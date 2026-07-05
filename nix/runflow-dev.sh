@@ -2,6 +2,13 @@ set -euo pipefail
 
 export NATS_DATA="${NATS_DATA:-.data/nats}"
 export NATS_URL="${NATS_URL:-nats://127.0.0.1:4222}"
+export PGDATA="${PGDATA:-.data/postgres}"
+export PGHOST="${PGHOST:-.data/postgres-socket}"
+export PGPORT="${PGPORT:-5432}"
+export PGBOUNCER_PORT="${PGBOUNCER_PORT:-6432}"
+export POSTGRES_DB="${POSTGRES_DB:-runflow}"
+export POSTGRES_USER="${POSTGRES_USER:-runflow}"
+export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-runflow}"
 export BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 export BACKEND_PORT="${BACKEND_PORT:-8000}"
 export FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
@@ -19,9 +26,104 @@ export AWS_ACCESS_KEY_ID="$RUSTFS_ACCESS_KEY"
 export AWS_SECRET_ACCESS_KEY="$RUSTFS_SECRET_KEY"
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 export AWS_ENDPOINT_URL="${AWS_ENDPOINT_URL:-http://$RUSTFS_ADDRESS}"
+export RUNFLOW_PGBOUNCER_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGBOUNCER_PORT/$POSTGRES_DB"
 export PYTHONPATH="$PWD/src:${PYTHONPATH:-}"
 
-mkdir -p "$NATS_DATA" "$RUSTFS_DATA"
+case "$PGDATA" in
+  /*) ;;
+  *) PGDATA="$PWD/$PGDATA" ;;
+esac
+
+case "$PGHOST" in
+  /*) ;;
+  *) PGHOST="$PWD/$PGHOST" ;;
+esac
+
+pgbouncer_dir="$PWD/.data/pgbouncer"
+pgbouncer_config="$pgbouncer_dir/pgbouncer.ini"
+pgbouncer_userlist="$pgbouncer_dir/userlist.txt"
+
+mkdir -p "$NATS_DATA" "$RUSTFS_DATA" "$PGDATA" "$PGHOST" "$pgbouncer_dir"
+
+if [ ! -s "$PGDATA/PG_VERSION" ]; then
+  echo "Initializing PostgreSQL database at $PGDATA"
+  initdb -D "$PGDATA" --auth=trust
+
+  cat >> "$PGDATA/postgresql.conf" <<EOF
+listen_addresses = '127.0.0.1'
+port = $PGPORT
+unix_socket_directories = '$PGHOST'
+EOF
+
+  cat >> "$PGDATA/pg_hba.conf" <<EOF
+host all all 127.0.0.1/32 md5
+host all all ::1/128 md5
+EOF
+fi
+
+echo "Starting PostgreSQL"
+pg_ctl -D "$PGDATA" \
+  -o "-k $PGHOST -p $PGPORT" \
+  -l .data/postgres.log \
+  start
+
+until pg_isready -h "$PGHOST" -p "$PGPORT"; do
+  sleep 1
+done
+
+echo "Ensuring PostgreSQL database/user exist"
+psql -h "$PGHOST" -p "$PGPORT" -d postgres <<SQL
+DO \$\$
+BEGIN
+  IF NOT EXISTS (
+    SELECT FROM pg_catalog.pg_roles WHERE rolname = '$POSTGRES_USER'
+  ) THEN
+    CREATE ROLE "$POSTGRES_USER" LOGIN PASSWORD '$POSTGRES_PASSWORD';
+  END IF;
+END
+\$\$;
+SQL
+
+if ! psql -h "$PGHOST" -p "$PGPORT" -d postgres -tAc \
+  "SELECT 1 FROM pg_database WHERE datname = '$POSTGRES_DB'" \
+  | grep -q 1; then
+  createdb -h "$PGHOST" -p "$PGPORT" -O "$POSTGRES_USER" "$POSTGRES_DB"
+fi
+
+cat > "$pgbouncer_userlist" <<EOF
+"$POSTGRES_USER" "$POSTGRES_PASSWORD"
+EOF
+
+cat > "$pgbouncer_config" <<EOF
+[databases]
+$POSTGRES_DB = host=$PGHOST port=$PGPORT dbname=$POSTGRES_DB
+
+[pgbouncer]
+listen_addr = 127.0.0.1
+listen_port = $PGBOUNCER_PORT
+unix_socket_dir = $pgbouncer_dir
+auth_type = plain
+auth_file = $pgbouncer_userlist
+pool_mode = transaction
+max_client_conn = 200
+default_pool_size = 20
+reserve_pool_size = 5
+ignore_startup_parameters = extra_float_digits
+pidfile = $pgbouncer_dir/pgbouncer.pid
+EOF
+
+echo "Starting PgBouncer on port $PGBOUNCER_PORT"
+pgbouncer "$pgbouncer_config" > .data/pgbouncer.log 2>&1 &
+pid_pgbouncer=$!
+
+until pg_isready -h 127.0.0.1 -p "$PGBOUNCER_PORT" -d "$POSTGRES_DB"; do
+  if ! kill -0 "$pid_pgbouncer" 2>/dev/null; then
+    echo "PgBouncer exited before becoming ready"
+    cat .data/pgbouncer.log
+    exit 1
+  fi
+  sleep 1
+done
 
 echo "Starting NATS JetStream on $NATS_URL"
 nats-server -js -sd "$NATS_DATA" -p 4222 &
@@ -80,8 +182,9 @@ pid_runner=$!
 
 shutdown() {
   echo "Stopping Runflow dev services"
-  kill "$pid_runner" "$pid_frontend" "$pid_backend" "$pid_rustfs" "$pid_nats" 2>/dev/null || true
+  kill "$pid_runner" "$pid_frontend" "$pid_backend" "$pid_rustfs" "$pid_nats" "$pid_pgbouncer" 2>/dev/null || true
+  pg_ctl -D "$PGDATA" stop -m fast >/dev/null 2>&1 || true
 }
 
 trap shutdown EXIT INT TERM
-wait -n "$pid_backend" "$pid_frontend" "$pid_runner" "$pid_rustfs" "$pid_nats"
+wait -n "$pid_backend" "$pid_frontend" "$pid_runner" "$pid_rustfs" "$pid_nats" "$pid_pgbouncer"

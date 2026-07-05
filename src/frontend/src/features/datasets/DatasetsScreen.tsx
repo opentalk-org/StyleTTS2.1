@@ -4,12 +4,15 @@ import { useNav } from "@/app/navStore";
 import { openParamModal } from "@/shared/feedback/ParamModal";
 import { showToast } from "@/shared/feedback/Toast";
 import { Button } from "@/shared/ui/Button";
+import { Card } from "@/shared/ui/Card";
+import { EmptyState } from "@/shared/ui/EmptyState";
 import { Input } from "@/shared/ui/Input";
 import { DatasetCard } from "./DatasetCard";
-import { useDatasets } from "./store";
+import { useDatasetActions, useDatasetsQuery } from "./query";
 
 export function DatasetsScreen() {
-  const { datasets, create, remove } = useDatasets();
+  const { data: datasets = [], isLoading, isError, refetch } = useDatasetsQuery();
+  const { create, remove } = useDatasetActions();
   const go = useNav((s) => s.go);
   const [name, setName] = useState("");
 
@@ -18,7 +21,6 @@ export function DatasetsScreen() {
     if (!trimmed) return;
     create(trimmed);
     setName("");
-    showToast(`Dataset "${trimmed}" created`);
   };
 
   const importZip = () =>
@@ -52,11 +54,28 @@ export function DatasetsScreen() {
           Import ZIP
         </Button>
       </div>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3.5">
-        {datasets.map((d) => (
-          <DatasetCard key={d.id} dataset={d} onOpen={() => go("audio")} onDelete={remove} />
-        ))}
-      </div>
+      {isLoading ? (
+        <Card className="p-6 text-sm text-txt-mute">Loading datasets…</Card>
+      ) : isError ? (
+        <Card>
+          <EmptyState
+            icon="alert"
+            title="Couldn't reach the backend"
+            description="The datasets service didn't respond."
+            action={
+              <Button variant="primary" icon="refresh" onClick={() => refetch()}>
+                Retry
+              </Button>
+            }
+          />
+        </Card>
+      ) : (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3.5">
+          {datasets.map((d) => (
+            <DatasetCard key={d.id} dataset={d} onOpen={() => go("audio")} onDelete={remove} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

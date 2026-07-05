@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { useDatasetsQuery } from "@/features/datasets/query";
 import { getAudioRow } from "@/mock/data";
 import { fmtDur } from "@/shared/format";
 import { Icon, type IconName } from "@/shared/icons";
@@ -80,6 +81,7 @@ function Menu({ items, onPick }: { items: Item[]; onPick: () => void }) {
 
 export function SelectionBar() {
   const { selection, selectAllMatching, selectAllFiltered, clearSelection } = useAudio();
+  const { data: datasets = [] } = useDatasetsQuery();
   const [menu, setMenu] = useState<MenuName | null>(null);
   const ids = Object.keys(selection);
   const total = filteredAudioCount();
@@ -89,7 +91,7 @@ export function SelectionBar() {
 
   const processItems: Item[] = [
     { header: "Processing jobs" },
-    { label: "Split into segments", icon: "scissors", onClick: () => splitAction(count) },
+    { label: "Split into segments", icon: "scissors", onClick: () => splitAction(count, datasets) },
     { label: "Transcribe", icon: "file-audio", onClick: () => transcribeAction(count) },
     { label: "Phonemize", icon: "sliders", onClick: () => phonemizeAction(count) },
     { label: "Normalize loudness", icon: "audio-lines", onClick: () => normalizeAction(count) },
@@ -99,8 +101,8 @@ export function SelectionBar() {
   ];
   const datasetItems: Item[] = [
     { header: "Files & datasets" },
-    { label: "Add to dataset", icon: "database", onClick: () => addDatasetAction(count) },
-    { label: "Remove from dataset", icon: "database", onClick: () => removeDatasetAction(count) },
+    { label: "Add to dataset", icon: "database", onClick: () => addDatasetAction(count, datasets) },
+    { label: "Remove from dataset", icon: "database", onClick: () => removeDatasetAction(count, datasets) },
     { label: "Assign voice to segments", icon: "mic", onClick: () => assignVoiceAction(count) },
     { divider: true },
     { label: "Remove all segments", icon: "trash", danger: true, onClick: () => removeSegmentsAction(count) },

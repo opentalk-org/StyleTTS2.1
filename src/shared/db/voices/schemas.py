@@ -9,4 +9,11 @@ class VoiceCreate(BaseModel):
 
 class VoiceRead(VoiceCreate):
     id: UUID
+    segments: int
+    datasets: list[UUID]
     model_config = ConfigDict(from_attributes=True)
+
+
+class VoicePage(BaseModel):
+    rows: list[VoiceRead]
+    total: int

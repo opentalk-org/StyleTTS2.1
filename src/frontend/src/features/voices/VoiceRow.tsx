@@ -1,15 +1,13 @@
-import { useDatasets } from "@/features/datasets/store";
 import { askConfirm } from "@/shared/feedback/ConfirmDialog";
 import { Icon } from "@/shared/icons";
 import { IconButton } from "@/shared/ui/IconButton";
-import type { Voice } from "@/mock/types";
+import type { Voice } from "./api";
 import { useVoiceActions } from "./query";
 import { useVoiceFilters } from "./store";
 
 export function VoiceRow({ voice }: { voice: Voice }) {
   const { editId, set } = useVoiceFilters();
   const { rename, remove } = useVoiceActions();
-  const datasets = useDatasets((s) => s.datasets);
   const editing = editId === voice.id;
 
   const del = () =>
@@ -48,15 +46,7 @@ export function VoiceRow({ voice }: { voice: Voice }) {
           ) : (
             <>
               <div className="truncate text-[13.5px] font-semibold text-txt">{voice.name}</div>
-              <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                {voice.datasets.map((did) => {
-                  const d = datasets.find((x) => x.id === did);
-                  return (
-                    <span key={did} className="rounded bg-blue-50 px-1.5 py-px text-[10px] font-semibold text-blue-700">
-                      {d ? d.name : did}
-                    </span>
-                  );
-                })}
+              <div className="mt-0.5 flex items-center gap-1.5">
                 <span className="font-mono text-[11px] text-txt-mute">{voice.id}</span>
               </div>
             </>

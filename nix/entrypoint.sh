@@ -23,6 +23,7 @@ export AWS_REGION="${AWS_REGION:-us-east-1}"
 export AWS_ENDPOINT_URL="${AWS_ENDPOINT_URL:-http://127.0.0.1:9000}"
 export BACKEND_PORT="${BACKEND_PORT:-8000}"
 export DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGBOUNCER_PORT/$POSTGRES_DB"
+export RUNFLOW_PGBOUNCER_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGBOUNCER_PORT/$POSTGRES_DB"
 
 pgbouncer_dir=/tmp/pgbouncer
 pgbouncer_config="$pgbouncer_dir/pgbouncer.ini"

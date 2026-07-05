@@ -1,4 +1,4 @@
-import { useDatasets } from "@/features/datasets/store";
+import type { Dataset } from "@/features/datasets/api";
 import { SPEAKERS } from "@/mock/constants";
 import { showToast } from "@/shared/feedback/Toast";
 import { openParamModal, type ParamValues } from "@/shared/feedback/ParamModal";
@@ -8,18 +8,19 @@ function scope(count: number | undefined): string {
   return count ? `${count} file${count === 1 ? "" : "s"}` : "selection";
 }
 
-function datasetSelect() {
-  return useDatasets.getState().datasets.map((d) => ({ value: d.id, label: `${d.name} (${d.files})` }));
+function datasetSelect(datasets: Dataset[]) {
+  return datasets.map((d) => ({ value: d.id, label: `${d.name} (${d.files})` }));
 }
 
-export function uploadAction() {
+export function uploadAction(datasets: Dataset[]) {
+  const options = datasetSelect(datasets);
   openParamModal({
     icon: "upload",
     title: "Upload audio",
     submitLabel: "Upload",
     fields: [
       { type: "drop", label: "Drop audio files here or click to browse", hint: "WAV, FLAC, MP3 · up to 2 GB per file" },
-      { key: "target", type: "select", label: "Add to dataset", default: datasetSelect()[0]?.value ?? "", options: datasetSelect() },
+      { key: "target", type: "select", label: "Add to dataset", default: options[0]?.value ?? "", options },
       { key: "speaker", type: "select", label: "Assign speaker", default: SPEAKERS[0]!, options: SPEAKERS.map((s) => ({ value: s, label: s })) },
     ],
     onSubmit: () => {
@@ -28,7 +29,8 @@ export function uploadAction() {
   });
 }
 
-export function splitAction(count?: number) {
+export function splitAction(count: number | undefined, datasets: Dataset[]) {
+  const options = datasetSelect(datasets);
   openParamModal({
     icon: "scissors",
     title: "Split into segments",
@@ -36,7 +38,7 @@ export function splitAction(count?: number) {
     submitLabel: "Split",
     fields: [
       { key: "mode", type: "radio", label: "Mode", default: "new", options: [{ value: "new", label: "Create new" }, { value: "replace", label: "Replace all" }] },
-      { key: "target", type: "select", label: "Target dataset", default: datasetSelect()[0]?.value ?? "", options: datasetSelect() },
+      { key: "target", type: "select", label: "Target dataset", default: options[0]?.value ?? "", options },
       { key: "minlen", type: "number", label: "Min length (s)", default: 1.0, min: 0.1, max: 30, step: 0.1 },
       { key: "maxlen", type: "number", label: "Max length (s)", default: 12.0, min: 1, max: 60, step: 0.5 },
       { key: "minchars", type: "number", label: "Min characters", default: 3, min: 0, max: 200, step: 1 },
@@ -140,25 +142,27 @@ export function calculateStatisticsAction(count?: number) {
   });
 }
 
-export function addDatasetAction(count?: number) {
+export function addDatasetAction(count: number | undefined, datasets: Dataset[]) {
+  const options = datasetSelect(datasets);
   openParamModal({
     icon: "database",
     title: "Add to dataset",
     submitLabel: "Add",
     fields: [
-      { key: "target", type: "select", label: "Dataset", default: datasetSelect()[0]?.value ?? "", options: datasetSelect() },
+      { key: "target", type: "select", label: "Dataset", default: options[0]?.value ?? "", options },
     ],
     onSubmit: () => showToast(`Added ${scope(count)} to dataset`),
   });
 }
 
-export function removeDatasetAction(count?: number) {
+export function removeDatasetAction(count: number | undefined, datasets: Dataset[]) {
+  const options = datasetSelect(datasets);
   openParamModal({
     icon: "database",
     title: "Remove from dataset",
     submitLabel: "Remove",
     fields: [
-      { key: "target", type: "select", label: "Dataset", default: datasetSelect()[0]?.value ?? "", options: datasetSelect() },
+      { key: "target", type: "select", label: "Dataset", default: options[0]?.value ?? "", options },
     ],
     onSubmit: () => showToast(`Removed ${scope(count)} from dataset`, undefined, "error"),
   });

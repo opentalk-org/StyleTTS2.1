@@ -1,63 +1,63 @@
-import { VOICE_COUNT, getVoiceRow } from "@/mock/data";
-import type { Voice } from "@/mock/types";
-
-export type VoiceSort = "name" | "segments" | "segments_asc";
-export type VoiceQuery = {
-  query: string;
-  dataset: string;
-  minSegments: number;
-  sort: VoiceSort;
+export type Voice = {
+  id: string;
+  name: string;
+  segments: number;
+  datasets: string[];
 };
 
-/**
- * Mock server-owned voice table. Filtering/sorting happens HERE (server-side),
- * not in the browser — the frontend must never scan the full set, which can be
- * in the millions. A real backend owns and indexes this; the client only ever
- * receives an already-filtered page.
- *
- * ponytail: bounded to VOICE_COUNT for the mock; the real service pages millions.
- */
-const SERVER: Voice[] = Array.from({ length: VOICE_COUNT }, (_, i) => getVoiceRow(i));
+export type VoiceQuery = {
+  query: string;
+  limit: number;
+  offset: number;
+};
 
-function applyQuery(list: Voice[], p: VoiceQuery): Voice[] {
-  const q = p.query.trim().toLowerCase();
-  const out = list.filter(
-    (v) =>
-      (!q || v.name.toLowerCase().includes(q)) &&
-      v.segments >= p.minSegments &&
-      (p.dataset === "all" || v.datasets.includes(p.dataset)),
-  );
-  out.sort((a, b) =>
-    p.sort === "segments"
-      ? b.segments - a.segments
-      : p.sort === "segments_asc"
-        ? a.segments - b.segments
-        : a.name.localeCompare(b.name),
-  );
-  return out;
+export type VoicePage = {
+  rows: Voice[];
+  total: number;
+};
+
+type VoicePayload = {
+  name: string;
+};
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, init);
+  if (!response.ok) {
+    throw new Error(`Backend request failed: ${response.status}`);
+  }
+  return response.json() as Promise<T>;
 }
 
-const delay = <T>(value: T): Promise<T> =>
-  new Promise((resolve) => setTimeout(() => resolve(value), 250));
-
-export function fetchVoices(params: VoiceQuery): Promise<{ rows: Voice[]; total: number }> {
-  return delay({ rows: applyQuery(SERVER, params), total: SERVER.length });
+export function fetchVoices(params: VoiceQuery): Promise<VoicePage> {
+  const search = new URLSearchParams({
+    query: params.query,
+    limit: String(params.limit),
+    offset: String(params.offset),
+  });
+  return request<VoicePage>(`/voices?${search}`);
 }
 
-export function createVoice(): Promise<string> {
-  const name = `speaker_${SERVER.length + 1}`;
-  SERVER.unshift({ id: `v_${Date.now()}`, name, segments: 0, datasets: [] });
-  return delay(name);
+export function createVoice(): Promise<Voice> {
+  const payload: VoicePayload = { name: `speaker_${Date.now()}` };
+  return request<Voice>("/voices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
-export function renameVoice(id: string, name: string): Promise<void> {
-  const v = SERVER.find((x) => x.id === id);
-  if (v) v.name = name;
-  return delay(undefined);
+export function renameVoice(id: string, name: string): Promise<Voice> {
+  const payload: VoicePayload = { name };
+  return request<Voice>(`/voices/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
-export function deleteVoice(id: string): Promise<void> {
-  const i = SERVER.findIndex((x) => x.id === id);
-  if (i >= 0) SERVER.splice(i, 1);
-  return delay(undefined);
+export async function deleteVoice(id: string): Promise<void> {
+  const response = await fetch(`/voices/${id}`, { method: "DELETE" });
+  if (!response.ok) {
+    throw new Error(`Backend request failed: ${response.status}`);
+  }
 }

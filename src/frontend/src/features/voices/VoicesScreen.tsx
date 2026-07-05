@@ -1,28 +1,25 @@
-import { useDatasets } from "@/features/datasets/store";
+import { Pager } from "@/shared/data/Pager";
 import { VirtualTable } from "@/shared/data/VirtualTable";
 import { Button } from "@/shared/ui/Button";
 import { Card } from "@/shared/ui/Card";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { SearchInput } from "@/shared/ui/SearchInput";
 import { Select } from "@/shared/ui/Select";
-import type { VoiceSort } from "./api";
 import { VoiceRow } from "./VoiceRow";
 import { VoiceSkeleton } from "./VoiceSkeleton";
 import { useVoiceActions, useVoicesQuery } from "./query";
 import { useVoiceFilters } from "./store";
 
 export function VoicesScreen() {
-  const { query, dataset, minSegments, sort, set } = useVoiceFilters();
-  const { data, isLoading, isError, refetch } = useVoicesQuery({ query, dataset, minSegments, sort });
+  const { query, limit, offset, set } = useVoiceFilters();
+  const { data, isLoading, isError, refetch } = useVoicesQuery({ query, limit, offset });
   const { add } = useVoiceActions();
-  const datasets = useDatasets((s) => s.datasets);
 
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
-  const datasetOptions = [
-    { value: "all", label: "All datasets" },
-    ...datasets.map((d) => ({ value: d.id, label: d.name })),
-  ];
+  const page = Math.floor(offset / limit);
+  const pages = Math.max(1, Math.ceil(total / limit));
+  const visibleEnd = Math.min(offset + rows.length, total);
 
   return (
     <div className="mx-auto flex h-full max-w-[960px] flex-col px-7 pb-4 pt-5">
@@ -32,29 +29,17 @@ export function VoicesScreen() {
         </Button>
         <SearchInput
           value={query}
-          onChange={(v) => set({ query: v })}
+          onChange={(v) => set({ query: v, offset: 0 })}
           placeholder={total ? `Search ${total.toLocaleString()} voices…` : "Search voices…"}
         />
-        <Select variant="mini" value={dataset} onChange={(v) => set({ dataset: v })} options={datasetOptions} />
         <Select
           variant="mini"
-          value={String(minSegments)}
-          onChange={(v) => set({ minSegments: Number(v) })}
+          value={String(limit)}
+          onChange={(v) => set({ limit: Number(v), offset: 0 })}
           options={[
-            { value: "0", label: "Any size" },
-            { value: "1", label: "Has segments" },
-            { value: "50", label: "≥ 50 segments" },
-            { value: "200", label: "≥ 200 segments" },
-          ]}
-        />
-        <Select
-          variant="mini"
-          value={sort}
-          onChange={(v) => set({ sort: v as VoiceSort })}
-          options={[
-            { value: "name", label: "Sort: Name" },
-            { value: "segments", label: "Sort: Most segments" },
-            { value: "segments_asc", label: "Sort: Fewest segments" },
+            { value: "50", label: "50 per page" },
+            { value: "100", label: "100 per page" },
+            { value: "200", label: "200 per page" },
           ]}
         />
       </div>
@@ -78,8 +63,12 @@ export function VoicesScreen() {
         </Card>
       ) : (
         <>
-          <div className="mb-2.5 text-xs tabular-nums text-txt-mute">
-            {rows.length.toLocaleString()} of {total.toLocaleString()} voices
+          <div className="mb-2.5 flex items-center gap-3 text-xs tabular-nums text-txt-mute">
+            <span>
+              {total ? `${(offset + 1).toLocaleString()}-${visibleEnd.toLocaleString()}` : "0"} of{" "}
+              {total.toLocaleString()} voices
+            </span>
+            <Pager page={page} pages={pages} onChange={(p) => set({ offset: p * limit })} />
           </div>
           {rows.length ? (
             <VirtualTable

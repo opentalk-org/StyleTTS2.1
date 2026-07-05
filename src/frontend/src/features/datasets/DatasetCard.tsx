@@ -4,7 +4,7 @@ import { Icon } from "@/shared/icons";
 import { Button } from "@/shared/ui/Button";
 import { Card } from "@/shared/ui/Card";
 import { IconButton } from "@/shared/ui/IconButton";
-import type { Dataset } from "@/mock/types";
+import type { Dataset } from "./api";
 
 export function DatasetCard({
   dataset,
@@ -23,7 +23,6 @@ export function DatasetCard({
       label: "Delete dataset",
       onConfirm: () => {
         onDelete(dataset.id);
-        showToast("Dataset deleted", undefined, "error");
       },
     });
 

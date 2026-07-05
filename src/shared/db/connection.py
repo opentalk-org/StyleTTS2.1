@@ -1,4 +1,5 @@
 import os
+from contextlib import contextmanager
 from collections.abc import Iterator
 
 from sqlalchemy import Engine, create_engine
@@ -31,6 +32,7 @@ def create_database_schema(database_url: str | None = None) -> None:
         engine.dispose()
 
 
+@contextmanager
 def database_session(database_url: str | None = None) -> Iterator[Session]:
     engine = pgbouncer_engine(database_url)
     factory = sessionmaker(bind=engine, expire_on_commit=False)

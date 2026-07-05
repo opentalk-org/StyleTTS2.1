@@ -25,8 +25,8 @@ export function useVoiceActions() {
 
   const add = useMutation({
     mutationFn: createVoice,
-    onSuccess: (name) => {
-      showToast(`Voice "${name}" created`);
+    onSuccess: (voice) => {
+      showToast(`Voice "${voice.name}" created`);
       invalidate();
     },
   });

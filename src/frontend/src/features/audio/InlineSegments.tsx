@@ -1,4 +1,5 @@
 import { useNav } from "@/app/navStore";
+import { useDatasetsQuery } from "@/features/datasets/query";
 import { fileSegments } from "@/mock/data";
 import type { AudioFile } from "@/mock/types";
 import { fmtClock } from "@/shared/format";
@@ -11,6 +12,7 @@ const CAP = 8;
 /** Expanded preview of a file's segments below its row. */
 export function InlineSegments({ file, index }: { file: AudioFile; index: number }) {
   const segs = fileSegments(file);
+  const { data: datasets = [] } = useDatasetsQuery();
 
   if (segs.length === 0)
     return (
@@ -21,7 +23,7 @@ export function InlineSegments({ file, index }: { file: AudioFile; index: number
         <span className="flex-1 text-[12.5px] text-txt-dim">
           No segments yet. Split this file by silence or transcribe it to generate segments.
         </span>
-        <Button variant="primary" size="sm" icon="scissors" onClick={() => splitAction(1)}>
+        <Button variant="primary" size="sm" icon="scissors" onClick={() => splitAction(1, datasets)}>
           Split…
         </Button>
         <Button variant="ghost" size="sm" icon="file-audio" onClick={() => transcribeAction(1)}>

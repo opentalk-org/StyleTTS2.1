@@ -2,8 +2,9 @@ from contextlib import asynccontextmanager
 import os
 from pathlib import Path
 from typing import AsyncIterator
+import uuid
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from fastapi.staticfiles import StaticFiles
 
 from backend.nats_bus import BackendNatsBus
@@ -13,7 +14,13 @@ from runflow.registry.type_registry import TypeRegistry
 from runflow.tmp_nodes.audio.datatypes import register_audio_types
 from runflow.tmp_nodes.register import register_builtin_nodes
 from runflow.ui.schema_export import export_ui_schema
-from shared.db import create_database_schema
+from shared.db import create_database_schema, database_session
+from shared.db.datasets import crud as dataset_crud
+from shared.db.datasets.models import Dataset
+from shared.db.datasets.schemas import DatasetCreate, DatasetRead
+from shared.db.voices import crud as voice_crud
+from shared.db.voices.models import Voice
+from shared.db.voices.schemas import VoiceCreate, VoicePage, VoiceRead
 from shared.logging_setup import configure_logging, get_logger
 from shared.schemas import InlineGraphRunRequest, NodeLogResponseMessage, RunEventResponse, RunnerStatus, RunSnapshot, RunStatus
 
@@ -56,6 +63,80 @@ async def schema() -> dict:
     node_registry = register_builtin_nodes(NodeRegistry())
     type_registry = register_audio_types(TypeRegistry())
     return export_ui_schema(node_registry, type_registry)
+
+
+def dataset_response(item: Dataset, files: int) -> DatasetRead:
+    return DatasetRead(id=item.id, name=item.name, files=files)
+
+
+def voice_response(item: Voice) -> VoiceRead:
+    return VoiceRead(id=item.id, name=item.name, segments=0, datasets=[])
+
+
+@app.get("/datasets", response_model=list[DatasetRead])
+async def list_datasets() -> list[DatasetRead]:
+    with database_session() as session:
+        rows = dataset_crud.list_dataset_file_counts(session)
+        return [dataset_response(item, files) for item, files in rows]
+
+
+@app.post("/datasets", response_model=DatasetRead, status_code=status.HTTP_201_CREATED)
+async def create_dataset(request: DatasetCreate) -> DatasetRead:
+    try:
+        with database_session() as session:
+            item = dataset_crud.create_dataset(session, request)
+            return dataset_response(item, 0)
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
+@app.delete("/datasets/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_dataset(dataset_id: str) -> None:
+    try:
+        with database_session() as session:
+            dataset_crud.delete_dataset(session, uuid.UUID(dataset_id))
+    except (KeyError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
+@app.get("/voices", response_model=VoicePage)
+async def list_voices(
+    query: str = "",
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> VoicePage:
+    with database_session() as session:
+        rows, total = voice_crud.search_voices(session, query, limit, offset)
+        return VoicePage(rows=[voice_response(item) for item in rows], total=total)
+
+
+@app.post("/voices", response_model=VoiceRead, status_code=status.HTTP_201_CREATED)
+async def create_voice(request: VoiceCreate) -> VoiceRead:
+    try:
+        with database_session() as session:
+            item = voice_crud.create_voice(session, request)
+            return voice_response(item)
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
+@app.patch("/voices/{voice_id}", response_model=VoiceRead)
+async def rename_voice(voice_id: str, request: VoiceCreate) -> VoiceRead:
+    try:
+        with database_session() as session:
+            item = voice_crud.rename_voice(session, uuid.UUID(voice_id), request.name)
+            return voice_response(item)
+    except (KeyError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
+@app.delete("/voices/{voice_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_voice(voice_id: str) -> None:
+    try:
+        with database_session() as session:
+            voice_crud.delete_voice(session, uuid.UUID(voice_id))
+    except (KeyError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
 
 @app.post("/graphs/runs", response_model=RunStatus, status_code=status.HTTP_202_ACCEPTED)

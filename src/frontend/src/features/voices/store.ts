@@ -1,12 +1,9 @@
 import { create } from "zustand";
 
-import type { VoiceSort } from "./api";
-
 export type VoiceFilters = {
   query: string;
-  dataset: string;
-  minSegments: number;
-  sort: VoiceSort;
+  limit: number;
+  offset: number;
   editId: string | null;
 };
 
@@ -21,9 +18,8 @@ type VoiceFiltersStore = VoiceFilters & {
  */
 export const useVoiceFilters = create<VoiceFiltersStore>((set) => ({
   query: "",
-  dataset: "all",
-  minSegments: 0,
-  sort: "name",
+  limit: 100,
+  offset: 0,
   editId: null,
   set: (patch) => set(patch),
 }));

@@ -26,6 +26,7 @@ class Checkpoint(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     path: Mapped[str] = mapped_column(Text, nullable=False)
     size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     type_: Mapped[str] = mapped_column("type", String(64), nullable=False)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False)
 
@@ -37,6 +38,7 @@ class ExtraFile(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     path: Mapped[str] = mapped_column(Text, nullable=False)
     size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     type_: Mapped[str] = mapped_column("type", String(64), nullable=False)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False)
 

@@ -68,8 +68,11 @@
 
       backendDependencies = ps:
         runflowDependencies ps ++ [
+          ps.boto3
           ps.fastapi
           ps."nats-py"
+          ps.psycopg
+          ps.sqlalchemy
           ps.uvicorn
           ps.websockets
         ];
@@ -108,9 +111,11 @@
               runnerEnv
               pkgs.bash
               pkgs.coreutils
+              pkgs.gnugrep
               pkgs.nats-server
               pkgs.nodejs_22
               pkgs.pgbouncer
+              pkgs.postgresql_16
               rustfs
             ];
             text = builtins.readFile ./nix/runflow-dev.sh;

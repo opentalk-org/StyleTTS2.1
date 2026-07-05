@@ -9,4 +9,5 @@ class DatasetCreate(BaseModel):
 
 class DatasetRead(DatasetCreate):
     id: UUID
+    files: int
     model_config = ConfigDict(from_attributes=True)

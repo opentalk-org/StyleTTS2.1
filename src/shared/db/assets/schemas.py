@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -16,18 +17,36 @@ class BucketFileRead(BucketFileCreate):
     model_config = ConfigDict(from_attributes=True)
 
 
-class FileAssetCreate(BaseModel):
+class CheckpointCreate(BaseModel):
+    name: str
+    folder_path: Path
+    type_: str
+    metadata: dict[str, Any]
+
+
+class CheckpointUpdate(BaseModel):
+    name: str
+    folder_path: Path | None
+    type_: str
+    metadata: dict[str, Any]
+
+
+class ExtraFileCreate(BaseModel):
     name: str
     data: bytes
     type_: str
     metadata: dict[str, Any]
 
 
-class FileAssetUpdate(BaseModel):
+class ExtraFileUpdate(BaseModel):
     name: str
     data: bytes | None
     type_: str
     metadata: dict[str, Any]
+
+
+FileAssetCreate = ExtraFileCreate
+FileAssetUpdate = ExtraFileUpdate
 
 
 class FileAssetRead(BaseModel):
@@ -35,6 +54,7 @@ class FileAssetRead(BaseModel):
     name: str
     path: str
     size: int
+    content_hash: str
     type_: str
     metadata: dict[str, Any] = Field(alias="metadata_")
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)

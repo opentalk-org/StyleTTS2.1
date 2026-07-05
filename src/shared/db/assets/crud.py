@@ -1,14 +1,27 @@
 from collections.abc import Sequence
 import uuid
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from shared.db.assets.file_store import (
+    checkpoint_cache_path,
+    checkpoint_tar,
+    extra_file_cache_path,
+    object_store,
+    stored_bytes,
+)
 from shared.db.assets.models import BucketFile, Checkpoint, Config, ExtraFile
-from shared.db.assets.schemas import BucketFileCreate, ConfigCreate, FileAssetCreate, FileAssetUpdate
+from shared.db.assets.schemas import (
+    BucketFileCreate,
+    CheckpointCreate,
+    CheckpointUpdate,
+    ConfigCreate,
+    ExtraFileCreate,
+    ExtraFileUpdate,
+)
 from shared.db.common import many, one
-from shared.storage import ObjectStoreConfig, S3ObjectStore
-from shared.storage.object_store import S3ObjectStore as ObjectStore
 
 
 def list_bucket_files(session: Session) -> Sequence[BucketFile]:
@@ -27,8 +40,24 @@ def create_bucket_file(session: Session, payload: BucketFileCreate) -> BucketFil
     return item
 
 
-def create_checkpoint(session: Session, payload: FileAssetCreate) -> Checkpoint:
-    return _create_file_asset(session, Checkpoint, "checkpoints", payload)
+def create_checkpoint(session: Session, payload: CheckpointCreate) -> Checkpoint:
+    item_id = uuid.uuid4()
+    path = f"checkpoints/{item_id}.tar"
+    stored = checkpoint_tar(payload.folder_path)
+    object_store().upload(path, stored.data)
+    item = Checkpoint(
+        id=item_id,
+        name=payload.name,
+        path=path,
+        size=stored.size,
+        content_hash=stored.content_hash,
+        type_=payload.type_,
+        metadata_=payload.metadata,
+    )
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return item
 
 
 def get_checkpoint(session: Session, checkpoint_id: UUID) -> Checkpoint:
@@ -37,12 +66,23 @@ def get_checkpoint(session: Session, checkpoint_id: UUID) -> Checkpoint:
 
 def read_checkpoint(session: Session, checkpoint_id: UUID) -> bytes:
     item = one(session, Checkpoint, checkpoint_id)
-    return _object_store().download(item.path)
+    return object_store().download(item.path)
 
 
-def update_checkpoint(session: Session, checkpoint_id: UUID, payload: FileAssetUpdate) -> Checkpoint:
+def get_checkpoint_path(session: Session, checkpoint_id: UUID) -> Path:
+    return checkpoint_cache_path(one(session, Checkpoint, checkpoint_id))
+
+
+def update_checkpoint(session: Session, checkpoint_id: UUID, payload: CheckpointUpdate) -> Checkpoint:
     item = one(session, Checkpoint, checkpoint_id)
-    _update_file_asset(item, payload)
+    item.name = payload.name
+    item.type_ = payload.type_
+    item.metadata_ = payload.metadata
+    if payload.folder_path is not None:
+        stored = checkpoint_tar(payload.folder_path)
+        object_store().upload(item.path, stored.data)
+        item.size = stored.size
+        item.content_hash = stored.content_hash
     session.commit()
     session.refresh(item)
     return item
@@ -50,13 +90,29 @@ def update_checkpoint(session: Session, checkpoint_id: UUID, payload: FileAssetU
 
 def delete_checkpoint(session: Session, checkpoint_id: UUID) -> None:
     item = one(session, Checkpoint, checkpoint_id)
-    _object_store().delete(item.path)
+    object_store().delete(item.path)
     session.delete(item)
     session.commit()
 
 
-def create_extra_file(session: Session, payload: FileAssetCreate) -> ExtraFile:
-    return _create_file_asset(session, ExtraFile, "extra-files", payload)
+def create_extra_file(session: Session, payload: ExtraFileCreate) -> ExtraFile:
+    stored = stored_bytes(payload.data)
+    item_id = uuid.uuid4()
+    path = f"extra-files/{item_id}"
+    object_store().upload(path, stored.data)
+    item = ExtraFile(
+        id=item_id,
+        name=payload.name,
+        path=path,
+        size=stored.size,
+        content_hash=stored.content_hash,
+        type_=payload.type_,
+        metadata_=payload.metadata,
+    )
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return item
 
 
 def get_extra_file(session: Session, extra_file_id: UUID) -> ExtraFile:
@@ -64,13 +120,23 @@ def get_extra_file(session: Session, extra_file_id: UUID) -> ExtraFile:
 
 
 def read_extra_file(session: Session, extra_file_id: UUID) -> bytes:
-    item = one(session, ExtraFile, extra_file_id)
-    return _object_store().download(item.path)
+    return get_extra_file_path(session, extra_file_id).read_bytes()
 
 
-def update_extra_file(session: Session, extra_file_id: UUID, payload: FileAssetUpdate) -> ExtraFile:
+def get_extra_file_path(session: Session, extra_file_id: UUID) -> Path:
+    return extra_file_cache_path(one(session, ExtraFile, extra_file_id))
+
+
+def update_extra_file(session: Session, extra_file_id: UUID, payload: ExtraFileUpdate) -> ExtraFile:
     item = one(session, ExtraFile, extra_file_id)
-    _update_file_asset(item, payload)
+    item.name = payload.name
+    item.type_ = payload.type_
+    item.metadata_ = payload.metadata
+    if payload.data is not None:
+        stored = stored_bytes(payload.data)
+        object_store().upload(item.path, stored.data)
+        item.size = stored.size
+        item.content_hash = stored.content_hash
     session.commit()
     session.refresh(item)
     return item
@@ -78,7 +144,7 @@ def update_extra_file(session: Session, extra_file_id: UUID, payload: FileAssetU
 
 def delete_extra_file(session: Session, extra_file_id: UUID) -> None:
     item = one(session, ExtraFile, extra_file_id)
-    _object_store().delete(item.path)
+    object_store().delete(item.path)
     session.delete(item)
     session.commit()
 
@@ -91,39 +157,3 @@ def create_config(session: Session, payload: ConfigCreate) -> Config:
     session.commit()
     session.refresh(item)
     return item
-
-
-def _create_file_asset(
-    session: Session,
-    model: type[Checkpoint] | type[ExtraFile],
-    path_prefix: str,
-    payload: FileAssetCreate,
-) -> Checkpoint | ExtraFile:
-    item_id = uuid.uuid4()
-    path = f"{path_prefix}/{item_id}"
-    _object_store().upload(path, payload.data)
-    item = model(
-        id=item_id,
-        name=payload.name,
-        path=path,
-        size=len(payload.data),
-        type_=payload.type_,
-        metadata_=payload.metadata,
-    )
-    session.add(item)
-    session.commit()
-    session.refresh(item)
-    return item
-
-
-def _update_file_asset(item: Checkpoint | ExtraFile, payload: FileAssetUpdate) -> None:
-    item.name = payload.name
-    item.type_ = payload.type_
-    item.metadata_ = payload.metadata
-    if payload.data is not None:
-        _object_store().upload(item.path, payload.data)
-        item.size = len(payload.data)
-
-
-def _object_store() -> ObjectStore:
-    return S3ObjectStore(ObjectStoreConfig.from_env())

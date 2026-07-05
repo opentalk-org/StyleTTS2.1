@@ -1,5 +1,5 @@
 import { AUDIO_COUNT } from "@/mock/data";
-import type { Dataset } from "@/mock/types";
+import type { Dataset } from "@/features/datasets/api";
 import type { Option } from "@/shared/ui/Select";
 
 export function datasetOptions(datasets: Dataset[]): Option[] {

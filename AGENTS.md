@@ -29,6 +29,14 @@ This project is a ComfyUI-style workflow system for typed, batched, concurrent p
 - Keep node lifecycle separate from node logic. Loading/unloading belongs behind the node manager, not scattered through the scheduler.
 - Prefer artifact references over passing large payloads in memory. Branches should reuse stored artifacts instead of duplicating data.
 
+## Database and stored files
+
+- Backend and runner code must access PostgreSQL through the shared CRUD facades in `src/shared/db/<feature>/crud.py`. Do not bypass them with ad hoc SQLAlchemy queries unless the feature CRUD does not exist yet.
+- Use `shared.db.connection.database_session` for SQLAlchemy sessions and keep transaction boundaries inside CRUD/service functions.
+- Audio file bytes are managed by `src/shared/db/audio/crud.py`. Call the public single or bulk audio CRUD functions; callers should not manage pack files, byte offsets, stale bytes, or pruning directly. use bulk options if audio files can be counted in hundrends.
+- Checkpoints and extra files are managed by `src/shared/db/assets/crud.py`. Checkpoints are folder artifacts: create/update them from a folder path and use `get_checkpoint_path` to get the cached local folder. Extra files are single-object artifacts; use `get_extra_file_path` when a local cached file path is needed.
+- PostgreSQL is the source of truth for metadata and bucket object keys. Bucket objects and local caches are implementation details behind shared CRUD.
+
 ## Project structure
 
 - Use feature-based structure inside `src/frontend`, `src/backend`, and `src/runflow`. Avoid broad technical folders such as `models/`, `schemas/`, `components/`, or `utils/` at the package root when the code belongs to one feature.
