@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, type ChangeEvent, type DragEvent, type ReactNode } from "react";
 
 import { Icon } from "../icons";
 import { Input } from "../ui/Input";
@@ -29,15 +29,7 @@ export function ParamFieldRenderer({
       </div>
     );
   if (field.type === "drop")
-    return (
-      <div className="col-span-2 flex flex-col items-center justify-center gap-2 rounded-[9px] border-2 border-dashed border-line-2 bg-panel-2 p-6 text-center hover:border-blue-500">
-        <span className="text-txt-mute">
-          <Icon name="upload" size={22} strokeWidth={2} />
-        </span>
-        <div className="text-[13px] font-semibold text-txt">{field.label}</div>
-        {field.hint ? <div className="text-[11.5px] text-txt-mute">{field.hint}</div> : null}
-      </div>
-    );
+    return <DropField field={field} values={values} set={set} />;
   if (field.type === "toggle")
     return (
       <label className="col-span-2 flex cursor-pointer items-center gap-3 py-1">
@@ -93,4 +85,56 @@ export function ParamFieldRenderer({
       </Field>
     </div>
   );
+}
+
+function DropField({
+  field,
+  values,
+  set,
+}: {
+  field: Extract<ParamField, { type: "drop" }>;
+  values: ParamValues;
+  set: (key: string, value: ParamValues[string]) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const files = field.key ? fileList(values[field.key]) : [];
+  const choose = () => inputRef.current?.click();
+  const setFiles = (next: File[]) => {
+    if (field.key) set(field.key, next);
+  };
+  const onChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setFiles(Array.from(event.currentTarget.files ?? []));
+    event.currentTarget.value = "";
+  };
+  const onDrop = (event: DragEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    setFiles(Array.from(event.dataTransfer.files));
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={choose}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={onDrop}
+      className="col-span-2 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[9px] border-2 border-dashed border-line-2 bg-panel-2 p-6 text-center hover:border-blue-500"
+    >
+      <input ref={inputRef} type="file" hidden accept={field.accept} multiple={field.multiple ?? true} onChange={onChange} />
+      <span className="text-txt-mute">
+        <Icon name="upload" size={22} strokeWidth={2} />
+      </span>
+      <div className="text-[13px] font-semibold text-txt">{field.label}</div>
+      {files.length ? <div className="max-w-full truncate text-[11.5px] text-blue-700">{fileSummary(files)}</div> : null}
+      {field.hint ? <div className="text-[11.5px] text-txt-mute">{field.hint}</div> : null}
+    </button>
+  );
+}
+
+function fileList(value: ParamValues[string] | undefined): File[] {
+  return Array.isArray(value) ? value.filter((item): item is File => item instanceof File) : [];
+}
+
+function fileSummary(files: File[]): string {
+  if (files.length === 1) return files[0]?.name ?? "";
+  return `${files.length} files selected`;
 }

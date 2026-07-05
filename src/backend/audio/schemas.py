@@ -17,6 +17,15 @@ class AudioSegmentRead(BaseModel):
     speaker: str
 
 
+class AudioSegmentWrite(BaseModel):
+    id: str
+    start: float
+    end: float
+    text: str
+    phon: str
+    speaker: str
+
+
 class AudioFileListItem(BaseModel):
     id: UUID
     name: str

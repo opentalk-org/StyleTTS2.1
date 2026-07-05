@@ -1,8 +1,8 @@
 import { SPEAKERS } from "@/mock/constants";
-import type { Segment } from "@/mock/types";
 import { fmtClock } from "@/shared/format";
 import { Icon } from "@/shared/icons";
 import { cn } from "@/shared/ui/cn";
+import type { Segment } from "./api";
 import { useEditor } from "./editorStore";
 
 const ROW_COLS = "30px 92px 120px 1fr auto";

@@ -1,32 +1,41 @@
-import { showToast } from "@/shared/feedback/Toast";
 import { Icon } from "@/shared/icons";
 import { Card } from "@/shared/ui/Card";
-
-import { useTraining } from "./store";
+import { defaultWorkflowContext, graphPayload } from "../workflows/logic";
+import { useStartGraphMutation } from "../workflows/query";
+import type { WorkflowGraph, WorkflowNode, WorkflowSchema } from "../workflows/types";
 
 const BASE_SYMBOLS = 178;
 
 type ValidationRow = { ok: boolean; label: string };
 
 /** Sticky right rail: draft state, validation checklist, and the queue action. */
-export function QueueCard() {
-  const alphabet = useTraining((s) => s.alphabet);
-  const oodSets = useTraining((s) => s.oodSets);
-
-  const alphabetValid =
-    alphabet.trim().split(/\s+/).filter(Boolean).length === BASE_SYMBOLS;
+export function QueueCard({
+  schema,
+  graph,
+}: {
+  schema: WorkflowSchema | null;
+  graph: WorkflowGraph | null;
+}) {
+  const start = useStartGraphMutation();
+  const training = graph?.nodes.find((node) => node.type.endsWith("Training") || node.type === "StyleTtsFinetune");
+  const dataset = graph?.nodes.find((node) => node.type === "TrainingDatasetInput");
+  const checkpoint = graph?.nodes.find((node) => node.type === "CheckpointAssetInput");
+  const alphabet = graph?.nodes.find((node) => node.type === "PhonemeAlphabetInput");
+  const oodSets = graph?.nodes.find((node) => node.type === "OodTextSetInput");
+  const alphabetSymbols = String(alphabet?.params.symbols ?? "");
+  const alphabetValid = !alphabet || alphabetSymbols.trim().split(/\s+/).filter(Boolean).length === BASE_SYMBOLS;
 
   const rows: ValidationRow[] = [
-    { ok: true, label: "Display name set" },
-    { ok: true, label: "Training dataset selected" },
-    { ok: false, label: "Base checkpoint required" },
+    { ok: Boolean(training?.params.display_name), label: "Display name set" },
+    { ok: Boolean(dataset?.params.dataset_id), label: "Training dataset selected" },
+    { ok: Boolean(checkpoint?.params.checkpoint_id), label: "Base checkpoint required" },
     { ok: alphabetValid, label: "Phoneme alphabet valid" },
-    { ok: oodSets.length > 0, label: "OOD reference set added" },
+    { ok: hasOodSet(oodSets), label: "OOD reference set added" },
   ];
 
   const queue = () => {
-    const id = `job_${Math.random().toString(16).slice(2, 6)}`;
-    showToast("Training job queued", id);
+    if (!schema || !graph) return;
+    start.mutate(graphPayload(graph, null, defaultWorkflowContext(schema.runtime_config_defaults)));
   };
 
   return (
@@ -61,7 +70,8 @@ export function QueueCard() {
 
       <button
         onClick={queue}
-        className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border-0 bg-blue-500 text-sm font-semibold text-white cursor-pointer transition-colors hover:bg-blue-600"
+        disabled={!schema || !graph || start.isPending}
+        className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border-0 bg-blue-500 text-sm font-semibold text-white cursor-pointer transition-colors hover:bg-blue-600 disabled:cursor-default disabled:opacity-50"
       >
         <Icon name="bolt" size={17} strokeWidth={2.2} />
         Queue training job
@@ -72,4 +82,9 @@ export function QueueCard() {
       </p>
     </Card>
   );
+}
+
+function hasOodSet(node: WorkflowNode | undefined): boolean {
+  const sets = node?.params.sets;
+  return Array.isArray(sets) && sets.length > 0;
 }

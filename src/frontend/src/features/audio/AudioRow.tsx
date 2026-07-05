@@ -1,12 +1,14 @@
+import { useNav } from "@/app/navStore";
 import { fmtAgo, fmtDur } from "@/shared/format";
 import { Icon } from "@/shared/icons";
 import { WaveformBars } from "@/shared/media/WaveformBars";
 import { cn } from "@/shared/ui/cn";
+import { IconButton } from "@/shared/ui/IconButton";
 import { InlineSegments } from "./InlineSegments";
 import type { AudioFile } from "./api";
 import { useAudio } from "./store";
 
-export const AUDIO_COLS = "30px 22px 66px minmax(130px,1.2fr) 118px 54px 46px 74px";
+export const AUDIO_COLS = "30px 22px 66px minmax(130px,1.2fr) 118px 54px 46px 74px 30px";
 
 function Checkbox({ on }: { on: boolean }) {
   return (
@@ -27,6 +29,7 @@ export function AudioRow({ file, index }: { file: AudioFile; index: number }) {
   const ex = !!expanded[file.id];
   const noSeg = file.segments === 0;
   const updatedAt = Date.parse(file.updated_at);
+  const openEditor = useNav((s) => s.openEditor);
 
   return (
     <div>
@@ -64,6 +67,15 @@ export function AudioRow({ file, index }: { file: AudioFile; index: number }) {
           {file.segments || "—"}
         </span>
         <span className="text-xs text-txt-mute">{Number.isNaN(updatedAt) ? "-" : fmtAgo(updatedAt)}</span>
+        <IconButton
+          icon="edit"
+          title="Open segment editor"
+          size={26}
+          onClick={(event) => {
+            event.stopPropagation();
+            openEditor(file.id);
+          }}
+        />
       </div>
       {ex ? <InlineSegments file={file} /> : null}
     </div>

@@ -3,6 +3,8 @@ export type JsonSchema = {
   title?: string;
   default?: unknown;
   enum?: string[];
+  minimum?: number;
+  maximum?: number;
   properties?: Record<string, JsonSchema>;
   additionalProperties?: JsonSchema | boolean;
   anyOf?: JsonSchema[];

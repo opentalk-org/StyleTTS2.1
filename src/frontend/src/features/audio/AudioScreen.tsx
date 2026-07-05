@@ -31,6 +31,7 @@ function Header({ allSel, onToggleAll }: { allSel: boolean; onToggleAll: () => v
       ))}
       <span className="justify-self-end text-[11px] font-bold uppercase tracking-wider text-txt-mute">Segs</span>
       <span className="text-[11px] font-bold uppercase tracking-wider text-txt-mute">Updated</span>
+      <span />
     </div>
   );
 }

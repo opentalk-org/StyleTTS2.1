@@ -17,6 +17,22 @@ from runner.nodes.audio_sources import AllAudioSourceNode, DatasetAudioSourceNod
 from runner.nodes.dataset_writeback import AddAudioToDatasetNode, AssignVoiceNode, DeleteAudioRecordsNode, RemoveAudioFromDatasetNode
 from runner.nodes.datatypes import register_runner_types
 from runner.nodes.text_processing import PhonemizeTranscriptNode
+from runner.nodes.training import (
+    AsrModelTrainingNode,
+    CheckpointAssetInputNode,
+    F0ModelTrainingNode,
+    FetchPhonemeAlphabetNode,
+    ListDatasetAudioIdsNode,
+    OodTextSetInputNode,
+    OptionalTrainingAssetsInputNode,
+    PrefetchCheckpointAssetNode,
+    PrefetchOodTextSetsNode,
+    PrefetchTrainingAssetsNode,
+    PhonemeAlphabetInputNode,
+    TrainingRunInputNode,
+    StyleTtsFinetuneNode,
+    TrainingDatasetInputNode,
+)
 
 
 def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
@@ -42,6 +58,20 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         RemoveAudioFromDatasetNode,
         AssignVoiceNode,
         DeleteAudioRecordsNode,
+        TrainingRunInputNode,
+        TrainingDatasetInputNode,
+        CheckpointAssetInputNode,
+        OptionalTrainingAssetsInputNode,
+        PhonemeAlphabetInputNode,
+        OodTextSetInputNode,
+        ListDatasetAudioIdsNode,
+        PrefetchCheckpointAssetNode,
+        PrefetchTrainingAssetsNode,
+        FetchPhonemeAlphabetNode,
+        PrefetchOodTextSetsNode,
+        StyleTtsFinetuneNode,
+        F0ModelTrainingNode,
+        AsrModelTrainingNode,
     ]:
         registry.register(node_cls)
     return registry

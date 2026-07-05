@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID as PythonUUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, Text
+from sqlalchemy import Boolean, DateTime, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,6 +25,7 @@ class Job(Base):
 
 class NodeLog(Base):
     __tablename__ = "node_logs"
+    __table_args__ = (UniqueConstraint("run_id", "node_id", name="uq_node_logs_run_node"),)
 
     id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     run_id: Mapped[str] = mapped_column(Text, nullable=False, index=True)

@@ -1,7 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
+import { backendResourceUrl } from "@/app/backend";
 import { useNav } from "@/app/navStore";
-import { fileSegments, getAudioRow } from "@/mock/data";
 import { showToast } from "@/shared/feedback/Toast";
 import { fmtClock, fmtDur } from "@/shared/format";
 import { Icon, type IconName } from "@/shared/icons";
@@ -10,9 +10,12 @@ import { Button } from "@/shared/ui/Button";
 import { SearchInput } from "@/shared/ui/SearchInput";
 import { Slider } from "@/shared/ui/form/Slider";
 import { cn } from "@/shared/ui/cn";
+import { useQueryClient } from "@tanstack/react-query";
+import { saveAudioSegments } from "./api";
 import { SegmentRow } from "./SegmentRow";
 import { SegmentTimeline } from "./SegmentTimeline";
 import { useEditor } from "./editorStore";
+import { AUDIO_FILES_KEY, useAudioFileQuery, useWaveformQuery } from "./query";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -33,51 +36,59 @@ function TBtn({ icon, title, big, flip, onClick }: { icon: IconName; title: stri
 }
 
 export function SegmentEditor() {
-  const activeFileIndex = useNav((s) => s.activeFileIndex);
+  const activeAudioFileId = useNav((s) => s.activeAudioFileId);
+  const audio = useAudioFileQuery(activeAudioFileId);
+  const queryClient = useQueryClient();
+  const audioRef = useRef<HTMLAudioElement>(null);
   const ed = useEditor();
   const {
-    fileIndex, segs, playPos, playing, speed, volume, loop, abA, abB, viewStart, viewEnd, dirty, segSel, segQuery,
-    load, seek, togglePlay, setSpeed, setVolume, toggleLoop, setA, setB, clearAB, setView, zoomIn, zoomOut, select, setSegTime, setQuery, addSeg, save,
+    fileId, dur, segs, playPos, playing, speed, volume, loop, abA, abB, viewStart, viewEnd, dirty, segSel, segQuery,
+    load, seek, togglePlay, setSpeed, setVolume, toggleLoop, setA, setB, clearAB, setView, zoomIn, zoomOut, select, setSegTime, setQuery, addSeg,
   } = ed;
+  const minimapWaveform = useWaveformQuery(activeAudioFileId, 0, dur, 800);
+  const viewWaveform = useWaveformQuery(activeAudioFileId, viewStart, viewEnd, 1400);
 
   useEffect(() => {
-    if (activeFileIndex === null || activeFileIndex === fileIndex) return;
-    const f = getAudioRow(activeFileIndex);
-    load(activeFileIndex, f.dur, fileSegments(f));
-  }, [activeFileIndex, fileIndex, load]);
+    if (!audio.data || audio.data.id === fileId) return;
+    load(audio.data.id, audio.data.duration, audio.data.segment_preview);
+  }, [audio.data, fileId, load]);
 
-  // Mock playback: advance the playhead while playing, honouring A-B loop / end,
-  // and scroll the timeline window to keep the playhead in view.
   useEffect(() => {
-    if (!playing || activeFileIndex === null) return;
-    const d = getAudioRow(activeFileIndex).dur;
-    const id = setInterval(() => {
-      const st = useEditor.getState();
-      let p = st.playPos + 0.05 * st.speed;
-      if (st.loop && st.abA != null && st.abB != null) {
-        const lo = Math.min(st.abA, st.abB);
-        const hi = Math.max(st.abA, st.abB);
-        if (p >= hi) p = lo;
-      }
-      if (p >= d) {
-        if (st.loop) p = 0;
-        else {
-          st.togglePlay();
-          p = d;
-        }
-      }
-      st.seek(p);
-      st.followPlayhead();
-    }, 50);
-    return () => clearInterval(id);
-  }, [playing, activeFileIndex]);
+    const element = audioRef.current;
+    if (!element) return;
+    element.volume = volume;
+    element.playbackRate = speed;
+  }, [speed, volume]);
 
-  if (activeFileIndex === null || fileIndex !== activeFileIndex) return <></>;
+  useEffect(() => {
+    const element = audioRef.current;
+    if (!element) return;
+    if (Math.abs(element.currentTime - playPos) > 0.25) element.currentTime = playPos;
+  }, [playPos]);
 
-  const file = getAudioRow(activeFileIndex);
-  const dur = file.dur;
+  useEffect(() => {
+    const element = audioRef.current;
+    if (!element) return;
+    if (playing) void element.play().catch(() => useEditor.getState().togglePlay());
+    else element.pause();
+  }, [playing]);
+
+  if (activeAudioFileId === null) return <></>;
+  if (audio.isLoading) return <div className="p-7 text-sm text-txt-mute">Loading segment editor...</div>;
+  if (audio.isError || !audio.data || fileId !== activeAudioFileId) return <div className="p-7 text-sm text-txt-mute">Audio file is unavailable.</div>;
+
+  const file = audio.data;
   const q = segQuery.trim().toLowerCase();
   const vis = q ? segs.filter((g) => g.text.toLowerCase().includes(q) || g.phon.toLowerCase().includes(q)) : segs;
+  const contentUrl = backendResourceUrl(`/audio-files/${encodeURIComponent(activeAudioFileId)}/content`);
+  const seed = hashSeed(activeAudioFileId);
+
+  const saveSegments = async () => {
+    const updated = await saveAudioSegments(activeAudioFileId, segs);
+    load(updated.id, updated.duration, updated.segment_preview);
+    await queryClient.invalidateQueries({ queryKey: [AUDIO_FILES_KEY] });
+    showToast("Segments saved");
+  };
 
   const abBtn = (label: string, on: boolean, onClick: () => void) => (
     <button
@@ -91,6 +102,28 @@ export function SegmentEditor() {
 
   return (
     <div className="mx-auto flex h-full max-w-[1140px] flex-col px-7 pb-6 pt-[18px]">
+      <audio
+        ref={audioRef}
+        src={contentUrl}
+        preload="metadata"
+        onTimeUpdate={(event) => {
+          const state = useEditor.getState();
+          let next = event.currentTarget.currentTime;
+          if (state.loop && state.abA != null && state.abB != null) {
+            const lo = Math.min(state.abA, state.abB);
+            const hi = Math.max(state.abA, state.abB);
+            if (next >= hi) {
+              event.currentTarget.currentTime = lo;
+              next = lo;
+            }
+          }
+          state.seek(next);
+          state.followPlayhead();
+        }}
+        onEnded={() => {
+          if (useEditor.getState().playing) useEditor.getState().togglePlay();
+        }}
+      />
       {/* header */}
       <div className="mb-4 flex items-center gap-3.5">
         <Button variant="secondary" icon="arrow-left" onClick={() => useNav.getState().go("audio")}>
@@ -102,7 +135,7 @@ export function SegmentEditor() {
             <span className="rounded-full bg-panel-2 px-2 py-0.5 text-[11px] font-semibold text-txt-dim">{file.speaker}</span>
           </div>
           <div className="mt-0.5 text-xs tabular-nums text-txt-mute">
-            {fmtDur(dur)} · {file.sr / 1000}kHz · {file.sizeMb} MB · {segs.length} segments
+            {fmtDur(dur)} · {file.sample_rate ? `${file.sample_rate / 1000}kHz` : "unknown rate"} · {file.size_mb} MB · {segs.length} segments
           </div>
         </div>
         <span className={cn("flex items-center gap-1.5 text-xs font-semibold", dirty ? "text-amber-700" : "text-txt-mute")}>
@@ -116,7 +149,7 @@ export function SegmentEditor() {
         <Button
           variant={dirty ? "primary" : "ghost"}
           disabled={!dirty}
-          onClick={() => { save(); showToast("Segments saved"); }}
+          onClick={() => { void saveSegments(); }}
         >
           Save
         </Button>
@@ -132,11 +165,13 @@ export function SegmentEditor() {
           selId={segSel}
           viewStart={viewStart}
           viewEnd={viewEnd}
-          seed={activeFileIndex + 1}
+          seed={seed}
           onSeek={seek}
           onSelect={select}
           onSetView={setView}
           onSegTime={setSegTime}
+          minimapPeaks={minimapWaveform.data?.peaks}
+          viewPeaks={viewWaveform.data?.peaks}
         />
         <div className="mt-3.5 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1.5">
@@ -232,4 +267,10 @@ export function SegmentEditor() {
       </div>
     </div>
   );
+}
+
+function hashSeed(value: string): number {
+  let out = 0;
+  for (let i = 0; i < value.length; i += 1) out = (out * 31 + value.charCodeAt(i)) >>> 0;
+  return out || 1;
 }

@@ -3,7 +3,8 @@ import { type PointerEvent, useRef } from "react";
 import { fmtDur } from "@/shared/format";
 import { WaveformBars } from "@/shared/media/WaveformBars";
 import { cn } from "@/shared/ui/cn";
-import type { Segment } from "@/mock/types";
+import type { Segment } from "./api";
+import { WaveformPeaks } from "./WaveformPeaks";
 
 const LANE_H = 30;
 const MIN_BODY = 96;
@@ -59,6 +60,8 @@ export function SegmentTimeline({
   onSelect,
   onSetView,
   onSegTime,
+  minimapPeaks,
+  viewPeaks,
 }: {
   segs: Segment[];
   dur: number;
@@ -71,6 +74,8 @@ export function SegmentTimeline({
   onSelect: (id: string) => void;
   onSetView: (start: number, end: number) => void;
   onSegTime: (id: string, start: number, end: number) => void;
+  minimapPeaks?: [number, number][];
+  viewPeaks?: [number, number][];
 }) {
   const panning = useRef(false);
   const drag = useRef<Drag | null>(null);
@@ -136,8 +141,8 @@ export function SegmentTimeline({
         onPointerUp={() => { panning.current = false; }}
         onLostPointerCapture={() => { panning.current = false; }}
       >
-        <div className="pointer-events-none absolute inset-0 px-px opacity-50">
-          <WaveformBars seed={seed} bars={160} height={36} />
+        <div className="pointer-events-none absolute inset-0 px-px text-blue-500 opacity-50">
+          {minimapPeaks?.length ? <WaveformPeaks peaks={minimapPeaks} height={36} /> : <WaveformBars seed={seed} bars={160} height={36} />}
         </div>
         <div
           className="pointer-events-none absolute top-0 bottom-0 rounded border-[1.5px] border-blue-500 bg-blue-500/15"
@@ -160,8 +165,8 @@ export function SegmentTimeline({
 
         {/* body: waveform + in-view segment lanes */}
         <div ref={bodyRef} className="relative cursor-text" style={{ height: bodyH }} onPointerDown={seekAt}>
-          <div className="pointer-events-none absolute inset-0 px-px opacity-60">
-            <WaveformBars seed={seed + Math.floor(viewStart)} bars={120} height={bodyH} />
+          <div className="pointer-events-none absolute inset-0 px-px text-blue-500 opacity-60">
+            {viewPeaks?.length ? <WaveformPeaks peaks={viewPeaks} height={bodyH} /> : <WaveformBars seed={seed + Math.floor(viewStart)} bars={120} height={bodyH} />}
           </div>
 
           {placed.map(({ seg, lane }) => {

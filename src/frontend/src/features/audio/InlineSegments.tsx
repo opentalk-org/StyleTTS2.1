@@ -1,15 +1,11 @@
-import { useDatasetsQuery } from "@/features/datasets/query";
 import { fmtClock } from "@/shared/format";
 import { Icon } from "@/shared/icons";
-import { Button } from "@/shared/ui/Button";
-import { splitAction, transcribeAction } from "./actions";
 import type { AudioFile } from "./api";
 
 const CAP = 8;
 
 export function InlineSegments({ file }: { file: AudioFile }) {
   const segs = file.segment_preview;
-  const { data: datasets = [] } = useDatasetsQuery();
 
   if (segs.length === 0)
     return (
@@ -20,12 +16,6 @@ export function InlineSegments({ file }: { file: AudioFile }) {
         <span className="flex-1 text-[12.5px] text-txt-dim">
           No segments yet. Split this file by silence or transcribe it to generate segments.
         </span>
-        <Button variant="primary" size="sm" icon="scissors" onClick={() => splitAction(1, datasets)}>
-          Split…
-        </Button>
-        <Button variant="ghost" size="sm" icon="file-audio" onClick={() => transcribeAction(1)}>
-          Transcribe
-        </Button>
       </div>
     );
 

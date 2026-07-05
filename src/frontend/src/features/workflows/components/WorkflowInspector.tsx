@@ -2,10 +2,21 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { SchemaForm } from "@/shared/schema-form/SchemaForm";
 import { Button } from "@/shared/ui/Button";
+import { Field } from "@/shared/ui/form/Field";
+import { FormSection } from "@/shared/ui/FormSection";
 import { Input } from "@/shared/ui/Input";
+import { Tabs } from "@/shared/ui/Tabs";
 import { fetchNodeLog, nodeSnapshot } from "../api";
 import { useLoadNodeMutation, useUnloadNodeMutation } from "../query";
 import { useWorkflowStore } from "../store";
+
+type InspectorTab = "settings" | "runtime" | "logs";
+
+const INSPECTOR_TABS = [
+  { value: "settings", label: "Settings" },
+  { value: "runtime", label: "Runtime" },
+  { value: "logs", label: "Logs" },
+];
 
 export function WorkflowInspector() {
   const loadNode = useLoadNodeMutation();
@@ -41,19 +52,20 @@ export function WorkflowInspector() {
 
   return (
     <InspectorShell title={`${node.id} · ${node.type}`} onClose={closeInspector}>
-      <div className="grid grid-cols-3 gap-1.5">
-        <Tab active={inspectorTab === "settings"} onClick={() => setInspectorTab("settings")}>Settings</Tab>
-        <Tab active={inspectorTab === "runtime"} onClick={() => setInspectorTab("runtime")}>Runtime</Tab>
-        <Tab active={inspectorTab === "logs"} onClick={() => setInspectorTab("logs")}>Logs</Tab>
-      </div>
+      <Tabs value={inspectorTab} onChange={(tab) => setInspectorTab(tab as InspectorTab)} options={INSPECTOR_TABS} />
       {inspectorTab === "settings" ? (
-        <div className="grid gap-3">
-          <label className="grid gap-1.5 font-mono text-[10px] font-bold uppercase tracking-wide text-txt-mute">
-            node id
-            <Input filled className="h-9" value={node.id} onChange={(event) => renameSelectedNode(event.target.value)} />
-          </label>
-          <SchemaForm schema={info.settings} values={node.params} onChange={(params) => update({ params })} />
-          <Button variant="secondary" icon="trash" onClick={deleteSelection}>Delete</Button>
+        <div className="flex min-w-0 flex-col gap-3.5">
+          <FormSection title="Node identity" tag="Node">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3.5">
+              <Field label="Node id">
+                <Input filled value={node.id} onChange={(event) => renameSelectedNode(event.target.value)} />
+              </Field>
+              <Button variant="secondary" icon="trash" onClick={deleteSelection}>Delete</Button>
+            </div>
+          </FormSection>
+          <FormSection title="Settings" tag={node.type}>
+            <SchemaForm schema={info.settings} values={node.params} onChange={(params) => update({ params })} />
+          </FormSection>
         </div>
       ) : null}
       {inspectorTab === "runtime" ? (
@@ -91,17 +103,5 @@ function InspectorShell({ title, onClose, children }: { title: string; onClose: 
         <div className="grid content-start gap-3 overflow-auto">{children}</div>
       </section>
     </div>
-  );
-}
-
-function Tab({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      type="button"
-      className={`min-h-[30px] rounded-md border font-mono text-[10px] font-extrabold uppercase ${active ? "border-amber-500 bg-amber-50 text-amber-700" : "border-line bg-panel-2 text-txt-mute"}`}
-      onClick={onClick}
-    >
-      {children}
-    </button>
   );
 }

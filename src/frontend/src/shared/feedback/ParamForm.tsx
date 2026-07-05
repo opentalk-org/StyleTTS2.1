@@ -18,6 +18,9 @@ function initialValues(fields: ParamField[]): ParamValues {
       case "text":
         out[f.key] = f.default ?? "";
         break;
+      case "drop":
+        if (f.key) out[f.key] = [];
+        break;
     }
   }
   return out;

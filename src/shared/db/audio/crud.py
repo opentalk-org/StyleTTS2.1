@@ -23,6 +23,7 @@ from shared.db.audio.pack_store import AudioPackConfig, ObjectStore
 from shared.db.audio.schemas import AudioCreate, AudioPartRead, AudioUpdate, SegmentCreate, SegmentUpdate
 from shared.db.common import many, one
 from shared.db.datasets.models import Dataset
+from shared.db.waveforms import crud as waveform_crud
 from shared.storage import ObjectStoreConfig, S3ObjectStore
 
 
@@ -40,6 +41,27 @@ def search_audio_files(
 ) -> tuple[Sequence[AudioFile], int]:
     statement = select(AudioFile)
     count_statement = select(func.count()).select_from(AudioFile)
+    for item in _audio_filters(query, dataset):
+        statement = statement.where(item)
+        count_statement = count_statement.where(item)
+    statement = statement.order_by(_audio_sort(sort)).limit(limit).offset(offset)
+    rows = session.execute(statement).unique().scalars().all()
+    total = session.execute(count_statement).scalar_one()
+    return rows, total
+
+
+def search_audio_file_ids(session: Session, query: str, dataset: str) -> list[uuid.UUID]:
+    statement = select(AudioFile.id)
+    for item in _audio_filters(query, dataset):
+        statement = statement.where(item)
+    return list(session.execute(statement).scalars().all())
+
+
+def get_audio_file(session: Session, audio_file_id: uuid.UUID) -> AudioFile:
+    return one(session, AudioFile, audio_file_id)
+
+
+def _audio_filters(query: str, dataset: str) -> list[Any]:
     filters = []
     if query:
         pattern = f"%{query}%"
@@ -49,17 +71,7 @@ def search_audio_files(
     elif dataset != "all":
         dataset_id = uuid.UUID(dataset)
         filters.append(AudioFile.datasets.any(Dataset.id == dataset_id))
-    for item in filters:
-        statement = statement.where(item)
-        count_statement = count_statement.where(item)
-    statement = statement.order_by(_audio_sort(sort)).limit(limit).offset(offset)
-    rows = session.execute(statement).unique().scalars().all()
-    total = session.execute(count_statement).scalar_one()
-    return rows, total
-
-
-def get_audio_file(session: Session, audio_file_id: uuid.UUID) -> AudioFile:
-    return one(session, AudioFile, audio_file_id)
+    return filters
 
 
 def _audio_sort(sort: str):
@@ -80,7 +92,10 @@ def create_audio_file(
     store: ObjectStore | None = None,
     config: AudioPackConfig = AudioPackConfig(),
 ) -> AudioFile:
-    return create_packed_audio_file(session, _object_store(store), payload, config)
+    resolved_store = _object_store(store)
+    item = create_packed_audio_file(session, resolved_store, payload, config)
+    waveform_crud.replace_waveform_from_audio(session, item.id, payload.wav_bytes, item.duration, payload.waveform, resolved_store)
+    return item
 
 
 def bulk_create_audio_files(
@@ -89,7 +104,11 @@ def bulk_create_audio_files(
     store: ObjectStore | None = None,
     config: AudioPackConfig = AudioPackConfig(),
 ) -> list[AudioFile]:
-    return bulk_create_packed_audio_files(session, _object_store(store), payloads, config)
+    resolved_store = _object_store(store)
+    items = bulk_create_packed_audio_files(session, resolved_store, payloads, config)
+    for item, payload in zip(items, payloads, strict=True):
+        waveform_crud.replace_waveform_from_audio(session, item.id, payload.wav_bytes, item.duration, payload.waveform, resolved_store)
+    return items
 
 
 def read_audio_file(
@@ -140,6 +159,7 @@ def update_audio_file(
         return item
     resolved_store = _object_store(store)
     item = update_packed_audio_file(session, resolved_store, audio_file_id, payload, config)
+    waveform_crud.replace_waveform_from_audio(session, item.id, payload.wav_bytes, item.duration, payload.waveform, resolved_store)
     prune_fragmented_audio_packs(session, resolved_store, config)
     session.refresh(item)
     return item
@@ -165,6 +185,9 @@ def bulk_update_audio_files(
     if binary_payloads:
         resolved_store = _object_store(store)
         items.update(bulk_update_packed_audio_files(session, resolved_store, binary_payloads, config))
+        for audio_file_id, payload in binary_payloads.items():
+            item = items[audio_file_id]
+            waveform_crud.replace_waveform_from_audio(session, item.id, payload.wav_bytes, item.duration, payload.waveform, resolved_store)
         prune_fragmented_audio_packs(session, resolved_store, config)
     if metadata_payloads:
         for audio_file_id, payload in metadata_payloads.items():
@@ -184,6 +207,7 @@ def delete_audio_file(
     config: AudioPackConfig = AudioPackConfig(),
 ) -> None:
     resolved_store = _object_store(store)
+    waveform_crud.delete_waveform(session, audio_file_id)
     bulk_delete_packed_audio_files(session, [audio_file_id])
     prune_fragmented_audio_packs(session, resolved_store, config)
 
@@ -195,7 +219,10 @@ def bulk_delete_audio_files(
     config: AudioPackConfig = AudioPackConfig(),
 ) -> None:
     resolved_store = _object_store(store)
-    bulk_delete_packed_audio_files(session, audio_file_ids)
+    ids = list(audio_file_ids)
+    for audio_file_id in ids:
+        waveform_crud.delete_waveform(session, audio_file_id)
+    bulk_delete_packed_audio_files(session, ids)
     prune_fragmented_audio_packs(session, resolved_store, config)
 
 

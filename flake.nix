@@ -29,6 +29,7 @@
           ps.fastapi
           ps."nats-py"
           ps.psycopg
+          ps."python-multipart"
           ps.sqlalchemy
           ps.uvicorn
           ps.websockets

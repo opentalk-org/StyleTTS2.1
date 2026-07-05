@@ -8,13 +8,17 @@ import { Select, type Option } from "@/shared/ui/Select";
  */
 export function FormSelect({
   defaultValue,
+  value,
+  onChange,
   options,
 }: {
   defaultValue: string;
+  value?: string;
+  onChange?: (value: string) => void;
   options: Option[];
 }) {
-  const [value, setValue] = useState(defaultValue);
-  return <Select value={value} onChange={setValue} options={options} />;
+  const [localValue, setLocalValue] = useState(defaultValue);
+  return <Select value={value ?? localValue} onChange={onChange ?? setLocalValue} options={options} />;
 }
 
 /** Build select options from a mix of plain strings and explicit {value,label}. */

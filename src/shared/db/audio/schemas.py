@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from shared.db.assets.schemas import BucketFileRead
+from shared.db.waveforms.schemas import WaveformInput
 
 
 class SegmentCreate(BaseModel):
@@ -51,6 +52,7 @@ class AudioCreate(BaseModel):
     segments: list[dict[str, Any]]
     metadata: dict[str, Any]
     virtual: bool
+    waveform: WaveformInput
 
 
 class AudioUpdate(BaseModel):
@@ -60,6 +62,7 @@ class AudioUpdate(BaseModel):
     segments: list[dict[str, Any]]
     metadata: dict[str, Any]
     virtual: bool
+    waveform: WaveformInput | None = None
 
 
 PackedAudioCreate = AudioCreate

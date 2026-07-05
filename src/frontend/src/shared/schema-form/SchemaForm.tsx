@@ -14,7 +14,7 @@ export function SchemaForm({
   const set = (key: string, value: unknown) => onChange({ ...values, [key]: value });
 
   return (
-    <div className="grid gap-3">
+    <div className="grid gap-3.5">
       {Object.entries(properties).map(([name, prop]) => (
         <SchemaField key={name} name={name} schema={prop} root={schema} value={values[name]} onChange={(value) => set(name, value)} />
       ))}

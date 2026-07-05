@@ -23,12 +23,12 @@ type NavStore = {
   connected: boolean;
   backendUrl: string;
   /** Set when opening the segment editor from the Audio Files table. */
-  activeFileIndex: number | null;
+  activeAudioFileId: string | null;
   go: (screen: Screen) => void;
   toggleNav: () => void;
   setBackendUrl: (url: string) => void;
   connect: () => void;
-  openEditor: (fileIndex: number) => void;
+  openEditor: (audioFileId: string) => void;
 };
 
 export const useNav = create<NavStore>((set) => ({
@@ -36,10 +36,10 @@ export const useNav = create<NavStore>((set) => ({
   navCollapsed: false,
   connected: false,
   backendUrl: defaultBackendUrl(),
-  activeFileIndex: null,
+  activeAudioFileId: null,
   go: (screen) => set({ screen }),
   toggleNav: () => set((s) => ({ navCollapsed: !s.navCollapsed })),
   setBackendUrl: (backendUrl) => set({ backendUrl }),
   connect: () => set({ connected: true }),
-  openEditor: (activeFileIndex) => set({ screen: "editor", activeFileIndex }),
+  openEditor: (activeAudioFileId) => set({ screen: "editor", activeAudioFileId }),
 }));

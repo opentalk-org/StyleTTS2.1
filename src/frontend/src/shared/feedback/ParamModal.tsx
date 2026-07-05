@@ -4,14 +4,15 @@ import type { IconName } from "../icons";
 import type { Option } from "../ui/Select";
 import { ParamForm } from "./ParamForm";
 
-export type ParamValues = Record<string, string | number | boolean>;
+export type ParamValues = Record<string, string | number | boolean | File[]>;
 
 export type ParamField =
   | { key: string; type: "number"; label: string; default: number; min?: number; max?: number; step?: number; hint?: string; showIf?: (v: ParamValues) => boolean }
   | { key: string; type: "text"; label: string; default?: string; placeholder?: string; hint?: string; showIf?: (v: ParamValues) => boolean }
   | { key: string; type: "select" | "radio"; label: string; default: string; options: Option[]; hint?: string; showIf?: (v: ParamValues) => boolean }
   | { key: string; type: "toggle"; label: string; default: boolean; hint?: string; showIf?: (v: ParamValues) => boolean }
-  | { key?: string; type: "info" | "drop"; label: string; hint?: string; showIf?: (v: ParamValues) => boolean };
+  | { key?: string; type: "info"; label: string; hint?: string; showIf?: (v: ParamValues) => boolean }
+  | { key?: string; type: "drop"; label: string; hint?: string; accept?: string; multiple?: boolean; showIf?: (v: ParamValues) => boolean };
 
 export type ParamSchema = {
   icon?: IconName;

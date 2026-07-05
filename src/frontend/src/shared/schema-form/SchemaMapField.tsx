@@ -29,9 +29,14 @@ export function SchemaMapField({
   };
 
   return (
-    <div className="rounded-md border border-line bg-panel-2 p-3">
-      <div className="mb-2 text-[12px] font-bold uppercase tracking-wider text-txt-mute">{name}</div>
-      <div className="grid gap-2">
+    <div className="grid gap-3.5 border-t border-line pt-4 first:border-t-0 first:pt-0">
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="text-[15px] font-bold tracking-tight text-txt">{name}</div>
+        <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-blue-500">
+          Map
+        </div>
+      </div>
+      <div className="grid gap-2.5">
         {Object.entries(value).map(([key, item]) => (
           <div key={key} className="grid grid-cols-[1fr_1fr_auto] gap-2">
             <Input filled className="h-9" value={key} onChange={(event) => rename(key, event.target.value)} />
@@ -42,7 +47,7 @@ export function SchemaMapField({
               value={valueToText(item, itemSchema)}
               onChange={(event) => setKey(key, textToValue(event.target.value, itemSchema))}
             />
-            <Button variant="secondary" onClick={() => remove(key)}>Remove</Button>
+            <Button variant="secondary" icon="trash" onClick={() => remove(key)}>Remove</Button>
           </div>
         ))}
         <Button variant="secondary" icon="plus" onClick={() => setKey(nextMapKey(value), defaultValue(itemSchema))}>

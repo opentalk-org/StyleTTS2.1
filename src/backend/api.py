@@ -9,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.audio import router as audio_router
+from backend.checkpoints import router as checkpoints_router
+from backend.jobs import router as jobs_router
 from backend.runners import router as runners_router
 from backend.settings import router as settings_router
 from backend.nats_bus import BackendNatsBus
@@ -58,6 +60,8 @@ app.add_middleware(
 )
 app.mount("/ui-old", StaticFiles(directory=old_static_dir, html=True), name="ui-old")
 app.include_router(audio_router)
+app.include_router(checkpoints_router)
+app.include_router(jobs_router)
 app.include_router(runners_router)
 app.include_router(settings_router)
 app.include_router(workflow_router(manager))

@@ -42,7 +42,7 @@ def workflow_router(manager: BackendManager) -> APIRouter:
         workflow = await get_workflow(workflow_id)
         try:
             request = compile_workflow_definition(workflow.data, workflow_id)
-            run = await manager.start_inline_graph(request)
+            run = await manager.start_inline_graph(request, name=workflow.name)
             return WorkflowStartResponse(workflow=workflow, run=run)
         except DuplicateRunError as error:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error

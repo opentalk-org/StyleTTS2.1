@@ -19,7 +19,13 @@ from shared.schemas import (
     RunState,
     RunStatus,
 )
+from backend.jobs.persistence import persist_job, persist_node_log
 from backend.websocket_hub import WebSocketHub
+from shared.db import database_session
+from shared.db.jobs import crud as jobs_crud
+
+
+IMMEDIATE_EVENT_KINDS = {"run_claimed", "run_started", "run_completed", "run_stopped", "run_failed", "node_failed", "node_lifecycle_failed", "node_loaded", "node_unloaded"}
 
 
 class DuplicateRunError(ValueError):
@@ -43,6 +49,7 @@ class CommandBus(Protocol):
 @dataclass
 class BackendRunRecord:
     run_id: str
+    name: str
     workflow_path: Path
     state: RunState
     created_at: datetime
@@ -77,7 +84,7 @@ class BackendManager:
     def set_command_bus(self, command_bus: CommandBus) -> None:
         self._command_bus = command_bus
 
-    async def start_inline_graph(self, request: InlineGraphRunRequest) -> RunStatus:
+    async def start_inline_graph(self, request: InlineGraphRunRequest, name: str | None = None) -> RunStatus:
         run_id = self._inline_run_id(request)
         if run_id in self._runs:
             raise DuplicateRunError(f"Run already exists: {run_id}")
@@ -85,12 +92,14 @@ class BackendManager:
         command_request = request.model_copy(update={"run_id": run_id})
         record = BackendRunRecord(
             run_id=run_id,
+            name=name or run_id,
             workflow_path=Path("inline_graph"),
             state=RunState.QUEUED,
-            created_at=self._now(),
+            created_at=datetime.now(UTC),
             graph_request=command_request,
         )
         self._runs[run_id] = record
+        persist_job(record)
         self.logger.info("queue run run_id=%s", run_id)
         await self._command_bus_checked().publish_start_graph(command_request)
         await self._broadcast_run_status(record)
@@ -114,17 +123,28 @@ class BackendManager:
         return await self._publish_node_lifecycle(run_id, node_id, "unload_node")
 
     async def node_log(self, run_id: str, node_id: str) -> NodeLogResponseMessage:
-        record = self._record(run_id)
-        if record.runner_id is None:
-            raise RuntimeError(f"Run has no claimed runner: {run_id}")
-        self.logger.info("read node log run_id=%s node_id=%s runner_id=%s", run_id, node_id, record.runner_id)
-        return await self._command_bus_checked().request_node_log(run_id, node_id, record.runner_id)
+        record = self._runs.get(run_id)
+        if record is not None and record.runner_id is not None and record.state in {RunState.QUEUED, RunState.RUNNING, RunState.STOPPING}:
+            self.logger.info("read live node log run_id=%s node_id=%s runner_id=%s", run_id, node_id, record.runner_id)
+            response = await self._command_bus_checked().request_node_log(run_id, node_id, record.runner_id)
+            persist_node_log(response)
+            return response
+        try:
+            with database_session() as session:
+                item = jobs_crud.get_node_log(session, run_id, node_id)
+                return NodeLogResponseMessage(request_id="db", run_id=run_id, node_id=node_id, content=item.content, truncated=item.truncated, error=item.error)
+        except KeyError as error:
+            raise RuntimeError(f"Node log is not available: {run_id}/{node_id}") from error
 
     async def graph(self, run_id: str) -> InlineGraphRunRequest:
-        record = self._record(run_id)
-        if record.graph_request is None:
-            raise RuntimeError(f"Run graph is not available: {run_id}")
-        return record.graph_request
+        record = self._runs.get(run_id)
+        if record is not None and record.graph_request is not None:
+            return record.graph_request
+        try:
+            with database_session() as session:
+                return InlineGraphRunRequest.model_validate(jobs_crud.get_job(session, run_id).graph_request)
+        except KeyError as error:
+            raise RuntimeError(f"Run graph is not available: {run_id}") from error
 
     async def status(self, run_id: str) -> RunStatus:
         return self._record(run_id).to_status()
@@ -145,7 +165,8 @@ class BackendManager:
         record = self._ensure_record(event.run_id)
         record.event_store.record(event)
         self._apply_lifecycle_event(record, event)
-        if self._is_immediate_event(event.kind):
+        persist_job(record)
+        if event.kind in IMMEDIATE_EVENT_KINDS:
             await self._broadcast_run_snapshot(record)
             return
         self._schedule_run_snapshot(record.run_id)
@@ -192,19 +213,6 @@ class BackendManager:
         if run_id in self._runs:
             await self._broadcast_run_snapshot(self._runs[run_id])
 
-    def _is_immediate_event(self, kind: str) -> bool:
-        return kind in {
-            "run_claimed",
-            "run_started",
-            "run_completed",
-            "run_stopped",
-            "run_failed",
-            "node_failed",
-            "node_lifecycle_failed",
-            "node_loaded",
-            "node_unloaded",
-        }
-
     def _handle_socket_message(self, websocket: WebSocket, raw_message: str) -> None:
         message = json.loads(raw_message)
         if message["type"] == "watch_run":
@@ -232,14 +240,17 @@ class BackendManager:
             record.finished_at = event.created_at
             record.error = event.message
             self.logger.error("run failed run_id=%s error=%s", record.run_id, event.message)
+        if event.kind in {"run_completed", "run_stopped", "run_failed"}:
+            self._schedule_node_log_sync(record)
 
     def _ensure_record(self, run_id: str) -> BackendRunRecord:
         if run_id not in self._runs:
             self._runs[run_id] = BackendRunRecord(
                 run_id=run_id,
+                name=run_id,
                 workflow_path=Path("unknown"),
                 state=RunState.RUNNING,
-                created_at=self._now(),
+                created_at=datetime.now(UTC),
             )
         return self._runs[run_id]
 
@@ -272,5 +283,15 @@ class BackendManager:
             return request.run_id
         return f"graph_{uuid4().hex[:8]}"
 
-    def _now(self) -> datetime:
-        return datetime.now(UTC)
+    def _schedule_node_log_sync(self, record: BackendRunRecord) -> None:
+        if record.runner_id is None or record.graph_request is None:
+            return
+        asyncio.create_task(self._sync_node_logs(record.run_id, record.runner_id, [node.id for node in record.graph_request.nodes]))
+
+    async def _sync_node_logs(self, run_id: str, runner_id: str, node_ids: list[str]) -> None:
+        for node_id in node_ids:
+            try:
+                response = await self._command_bus_checked().request_node_log(run_id, node_id, runner_id)
+                persist_node_log(response)
+            except Exception:
+                self.logger.exception("sync node log failed run_id=%s node_id=%s", run_id, node_id)

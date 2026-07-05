@@ -1,22 +1,24 @@
 import type { Tone } from "@/shared/ui/Badge";
-import type { Checkpoint, CheckpointType } from "@/mock/types";
-import type { CheckpointsStore } from "./store";
+import type { Checkpoint } from "./api";
 
-export const TYPE_TONE: Record<CheckpointType, Tone> = {
+export const TYPE_TONE: Record<string, Tone> = {
   styletts2: "blue",
   asr: "emerald",
   f0: "amber",
   plbert: "gray",
 };
 
-/** Filter by query + type, then group by originating training job. */
-export function groupCheckpoints(s: CheckpointsStore): Record<string, Checkpoint[]> {
-  const q = s.query.trim().toLowerCase();
-  const list = s.checkpoints.filter(
-    (c) => (!q || c.name.toLowerCase().includes(q)) && (s.type === "all" || c.type === s.type),
+export function checkpointTone(type: string): Tone {
+  return TYPE_TONE[type] ?? "gray";
+}
+
+export function groupCheckpoints(items: Checkpoint[], query: string, type: string): Record<string, Checkpoint[]> {
+  const q = query.trim().toLowerCase();
+  const list = items.filter(
+    (c) => (!q || c.name.toLowerCase().includes(q)) && (type === "all" || c.type_ === type),
   );
   const groups: Record<string, Checkpoint[]> = {};
-  for (const c of list) (groups[c.job] ??= []).push(c);
+  for (const c of list) (groups[c.job_id ?? "-"] ??= []).push(c);
   return groups;
 }
 

@@ -1,13 +1,14 @@
 import { useState } from "react";
 
 import { useDatasetsQuery } from "@/features/datasets/query";
+import { askConfirm } from "@/shared/feedback/ConfirmDialog";
+import { showToast } from "@/shared/feedback/Toast";
 import { Icon, type IconName } from "@/shared/icons";
 import { cn } from "@/shared/ui/cn";
 import {
   addDatasetAction,
   assignVoiceAction,
   calculateStatisticsAction,
-  deleteFilesAction,
   denoiseAction,
   normalizeAction,
   phonemizeAction,
@@ -16,6 +17,7 @@ import {
   splitAction,
   transcribeAction,
 } from "./actions";
+import { useDeleteAudioFilesMutation } from "./query";
 import { useAudio } from "./store";
 
 type MenuName = "process" | "dataset";
@@ -70,13 +72,30 @@ function Menu({ items, onPick }: { items: Item[]; onPick: () => void }) {
 }
 
 export function SelectionBar({ total }: { total: number }) {
-  const { selection, selectAllMatching, selectAllFiltered, clearSelection } = useAudio();
+  const { query, dataset, selection, selectAllMatching, selectAllFiltered, clearSelection } = useAudio();
   const { data: datasets = [] } = useDatasetsQuery();
+  const deleteAudioFiles = useDeleteAudioFilesMutation();
   const [menu, setMenu] = useState<MenuName | null>(null);
   const ids = Object.keys(selection);
   const selCount = selectAllMatching ? total : ids.length;
   const toggle = (name: MenuName) => setMenu((m) => (m === name ? null : name));
   const count = selCount;
+  const label = `${count.toLocaleString()} file${count === 1 ? "" : "s"}`;
+  const deleteSelectedFiles = () => askConfirm({
+    title: "Delete files?",
+    desc: `Permanently delete ${label} and all of their segments. This cannot be undone.`,
+    danger: true,
+    label: "Delete files",
+    onConfirm: () => {
+      const request = selectAllMatching ? { mode: "filter" as const, query, dataset } : { mode: "ids" as const, ids };
+      deleteAudioFiles.mutate(request, {
+        onSuccess: () => {
+          clearSelection();
+          showToast(`Deleted ${label}`, undefined, "error");
+        },
+      });
+    },
+  });
 
   const processItems: Item[] = [
     { header: "Processing jobs" },
@@ -117,8 +136,9 @@ export function SelectionBar({ total }: { total: number }) {
         {menu === "dataset" ? <Menu items={datasetItems} onPick={() => setMenu(null)} /> : null}
       </div>
       <button
-        onClick={() => deleteFilesAction(count)}
-        className="flex h-[34px] items-center gap-1.5 rounded-md bg-red-500 px-3 text-[12.5px] font-semibold text-white hover:bg-red-600"
+        disabled={deleteAudioFiles.isPending}
+        onClick={deleteSelectedFiles}
+        className="flex h-[34px] items-center gap-1.5 rounded-md bg-red-500 px-3 text-[12.5px] font-semibold text-white hover:bg-red-600 disabled:cursor-default disabled:opacity-60"
       >
         <Icon name="trash" size={15} strokeWidth={2.2} />
         Delete

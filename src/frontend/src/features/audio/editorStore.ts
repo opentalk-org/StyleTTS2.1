@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { Segment } from "@/mock/types";
+import type { Segment } from "./api";
 
 /** Smallest visible timeline window, in seconds (deepest zoom). */
 const MIN_SPAN = 2;
@@ -20,8 +20,8 @@ function clampView(start: number, end: number, dur: number): { viewStart: number
 }
 
 type EditorStore = {
-  /** Index of the file whose segments are currently loaded (guards re-loading). */
-  fileIndex: number | null;
+  /** File whose segments are currently loaded (guards re-loading). */
+  fileId: string | null;
   dur: number;
   segs: Segment[];
   playPos: number;
@@ -37,7 +37,7 @@ type EditorStore = {
   dirty: boolean;
   segSel: string | null;
   segQuery: string;
-  load: (fileIndex: number, dur: number, segs: Segment[]) => void;
+  load: (fileId: string, dur: number, segs: Segment[]) => void;
   seek: (playPos: number) => void;
   togglePlay: () => void;
   setSpeed: (speed: number) => void;
@@ -72,7 +72,7 @@ function zoom(s: EditorStore, factor: number): { viewStart: number; viewEnd: num
 }
 
 export const useEditor = create<EditorStore>((set) => ({
-  fileIndex: null,
+  fileId: null,
   dur: 0,
   segs: [],
   playPos: 0,
@@ -87,9 +87,9 @@ export const useEditor = create<EditorStore>((set) => ({
   dirty: false,
   segSel: null,
   segQuery: "",
-  load: (fileIndex, dur, segs) =>
+  load: (fileId, dur, segs) =>
     set({
-      fileIndex, dur, segs: sortSegs(segs), playPos: 0, playing: false, dirty: false,
+      fileId, dur, segs: sortSegs(segs), playPos: 0, playing: false, dirty: false,
       segSel: null, segQuery: "", abA: null, abB: null, loop: false,
       viewStart: 0, viewEnd: Math.min(dur, DEFAULT_SPAN),
     }),

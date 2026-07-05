@@ -15,6 +15,7 @@ from shared.db.jobs import models as job_models
 from shared.db.runners import models as runner_models
 from shared.db.settings import models as settings_models
 from shared.db.voices import models as voice_models
+from shared.db.waveforms import models as waveform_models
 from shared.db.workflows import models as workflow_models
 
 

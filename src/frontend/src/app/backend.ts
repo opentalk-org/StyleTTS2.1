@@ -5,6 +5,10 @@ function backendUrl(path: string, base: string = useNav.getState().backendUrl): 
   return new URL(path, baseUrl.origin).toString();
 }
 
+export function backendResourceUrl(path: string, base?: string): string {
+  return backendUrl(path, base);
+}
+
 export function backendWebSocketUrl(path: string, base?: string): string {
   const url = new URL(backendUrl(path, base));
   if (url.protocol === "https:") {

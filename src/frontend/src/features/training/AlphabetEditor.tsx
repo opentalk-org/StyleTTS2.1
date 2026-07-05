@@ -7,7 +7,7 @@ import { Button } from "@/shared/ui/Button";
 import { Select } from "@/shared/ui/Select";
 
 import { FormSection } from "./FormSection";
-import { useTraining } from "./store";
+import type { SchemaValues } from "@/shared/schema-form/types";
 
 const BASE_SYMBOLS = 178;
 
@@ -19,10 +19,15 @@ const PRESETS = [
 ];
 
 /** Phoneme alphabet editor: preset picker, live symbol count, and a base-count advisory. */
-export function AlphabetEditor() {
-  const alphabet = useTraining((s) => s.alphabet);
-  const setAlphabet = useTraining((s) => s.setAlphabet);
-  const [preset, setPreset] = useState("ipa");
+export function AlphabetEditor({
+  values,
+  onChange,
+}: {
+  values: SchemaValues;
+  onChange: (values: SchemaValues) => void;
+}) {
+  const alphabet = String(values.symbols);
+  const [preset, setPreset] = useState(String(values.preset));
 
   const count = alphabet.trim().split(/\s+/).filter(Boolean).length;
   const matches = count === BASE_SYMBOLS;
@@ -31,7 +36,14 @@ export function AlphabetEditor() {
     <FormSection title="Phoneme alphabet" tag="Symbols">
       <div className="mb-3 flex flex-wrap items-center gap-2.5">
         <div className="min-w-[200px] flex-1">
-          <Select value={preset} onChange={setPreset} options={PRESETS} />
+          <Select
+            value={preset}
+            onChange={(value) => {
+              setPreset(value);
+              onChange({ ...values, preset: value });
+            }}
+            options={PRESETS}
+          />
         </div>
         <Button
           variant="ghost"
@@ -50,7 +62,7 @@ export function AlphabetEditor() {
 
       <Textarea
         value={alphabet}
-        onChange={(e) => setAlphabet(e.target.value)}
+        onChange={(event) => onChange({ ...values, symbols: event.target.value })}
         spellCheck={false}
         className="min-h-[76px] text-[15px] font-mono leading-[1.7]"
       />

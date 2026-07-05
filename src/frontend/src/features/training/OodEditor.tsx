@@ -1,15 +1,27 @@
+import type { SchemaValues } from "@/shared/schema-form/types";
 import { Icon } from "@/shared/icons";
 import { IconButton } from "@/shared/ui/IconButton";
 import { Button } from "@/shared/ui/Button";
 
 import { FormSection } from "./FormSection";
-import { useTraining } from "./store";
+
+type OodSetValue = { id: string; name: string; line_count: number };
 
 /** Out-of-domain reference text sets: list with per-row delete plus upload/add. */
-export function OodEditor() {
-  const oodSets = useTraining((s) => s.oodSets);
-  const addOod = useTraining((s) => s.addOod);
-  const removeOod = useTraining((s) => s.removeOod);
+export function OodEditor({
+  values,
+  onChange,
+}: {
+  values: SchemaValues;
+  onChange: (values: SchemaValues) => void;
+}) {
+  const oodSets = values.sets as OodSetValue[];
+  const addOod = (name: string, lineCount: number) => {
+    onChange({ ...values, sets: [...oodSets, { id: `ood_${Date.now()}`, name, line_count: lineCount }] });
+  };
+  const removeOod = (id: string) => {
+    onChange({ ...values, sets: oodSets.filter((set) => set.id !== id) });
+  };
 
   return (
     <FormSection title="OOD reference texts" tag="Required">
@@ -34,7 +46,7 @@ export function OodEditor() {
                 {s.name}
               </span>
               <span className="text-xs tabular-nums text-txt-mute">
-                {s.n} lines
+                {s.line_count} lines
               </span>
               <IconButton
                 icon="trash"

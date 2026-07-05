@@ -1,48 +1,99 @@
 import { useEffect, useState } from "react";
 
 import { useNav } from "@/app/navStore";
+import { showToast } from "@/shared/feedback/Toast";
 import { Button } from "@/shared/ui/Button";
 import { Input } from "@/shared/ui/Input";
-import { Select } from "@/shared/ui/Select";
-import { Toggle } from "@/shared/ui/form/Toggle";
+import type { StorageSettings, StorageSettingsPayload } from "./api";
 import { useStorageSettingsActions, useStorageSettingsQuery } from "./query";
 import { SettingsRow } from "./SettingsRow";
 import { SettingsSection } from "./SettingsSection";
-import { useSettings } from "./store";
 
-const LANGS = [
-  { value: "en-us", label: "English (US)" },
-  { value: "en-gb", label: "English (UK)" },
-  { value: "es", label: "Spanish" },
-  { value: "de", label: "German" },
-  { value: "fr", label: "French" },
-  { value: "ja", label: "Japanese" },
-];
+type SettingsForm = {
+  backendUrl: string;
+  storage: StorageSettingsPayload;
+};
+
+const DEFAULT_STORAGE_FORM: StorageSettingsPayload = {
+  bucket: "runflow",
+  endpoint_url: "http://127.0.0.1:9000",
+  region_name: "us-east-1",
+  access_key_id: "runflow",
+  secret_access_key: "runflow-secret",
+};
+
+function createSettingsForm(backendUrl: string, storage: StorageSettingsPayload): SettingsForm {
+  return { backendUrl, storage };
+}
+
+function storageFormFromSettings(settings: StorageSettings): StorageSettingsPayload {
+  return {
+    bucket: settings.bucket,
+    endpoint_url: settings.endpoint_url,
+    region_name: settings.region_name,
+    access_key_id: settings.access_key_id,
+    secret_access_key: settings.secret_access_key,
+  };
+}
+
+function storageFormsMatch(first: StorageSettingsPayload, second: StorageSettingsPayload): boolean {
+  return first.bucket === second.bucket
+    && first.endpoint_url === second.endpoint_url
+    && first.region_name === second.region_name
+    && first.access_key_id === second.access_key_id
+    && first.secret_access_key === second.secret_access_key;
+}
+
+function settingsFormsMatch(first: SettingsForm, second: SettingsForm): boolean {
+  return first.backendUrl === second.backendUrl
+    && storageFormsMatch(first.storage, second.storage);
+}
 
 export function SettingsScreen() {
-  const s = useSettings();
   const { backendUrl, setBackendUrl } = useNav();
   const storage = useStorageSettingsQuery();
-  const storageActions = useStorageSettingsActions();
-  const [storageForm, setStorageForm] = useState({
-    bucket: "runflow",
-    endpoint_url: "http://127.0.0.1:9000",
-    region_name: "us-east-1",
-    access_key_id: "runflow",
-    secret_access_key: "runflow-secret",
-  });
+  const updateStorage = useStorageSettingsActions();
+  const initialForm = createSettingsForm(backendUrl, DEFAULT_STORAGE_FORM);
+  const [form, setForm] = useState<SettingsForm>(initialForm);
+  const [savedForm, setSavedForm] = useState<SettingsForm>(initialForm);
 
   useEffect(() => {
     if (!storage.data) return;
-    setStorageForm({
-      bucket: storage.data.bucket,
-      endpoint_url: storage.data.endpoint_url,
-      region_name: storage.data.region_name,
-      access_key_id: storage.data.access_key_id,
-      secret_access_key: storage.data.secret_access_key,
+    const nextStorageForm = storageFormFromSettings(storage.data);
+    const previousSavedStorage = savedForm.storage;
+    setForm((current) => {
+      if (!storageFormsMatch(current.storage, previousSavedStorage)) return current;
+      return { ...current, storage: nextStorageForm };
     });
+    setSavedForm((current) => ({ ...current, storage: nextStorageForm }));
   }, [storage.data]);
-  const setStorage = (key: keyof typeof storageForm, value: string) => setStorageForm((current) => ({ ...current, [key]: value }));
+
+  const storageDirty = !storageFormsMatch(form.storage, savedForm.storage);
+  const dirty = !settingsFormsMatch(form, savedForm);
+  const saving = updateStorage.isPending;
+  const setStorage = (key: keyof StorageSettingsPayload, value: string) => {
+    setForm((current) => ({ ...current, storage: { ...current.storage, [key]: value } }));
+  };
+  const commitSettings = (submittedForm: SettingsForm, storageForm: StorageSettingsPayload) => {
+    const committedForm = { ...submittedForm, storage: storageForm };
+    setBackendUrl(committedForm.backendUrl);
+    setForm((current) => {
+      if (!settingsFormsMatch(current, submittedForm)) return current;
+      return committedForm;
+    });
+    setSavedForm(committedForm);
+    showToast("Settings saved");
+  };
+  const saveSettings = () => {
+    const submittedForm = form;
+    if (storageDirty) {
+      updateStorage.mutate(submittedForm.storage, {
+        onSuccess: (updatedStorage) => commitSettings(submittedForm, storageFormFromSettings(updatedStorage)),
+      });
+      return;
+    }
+    commitSettings(submittedForm, submittedForm.storage);
+  };
 
   return (
     <div className="mx-auto max-w-[720px] px-7 pb-16 pt-6">
@@ -51,65 +102,36 @@ export function SettingsScreen() {
           <Input
             filled
             className="h-9 w-[220px] font-mono"
-            value={backendUrl}
-            onChange={(e) => setBackendUrl(e.target.value)}
+            value={form.backendUrl}
+            onChange={(e) => setForm((current) => ({ ...current, backendUrl: e.target.value }))}
           />
-        </SettingsRow>
-        <SettingsRow title="Poll while idle" desc="Keep fetching job status even when nothing is running.">
-          <Toggle checked={s.pollWhenIdle} onChange={(v) => s.set("pollWhenIdle", v)} />
-        </SettingsRow>
-      </SettingsSection>
-      <SettingsSection title="Defaults">
-        <SettingsRow title="Auto-normalize on upload" desc="Queue a normalize job for every newly uploaded file.">
-          <Toggle checked={s.autoNormalize} onChange={(v) => s.set("autoNormalize", v)} />
-        </SettingsRow>
-        <SettingsRow title="Default phoneme language" desc="Used to pre-fill the phonemize and synthesis forms.">
-          <div className="w-[200px]">
-            <Select variant="mini" value={s.defaultLang} onChange={(v) => s.set("defaultLang", v)} options={LANGS} />
-          </div>
         </SettingsRow>
       </SettingsSection>
       <SettingsSection title="S3 bucket">
         <SettingsRow title="Endpoint" desc="RustFS defaults to the local S3-compatible endpoint.">
-          <Input filled className="h-9 w-[260px] font-mono" value={storageForm.endpoint_url} onChange={(e) => setStorage("endpoint_url", e.target.value)} />
+          <Input filled className="h-9 w-[260px] font-mono" value={form.storage.endpoint_url} onChange={(e) => setStorage("endpoint_url", e.target.value)} />
         </SettingsRow>
         <SettingsRow title="Bucket" desc="Bucket that stores packed audio files, checkpoints, and extra files.">
-          <Input filled className="h-9 w-[220px] font-mono" value={storageForm.bucket} onChange={(e) => setStorage("bucket", e.target.value)} />
+          <Input filled className="h-9 w-[220px] font-mono" value={form.storage.bucket} onChange={(e) => setStorage("bucket", e.target.value)} />
         </SettingsRow>
         <SettingsRow title="Region" desc="S3 region used by the object store client.">
-          <Input filled className="h-9 w-[180px] font-mono" value={storageForm.region_name} onChange={(e) => setStorage("region_name", e.target.value)} />
+          <Input filled className="h-9 w-[180px] font-mono" value={form.storage.region_name} onChange={(e) => setStorage("region_name", e.target.value)} />
         </SettingsRow>
         <SettingsRow title="Access key" desc="Credential used by backend and runners.">
-          <Input filled className="h-9 w-[220px] font-mono" value={storageForm.access_key_id} onChange={(e) => setStorage("access_key_id", e.target.value)} />
+          <Input filled className="h-9 w-[220px] font-mono" value={form.storage.access_key_id} onChange={(e) => setStorage("access_key_id", e.target.value)} />
         </SettingsRow>
         <SettingsRow title="Secret key" desc="Stored for local development; use environment-specific secrets outside dev.">
-          <div className="flex items-center gap-2">
-            <Input filled className="h-9 w-[220px] font-mono" value={storageForm.secret_access_key} onChange={(e) => setStorage("secret_access_key", e.target.value)} />
-            <Button variant="primary" onClick={() => storageActions.update(storageForm)}>Save</Button>
-          </div>
+          <Input filled className="h-9 w-[220px] font-mono" value={form.storage.secret_access_key} onChange={(e) => setStorage("secret_access_key", e.target.value)} />
         </SettingsRow>
       </SettingsSection>
-      <SettingsSection title="Safety">
-        <SettingsRow title="Confirm destructive actions" desc="Ask before deleting files, datasets, voices, checkpoints, or killing jobs.">
-          <Toggle checked={s.confirmDeletes} onChange={(v) => s.set("confirmDeletes", v)} />
-        </SettingsRow>
-      </SettingsSection>
-      <SettingsSection title="Appearance">
-        <SettingsRow title="Theme" desc="Interface color theme.">
-          <div className="w-[200px]">
-            <Select
-              variant="mini"
-              value={s.theme}
-              onChange={(v) => s.set("theme", v as typeof s.theme)}
-              options={[
-                { value: "light", label: "Light" },
-                { value: "system", label: "System (soon)" },
-                { value: "dark", label: "Dark (soon)" },
-              ]}
-            />
-          </div>
-        </SettingsRow>
-      </SettingsSection>
+      <div className="sticky bottom-0 -mx-7 mt-3 flex items-center justify-between border-t border-line bg-app/95 px-7 py-4 backdrop-blur">
+        <div className="text-xs font-medium text-txt-mute">
+          {dirty ? "Unsaved changes" : "All changes saved"}
+        </div>
+        <Button variant="primary" disabled={!dirty || saving} onClick={saveSettings}>
+          {saving ? "Saving..." : "Save settings"}
+        </Button>
+      </div>
     </div>
   );
 }

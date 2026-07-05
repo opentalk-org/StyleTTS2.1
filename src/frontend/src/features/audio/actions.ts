@@ -192,16 +192,3 @@ export function removeSegmentsAction(count?: number) {
     onSubmit: () => showToast(`Removed segments from ${scope(count)}`, undefined, "error"),
   });
 }
-
-export function deleteFilesAction(count?: number) {
-  openParamModal({
-    icon: "trash",
-    title: "Delete files",
-    danger: true,
-    submitLabel: "Delete",
-    fields: [
-      { type: "info", label: `Permanently delete ${scope(count)} and all of their segments. This cannot be undone.` },
-    ],
-    onSubmit: () => showToast(`Deleted ${scope(count)}`, undefined, "error"),
-  });
-}
