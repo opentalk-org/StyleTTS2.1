@@ -40,12 +40,63 @@
           backendEnv = python.withPackages backendDependencies;
           runnerEnv = python.withPackages runnerDependencies;
           runflowEnv = python.withPackages runflowDependencies;
+          runflowDev = pkgs.writeShellApplication {
+            name = "runflow-dev";
+            runtimeInputs = [
+              backendEnv
+              runnerEnv
+              pkgs.bash
+              pkgs.coreutils
+              pkgs.nats-server
+            ];
+            text = ''
+              set -euo pipefail
+
+              export NATS_DATA="''${NATS_DATA:-.data/nats}"
+              export NATS_URL="''${NATS_URL:-nats://127.0.0.1:4222}"
+              export BACKEND_HOST="''${BACKEND_HOST:-127.0.0.1}"
+              export BACKEND_PORT="''${BACKEND_PORT:-8000}"
+              export RUNNER_ID="''${RUNNER_ID:-runner-1}"
+              export PYTHONPATH="$PWD/src:''${PYTHONPATH:-}"
+
+              mkdir -p "$NATS_DATA"
+
+              echo "Starting NATS JetStream on $NATS_URL"
+              nats-server -js -sd "$NATS_DATA" -p 4222 &
+              pid_nats=$!
+
+              until nats-server --signal ldm >/dev/null 2>&1; do
+                if ! kill -0 "$pid_nats" 2>/dev/null; then
+                  echo "NATS exited before becoming ready"
+                  exit 1
+                fi
+                sleep 1
+              done
+
+              echo "Starting backend at http://$BACKEND_HOST:$BACKEND_PORT/ui"
+              uvicorn backend.api:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" &
+              pid_backend=$!
+
+              echo "Starting runner $RUNNER_ID"
+              python -m runner.worker --runner-id "$RUNNER_ID" --nats-url "$NATS_URL" &
+              pid_runner=$!
+
+              shutdown() {
+                echo "Stopping Runflow dev services"
+                kill "$pid_runner" "$pid_backend" "$pid_nats" 2>/dev/null || true
+              }
+
+              trap shutdown EXIT INT TERM
+              wait -n "$pid_backend" "$pid_runner" "$pid_nats"
+            '';
+          };
         in
         pkgs.mkShell {
           packages = [
             backendEnv
             runnerEnv
             runflowEnv
+            runflowDev
             pkgs.nats-server
             pkgs.postgresql_16
           ];
