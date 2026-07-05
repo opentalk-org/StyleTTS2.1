@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
-import { seedDatasets } from "../../mock/data";
-import type { Dataset } from "../../mock/types";
+import { seedDatasets } from "@/mock/data";
+import type { Dataset } from "@/mock/types";
 
 type DatasetsStore = {
   datasets: Dataset[];

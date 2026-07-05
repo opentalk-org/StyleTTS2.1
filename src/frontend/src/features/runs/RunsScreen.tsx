@@ -1,4 +1,4 @@
-import { EmbeddedDashboard } from "../../shared/EmbeddedDashboard";
+import { EmbeddedDashboard } from "@/shared/EmbeddedDashboard";
 
 export function RunsScreen() {
   return (

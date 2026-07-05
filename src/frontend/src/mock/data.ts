@@ -1,4 +1,4 @@
-import { PHON, SENTENCES, SPEAKERS, rng } from "./constants";
+import { PHON, SENTENCES, SPEAKERS, pick, rng } from "./constants";
 import type {
   AudioFile,
   AudioStatus,
@@ -24,46 +24,57 @@ const DATASET_IDS = ["ds_vox", "ds_narr", "ds_pod"];
 /** Deterministic audio row for a given index — stable across scrolls. */
 export function getAudioRow(index: number): AudioFile {
   const r = rng(index + 1);
-  const dur = 2.4 + rng(index * 3 + 2) * 46;
+  // Every 40th file is a long recording (~40–66 min, hundreds of segments) so
+  // the editor's windowed timeline is exercised at scale.
+  const isLong = index % 40 === 0;
+  const dur = isLong ? 2400 + rng(index * 3 + 2) * 1600 : 2.4 + rng(index * 3 + 2) * 46;
   const status: AudioStatus[] = [];
-  if (r > 0.18) status.push("transcribed");
+  if (isLong || r > 0.18) status.push("transcribed");
   if (rng(index * 5 + 1) > 0.4) status.push("normalized");
   if (rng(index * 7 + 3) > 0.7) status.push("denoised");
   if (rng(index * 11 + 5) > 0.86) status.push("flagged");
   const nseg = Math.max(1, Math.round(dur / 4 + rng(index * 2) * 3));
   return {
     id: `aud_${index}`,
-    name: `${FILE_NAMES[index % FILE_NAMES.length]}_${String(101 + (index % 8999)).padStart(4, "0")}.wav`,
-    speaker: SPEAKERS[index % SPEAKERS.length],
+    name: `${pick(FILE_NAMES, index)}_${String(101 + (index % 8999)).padStart(4, "0")}.wav`,
+    speaker: pick(SPEAKERS, index),
     dur,
-    sr: SAMPLE_RATES[index % SAMPLE_RATES.length],
+    sr: pick(SAMPLE_RATES, index),
     status: status.length ? status : ["raw"],
     segments: status.includes("transcribed") ? nseg : 0,
     updated: Date.now() - Math.round(rng(index * 13 + 9) * 86400000 * 30),
     sizeMb: (dur * 1.4).toFixed(1),
-    dataset: rng(index * 17 + 4) > 0.32 ? DATASET_IDS[index % 3] : null,
+    dataset: rng(index * 17 + 4) > 0.32 ? pick(DATASET_IDS, index) : null,
   };
 }
 
-/** Reconstruct a file's segments (mock — derived from the file, not stored). */
+/**
+ * Reconstruct a file's segments (mock — derived from the file, not stored).
+ * Diarization/split can produce OVERLAPPING segments (two speakers talking over
+ * each other), so some segments deliberately overlap their neighbour — the
+ * editor timeline lays those out in separate lanes.
+ */
 export function fileSegments(file: AudioFile): Segment[] {
   if (!file.segments) return [];
   const out: Segment[] = [];
   const seed = Number(file.id.replace(/\D/g, "")) || 1;
+  const stride = file.dur / file.segments;
   let t = 0;
   for (let i = 0; i < file.segments; i++) {
-    const len = (file.dur / file.segments) * (0.7 + rng(seed + i * 9 + 1) * 0.6);
-    const start = t;
-    const end = Math.min(file.dur, i === file.segments - 1 ? file.dur : t + len);
+    const len = stride * (0.7 + rng(seed + i * 9 + 1) * 0.6);
+    // ~25% of segments start before the previous one ended — an overlap.
+    const overlap = i > 0 && rng(seed + i * 3 + 2) > 0.75;
+    const start = overlap ? Math.max(0, t - stride * (0.3 + rng(seed + i * 5) * 0.4)) : t;
+    const end = Math.min(file.dur, start + len);
     out.push({
       id: `${file.id}_s${i}`,
       start,
       end,
-      text: SENTENCES[i % SENTENCES.length],
-      phon: PHON[i % PHON.length],
-      speaker: file.speaker,
+      text: pick(SENTENCES, i),
+      phon: pick(PHON, i),
+      speaker: pick(SPEAKERS, seed + i),
     });
-    t = end + (i < file.segments - 1 ? (file.dur / file.segments) * 0.06 : 0);
+    t = end + stride * 0.06;
   }
   return out;
 }
@@ -75,7 +86,7 @@ const LAST = ["Chen", "Park", "Russo", "Okafor", "Vance", "Hale", "Mori", "Singh
 
 function voiceDatasets(i: number): string[] {
   const out = DATASET_IDS.filter((_, k) => rng(i * 5 + k + 1) > 0.55);
-  return out.length ? out : [DATASET_IDS[i % 3]];
+  return out.length ? out : [pick(DATASET_IDS, i)];
 }
 
 /** Deterministic voice row by index. */
@@ -83,14 +94,14 @@ export function getVoiceRow(index: number): Voice {
   if (index < SPEAKERS.length)
     return {
       id: `v_${index}`,
-      name: SPEAKERS[index],
+      name: pick(SPEAKERS, index),
       segments: 40 + Math.round(rng(index * 3 + 2) * 220),
       datasets: voiceDatasets(index),
     };
   const i = index - SPEAKERS.length;
   return {
     id: `v_g${i}`,
-    name: `${FIRST[(i * 7) % FIRST.length]} ${LAST[(i * 13) % LAST.length]} ${100 + i}`,
+    name: `${pick(FIRST, i * 7)} ${pick(LAST, i * 13)} ${100 + i}`,
     segments: Math.round(rng(i + 9) * 420),
     datasets: voiceDatasets(i + 30),
   };

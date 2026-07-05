@@ -1,0 +1,33 @@
+from shared.db.assets.crud import (
+    create_bucket_file,
+    create_checkpoint,
+    create_config,
+    create_extra_file,
+    delete_checkpoint,
+    delete_extra_file,
+    get_bucket_file,
+    get_checkpoint,
+    get_extra_file,
+    list_bucket_files,
+    read_checkpoint,
+    read_extra_file,
+    update_checkpoint,
+    update_extra_file,
+)
+
+__all__ = [
+    "create_bucket_file",
+    "create_checkpoint",
+    "create_config",
+    "create_extra_file",
+    "delete_checkpoint",
+    "delete_extra_file",
+    "get_bucket_file",
+    "get_checkpoint",
+    "get_extra_file",
+    "list_bucket_files",
+    "read_checkpoint",
+    "read_extra_file",
+    "update_checkpoint",
+    "update_extra_file",
+]

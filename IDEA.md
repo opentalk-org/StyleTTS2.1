@@ -51,7 +51,15 @@ initialization:
 
 workflow:
 - id
+- name
 - data (jsonb)
+- hidden
+
+runner:
+- id
+- name
+- hostname
+- port
 
 
 load audio -> vad split audio -> audio diarization and split with sortformer -> deepfilternet -> 3 nodes (whisper, parakeet, canary) -> save audio

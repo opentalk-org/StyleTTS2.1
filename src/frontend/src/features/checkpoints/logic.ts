@@ -1,5 +1,5 @@
-import type { Tone } from "../../shared/ui/Badge";
-import type { Checkpoint, CheckpointType } from "../../mock/types";
+import type { Tone } from "@/shared/ui/Badge";
+import type { Checkpoint, CheckpointType } from "@/mock/types";
 import type { CheckpointsStore } from "./store";
 
 export const TYPE_TONE: Record<CheckpointType, Tone> = {

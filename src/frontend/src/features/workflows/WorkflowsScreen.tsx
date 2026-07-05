@@ -1,4 +1,4 @@
-import { EmptyState } from "../../shared/ui/EmptyState";
+import { EmptyState } from "@/shared/ui/EmptyState";
 
 /**
  * Node-graph workflow editor. Intentionally left as a placeholder for a later

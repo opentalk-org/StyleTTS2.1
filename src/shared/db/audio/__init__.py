@@ -1,0 +1,41 @@
+from shared.db.audio.crud import (
+    bulk_create_audio_files,
+    bulk_delete_audio_files,
+    bulk_read_audio_files,
+    bulk_read_audio_parts,
+    bulk_update_audio_files,
+    create_audio_file,
+    create_segment,
+    delete_audio_file,
+    delete_segment,
+    get_audio_file,
+    list_audio_files,
+    read_audio_file,
+    read_audio_part,
+    update_audio_file,
+    update_segment,
+)
+from shared.db.audio.pack_store import AudioPackConfig
+from shared.db.audio.schemas import AudioCreate, AudioPartRead, AudioUpdate
+
+__all__ = [
+    "AudioCreate",
+    "AudioPackConfig",
+    "AudioPartRead",
+    "AudioUpdate",
+    "bulk_create_audio_files",
+    "bulk_delete_audio_files",
+    "bulk_read_audio_files",
+    "bulk_read_audio_parts",
+    "bulk_update_audio_files",
+    "create_audio_file",
+    "create_segment",
+    "delete_audio_file",
+    "delete_segment",
+    "get_audio_file",
+    "list_audio_files",
+    "read_audio_file",
+    "read_audio_part",
+    "update_audio_file",
+    "update_segment",
+]

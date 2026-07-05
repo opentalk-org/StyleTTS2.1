@@ -20,7 +20,7 @@ export function WaveformPlayer({
 }) {
   const [playing, setPlaying] = useState(false);
   const [pos, setPos] = useState(0);
-  const timer = useRef<ReturnType<typeof setInterval>>();
+  const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   useEffect(() => {
     if (!playing) return;

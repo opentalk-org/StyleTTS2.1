@@ -13,6 +13,7 @@ from runflow.registry.type_registry import TypeRegistry
 from runflow.tmp_nodes.audio.datatypes import register_audio_types
 from runflow.tmp_nodes.register import register_builtin_nodes
 from runflow.ui.schema_export import export_ui_schema
+from shared.db import create_database_schema
 from shared.logging_setup import configure_logging, get_logger
 from shared.schemas import InlineGraphRunRequest, NodeLogResponseMessage, RunEventResponse, RunnerStatus, RunSnapshot, RunStatus
 
@@ -28,6 +29,7 @@ old_static_dir = Path(__file__).parent / "ui" / "static"
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("backend startup")
+    create_database_schema()
     await nats_bus.start()
     try:
         yield

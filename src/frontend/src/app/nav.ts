@@ -1,4 +1,4 @@
-import type { IconName } from "../shared/icons";
+import type { IconName } from "@/shared/icons";
 import type { Screen } from "./navStore";
 
 export type NavItem = { id: Screen; label: string; icon: IconName };

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
-import { seedCheckpoints } from "../../mock/data";
-import type { Checkpoint } from "../../mock/types";
+import { seedCheckpoints } from "@/mock/data";
+import type { Checkpoint } from "@/mock/types";
 
 export type CheckpointsStore = {
   checkpoints: Checkpoint[];

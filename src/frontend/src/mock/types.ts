@@ -54,32 +54,6 @@ export type Checkpoint = {
   created: number;
 };
 
-export type JobType =
-  | "training"
-  | "transcribe"
-  | "normalize"
-  | "denoise"
-  | "phonemize"
-  | "split"
-  | "statistics"
-  | "upload";
-
-export type JobStatus = "queued" | "running" | "succeeded" | "failed";
-
-export type Job = {
-  id: string;
-  type: JobType;
-  label: string;
-  status: JobStatus;
-  progress: number;
-  updated: number;
-  stale?: boolean;
-  error?: string;
-  epoch?: number;
-  step?: number;
-  machines?: number;
-};
-
 export type StatEntry = {
   id: string;
   files: number;

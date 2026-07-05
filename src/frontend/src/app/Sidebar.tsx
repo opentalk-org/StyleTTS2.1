@@ -1,12 +1,10 @@
-import { runningCount, useJobs } from "../features/jobs/store";
-import { Icon } from "../shared/icons";
-import { cn } from "../shared/ui/cn";
+import { Icon } from "@/shared/icons";
+import { cn } from "@/shared/ui/cn";
 import { NAV_ITEMS } from "./nav";
 import { useNav } from "./navStore";
 
 export function Sidebar() {
   const { screen, navCollapsed, go, toggleNav } = useNav();
-  const running = useJobs((s) => runningCount(s.jobs));
   const expanded = !navCollapsed;
 
   return (
@@ -42,15 +40,6 @@ export function Sidebar() {
                 <Icon name={item.icon} size={19} strokeWidth={active ? 2.3 : 2} />
               </span>
               {expanded ? <span className="flex-1 whitespace-nowrap text-left">{item.label}</span> : null}
-              {item.id === "jobs" && running > 0 ? (
-                <span
-                  className={cn(
-                    "h-2 w-2 flex-none rounded-full",
-                    active ? "bg-white" : "bg-amber-500",
-                  )}
-                  style={{ animation: "pulse-dot 1.4s infinite" }}
-                />
-              ) : null}
             </button>
           );
         })}

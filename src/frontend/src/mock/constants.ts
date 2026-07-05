@@ -31,3 +31,8 @@ export function rng(seed: number): number {
   const x = Math.sin(seed) * 10000;
   return x - Math.floor(x);
 }
+
+/** Cyclic element access that is total for any integer index (never undefined). */
+export function pick<T>(arr: readonly T[], i: number): T {
+  return arr[((i % arr.length) + arr.length) % arr.length] as T;
+}
