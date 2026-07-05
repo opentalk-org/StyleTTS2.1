@@ -9,13 +9,15 @@ export type AudioFilters = {
 };
 
 type AudioStore = AudioFilters & {
+  limit: number;
+  offset: number;
   /** file id -> selected. */
   selection: Record<string, true>;
   /** "select all N matching the current filter" mode (server-side selection). */
   selectAllMatching: boolean;
   /** file id -> expanded inline-segments preview. */
   expanded: Record<string, true>;
-  setFilters: (patch: Partial<AudioFilters>) => void;
+  setFilters: (patch: Partial<AudioFilters> & Partial<Pick<AudioStore, "limit" | "offset">>) => void;
   toggleSelect: (id: string) => void;
   clearSelection: () => void;
   selectAllFiltered: () => void;
@@ -26,6 +28,8 @@ export const useAudio = create<AudioStore>((set) => ({
   query: "",
   dataset: "all",
   sort: "updated",
+  limit: 100,
+  offset: 0,
   selection: {},
   selectAllMatching: false,
   expanded: {},

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 import { WorkflowBottomBar } from "./WorkflowBottomBar";
 import { WorkflowEdges } from "./WorkflowEdges";
@@ -11,7 +11,8 @@ export function WorkflowCanvas() {
   const canvasRef = useRef<HTMLElement | null>(null);
   const [panning, setPanning] = useState<{ x: number; y: number } | null>(null);
   const [marquee, setMarquee] = useState<{ x: number; y: number; startX: number; startY: number } | null>(null);
-  const { graph, viewport, wireDraft, selectNode, selectNodes, panViewport, zoomAt, setWireDraft, deleteSelection } = useWorkflowStore();
+  const { graph, viewport, wireDraft, selectNode, selectNodes, panViewport, zoomAt, setWireDraft, finishWire, deleteSelection } = useWorkflowStore();
+  const isWiring = wireDraft !== null;
 
   useEffect(() => {
     const onKeydown = (event: KeyboardEvent) => {
@@ -27,7 +28,29 @@ export function WorkflowCanvas() {
     return () => window.removeEventListener("keydown", onKeydown);
   }, [deleteSelection, selectNode, setWireDraft]);
 
-  const onPointerMove = (event: PointerEvent) => {
+  useEffect(() => {
+    if (!isWiring) return;
+    const onPointerMove = (event: PointerEvent) => {
+      if (!canvasRef.current) return;
+      const box = canvasRef.current.getBoundingClientRect();
+      const state = useWorkflowStore.getState();
+      if (!state.wireDraft) return;
+      const point = graphPoint(state.viewport, event.clientX, event.clientY, box.left, box.top);
+      setWireDraft({ ...state.wireDraft, x: point.x, y: point.y });
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-workflow-socket]");
+      finishWire(target?.dataset.node ?? null, target?.dataset.port ?? null, (target?.dataset.kind as "input" | "output" | undefined) ?? null);
+    };
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [finishWire, isWiring, setWireDraft]);
+
+  const onPointerMove = (event: ReactPointerEvent) => {
     if (panning) {
       panViewport(event.clientX - panning.x, event.clientY - panning.y);
       setPanning({ x: event.clientX, y: event.clientY });
@@ -37,17 +60,13 @@ export function WorkflowCanvas() {
       const point = graphPoint(viewport, event.clientX, event.clientY, box.left, box.top);
       setMarquee({ ...marquee, x: point.x, y: point.y });
     }
-    if (wireDraft && canvasRef.current) {
-      const box = canvasRef.current.getBoundingClientRect();
-      const point = graphPoint(viewport, event.clientX, event.clientY, box.left, box.top);
-      setWireDraft({ ...wireDraft, x: point.x, y: point.y });
-    }
   };
 
   return (
     <section
       ref={canvasRef}
-      className="relative min-w-0 flex-1 overflow-hidden bg-app"
+      data-workflow-canvas
+      className="relative h-full min-w-0 overflow-hidden bg-app"
       onClick={() => selectNode(null)}
       onPointerDown={(event) => {
         if (event.button !== 0) return;

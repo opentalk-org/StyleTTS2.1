@@ -1,4 +1,5 @@
 from typing import Any
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -73,5 +74,6 @@ class AudioPartRead(BaseModel):
 class AudioFileRead(AudioFileCreate):
     id: UUID
     bucket_file: BucketFileRead
+    updated_at: datetime
     metadata: dict[str, Any] = Field(alias="metadata_")
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)

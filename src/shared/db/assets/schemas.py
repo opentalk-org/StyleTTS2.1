@@ -22,6 +22,7 @@ class CheckpointCreate(BaseModel):
     folder_path: Path
     type_: str
     metadata: dict[str, Any]
+    job_id: str | None = None
 
 
 class CheckpointUpdate(BaseModel):
@@ -29,6 +30,19 @@ class CheckpointUpdate(BaseModel):
     folder_path: Path | None
     type_: str
     metadata: dict[str, Any]
+    job_id: str | None = None
+
+
+class CheckpointRead(BaseModel):
+    id: UUID
+    name: str
+    path: str
+    size: int
+    content_hash: str
+    type_: str
+    metadata: dict[str, Any] = Field(alias="metadata_")
+    job_id: str | None
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class ExtraFileCreate(BaseModel):

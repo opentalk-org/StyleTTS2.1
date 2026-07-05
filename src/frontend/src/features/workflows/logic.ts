@@ -1,5 +1,5 @@
 import type { SchemaValues } from "@/shared/schema-form/types";
-import type { Viewport, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowPayload, WorkflowRunContext, WorkflowSchema } from "./types";
+import type { Viewport, WorkflowDefinition, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowPayload, WorkflowRunContext, WorkflowSchema } from "./types";
 
 export function typeAccepts(schema: WorkflowSchema, targetType: string, sourceType: string): boolean {
   const target = schema.types[targetType];
@@ -121,4 +121,13 @@ export function graphPayload(graph: WorkflowGraph, runId: string | null, context
     edges: graph.edges,
     context,
   };
+}
+
+export function defaultWorkflowContext(config: SchemaValues): WorkflowRunContext {
+  return { work_dir: "work", cache_dir: "cache", output_dir: "outputs", device: "cuda", config, input_items: [] };
+}
+
+export function workflowDefinition(graph: WorkflowGraph, config: SchemaValues): WorkflowDefinition {
+  const payload = graphPayload(graph, null, defaultWorkflowContext(config));
+  return { nodes: payload.nodes, edges: payload.edges, context: payload.context, launch_source: null };
 }

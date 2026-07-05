@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 
 import { Button } from "@/shared/ui/Button";
-import { graphPayload } from "../logic";
+import { defaultWorkflowContext, graphPayload } from "../logic";
 import { useRunSnapshotQuery, useStartGraphMutation, useStopRunMutation } from "../query";
 import { useWorkflowStore } from "../store";
 
@@ -16,7 +16,7 @@ export function WorkflowRunPanel() {
     if (activeRunId && snapshotQuery.data) applyRunSnapshot(activeRunId, snapshotQuery.data);
   }, [activeRunId, applyRunSnapshot, snapshotQuery.data]);
   const canStop = active && ["queued", "running", "stopping"].includes(active.state);
-  const context = { work_dir: "work", cache_dir: "cache", output_dir: "outputs", device: "cuda", config: runtimeConfig, input_items: [] };
+  const context = defaultWorkflowContext(runtimeConfig);
   const runGraph = () => start.mutate(graphPayload(graph, null, context), { onSuccess: (run) => setActiveRunId(run.run_id) });
 
   return (

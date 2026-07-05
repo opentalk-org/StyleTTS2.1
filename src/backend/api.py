@@ -5,8 +5,10 @@ from typing import AsyncIterator
 import uuid
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from backend.audio import router as audio_router
 from backend.runners import router as runners_router
 from backend.settings import router as settings_router
 from backend.nats_bus import BackendNatsBus
@@ -48,7 +50,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Runflow Backend", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.mount("/ui-old", StaticFiles(directory=old_static_dir, html=True), name="ui-old")
+app.include_router(audio_router)
 app.include_router(runners_router)
 app.include_router(settings_router)
 app.include_router(workflow_router(manager))

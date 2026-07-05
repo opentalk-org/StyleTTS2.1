@@ -1,4 +1,3 @@
-import { AUDIO_COUNT } from "@/mock/data";
 import type { Dataset } from "@/features/datasets/api";
 import type { Option } from "@/shared/ui/Select";
 
@@ -18,15 +17,4 @@ export function sortOptions(): Option[] {
     { value: "speaker", label: "Sort: Speaker" },
     { value: "segments", label: "Sort: Segments" },
   ];
-}
-
-/**
- * Rows the virtualized table renders over.
- *
- * ponytail: real filtering is server-side, so the toolbar filters are controlled
- * UI state only and the table always virtualizes the full library count. Wire a
- * server count here when the backend can page filtered results.
- */
-export function filteredAudioCount(): number {
-  return AUDIO_COUNT;
 }

@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { defaultBackendUrl } from "./backendConfig";
+
 export type Screen =
   | "datasets"
   | "voices"
@@ -33,7 +35,7 @@ export const useNav = create<NavStore>((set) => ({
   screen: "training",
   navCollapsed: false,
   connected: false,
-  backendUrl: "http://localhost:8200",
+  backendUrl: defaultBackendUrl(),
   activeFileIndex: null,
   go: (screen) => set({ screen }),
   toggleNav: () => set((s) => ({ navCollapsed: !s.navCollapsed })),

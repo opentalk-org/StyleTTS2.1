@@ -3,7 +3,7 @@ from __future__ import annotations
 from runflow.registry.node_registry import NodeRegistry
 from runflow.registry.type_registry import TypeRegistry
 from runner.nodes.asr import CanaryTranscribeNode, ParakeetTranscribeNode, WhisperTranscribeNode
-from runner.nodes.audio_io import LoadBucketAudioNode, SaveAudioArtifactNode, SaveTranscriptNode
+from runner.nodes.audio_io import LoadAudioNode, SaveAudioArtifactNode, SaveTranscriptNode
 from runner.nodes.audio_processing import (
     CalculateAudioStatsNode,
     CutAudioBySegmentsNode,
@@ -24,7 +24,7 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         SelectedAudioSourceNode,
         DatasetAudioSourceNode,
         AllAudioSourceNode,
-        LoadBucketAudioNode,
+        LoadAudioNode,
         SaveTranscriptNode,
         SaveAudioArtifactNode,
         WhisperTranscribeNode,

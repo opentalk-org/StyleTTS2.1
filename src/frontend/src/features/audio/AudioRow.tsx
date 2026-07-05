@@ -1,10 +1,9 @@
-import { useNav } from "@/app/navStore";
-import { getAudioRow } from "@/mock/data";
 import { fmtAgo, fmtDur } from "@/shared/format";
 import { Icon } from "@/shared/icons";
 import { WaveformBars } from "@/shared/media/WaveformBars";
 import { cn } from "@/shared/ui/cn";
 import { InlineSegments } from "./InlineSegments";
+import type { AudioFile } from "./api";
 import { useAudio } from "./store";
 
 export const AUDIO_COLS = "30px 22px 66px minmax(130px,1.2fr) 118px 54px 46px 74px";
@@ -22,17 +21,17 @@ function Checkbox({ on }: { on: boolean }) {
   );
 }
 
-export function AudioRow({ index }: { index: number }) {
-  const file = getAudioRow(index);
+export function AudioRow({ file, index }: { file: AudioFile; index: number }) {
   const { selection, selectAllMatching, expanded, toggleSelect, toggleExpanded } = useAudio();
   const on = selectAllMatching || !!selection[file.id];
   const ex = !!expanded[file.id];
   const noSeg = file.segments === 0;
+  const updatedAt = Date.parse(file.updated_at);
 
   return (
     <div>
       <div
-        onClick={() => useNav.getState().openEditor(index)}
+        onClick={() => toggleExpanded(file.id)}
         className={cn(
           "grid h-[52px] cursor-pointer items-center gap-3 px-3.5 transition-colors",
           ex ? "" : "border-b border-line",
@@ -60,13 +59,13 @@ export function AudioRow({ index }: { index: number }) {
           ) : null}
         </div>
         <span className="truncate text-[12.5px] text-txt-dim">{file.speaker}</span>
-        <span className="font-mono text-[12.5px] tabular-nums text-txt-dim">{fmtDur(file.dur)}</span>
+        <span className="font-mono text-[12.5px] tabular-nums text-txt-dim">{fmtDur(file.duration)}</span>
         <span className={cn("justify-self-end text-[12.5px] tabular-nums", file.segments ? "font-semibold text-txt" : "text-txt-mute")}>
           {file.segments || "—"}
         </span>
-        <span className="text-xs text-txt-mute">{fmtAgo(file.updated)}</span>
+        <span className="text-xs text-txt-mute">{Number.isNaN(updatedAt) ? "-" : fmtAgo(updatedAt)}</span>
       </div>
-      {ex ? <InlineSegments file={file} index={index} /> : null}
+      {ex ? <InlineSegments file={file} /> : null}
     </div>
   );
 }

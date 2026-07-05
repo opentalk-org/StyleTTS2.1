@@ -1,14 +1,13 @@
 import { useEffect, useRef } from "react";
 
+import { backendWebSocketUrl } from "@/app/backend";
+import { useNav } from "@/app/navStore";
+
 import { useWorkflowStore } from "./store";
 import type { WorkflowSocketMessage } from "./types";
 
-function socketUrl(): string {
-  const scheme = window.location.protocol === "https:" ? "wss" : "ws";
-  return `${scheme}://${window.location.host}/ws`;
-}
-
 export function useWorkflowSocket() {
+  const backendUrl = useNav((state) => state.backendUrl);
   const activeRunId = useWorkflowStore((state) => state.activeRunId);
   const applyRunnerStatus = useWorkflowStore((state) => state.applyRunnerStatus);
   const applyRunStatus = useWorkflowStore((state) => state.applyRunStatus);
@@ -16,7 +15,7 @@ export function useWorkflowSocket() {
   const socketRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    const socket = new WebSocket(socketUrl());
+    const socket = new WebSocket(backendWebSocketUrl("/ws", backendUrl));
     socketRef.current = socket;
     socket.addEventListener("message", (event) => {
       const message = JSON.parse(event.data) as WorkflowSocketMessage;
@@ -31,7 +30,7 @@ export function useWorkflowSocket() {
       socketRef.current = null;
       socket.close();
     };
-  }, [applyRunnerStatus, applyRunSnapshot, applyRunStatus]);
+  }, [applyRunnerStatus, applyRunSnapshot, applyRunStatus, backendUrl]);
 
   useEffect(() => {
     const socket = socketRef.current;

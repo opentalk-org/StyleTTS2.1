@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import Iterable, Sequence
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -128,6 +129,7 @@ def _create_item_from_write(writer: AudioPackWriter, payload: AudioCreate) -> Au
         segments=payload.segments,
         metadata_=payload.metadata,
         virtual=payload.virtual,
+        updated_at=_now(),
     )
 
 
@@ -143,11 +145,16 @@ def _replace_item_from_write(item: AudioFile, writer: AudioPackWriter, payload: 
     item.segments = payload.segments
     item.metadata_ = payload.metadata
     item.virtual = payload.virtual
+    item.updated_at = _now()
 
 
 def _decrease_used_bytes(item: AudioFile) -> None:
     item.bucket_file.used_bytes -= item.byte_length
     assert item.bucket_file.used_bytes >= 0, f"pack used bytes went negative: {item.bucket_file_id}"
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _download_packs(store: ObjectStore, items: Sequence[AudioFile]) -> dict[uuid.UUID, bytes]:

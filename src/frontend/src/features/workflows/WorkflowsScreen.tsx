@@ -11,7 +11,7 @@ import { transcriptTemplate } from "./templates";
 export function WorkflowsScreen() {
   const schemaQuery = useWorkflowSchemaQuery();
   const runsQuery = useRunsQuery();
-  const { schema, graph, setSchema, setGraph, applyRunnerStatus } = useWorkflowStore();
+  const { schema, setSchema, setGraph, applyRunnerStatus } = useWorkflowStore();
   useWorkflowSocket();
 
   useEffect(() => {
@@ -40,9 +40,9 @@ export function WorkflowsScreen() {
   }
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden">
+    <div className="relative h-full min-h-0 overflow-hidden">
       <WorkflowCanvas />
-      {graph.nodes.length ? <WorkflowInspector /> : null}
+      <WorkflowInspector />
     </div>
   );
 }

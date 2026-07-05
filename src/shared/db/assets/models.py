@@ -29,6 +29,7 @@ class Checkpoint(Base):
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     type_: Mapped[str] = mapped_column("type", String(64), nullable=False)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False)
+    job_id: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ExtraFile(Base):

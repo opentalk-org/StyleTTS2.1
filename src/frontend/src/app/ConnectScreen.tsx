@@ -34,7 +34,7 @@ export function ConnectScreen() {
           <input
             value={backendUrl}
             onChange={(e) => setBackendUrl(e.target.value)}
-            placeholder="http://localhost:8200"
+            placeholder="http://127.0.0.1:8000"
             className="h-13 rounded-lg border-2 border-line-2 bg-panel px-4 text-base text-txt outline-none focus:border-blue-500"
           />
         </label>

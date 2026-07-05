@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import type { SchemaValues } from "@/shared/schema-form/types";
 import { connect, deleteNodes, moveNodes, renameNode, zoomViewport } from "./logic";
-import type { RunSnapshot, RunStatus, Viewport, WireDraft, WorkflowEdge, WorkflowGraph, WorkflowSchema } from "./types";
+import type { PortAnchor, PortAnchorKey, RunSnapshot, RunStatus, Viewport, WireDraft, WorkflowEdge, WorkflowGraph, WorkflowSchema } from "./types";
 
 type WorkflowStore = {
   schema: WorkflowSchema | null;
@@ -12,8 +12,11 @@ type WorkflowStore = {
   wireDraft: WireDraft;
   runtimeConfig: SchemaValues;
   activeRunId: string | null;
+  inspectorOpen: boolean;
+  inspectorTab: "settings" | "runtime" | "logs";
   runs: RunStatus[];
   snapshots: Record<string, RunSnapshot>;
+  portAnchors: Record<PortAnchorKey, PortAnchor>;
   setSchema: (schema: WorkflowSchema) => void;
   setGraph: (graph: WorkflowGraph) => void;
   selectNode: (nodeId: string | null, additive?: boolean) => void;
@@ -22,15 +25,21 @@ type WorkflowStore = {
   moveSelection: (dx: number, dy: number) => void;
   renameSelectedNode: (nextId: string) => void;
   addEdge: (edge: WorkflowEdge) => void;
+  startWire: (nodeId: string, portName: string, kind: "input" | "output", x: number, y: number) => void;
+  finishWire: (nodeId: string | null, portName: string | null, kind: "input" | "output" | null) => void;
   setViewport: (viewport: Viewport) => void;
   panViewport: (dx: number, dy: number) => void;
   zoomAt: (nextZoom: number, anchorX: number, anchorY: number) => void;
   setWireDraft: (wireDraft: WireDraft) => void;
   setRuntimeConfig: (runtimeConfig: SchemaValues) => void;
   setActiveRunId: (activeRunId: string | null) => void;
+  openInspector: (tab?: "settings" | "runtime" | "logs") => void;
+  closeInspector: () => void;
+  setInspectorTab: (tab: "settings" | "runtime" | "logs") => void;
   applyRunnerStatus: (runs: RunStatus[]) => void;
   applyRunStatus: (run: RunStatus) => void;
   applyRunSnapshot: (runId: string, snapshot: RunSnapshot) => void;
+  setPortAnchor: (key: PortAnchorKey, anchor: PortAnchor) => void;
 };
 
 export const useWorkflowStore = create<WorkflowStore>((set) => ({
@@ -41,10 +50,13 @@ export const useWorkflowStore = create<WorkflowStore>((set) => ({
   wireDraft: null,
   runtimeConfig: {},
   activeRunId: null,
+  inspectorOpen: false,
+  inspectorTab: "settings",
   runs: [],
   snapshots: {},
+  portAnchors: {},
   setSchema: (schema) => set({ schema, runtimeConfig: structuredClone(schema.runtime_config_defaults) as SchemaValues }),
-  setGraph: (graph) => set({ graph }),
+  setGraph: (graph) => set({ graph, selectedNodeIds: [], wireDraft: null, portAnchors: {} }),
   selectNode: (nodeId, additive = false) => set((state) => {
     if (nodeId === null) return { selectedNodeIds: [] };
     if (!additive) return { selectedNodeIds: [nodeId] };
@@ -65,16 +77,52 @@ export const useWorkflowStore = create<WorkflowStore>((set) => ({
     if (!state.schema) return {};
     return { graph: connect(state.schema, state.graph, edge), wireDraft: null };
   }),
+  startWire: (nodeId, portName, kind, x, y) => set((state) => {
+    if (kind === "input") {
+      const edge = state.graph.edges.find((item) => item.target_node === nodeId && item.target_port === portName);
+      if (edge) {
+        return {
+          graph: {
+            ...state.graph,
+            edges: state.graph.edges.filter((item) => item !== edge),
+          },
+          wireDraft: { node: edge.source_node, port: edge.source_port, kind: "output", x, y },
+        };
+      }
+    }
+    return { wireDraft: { node: nodeId, port: portName, kind, x, y } };
+  }),
+  finishWire: (nodeId, portName, kind) => set((state) => {
+    const wire = state.wireDraft;
+    if (!wire || !state.schema || !nodeId || !portName || !kind) return { wireDraft: null };
+    if (wire.kind === "output" && kind === "input") {
+      const graph = connect(state.schema, state.graph, { source_node: wire.node, source_port: wire.port, target_node: nodeId, target_port: portName });
+      return { graph, wireDraft: null };
+    }
+    if (wire.kind === "input" && kind === "output") {
+      const graph = connect(state.schema, state.graph, { source_node: nodeId, source_port: portName, target_node: wire.node, target_port: wire.port });
+      return { graph, wireDraft: null };
+    }
+    return { wireDraft: null };
+  }),
   setViewport: (viewport) => set({ viewport }),
   panViewport: (dx, dy) => set((state) => ({ viewport: { ...state.viewport, x: state.viewport.x + dx, y: state.viewport.y + dy } })),
   zoomAt: (nextZoom, anchorX, anchorY) => set((state) => ({ viewport: zoomViewport(state.viewport, nextZoom, anchorX, anchorY) })),
   setWireDraft: (wireDraft) => set({ wireDraft }),
   setRuntimeConfig: (runtimeConfig) => set({ runtimeConfig }),
   setActiveRunId: (activeRunId) => set({ activeRunId }),
+  openInspector: (inspectorTab = "settings") => set({ inspectorOpen: true, inspectorTab }),
+  closeInspector: () => set({ inspectorOpen: false }),
+  setInspectorTab: (inspectorTab) => set({ inspectorTab }),
   applyRunnerStatus: (runs) => set({ runs }),
   applyRunStatus: (run) => set((state) => {
     const others = state.runs.filter((item) => item.run_id !== run.run_id);
     return { runs: [run, ...others] };
   }),
   applyRunSnapshot: (runId, snapshot) => set((state) => ({ snapshots: { ...state.snapshots, [runId]: snapshot } })),
+  setPortAnchor: (key, anchor) => set((state) => {
+    const current = state.portAnchors[key];
+    if (current && Math.abs(current.x - anchor.x) < 0.5 && Math.abs(current.y - anchor.y) < 0.5) return {};
+    return { portAnchors: { ...state.portAnchors, [key]: anchor } };
+  }),
 }));

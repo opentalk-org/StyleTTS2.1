@@ -1,8 +1,6 @@
 import { useState } from "react";
 
 import { useDatasetsQuery } from "@/features/datasets/query";
-import { getAudioRow } from "@/mock/data";
-import { fmtDur } from "@/shared/format";
 import { Icon, type IconName } from "@/shared/icons";
 import { cn } from "@/shared/ui/cn";
 import {
@@ -18,7 +16,6 @@ import {
   splitAction,
   transcribeAction,
 } from "./actions";
-import { filteredAudioCount } from "./logic";
 import { useAudio } from "./store";
 
 type MenuName = "process" | "dataset";
@@ -27,13 +24,6 @@ type Item =
   | { header: string }
   | { divider: true }
   | { label: string; icon: IconName; onClick: () => void; danger?: boolean };
-
-function selectedDuration(ids: string[]): number {
-  // ponytail: sums only the explicitly-selected rows; "all matching" is server-side so its duration is unknown.
-  let total = 0;
-  for (const id of ids) total += getAudioRow(Number(id.replace(/\D/g, ""))).dur;
-  return total;
-}
 
 function DarkButton({ label, icon, open, onClick }: { label: string; icon: IconName; open: boolean; onClick: () => void }) {
   return (
@@ -79,12 +69,11 @@ function Menu({ items, onPick }: { items: Item[]; onPick: () => void }) {
   );
 }
 
-export function SelectionBar() {
+export function SelectionBar({ total }: { total: number }) {
   const { selection, selectAllMatching, selectAllFiltered, clearSelection } = useAudio();
   const { data: datasets = [] } = useDatasetsQuery();
   const [menu, setMenu] = useState<MenuName | null>(null);
   const ids = Object.keys(selection);
-  const total = filteredAudioCount();
   const selCount = selectAllMatching ? total : ids.length;
   const toggle = (name: MenuName) => setMenu((m) => (m === name ? null : name));
   const count = selCount;
@@ -112,9 +101,6 @@ export function SelectionBar() {
     <div className="relative mb-3 flex items-center gap-2.5 rounded-[9px] bg-gray-900 py-2.5 pl-4 pr-3">
       <div className="flex items-center gap-2.5">
         <span className="text-[13px] font-bold text-white">{selCount.toLocaleString()} selected</span>
-        {!selectAllMatching ? (
-          <span className="text-xs tabular-nums text-white/55">{fmtDur(selectedDuration(ids))} total</span>
-        ) : null}
       </div>
       {!selectAllMatching ? (
         <button onClick={selectAllFiltered} className="text-xs font-semibold text-blue-300">

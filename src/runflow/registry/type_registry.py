@@ -8,6 +8,8 @@ class TypeRegistry:
         self.types: dict[str, DataType | UnionDataType] = {}
 
     def register(self, dtype: DataType | UnionDataType) -> DataType | UnionDataType:
+        if dtype.name in self.types:
+            raise ValueError(f"datatype already registered: {dtype.name}")
         self.types[dtype.name] = dtype
         return dtype
 

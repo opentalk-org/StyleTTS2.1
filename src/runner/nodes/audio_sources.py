@@ -36,7 +36,7 @@ class AudioSourceNode(Node):
     CATEGORY = "Audio / Sources"
     IS_INPUT = True
     INPUTS = {}
-    OUTPUTS = {"audio": Port("audio", AUDIO_REF, mode=PortMode.STREAM)}
+    OUTPUTS = {"audio_ref": Port("audio_ref", AUDIO_REF, mode=PortMode.STREAM)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     def __init__(self, node_id: str | None = None, **params):
@@ -51,7 +51,7 @@ class AudioSourceNode(Node):
         end = self._cursor + self.runtime.queue_max_size
         items = self._items[self._cursor:end]
         self._cursor += len(items)
-        return [{"audio": item} for item in items]
+        return [{"audio_ref": item} for item in items]
 
     def _load_refs(self) -> list[AudioRecordRef]:
         raise NotImplementedError

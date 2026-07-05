@@ -24,21 +24,12 @@ class AudioRecordRef:
 
 
 @dataclass(frozen=True)
-class BucketAudio:
+class Audio:
     audio_file_id: UUID
     name: str
     data: bytes
     sample_rate: int
     channels: int
-    duration: float
-    id: str
-    lineage_id: str
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class AudioSegment:
-    source_audio_id: UUID
     start: float
     end: float
     confidence: float

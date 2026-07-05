@@ -12,6 +12,7 @@ export POSTGRES_USER="${POSTGRES_USER:-runflow}"
 export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-runflow}"
 export BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 export BACKEND_PORT="${BACKEND_PORT:-8000}"
+export VITE_BACKEND_URL="${VITE_BACKEND_URL:-http://$BACKEND_HOST:$BACKEND_PORT}"
 export FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 export FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 export RUNNER_ID="${RUNNER_ID:-runner-1}"
@@ -51,6 +52,14 @@ pgbouncer_userlist="$pgbouncer_dir/userlist.txt"
 
 mkdir -p "$NATS_DATA" "$RUSTFS_DATA" "$PGDATA" "$PGHOST" "$pgbouncer_dir"
 
+pid_postgres=""
+pid_pgbouncer=""
+pid_nats=""
+pid_rustfs=""
+pid_backend=""
+pid_frontend=""
+pid_runners=""
+
 if [ ! -s "$PGDATA/PG_VERSION" ]; then
   echo "Initializing PostgreSQL database at $PGDATA"
   initdb -D "$PGDATA" --auth=trust
@@ -67,13 +76,19 @@ host all all ::1/128 md5
 EOF
 fi
 
-echo "Starting PostgreSQL"
-pg_ctl -D "$PGDATA" \
-  -o "-k $PGHOST -p $PGPORT" \
-  -l .data/postgres.log \
-  start
+if pg_ctl -D "$PGDATA" status >/dev/null 2>&1; then
+  echo "Using existing PostgreSQL at $PGHOST:$PGPORT"
+else
+  rm -f "$PGHOST/.s.PGSQL.$PGPORT" "$PGHOST/.s.PGSQL.$PGPORT.lock"
+  echo "Starting PostgreSQL"
+  pg_ctl -D "$PGDATA" \
+    -o "-k $PGHOST -p $PGPORT" \
+    -l .data/postgres.log \
+    start
+  pid_postgres=started
+fi
 
-until pg_isready -h "$PGHOST" -p "$PGPORT"; do
+until pg_isready -h "$PGHOST" -p "$PGPORT" -d postgres; do
   sleep 1
 done
 
@@ -118,12 +133,16 @@ ignore_startup_parameters = extra_float_digits
 pidfile = $pgbouncer_dir/pgbouncer.pid
 EOF
 
-echo "Starting PgBouncer on port $PGBOUNCER_PORT"
-pgbouncer "$pgbouncer_config" > .data/pgbouncer.log 2>&1 &
-pid_pgbouncer=$!
+if pg_isready -h 127.0.0.1 -p "$PGBOUNCER_PORT" -d "$POSTGRES_DB" -U "$POSTGRES_USER" >/dev/null 2>&1; then
+  echo "Using existing PgBouncer on port $PGBOUNCER_PORT"
+else
+  echo "Starting PgBouncer on port $PGBOUNCER_PORT"
+  pgbouncer "$pgbouncer_config" > .data/pgbouncer.log 2>&1 &
+  pid_pgbouncer=$!
+fi
 
 until pg_isready -h 127.0.0.1 -p "$PGBOUNCER_PORT" -d "$POSTGRES_DB"; do
-  if ! kill -0 "$pid_pgbouncer" 2>/dev/null; then
+  if [ -n "$pid_pgbouncer" ] && ! kill -0 "$pid_pgbouncer" 2>/dev/null; then
     echo "PgBouncer exited before becoming ready"
     cat .data/pgbouncer.log
     exit 1
@@ -131,28 +150,36 @@ until pg_isready -h 127.0.0.1 -p "$PGBOUNCER_PORT" -d "$POSTGRES_DB"; do
   sleep 1
 done
 
-echo "Starting NATS JetStream on $NATS_URL"
-nats-server -js -sd "$NATS_DATA" -p "$NATS_PORT" &
-pid_nats=$!
+if python -c "import socket; socket.create_connection(('127.0.0.1', $NATS_PORT), 1).close()" >/dev/null 2>&1; then
+  echo "Using existing NATS on $NATS_URL"
+else
+  echo "Starting NATS JetStream on $NATS_URL"
+  nats-server -js -sd "$NATS_DATA" -p "$NATS_PORT" &
+  pid_nats=$!
+fi
 
 until python -c "import socket; socket.create_connection(('127.0.0.1', $NATS_PORT), 1).close()" >/dev/null 2>&1; do
-  if ! kill -0 "$pid_nats" 2>/dev/null; then
+  if [ -n "$pid_nats" ] && ! kill -0 "$pid_nats" 2>/dev/null; then
     echo "NATS exited before becoming ready"
     exit 1
   fi
   sleep 1
 done
-if ! kill -0 "$pid_nats" 2>/dev/null; then
+if [ -n "$pid_nats" ] && ! kill -0 "$pid_nats" 2>/dev/null; then
   echo "NATS exited before becoming ready"
   exit 1
 fi
 
-echo "Starting RustFS at $AWS_ENDPOINT_URL"
-rustfs > /tmp/runflow-rustfs.log 2>&1 &
-pid_rustfs=$!
+if aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-buckets >/dev/null 2>&1; then
+  echo "Using existing RustFS at $AWS_ENDPOINT_URL"
+else
+  echo "Starting RustFS at $AWS_ENDPOINT_URL"
+  rustfs > /tmp/runflow-rustfs.log 2>&1 &
+  pid_rustfs=$!
+fi
 
 until aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-buckets >/dev/null 2>&1; do
-  if ! kill -0 "$pid_rustfs" 2>/dev/null; then
+  if [ -n "$pid_rustfs" ] && ! kill -0 "$pid_rustfs" 2>/dev/null; then
     echo "RustFS exited before becoming ready"
     cat /tmp/runflow-rustfs.log
     exit 1
@@ -167,13 +194,13 @@ if ! aws --endpoint-url "$AWS_ENDPOINT_URL" s3api head-bucket \
     --bucket "$RUSTFS_BUCKET" >/dev/null
 fi
 
-echo "Starting backend API at http://$BACKEND_HOST:$BACKEND_PORT"
 echo "Legacy static UI is available at http://$BACKEND_HOST:$BACKEND_PORT/ui-old"
+echo "Starting backend API at http://$BACKEND_HOST:$BACKEND_PORT"
 uvicorn backend.api:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" &
 pid_backend=$!
 
 until python -c "from urllib.request import urlopen; urlopen('http://127.0.0.1:$BACKEND_PORT/health', timeout=1).read()" >/dev/null 2>&1; do
-  if ! kill -0 "$pid_backend" 2>/dev/null; then
+  if [ -n "$pid_backend" ] && ! kill -0 "$pid_backend" 2>/dev/null; then
     echo "Backend exited before becoming ready"
     exit 1
   fi
@@ -196,11 +223,22 @@ pid_runners=$!
 
 shutdown() {
   echo "Stopping Runflow dev services"
-  kill "$pid_runners" "$pid_frontend" "$pid_backend" 2>/dev/null || true
+  [ -z "$pid_runners" ] || kill "$pid_runners" 2>/dev/null || true
+  [ -z "$pid_frontend" ] || kill "$pid_frontend" 2>/dev/null || true
+  [ -z "$pid_backend" ] || kill "$pid_backend" 2>/dev/null || true
   sleep 1
-  kill "$pid_rustfs" "$pid_nats" "$pid_pgbouncer" 2>/dev/null || true
-  pg_ctl -D "$PGDATA" stop -m fast >/dev/null 2>&1 || true
+  [ -z "$pid_rustfs" ] || kill "$pid_rustfs" 2>/dev/null || true
+  [ -z "$pid_nats" ] || kill "$pid_nats" 2>/dev/null || true
+  [ -z "$pid_pgbouncer" ] || kill "$pid_pgbouncer" 2>/dev/null || true
+  [ -z "$pid_postgres" ] || pg_ctl -D "$PGDATA" stop -m fast >/dev/null 2>&1 || true
 }
 
 trap shutdown EXIT INT TERM
-wait -n "$pid_backend" "$pid_frontend" "$pid_runners" "$pid_rustfs" "$pid_nats" "$pid_pgbouncer"
+wait_pids=()
+[ -z "$pid_backend" ] || wait_pids+=("$pid_backend")
+[ -z "$pid_frontend" ] || wait_pids+=("$pid_frontend")
+[ -z "$pid_runners" ] || wait_pids+=("$pid_runners")
+[ -z "$pid_rustfs" ] || wait_pids+=("$pid_rustfs")
+[ -z "$pid_nats" ] || wait_pids+=("$pid_nats")
+[ -z "$pid_pgbouncer" ] || wait_pids+=("$pid_pgbouncer")
+wait -n "${wait_pids[@]}"

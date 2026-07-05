@@ -11,7 +11,9 @@ from runner.nodes.models import Transcript, stable_id
 
 class PhonemizeSettings(StrictSettings):
     language: str = "en-us"
-    workers: int = Field(default=4, ge=1, le=64)
+    tie: bool = True
+    workers: int = Field(default=4, ge=1, le=32)
+    threads: int = Field(default=2, ge=1, le=16)
 
 
 class PhonemizeTranscriptNode(Node):
@@ -25,7 +27,7 @@ class PhonemizeTranscriptNode(Node):
         outputs = []
         for inputs in batch:
             transcript: Transcript = inputs["transcript"]
-            metadata = {**transcript.metadata, "phoneme_language": self.settings.language}
+            metadata = {**transcript.metadata, "phoneme_language": self.settings.language, "tie": self.settings.tie}
             outputs.append({
                 "transcript": Transcript(
                     transcript.text,

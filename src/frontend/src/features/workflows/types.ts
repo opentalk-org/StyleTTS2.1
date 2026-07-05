@@ -75,6 +75,24 @@ export type WorkflowPayload = WorkflowGraph & {
   context: WorkflowRunContext;
 };
 
+export type WorkflowDefinition = WorkflowGraph & {
+  context: WorkflowRunContext;
+  launch_source: WorkflowLaunchSource | null;
+};
+
+export type SavedWorkflow = {
+  id: string;
+  name: string;
+  data: WorkflowDefinition;
+  hidden: boolean;
+};
+
+export type SaveWorkflowPayload = {
+  name: string;
+  data: WorkflowDefinition;
+  hidden: boolean;
+};
+
 export type Viewport = {
   x: number;
   y: number;
@@ -82,11 +100,19 @@ export type Viewport = {
 };
 
 export type WireDraft = {
-  source_node: string;
-  source_port: string;
+  node: string;
+  port: string;
+  kind: "input" | "output";
   x: number;
   y: number;
 } | null;
+
+export type PortAnchorKey = `${string}:${string}:${"input" | "output"}`;
+
+export type PortAnchor = {
+  x: number;
+  y: number;
+};
 
 export type RunStatus = {
   run_id: string;

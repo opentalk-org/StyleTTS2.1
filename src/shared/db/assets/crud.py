@@ -53,6 +53,7 @@ def create_checkpoint(session: Session, payload: CheckpointCreate) -> Checkpoint
         content_hash=stored.content_hash,
         type_=payload.type_,
         metadata_=payload.metadata,
+        job_id=payload.job_id,
     )
     session.add(item)
     session.commit()
@@ -62,6 +63,10 @@ def create_checkpoint(session: Session, payload: CheckpointCreate) -> Checkpoint
 
 def get_checkpoint(session: Session, checkpoint_id: UUID) -> Checkpoint:
     return one(session, Checkpoint, checkpoint_id)
+
+
+def list_checkpoints(session: Session) -> Sequence[Checkpoint]:
+    return many(session, Checkpoint)
 
 
 def read_checkpoint(session: Session, checkpoint_id: UUID) -> bytes:
@@ -78,6 +83,7 @@ def update_checkpoint(session: Session, checkpoint_id: UUID, payload: Checkpoint
     item.name = payload.name
     item.type_ = payload.type_
     item.metadata_ = payload.metadata
+    item.job_id = payload.job_id
     if payload.folder_path is not None:
         stored = checkpoint_tar(payload.folder_path)
         object_store().upload(item.path, stored.data)

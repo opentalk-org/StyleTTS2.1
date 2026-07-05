@@ -1,10 +1,13 @@
-import { VirtualTable } from "@/shared/data/VirtualTable";
+import { Pager } from "@/shared/data/Pager";
 import { Icon } from "@/shared/icons";
+import { Button } from "@/shared/ui/Button";
+import { Card } from "@/shared/ui/Card";
 import { cn } from "@/shared/ui/cn";
+import { EmptyState } from "@/shared/ui/EmptyState";
 import { AUDIO_COLS, AudioRow } from "./AudioRow";
 import { AudioToolbar } from "./AudioToolbar";
 import { SelectionBar } from "./SelectionBar";
-import { filteredAudioCount } from "./logic";
+import { useAudioFilesQuery } from "./query";
 import { useAudio } from "./store";
 
 const HEAD = ["Wave", "File", "Voice", "Dur"];
@@ -33,24 +36,56 @@ function Header({ allSel, onToggleAll }: { allSel: boolean; onToggleAll: () => v
 }
 
 export function AudioScreen() {
-  const { selection, selectAllMatching, selectAllFiltered, clearSelection } = useAudio();
-  const count = filteredAudioCount();
+  const { query, dataset, sort, limit, offset, selection, selectAllMatching, selectAllFiltered, clearSelection, setFilters } = useAudio();
+  const { data, isLoading, isError, refetch } = useAudioFilesQuery({ query, dataset, sort, limit, offset });
+  const rows = data?.rows ?? [];
+  const total = data?.total ?? 0;
+  const page = Math.floor(offset / limit);
+  const pages = Math.max(1, Math.ceil(total / limit));
+  const visibleEnd = Math.min(offset + rows.length, total);
   const hasSelection = selectAllMatching || Object.keys(selection).length > 0;
 
   return (
     <div className="mx-auto flex h-full max-w-[1240px] flex-col px-7 pb-6 pt-5">
       <AudioToolbar />
-      {hasSelection ? <SelectionBar /> : null}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-line bg-panel">
-        <VirtualTable
-          count={count}
-          estimateRowHeight={52}
-          className="flex-1"
-          header={<Header allSel={selectAllMatching} onToggleAll={selectAllMatching ? clearSelection : selectAllFiltered} />}
-          renderRow={(i) => <AudioRow index={i} />}
-        />
-      </div>
-      <div className="mt-3 text-[12.5px] tabular-nums text-txt-mute">{count.toLocaleString()} files</div>
+      {hasSelection ? <SelectionBar total={total} /> : null}
+      {isLoading ? (
+        <Card className="p-6 text-sm text-txt-mute">Loading audio files...</Card>
+      ) : isError ? (
+        <Card>
+          <EmptyState
+            icon="alert"
+            title="Couldn't reach the backend"
+            description="The audio file service didn't respond."
+            action={
+              <Button variant="primary" icon="refresh" onClick={() => refetch()}>
+                Retry
+              </Button>
+            }
+          />
+        </Card>
+      ) : (
+        <>
+          <div className="mb-2.5 flex items-center gap-3 text-xs tabular-nums text-txt-mute">
+            <span>
+              {total ? `${(offset + 1).toLocaleString()}-${visibleEnd.toLocaleString()}` : "0"} of {total.toLocaleString()} files
+            </span>
+            <Pager page={page} pages={pages} onChange={(next) => setFilters({ offset: next * limit })} />
+          </div>
+          {rows.length ? (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-line bg-panel">
+              <Header allSel={selectAllMatching} onToggleAll={selectAllMatching ? clearSelection : selectAllFiltered} />
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {rows.map((file, index) => <AudioRow key={file.id} file={file} index={offset + index} />)}
+              </div>
+            </div>
+          ) : (
+            <Card>
+              <EmptyState icon="file-audio" title="No audio files match your filters." />
+            </Card>
+          )}
+        </>
+      )}
     </div>
   );
 }

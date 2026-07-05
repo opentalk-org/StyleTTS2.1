@@ -1,7 +1,9 @@
 import uuid
 from collections.abc import Iterable, Sequence
+from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import Text, cast, desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from shared.db.audio.models import AudioFile
@@ -20,6 +22,7 @@ from shared.db.audio.pack_prune import prune_fragmented_audio_packs
 from shared.db.audio.pack_store import AudioPackConfig, ObjectStore
 from shared.db.audio.schemas import AudioCreate, AudioPartRead, AudioUpdate, SegmentCreate, SegmentUpdate
 from shared.db.common import many, one
+from shared.db.datasets.models import Dataset
 from shared.storage import ObjectStoreConfig, S3ObjectStore
 
 
@@ -27,8 +30,48 @@ def list_audio_files(session: Session) -> Sequence[AudioFile]:
     return many(session, AudioFile)
 
 
+def search_audio_files(
+    session: Session,
+    query: str,
+    dataset: str,
+    sort: str,
+    limit: int,
+    offset: int,
+) -> tuple[Sequence[AudioFile], int]:
+    statement = select(AudioFile)
+    count_statement = select(func.count()).select_from(AudioFile)
+    filters = []
+    if query:
+        pattern = f"%{query}%"
+        filters.append(or_(AudioFile.name.ilike(pattern), cast(AudioFile.metadata_, Text).ilike(pattern)))
+    if dataset == "unassigned":
+        filters.append(~AudioFile.datasets.any())
+    elif dataset != "all":
+        dataset_id = uuid.UUID(dataset)
+        filters.append(AudioFile.datasets.any(Dataset.id == dataset_id))
+    for item in filters:
+        statement = statement.where(item)
+        count_statement = count_statement.where(item)
+    statement = statement.order_by(_audio_sort(sort)).limit(limit).offset(offset)
+    rows = session.execute(statement).unique().scalars().all()
+    total = session.execute(count_statement).scalar_one()
+    return rows, total
+
+
 def get_audio_file(session: Session, audio_file_id: uuid.UUID) -> AudioFile:
     return one(session, AudioFile, audio_file_id)
+
+
+def _audio_sort(sort: str):
+    if sort == "name":
+        return AudioFile.name
+    if sort == "duration":
+        return desc(AudioFile.duration)
+    if sort == "segments":
+        return desc(func.jsonb_array_length(AudioFile.segments))
+    if sort == "speaker":
+        return AudioFile.name
+    return desc(AudioFile.updated_at)
 
 
 def create_audio_file(
@@ -160,6 +203,7 @@ def create_segment(session: Session, audio_file_id: uuid.UUID, payload: SegmentC
     item = one(session, AudioFile, audio_file_id)
     segment = {"id": str(uuid.uuid4()), **payload.model_dump(mode="json")}
     item.segments = [*item.segments, segment]
+    item.updated_at = _now()
     session.commit()
     return segment
 
@@ -176,6 +220,7 @@ def update_segment(
     if segments == item.segments:
         raise KeyError(f"Segment not found: {segment_id}")
     item.segments = segments
+    item.updated_at = _now()
     session.commit()
     return replacement
 
@@ -186,6 +231,7 @@ def delete_segment(session: Session, audio_file_id: uuid.UUID, segment_id: str) 
     if len(segments) == len(item.segments):
         raise KeyError(f"Segment not found: {segment_id}")
     item.segments = segments
+    item.updated_at = _now()
     session.commit()
 
 
@@ -201,3 +247,8 @@ def _update_audio_metadata(item: AudioFile, payload: AudioUpdate) -> None:
     item.segments = payload.segments
     item.metadata_ = payload.metadata
     item.virtual = payload.virtual
+    item.updated_at = _now()
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)

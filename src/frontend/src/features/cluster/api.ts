@@ -1,3 +1,5 @@
+import { backendRequest } from "@/app/backend";
+
 export type Runner = {
   id: string;
   name: string;
@@ -26,18 +28,12 @@ export type RunnerRegisterPayload = {
   resources: Record<string, number>;
 };
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, init);
-  if (!response.ok) throw new Error(`Backend request failed: ${response.status}`);
-  return response.json() as Promise<T>;
-}
-
 export function fetchRunners(): Promise<RunnerPage> {
-  return request<RunnerPage>("/runners");
+  return backendRequest<RunnerPage>("/runners");
 }
 
 export function createRunner(payload: RunnerRegisterPayload): Promise<Runner> {
-  return request<Runner>("/runners", {
+  return backendRequest<Runner>("/runners", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

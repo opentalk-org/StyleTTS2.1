@@ -1,17 +1,14 @@
-import { useNav } from "@/app/navStore";
 import { useDatasetsQuery } from "@/features/datasets/query";
-import { fileSegments } from "@/mock/data";
-import type { AudioFile } from "@/mock/types";
 import { fmtClock } from "@/shared/format";
 import { Icon } from "@/shared/icons";
 import { Button } from "@/shared/ui/Button";
 import { splitAction, transcribeAction } from "./actions";
+import type { AudioFile } from "./api";
 
 const CAP = 8;
 
-/** Expanded preview of a file's segments below its row. */
-export function InlineSegments({ file, index }: { file: AudioFile; index: number }) {
-  const segs = fileSegments(file);
+export function InlineSegments({ file }: { file: AudioFile }) {
+  const segs = file.segment_preview;
   const { data: datasets = [] } = useDatasetsQuery();
 
   if (segs.length === 0)
@@ -45,7 +42,7 @@ export function InlineSegments({ file, index }: { file: AudioFile; index: number
             {String(i + 1).padStart(2, "0")}
           </span>
           <span className="font-mono text-[11px] tabular-nums text-txt-mute">
-            {fmtClock(g.start)}–{fmtClock(g.end)}
+            {fmtClock(g.start)}-{fmtClock(g.end)}
           </span>
           <div className="min-w-0">
             <div className="truncate text-[12.5px] text-txt">{g.text}</div>
@@ -53,14 +50,7 @@ export function InlineSegments({ file, index }: { file: AudioFile; index: number
           </div>
         </div>
       ))}
-      {segs.length > CAP ? (
-        <button
-          onClick={() => useNav.getState().openEditor(index)}
-          className="ml-2 mt-1 h-7 self-start rounded-md px-3 text-xs font-semibold text-blue-600 hover:bg-panel"
-        >
-          + {segs.length - CAP} more — open editor
-        </button>
-      ) : null}
+      {file.segments > CAP ? <span className="ml-2 mt-1 text-xs font-semibold text-txt-mute">+ {file.segments - CAP} more segments</span> : null}
     </div>
   );
 }
