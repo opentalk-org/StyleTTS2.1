@@ -50,6 +50,19 @@ export function WorkflowCanvas() {
     };
   }, [finishWire, isWiring, setWireDraft]);
 
+  useEffect(() => {
+    const element = canvasRef.current;
+    if (!element) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const box = element.getBoundingClientRect();
+      const next = viewport.zoom * (event.deltaY < 0 ? 1.12 : 0.88);
+      zoomAt(next, event.clientX - box.left, event.clientY - box.top);
+    };
+    element.addEventListener("wheel", onWheel, { passive: false });
+    return () => element.removeEventListener("wheel", onWheel);
+  }, [viewport.zoom, zoomAt]);
+
   const onPointerMove = (event: ReactPointerEvent) => {
     if (panning) {
       panViewport(event.clientX - panning.x, event.clientY - panning.y);
@@ -89,12 +102,6 @@ export function WorkflowCanvas() {
         }
         setPanning(null);
         setMarquee(null);
-      }}
-      onWheel={(event) => {
-        event.preventDefault();
-        const box = event.currentTarget.getBoundingClientRect();
-        const next = viewport.zoom * (event.deltaY < 0 ? 1.12 : 0.88);
-        zoomAt(next, event.clientX - box.left, event.clientY - box.top);
       }}
     >
       <div className="absolute inset-0 bg-[linear-gradient(#e5e7eb_1px,transparent_1px),linear-gradient(90deg,#e5e7eb_1px,transparent_1px)] bg-[size:32px_32px]" />

@@ -69,7 +69,10 @@ export function useLoadNodeMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ runId, nodeId }: { runId: string; nodeId: string }) => loadRunNode(runId, nodeId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["run-snapshot"] }),
+    onSuccess: (_run, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["run-snapshot", variables.runId] });
+      queryClient.invalidateQueries({ queryKey: ["runs"] });
+    },
   });
 }
 
@@ -77,6 +80,9 @@ export function useUnloadNodeMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ runId, nodeId }: { runId: string; nodeId: string }) => unloadRunNode(runId, nodeId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["run-snapshot"] }),
+    onSuccess: (_run, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["run-snapshot", variables.runId] });
+      queryClient.invalidateQueries({ queryKey: ["runs"] });
+    },
   });
 }

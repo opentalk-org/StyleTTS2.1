@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 class RunnerCreate(BaseModel):
@@ -8,7 +8,6 @@ class RunnerCreate(BaseModel):
     hostname: str
     port: int
     gpu_index: int | None = None
-    resources: dict[str, float] = Field(default_factory=dict)
 
 
 class RunnerRead(RunnerCreate):

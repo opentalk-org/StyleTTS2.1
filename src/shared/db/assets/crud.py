@@ -3,6 +3,7 @@ import uuid
 from pathlib import Path
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shared.db.assets.file_store import (
@@ -67,6 +68,13 @@ def get_checkpoint(session: Session, checkpoint_id: UUID) -> Checkpoint:
 
 def list_checkpoints(session: Session) -> Sequence[Checkpoint]:
     return many(session, Checkpoint)
+
+
+def list_extra_files(session: Session, type_: str | None = None) -> Sequence[ExtraFile]:
+    statement = select(ExtraFile)
+    if type_ is not None:
+        statement = statement.where(ExtraFile.type_ == type_)
+    return session.execute(statement).scalars().all()
 
 
 def read_checkpoint(session: Session, checkpoint_id: UUID) -> bytes:

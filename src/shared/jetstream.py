@@ -38,6 +38,10 @@ def event_subject(run_id: str) -> str:
     return f"{EVENT_SUBJECT_PREFIX}.{run_id}"
 
 
+def start_command_subject(runner_id: str) -> str:
+    return f"{START_COMMAND_SUBJECT}.{runner_id}"
+
+
 def stop_command_subject(runner_id: str) -> str:
     return f"{STOP_COMMAND_SUBJECT}.{runner_id}"
 

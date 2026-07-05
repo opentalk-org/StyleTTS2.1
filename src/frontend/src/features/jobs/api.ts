@@ -1,5 +1,5 @@
-import { backendRequest } from "@/app/backend";
-import type { WorkflowPayload } from "@/features/workflows/types";
+import { backendFetch, backendRequest } from "@/app/backend";
+import type { RunStatus, WorkflowPayload } from "@/features/workflows/types";
 
 export type Job = {
   run_id: string;
@@ -30,4 +30,13 @@ export function fetchJobs(params: JobQuery): Promise<JobPage> {
 
 export function fetchJobGraph(runId: string): Promise<WorkflowPayload> {
   return backendRequest<WorkflowPayload>(`/jobs/${encodeURIComponent(runId)}/graph`);
+}
+
+export async function deleteJob(runId: string): Promise<void> {
+  const response = await backendFetch(`/jobs/${encodeURIComponent(runId)}`, { method: "DELETE" });
+  if (!response.ok) throw new Error(`Backend request failed: ${response.status}`);
+}
+
+export function stopJob(runId: string): Promise<RunStatus> {
+  return backendRequest<RunStatus>(`/runs/${encodeURIComponent(runId)}/stop`, { method: "POST" });
 }

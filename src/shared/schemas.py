@@ -44,6 +44,7 @@ class GraphEdgeRequest(BaseModel):
 
 class InlineGraphRunRequest(BaseModel):
     run_id: str | None = None
+    runner_id: str | None = None
     nodes: list[GraphNodeRequest]
     edges: list[GraphEdgeRequest] = Field(default_factory=list)
     context: RunContextRequest = Field(default_factory=RunContextRequest)
@@ -147,6 +148,5 @@ class RunnerHeartbeatMessage(BaseModel):
     process_id: int
     port: int
     gpu_index: int | None
-    resources: dict[str, float]
     active_run_ids: list[str]
     created_at: datetime

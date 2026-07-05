@@ -24,6 +24,7 @@ from shared.jetstream import (
     node_command_subject,
     node_log_command_subject,
     node_log_response_subject,
+    start_command_subject,
     stop_command_subject,
 )
 from backend.runners.service import runner_live_registry
@@ -81,9 +82,10 @@ class BackendNatsBus:
 
     async def publish_start_graph(self, request: InlineGraphRunRequest) -> None:
         command = StartGraphRunCommand(request=request)
-        self.logger.info("publish start command run_id=%s", request.run_id)
+        subject = start_command_subject(request.runner_id) if request.runner_id is not None else START_COMMAND_SUBJECT
+        self.logger.info("publish start command run_id=%s runner_id=%s", request.run_id, request.runner_id)
         await self._js().publish(
-            START_COMMAND_SUBJECT,
+            subject,
             encode_model(command),
             stream=COMMAND_STREAM,
         )

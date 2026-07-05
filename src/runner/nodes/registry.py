@@ -17,21 +17,29 @@ from runner.nodes.audio_sources import AllAudioSourceNode, DatasetAudioSourceNod
 from runner.nodes.dataset_writeback import AddAudioToDatasetNode, AssignVoiceNode, DeleteAudioRecordsNode, RemoveAudioFromDatasetNode
 from runner.nodes.datatypes import register_runner_types
 from runner.nodes.text_processing import PhonemizeTranscriptNode
+from runner.nodes.testing import (
+    SelectStyleReferenceNode,
+    StyleReferenceSweepNode,
+    StyleTtsSweepSynthesisNode,
+    StyleTtsSynthesisNode,
+    TestingPromptPhonemizerNode,
+    TestingRunInputNode,
+    TestingTextPromptNode,
+)
 from runner.nodes.training import (
     AsrModelTrainingNode,
-    CheckpointAssetInputNode,
     F0ModelTrainingNode,
-    FetchPhonemeAlphabetNode,
     ListDatasetAudioIdsNode,
-    OodTextSetInputNode,
-    OptionalTrainingAssetsInputNode,
-    PrefetchCheckpointAssetNode,
+    PhonemeAlphabetNode,
+    PrefetchCheckpointNode,
     PrefetchOodTextSetsNode,
     PrefetchTrainingAssetsNode,
-    PhonemeAlphabetInputNode,
-    TrainingRunInputNode,
+    SelectCheckpointNode,
+    SelectOodTextSetsNode,
+    SelectTrainingAssetsNode,
+    SelectTrainingDatasetNode,
     StyleTtsFinetuneNode,
-    TrainingDatasetInputNode,
+    TrainingRunInputNode,
 )
 
 
@@ -59,19 +67,25 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         AssignVoiceNode,
         DeleteAudioRecordsNode,
         TrainingRunInputNode,
-        TrainingDatasetInputNode,
-        CheckpointAssetInputNode,
-        OptionalTrainingAssetsInputNode,
-        PhonemeAlphabetInputNode,
-        OodTextSetInputNode,
+        SelectTrainingDatasetNode,
+        SelectCheckpointNode,
+        SelectTrainingAssetsNode,
+        PhonemeAlphabetNode,
+        SelectOodTextSetsNode,
         ListDatasetAudioIdsNode,
-        PrefetchCheckpointAssetNode,
+        PrefetchCheckpointNode,
         PrefetchTrainingAssetsNode,
-        FetchPhonemeAlphabetNode,
         PrefetchOodTextSetsNode,
         StyleTtsFinetuneNode,
         F0ModelTrainingNode,
         AsrModelTrainingNode,
+        TestingRunInputNode,
+        TestingTextPromptNode,
+        SelectStyleReferenceNode,
+        StyleReferenceSweepNode,
+        TestingPromptPhonemizerNode,
+        StyleTtsSynthesisNode,
+        StyleTtsSweepSynthesisNode,
     ]:
         registry.register(node_cls)
     return registry

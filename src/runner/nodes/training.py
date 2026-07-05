@@ -22,25 +22,32 @@ class DecoderBackend(str, Enum):
     ISTFTNET = "istftnet"
 
 
+class AlphabetPreset(str, Enum):
+    IPA = "ipa"
+    ARPABET = "arpabet"
+    IPA_MULTI = "ipa-multi"
+    CUSTOM = "custom"
+
+
 DEFAULT_ALPHABET = "a b c d e f g h i j k l m n o p q r s t u v w x y z ɑ æ ə ɛ ɪ ʊ ʌ ɔ θ ð ʃ ʒ ŋ tʃ dʒ aɪ aʊ eɪ oʊ ɔɪ ɝ ɚ ˈ ˌ ː . , ? ! ' \" ( ) -"
 
 
-class TrainingDatasetInputSettings(StrictSettings):
-    dataset_id: str = Field(default="vox_studio_v3", title="Training dataset")
+class SelectTrainingDatasetSettings(StrictSettings):
+    dataset_id: str = Field(default="", title="Training dataset")
 
 
-class CheckpointAssetInputSettings(StrictSettings):
+class SelectCheckpointSettings(StrictSettings):
     checkpoint_id: str = Field(default="", title="Checkpoint")
 
 
-class OptionalTrainingAssetsInputSettings(StrictSettings):
-    f0_model: str = Field(default="jdc_f0.pth", title="F0 model")
-    asr_model: str = Field(default="asr_aligner.pth", title="ASR model")
-    plbert_model: str = Field(default="step_1M.t7", title="PL-BERT")
+class SelectTrainingAssetsSettings(StrictSettings):
+    f0_model: str = Field(default="", title="F0 model")
+    asr_model: str = Field(default="", title="ASR model")
+    plbert_model: str = Field(default="", title="PL-BERT")
 
 
-class PhonemeAlphabetInputSettings(StrictSettings):
-    preset: str = Field(default="ipa", title="Alphabet preset")
+class PhonemeAlphabetSettings(StrictSettings):
+    preset: AlphabetPreset = Field(default=AlphabetPreset.IPA, title="Alphabet preset")
     symbols: str = Field(default=DEFAULT_ALPHABET, title="Symbols")
 
 
@@ -50,15 +57,8 @@ class OodTextSet(StrictSettings):
     line_count: int
 
 
-def default_ood_sets() -> list[OodTextSet]:
-    return [
-        OodTextSet(id="ood_1", name="librispeech_eval.txt", line_count=512),
-        OodTextSet(id="ood_2", name="in_domain_prompts.txt", line_count=128),
-    ]
-
-
-class OodTextSetInputSettings(StrictSettings):
-    sets: list[OodTextSet] = Field(default_factory=default_ood_sets, title="Reference text sets")
+class SelectOodTextSetsSettings(StrictSettings):
+    sets: list[OodTextSet] = Field(default_factory=list, title="Reference text sets")
 
 
 class ListDatasetAudioIdsSettings(StrictSettings):
@@ -66,7 +66,7 @@ class ListDatasetAudioIdsSettings(StrictSettings):
 
 
 class StyleTtsFinetuneSettings(StrictSettings):
-    display_name: str = Field(default="vox_studio_v3", title="Display name")
+    display_name: str = Field(default="styletts_finetune", title="Display name")
     validation_samples: int = Field(default=32, title="Validation samples", ge=0, le=512)
     batch_size: int = Field(default=16, title="Batch size", ge=1, le=128)
     learning_rate: float = Field(default=1e-4, title="Learning rate", gt=0)
@@ -133,37 +133,39 @@ class MockTrainingInputNode(Node):
         return [{self.OUTPUT_FIELD: {"node_type": self.NODE_TYPE, "run": inputs["run"], "source": "mock"}} for inputs in batch]
 
 
-class TrainingDatasetInputNode(MockTrainingInputNode):
-    NODE_TYPE = "TrainingDatasetInput"
-    SETTINGS = TrainingDatasetInputSettings
-    OUTPUT_FIELD = "dataset"
-    OUTPUTS = {"dataset": Port("dataset", JSON)}
+class SelectTrainingDatasetNode(MockTrainingInputNode):
+    NODE_TYPE = "SelectTrainingDataset"
+    SETTINGS = SelectTrainingDatasetSettings
+    OUTPUT_FIELD = "dataset_ref"
+    OUTPUTS = {"dataset_ref": Port("dataset_ref", JSON)}
 
 
-class CheckpointAssetInputNode(MockTrainingInputNode):
-    NODE_TYPE = "CheckpointAssetInput"
-    SETTINGS = CheckpointAssetInputSettings
+class SelectCheckpointNode(MockTrainingInputNode):
+    NODE_TYPE = "SelectCheckpoint"
+    CATEGORY = "Assets / Inputs"
+    SETTINGS = SelectCheckpointSettings
     OUTPUT_FIELD = "checkpoint_ref"
     OUTPUTS = {"checkpoint_ref": Port("checkpoint_ref", JSON)}
 
 
-class OptionalTrainingAssetsInputNode(MockTrainingInputNode):
-    NODE_TYPE = "OptionalTrainingAssetsInput"
-    SETTINGS = OptionalTrainingAssetsInputSettings
+class SelectTrainingAssetsNode(MockTrainingInputNode):
+    NODE_TYPE = "SelectTrainingAssets"
+    SETTINGS = SelectTrainingAssetsSettings
     OUTPUT_FIELD = "asset_refs"
     OUTPUTS = {"asset_refs": Port("asset_refs", JSON)}
 
 
-class PhonemeAlphabetInputNode(MockTrainingInputNode):
-    NODE_TYPE = "PhonemeAlphabetInput"
-    SETTINGS = PhonemeAlphabetInputSettings
-    OUTPUT_FIELD = "alphabet_ref"
-    OUTPUTS = {"alphabet_ref": Port("alphabet_ref", JSON)}
+class PhonemeAlphabetNode(MockTrainingInputNode):
+    NODE_TYPE = "PhonemeAlphabet"
+    CATEGORY = "Text / Inputs"
+    SETTINGS = PhonemeAlphabetSettings
+    OUTPUT_FIELD = "phoneme_alphabet"
+    OUTPUTS = {"phoneme_alphabet": Port("phoneme_alphabet", JSON)}
 
 
-class OodTextSetInputNode(MockTrainingInputNode):
-    NODE_TYPE = "OodTextSetInput"
-    SETTINGS = OodTextSetInputSettings
+class SelectOodTextSetsNode(MockTrainingInputNode):
+    NODE_TYPE = "SelectOodTextSets"
+    SETTINGS = SelectOodTextSetsSettings
     OUTPUT_FIELD = "ood_text_set_refs"
     OUTPUTS = {"ood_text_set_refs": Port("ood_text_set_refs", JSON)}
 
@@ -172,17 +174,17 @@ class ListDatasetAudioIdsNode(Node):
     NODE_TYPE = "ListDatasetAudioIds"
     CATEGORY = "Training / DB"
     SETTINGS = ListDatasetAudioIdsSettings
-    INPUTS = {"dataset": Port("dataset", JSON)}
+    INPUTS = {"dataset_ref": Port("dataset_ref", JSON)}
     OUTPUTS = {"audio_file_ids": Port("audio_file_ids", JSON)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [{"audio_file_ids": {"source": inputs["dataset"], "include_virtual": self.settings.include_virtual, "ids": []}} for inputs in batch]
+        return [{"audio_file_ids": {"source": inputs["dataset_ref"], "include_virtual": self.settings.include_virtual, "ids": []}} for inputs in batch]
 
 
-class PrefetchCheckpointAssetNode(Node):
-    NODE_TYPE = "PrefetchCheckpointAsset"
-    CATEGORY = "Training / Assets"
+class PrefetchCheckpointNode(Node):
+    NODE_TYPE = "PrefetchCheckpoint"
+    CATEGORY = "Assets"
     INPUTS = {"checkpoint_ref": Port("checkpoint_ref", JSON)}
     OUTPUTS = {"checkpoint": Port("checkpoint", JSON)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
@@ -200,17 +202,6 @@ class PrefetchTrainingAssetsNode(Node):
 
     async def execute(self, batch, context):
         return [{"assets": {"source": inputs["asset_refs"], "cache": "mock"}} for inputs in batch]
-
-
-class FetchPhonemeAlphabetNode(Node):
-    NODE_TYPE = "FetchPhonemeAlphabet"
-    CATEGORY = "Training / DB"
-    INPUTS = {"alphabet_ref": Port("alphabet_ref", JSON)}
-    OUTPUTS = {"alphabet": Port("alphabet", JSON)}
-    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
-
-    async def execute(self, batch, context):
-        return [{"alphabet": inputs["alphabet_ref"]} for inputs in batch]
 
 
 class PrefetchOodTextSetsNode(Node):

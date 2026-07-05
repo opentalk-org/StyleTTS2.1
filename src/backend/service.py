@@ -24,7 +24,6 @@ from backend.websocket_hub import WebSocketHub
 from shared.db import database_session
 from shared.db.jobs import crud as jobs_crud
 
-
 IMMEDIATE_EVENT_KINDS = {"run_claimed", "run_started", "run_completed", "run_stopped", "run_failed", "node_failed", "node_lifecycle_failed", "node_loaded", "node_unloaded"}
 
 
@@ -97,6 +96,7 @@ class BackendManager:
             state=RunState.QUEUED,
             created_at=datetime.now(UTC),
             graph_request=command_request,
+            runner_id=command_request.runner_id,
         )
         self._runs[run_id] = record
         persist_job(record)
@@ -266,6 +266,8 @@ class BackendManager:
 
     async def _publish_node_lifecycle(self, run_id: str, node_id: str, command: str) -> RunStatus:
         record = self._record(run_id)
+        if record.state is not RunState.RUNNING:
+            raise RuntimeError(f"Run is not active: {run_id}")
         if record.runner_id is None:
             raise RuntimeError(f"Run has no claimed runner: {run_id}")
         self.logger.info(

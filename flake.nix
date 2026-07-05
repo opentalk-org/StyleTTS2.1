@@ -76,7 +76,7 @@
           };
           runnerLaunch = pkgs.writeShellApplication {
             name = "runflow-runner-launch";
-            runtimeInputs = [ runnerEnv pkgs.bash pkgs.coreutils pkgs.gnugrep ];
+            runtimeInputs = [ runnerEnv ];
             text = builtins.readFile ./nix/runner-launch.sh;
           };
         in
@@ -133,7 +133,7 @@
       };
       runnerLaunch = pkgs.writeShellApplication {
         name = "runflow-runner-launch";
-        runtimeInputs = [ runnerEnv pkgs.bash pkgs.coreutils pkgs.gnugrep runflowRunner ];
+        runtimeInputs = [ runnerEnv ];
         text = builtins.readFile ./nix/runner-launch.sh;
       };
 

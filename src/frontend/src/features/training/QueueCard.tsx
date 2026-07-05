@@ -1,6 +1,6 @@
 import { Icon } from "@/shared/icons";
 import { Card } from "@/shared/ui/Card";
-import { defaultWorkflowContext, graphPayload } from "../workflows/logic";
+import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../workflows/logic";
 import { useStartGraphMutation } from "../workflows/query";
 import type { WorkflowGraph, WorkflowNode, WorkflowSchema } from "../workflows/types";
 
@@ -18,10 +18,10 @@ export function QueueCard({
 }) {
   const start = useStartGraphMutation();
   const training = graph?.nodes.find((node) => node.type.endsWith("Training") || node.type === "StyleTtsFinetune");
-  const dataset = graph?.nodes.find((node) => node.type === "TrainingDatasetInput");
-  const checkpoint = graph?.nodes.find((node) => node.type === "CheckpointAssetInput");
-  const alphabet = graph?.nodes.find((node) => node.type === "PhonemeAlphabetInput");
-  const oodSets = graph?.nodes.find((node) => node.type === "OodTextSetInput");
+  const dataset = graph?.nodes.find((node) => node.type === "SelectTrainingDataset");
+  const checkpoint = graph?.nodes.find((node) => node.type === "SelectCheckpoint");
+  const alphabet = graph?.nodes.find((node) => node.type === "PhonemeAlphabet");
+  const oodSets = graph?.nodes.find((node) => node.type === "SelectOodTextSets");
   const alphabetSymbols = String(alphabet?.params.symbols ?? "");
   const alphabetValid = !alphabet || alphabetSymbols.trim().split(/\s+/).filter(Boolean).length === BASE_SYMBOLS;
 
@@ -35,7 +35,8 @@ export function QueueCard({
 
   const queue = () => {
     if (!schema || !graph) return;
-    start.mutate(graphPayload(graph, null, defaultWorkflowContext(schema.runtime_config_defaults)));
+    const config = runtimeConfigForGraph(schema, graph, schema.runtime_config_defaults);
+    start.mutate(graphPayload(graph, null, defaultWorkflowContext(config)));
   };
 
   return (

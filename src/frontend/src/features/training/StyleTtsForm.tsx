@@ -1,24 +1,18 @@
 import type { SchemaValues } from "@/shared/schema-form/types";
 import { Field } from "@/shared/ui/form/Field";
 import { Toggle } from "@/shared/ui/form/Toggle";
+import { useFileAssetsQuery } from "../assets/query";
+import { useCheckpointsQuery } from "../checkpoints/query";
+import { useDatasetsQuery } from "../datasets/query";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
 
 import { AlphabetEditor } from "./AlphabetEditor";
 import { AssetSlot } from "./AssetSlot";
 import { FormSection } from "./FormSection";
-import { FormSelect, opts } from "./FormSelect";
-import { trainingNode, type TrainingWorkflowSpec, updateNodeParams } from "./logic";
+import { FormSelect } from "./FormSelect";
+import { checkpointOptions, datasetOptions, fileAssetOptions, oodSetValues, trainingNode, type TrainingWorkflowSpec, updateNodeParams } from "./logic";
 import { OodEditor } from "./OodEditor";
 import { SettingField, SettingNumberInput, settingLabel } from "./SettingsField";
-
-const DATASETS = ["vox_studio_v3", "narration_set", "podcast_clean", "librispeech_360"];
-
-const CHECKPOINTS = opts([
-  { value: "", label: "— select base checkpoint —" },
-  "styletts2_libritts.pth",
-  "styletts2_ljspeech.pth",
-  "vox_studio_v2_ep50.pth",
-]);
 
 const TOGGLE_ROWS = [
   { key: "multispeaker", sub: "Per-speaker style encoder" },
@@ -38,6 +32,12 @@ export function StyleTtsForm({
   spec: TrainingWorkflowSpec;
   onChange: (graph: WorkflowGraph) => void;
 }) {
+  const datasets = useDatasetsQuery();
+  const checkpoints = useCheckpointsQuery();
+  const f0Assets = useFileAssetsQuery("f0");
+  const asrAssets = useFileAssetsQuery("asr");
+  const plbertAssets = useFileAssetsQuery("plbert");
+  const oodAssets = useFileAssetsQuery("ood_text");
   const training = trainingNode(graph, spec.ids.training);
   const dataset = trainingNode(graph, spec.ids.dataset);
   const checkpoint = trainingNode(graph, spec.ids.checkpoint);
@@ -59,10 +59,10 @@ export function StyleTtsForm({
           <SettingField schema={settingsSchema} values={values} name="display_name" onChange={(params) => updateParams(training.id, params)} />
           <Field label="Training dataset">
             <FormSelect
-              defaultValue="vox_studio_v3"
+              defaultValue=""
               value={String(dataset.params.dataset_id)}
               onChange={(dataset_id) => updateParams(dataset.id, { ...dataset.params, dataset_id })}
-              options={opts(DATASETS)}
+              options={datasetOptions(datasets.data ?? [])}
             />
           </Field>
         </div>
@@ -74,7 +74,7 @@ export function StyleTtsForm({
               defaultValue=""
               value={String(checkpoint.params.checkpoint_id)}
               onChange={(checkpoint_id) => updateParams(checkpoint.id, { ...checkpoint.params, checkpoint_id })}
-              options={CHECKPOINTS}
+              options={checkpointOptions(checkpoints.data ?? [], "styletts2", "— select base checkpoint —")}
             />
           </Field>
         </div>
@@ -82,9 +82,24 @@ export function StyleTtsForm({
 
       <FormSection title="Asset slots" tag="Optional pretrained">
         <div className="grid grid-cols-3 gap-3.5">
-          <AssetSlot label="F0 model" file={String(assets.params.f0_model)} />
-          <AssetSlot label="ASR model" file={String(assets.params.asr_model)} />
-          <AssetSlot label="PL-BERT" file={String(assets.params.plbert_model)} />
+          <AssetSlot
+            label="F0 model"
+            value={String(assets.params.f0_model)}
+            onChange={(f0_model) => updateParams(assets.id, { ...assets.params, f0_model })}
+            options={fileAssetOptions(f0Assets.data ?? [], "— select F0 file —")}
+          />
+          <AssetSlot
+            label="ASR model"
+            value={String(assets.params.asr_model)}
+            onChange={(asr_model) => updateParams(assets.id, { ...assets.params, asr_model })}
+            options={fileAssetOptions(asrAssets.data ?? [], "— select ASR file —")}
+          />
+          <AssetSlot
+            label="PL-BERT"
+            value={String(assets.params.plbert_model)}
+            onChange={(plbert_model) => updateParams(assets.id, { ...assets.params, plbert_model })}
+            options={fileAssetOptions(plbertAssets.data ?? [], "— select PL-BERT file —")}
+          />
         </div>
       </FormSection>
 
@@ -142,7 +157,11 @@ export function StyleTtsForm({
         </div>
       </FormSection>
 
-      <OodEditor values={oodSets.params} onChange={(params) => updateParams(oodSets.id, params)} />
+      <OodEditor
+        values={oodSets.params}
+        availableSets={oodSetValues(oodAssets.data ?? [])}
+        onChange={(params) => updateParams(oodSets.id, params)}
+      />
     </>
   );
 }

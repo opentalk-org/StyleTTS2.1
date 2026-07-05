@@ -1,13 +1,14 @@
+import type { SchemaValues } from "@/shared/schema-form/types";
 import { Field } from "@/shared/ui/form/Field";
+import { useCheckpointsQuery } from "../checkpoints/query";
+import { useDatasetsQuery } from "../datasets/query";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
 
 import { AlphabetEditor } from "./AlphabetEditor";
 import { FormSection } from "./FormSection";
-import { FormSelect, opts } from "./FormSelect";
-import { trainingNode, type TrainingWorkflowSpec, updateNodeParams } from "./logic";
+import { FormSelect } from "./FormSelect";
+import { checkpointOptions, datasetOptions, trainingNode, type TrainingWorkflowSpec, updateNodeParams } from "./logic";
 import { SettingField } from "./SettingsField";
-
-const DATASETS = ["vox_studio_v3", "narration_set", "podcast_clean", "librispeech_360"];
 
 /** Compact finetune form for the F0 pitch extractor and ASR aligner models. */
 export function SmallModelForm({
@@ -23,6 +24,8 @@ export function SmallModelForm({
   spec: TrainingWorkflowSpec;
   onChange: (graph: WorkflowGraph) => void;
 }) {
+  const datasets = useDatasetsQuery();
+  const checkpoints = useCheckpointsQuery();
   const isAsr = variant === "asr";
   const training = trainingNode(graph, spec.ids.training);
   const dataset = trainingNode(graph, spec.ids.dataset);
@@ -32,11 +35,8 @@ export function SmallModelForm({
   if (!trainingInfo) throw new Error(`Training node is not registered: ${training.type}`);
   const settingsSchema = trainingInfo.settings;
   const values = training.params;
-  const updateParams = (nodeId: string, params: typeof training.params) => onChange(updateNodeParams(graph, nodeId, params));
-  const pretrained = opts([
-    { value: "", label: "— train from scratch —" },
-    isAsr ? "asr_base.pth" : "f0_base.pth",
-  ]);
+  const updateParams = (nodeId: string, params: SchemaValues) => onChange(updateNodeParams(graph, nodeId, params));
+  const checkpointType = isAsr ? "asr" : "f0";
 
   return (
     <>
@@ -48,10 +48,10 @@ export function SmallModelForm({
           <SettingField schema={settingsSchema} values={values} name="display_name" onChange={(params) => updateParams(training.id, params)} />
           <Field label="Training dataset">
             <FormSelect
-              defaultValue="vox_studio_v3"
+              defaultValue=""
               value={String(dataset.params.dataset_id)}
               onChange={(dataset_id) => updateParams(dataset.id, { ...dataset.params, dataset_id })}
-              options={opts(DATASETS)}
+              options={datasetOptions(datasets.data ?? [])}
             />
           </Field>
         </div>
@@ -62,7 +62,7 @@ export function SmallModelForm({
               defaultValue=""
               value={String(checkpoint.params.checkpoint_id)}
               onChange={(checkpoint_id) => updateParams(checkpoint.id, { ...checkpoint.params, checkpoint_id })}
-              options={pretrained}
+              options={checkpointOptions(checkpoints.data ?? [], checkpointType, "— train from scratch —")}
             />
           </Field>
           <SettingField schema={settingsSchema} values={values} name="validation_samples" onChange={(params) => updateParams(training.id, params)} />

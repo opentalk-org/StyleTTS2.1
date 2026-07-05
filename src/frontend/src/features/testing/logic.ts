@@ -1,37 +1,225 @@
-import { rng } from "@/mock/constants";
-import type { Checkpoint } from "@/mock/types";
+import { resolveSchemaRef } from "@/shared/schema-form/logic";
+import type { JsonSchema, SchemaValues } from "@/shared/schema-form/types";
 import type { Option } from "@/shared/ui/Select";
 
-const IPA_POOL =
-  "ə t n s ɪ l ɹ k d m ɛ oʊ i z w æ aɪ eɪ ʃ θ ð v f p b ɡ".split(" ");
+import type { AudioFile } from "../audio/api";
+import type { Checkpoint } from "../checkpoints/api";
+import type { WorkflowGraph, WorkflowNode, WorkflowSchema } from "../workflows/types";
+import type { TestingWorkflowSpec } from "./workflows";
 
-/** Mock grapheme→IPA: deterministic per word, plausible-looking phoneme string. */
-export function phonemize(text: string): string {
+export { TESTING_OPTIONS, TESTING_WORKFLOWS, type TestingMode, type TestingWorkflowSpec } from "./workflows";
+
+export type SingleConfig = {
+  ckpt: string;
+  weights: string;
+  text: string;
+  lang: string;
+  steps: number;
+  emb: number;
+  styleRef: string;
+  styleMix: number;
+  prosodyMix: number;
+  alphabetSymbols: string;
+};
+
+export type SweepConfig = {
+  ckpt: string;
+  text: string;
+  voices: string[];
+  n: number;
+  alphabetSymbols: string;
+};
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  "en-us": "English (US)",
+  "en-gb": "English (UK)",
+  es: "Spanish",
+  de: "German",
+};
+
+const ALPHABET_LABELS: Record<string, string> = {
+  ipa: "IPA · default",
+  arpabet: "ARPAbet",
+  "ipa-multi": "IPA · multilingual",
+  custom: "Custom",
+};
+
+export function createTestingGraph(schema: WorkflowSchema, spec: TestingWorkflowSpec): WorkflowGraph {
+  assertTestingNodes(schema, spec);
+  return {
+    nodes: spec.nodes.map((node) => {
+      const info = schema.nodes[node.type];
+      if (!info) throw new Error(`Testing node is not registered: ${node.type}`);
+      return {
+        id: node.id,
+        type: node.type,
+        x: node.x,
+        y: node.y,
+        params: structuredClone(info.settings_defaults),
+        runtime: structuredClone(info.runtime_defaults),
+      };
+    }),
+    edges: spec.edges,
+  };
+}
+
+export function singleConfigFromGraph(graph: WorkflowGraph, spec: TestingWorkflowSpec): SingleConfig {
+  const prompt = testingNode(graph, spec.ids.prompt);
+  const checkpoint = testingNode(graph, spec.ids.checkpoint);
+  const alphabet = testingNode(graph, spec.ids.alphabet);
+  const styleRef = testingNode(graph, requiredNodeId(spec.ids.styleRef, "single style reference"));
+  const synthesis = testingNode(graph, requiredNodeId(spec.ids.synthesis, "single synthesis"));
+  return {
+    ckpt: String(checkpoint.params.checkpoint_id),
+    weights: String(synthesis.params.weights_file),
+    text: String(prompt.params.text),
+    lang: String(prompt.params.language),
+    steps: Number(synthesis.params.diffusion_steps),
+    emb: Number(synthesis.params.embedding_scale),
+    styleRef: String(styleRef.params.reference_id),
+    styleMix: Number(styleRef.params.style_mix),
+    prosodyMix: Number(styleRef.params.prosody_mix),
+    alphabetSymbols: String(alphabet.params.symbols),
+  };
+}
+
+export function sweepConfigFromGraph(graph: WorkflowGraph, spec: TestingWorkflowSpec): SweepConfig {
+  const prompt = testingNode(graph, spec.ids.prompt);
+  const checkpoint = testingNode(graph, spec.ids.checkpoint);
+  const alphabet = testingNode(graph, spec.ids.alphabet);
+  const styleSweep = testingNode(graph, requiredNodeId(spec.ids.styleSweep, "sweep style references"));
+  return {
+    ckpt: String(checkpoint.params.checkpoint_id),
+    text: String(prompt.params.text),
+    voices: stringArrayParam(styleSweep.params.voices),
+    n: Number(styleSweep.params.samples_per_voice),
+    alphabetSymbols: String(alphabet.params.symbols),
+  };
+}
+
+export function testingNode(graph: WorkflowGraph, nodeId: string): WorkflowNode {
+  const node = graph.nodes.find((item) => item.id === nodeId);
+  if (!node) throw new Error(`Testing graph is missing node: ${nodeId}`);
+  return node;
+}
+
+export function updateNodeParams(graph: WorkflowGraph, nodeId: string, params: SchemaValues): WorkflowGraph {
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => (node.id === nodeId ? { ...node, params } : node)),
+  };
+}
+
+export function enumOptions(schema: WorkflowSchema, node: WorkflowNode, name: string): Option[] {
+  const labels = labelsForSetting(name);
+  const info = schema.nodes[node.type];
+  if (!info) throw new Error(`Testing node is not registered: ${node.type}`);
+  const prop = settingProp(schema, node, name);
+  const resolved = resolveSchemaRef(prop, info.settings);
+  if (!resolved.enum) throw new Error(`Testing setting is not an enum: ${node.type}.${name}`);
+  return resolved.enum.map((value) => {
+    const label = labels[value];
+    if (!label) throw new Error(`Testing enum option has no label: ${node.type}.${name}.${value}`);
+    return { value, label };
+  });
+}
+
+export function numericSetting(schema: WorkflowSchema, node: WorkflowNode, name: string): { min: number; max: number } {
+  const prop = settingProp(schema, node, name);
+  if (typeof prop.minimum !== "number" || typeof prop.maximum !== "number") {
+    throw new Error(`Testing numeric setting is missing bounds: ${node.type}.${name}`);
+  }
+  return { min: prop.minimum, max: prop.maximum };
+}
+
+export function checkpointOptions(checkpoints: Checkpoint[]): Option[] {
+  const rows = checkpoints.filter((checkpoint) => checkpoint.type_ === "styletts2");
+  return [
+    { value: "", label: rows.length ? "— select checkpoint —" : "No StyleTTS2 checkpoints available" },
+    ...rows.map((checkpoint) => ({ value: checkpoint.id, label: checkpoint.name })),
+  ];
+}
+
+export function styleReferenceOptions(files: AudioFile[]): Option[] {
+  return [
+    { value: "", label: files.length ? "— select reference audio —" : "No audio files available" },
+    ...files.map((file) => ({
+      value: file.id,
+      label: file.speaker ? `${file.name} (${file.speaker})` : file.name,
+    })),
+  ];
+}
+
+export function checkpointWeightOptions(checkpoint: Checkpoint | undefined): Option[] {
+  const weights = weightFiles(checkpoint);
+  return [
+    { value: "", label: weights.length ? "Checkpoint default" : "No weights listed in checkpoint metadata" },
+    ...weights.map((weight) => ({ value: weight, label: weight })),
+  ];
+}
+
+export function phonemize(text: string, symbols: string): string {
+  const pool = symbols.trim().split(/\s+/).filter(Boolean);
+  if (pool.length === 0) throw new Error("Phoneme alphabet is empty");
   return text
     .trim()
     .split(/\s+/)
-    .map((w, wi) => {
-      const len = Math.max(2, Math.round(w.replace(/[^a-z]/gi, "").length * 0.85));
-      let o = "";
-      for (let c = 0; c < len; c++) {
-        o += IPA_POOL[(w.charCodeAt(c % w.length) + c * 3 + wi) % IPA_POOL.length];
-      }
-      return o;
-    })
+    .filter(Boolean)
+    .map((word, wordIndex) => phonemizeWord(word, wordIndex, pool))
     .join(" ");
 }
 
-/** Deterministic synthesis duration in seconds, seeded by a result id. */
 export function synthDuration(id: string, salt = 0): number {
-  return 2.2 + rng(id.length + salt) * 4;
+  return 2.2 + deterministicUnit(id.length + salt) * 4;
 }
 
-/** Checkpoint dropdown options, StyleTTS2 only, with an empty prompt entry. */
-export function checkpointOptions(checkpoints: Checkpoint[]): Option[] {
-  return [
-    { value: "", label: "— select checkpoint —" },
-    ...checkpoints
-      .filter((c) => c.type === "styletts2")
-      .map((c) => ({ value: c.id, label: c.name })),
-  ];
+export function assertTestingNodes(schema: WorkflowSchema, spec: TestingWorkflowSpec) {
+  const missing = spec.nodes.map((node) => node.type).filter((type) => !schema.nodes[type]);
+  if (missing.length > 0) {
+    throw new Error(`Testing workflow nodes are not registered: ${missing.join(", ")}`);
+  }
+}
+
+function phonemizeWord(word: string, wordIndex: number, pool: string[]): string {
+  const length = Math.max(2, Math.round(word.replace(/[^a-z]/gi, "").length * 0.85));
+  let output = "";
+  for (let index = 0; index < length; index++) {
+    output += pool[(word.charCodeAt(index % word.length) + index * 3 + wordIndex) % pool.length];
+  }
+  return output;
+}
+
+function settingProp(schema: WorkflowSchema, node: WorkflowNode, name: string): JsonSchema {
+  const info = schema.nodes[node.type];
+  if (!info) throw new Error(`Testing node is not registered: ${node.type}`);
+  const prop = info.settings.properties?.[name];
+  if (!prop) throw new Error(`Testing setting is not declared by node schema: ${node.type}.${name}`);
+  return prop;
+}
+
+function labelsForSetting(name: string): Record<string, string> {
+  if (name === "language") return LANGUAGE_LABELS;
+  if (name === "preset") return ALPHABET_LABELS;
+  throw new Error(`Testing setting labels are not configured: ${name}`);
+}
+
+function requiredNodeId(nodeId: string | undefined, label: string): string {
+  if (!nodeId) throw new Error(`Testing workflow is missing ${label} node id`);
+  return nodeId;
+}
+
+function stringArrayParam(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new Error("Testing sweep voices must be an array");
+  return value.map((item) => String(item));
+}
+
+function weightFiles(checkpoint: Checkpoint | undefined): string[] {
+  if (!checkpoint) return [];
+  const value = checkpoint.metadata.weights_files;
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item));
+}
+
+function deterministicUnit(seed: number): number {
+  return Math.sin(seed) * 10000 % 1;
 }

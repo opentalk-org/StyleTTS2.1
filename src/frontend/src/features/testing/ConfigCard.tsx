@@ -1,26 +1,14 @@
 import { useCheckpoints } from "@/features/checkpoints/store";
 import { seedStyleRefs } from "@/mock/data";
+import type { SchemaValues } from "@/shared/schema-form/types";
 import { showToast } from "@/shared/feedback/Toast";
 import { Card } from "@/shared/ui/Card";
 import { Field } from "@/shared/ui/form/Field";
 import { Slider } from "@/shared/ui/form/Slider";
 import { Select, type Option } from "@/shared/ui/Select";
 import { Textarea } from "@/shared/ui/Textarea";
-import { checkpointOptions } from "./logic";
-import { useTesting } from "./store";
-
-const LANGS: Option[] = [
-  { value: "en-us", label: "English (US)" },
-  { value: "en-gb", label: "English (UK)" },
-  { value: "es", label: "Spanish" },
-  { value: "de", label: "German" },
-];
-
-const WEIGHTS: Option[] = [
-  { value: "best.pth", label: "best.pth" },
-  { value: "ep50.pth", label: "epoch_50.pth" },
-  { value: "ep35.pth", label: "epoch_35.pth" },
-];
+import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
+import { checkpointOptions, enumOptions, numericSetting, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
 
 const STYLE_REFS: Option[] = [
   ...seedStyleRefs().map((r) => ({ value: r.id, label: `${r.name}  (${r.voice})` })),
@@ -45,17 +33,38 @@ function FieldGrid({ children }: { children: React.ReactNode }) {
 }
 
 /** Single-synthesis config: Text & inference / Model / Style reference. */
-export function ConfigCard() {
+export function ConfigCard({
+  schema,
+  graph,
+  spec,
+  onChange,
+}: {
+  schema: WorkflowSchema;
+  graph: WorkflowGraph;
+  spec: TestingWorkflowSpec;
+  onChange: (graph: WorkflowGraph) => void;
+}) {
   const checkpoints = useCheckpoints((s) => s.checkpoints);
-  const c = useTesting((s) => s.single);
-  const setSingle = useTesting((s) => s.setSingle);
+  if (!spec.ids.styleRef || !spec.ids.synthesis) {
+    throw new Error("Single testing workflow ids are incomplete");
+  }
+  const prompt = testingNode(graph, spec.ids.prompt);
+  const alphabet = testingNode(graph, spec.ids.alphabet);
+  const checkpoint = testingNode(graph, spec.ids.checkpoint);
+  const styleRef = testingNode(graph, spec.ids.styleRef);
+  const synthesis = testingNode(graph, spec.ids.synthesis);
+  const steps = numericSetting(schema, synthesis, "diffusion_steps");
+  const emb = numericSetting(schema, synthesis, "embedding_scale");
+  const styleMix = numericSetting(schema, styleRef, "style_mix");
+  const prosodyMix = numericSetting(schema, styleRef, "prosody_mix");
+  const updateParams = (nodeId: string, params: SchemaValues) => onChange(updateNodeParams(graph, nodeId, params));
 
   const onStyleRef = (v: string) => {
     if (v === "upload") {
       showToast("Choose a .wav style reference");
       return;
     }
-    setSingle("styleRef", v);
+    updateParams(styleRef.id, { ...styleRef.params, reference_id: v });
   };
 
   return (
@@ -63,26 +72,54 @@ export function ConfigCard() {
       <div className="flex flex-col gap-2.5">
         <GroupTitle>Text &amp; inference</GroupTitle>
         <Field label="Text">
-          <Textarea value={c.text} onChange={(e) => setSingle("text", e.target.value)} />
+          <Textarea
+            value={String(prompt.params.text)}
+            onChange={(e) => updateParams(prompt.id, { ...prompt.params, text: e.target.value })}
+          />
         </Field>
         <FieldGrid>
           <Field label="Language">
-            <Select value={c.lang} onChange={(v) => setSingle("lang", v)} options={LANGS} />
+            <Select
+              value={String(prompt.params.language)}
+              onChange={(language) => updateParams(prompt.id, { ...prompt.params, language })}
+              options={enumOptions(schema, prompt, "language")}
+            />
+          </Field>
+          <Field label="Phoneme alphabet">
+            <Select
+              value={String(alphabet.params.preset)}
+              onChange={(preset) => updateParams(alphabet.id, { ...alphabet.params, preset })}
+              options={enumOptions(schema, alphabet, "preset")}
+            />
           </Field>
           <Field label="Diffusion steps">
-            <Slider value={c.steps} onChange={(v) => setSingle("steps", v)} min={1} max={20} step={1} />
+            <Slider
+              value={Number(synthesis.params.diffusion_steps)}
+              onChange={(diffusion_steps) => updateParams(synthesis.id, { ...synthesis.params, diffusion_steps })}
+              min={steps.min}
+              max={steps.max}
+              step={1}
+            />
           </Field>
           <Field label="Embedding scale">
             <Slider
-              value={c.emb}
-              onChange={(v) => setSingle("emb", v)}
-              min={0.5}
-              max={3}
+              value={Number(synthesis.params.embedding_scale)}
+              onChange={(embedding_scale) => updateParams(synthesis.id, { ...synthesis.params, embedding_scale })}
+              min={emb.min}
+              max={emb.max}
               step={0.1}
               format={(v) => v.toFixed(1)}
             />
           </Field>
         </FieldGrid>
+        <Field label="Alphabet symbols">
+          <Textarea
+            value={String(alphabet.params.symbols)}
+            onChange={(e) => updateParams(alphabet.id, { ...alphabet.params, symbols: e.target.value })}
+            spellCheck={false}
+            className="min-h-[58px] text-xs font-mono leading-relaxed"
+          />
+        </Field>
       </div>
 
       <div className="h-px bg-line" />
@@ -92,13 +129,17 @@ export function ConfigCard() {
         <FieldGrid>
           <Field label="Checkpoint">
             <Select
-              value={c.ckpt}
-              onChange={(v) => setSingle("ckpt", v)}
+              value={String(checkpoint.params.checkpoint_id)}
+              onChange={(checkpoint_id) => updateParams(checkpoint.id, { ...checkpoint.params, checkpoint_id })}
               options={checkpointOptions(checkpoints)}
             />
           </Field>
           <Field label="Weights file">
-            <Select value={c.weights} onChange={(v) => setSingle("weights", v)} options={WEIGHTS} />
+            <Select
+              value={String(synthesis.params.weights_file)}
+              onChange={(weights_file) => updateParams(synthesis.id, { ...synthesis.params, weights_file })}
+              options={enumOptions(schema, synthesis, "weights_file")}
+            />
           </Field>
         </FieldGrid>
       </div>
@@ -109,24 +150,24 @@ export function ConfigCard() {
         <GroupTitle>Style reference</GroupTitle>
         <FieldGrid>
           <Field label="Reference">
-            <Select value={c.styleRef} onChange={onStyleRef} options={STYLE_REFS} />
+            <Select value={String(styleRef.params.reference_id)} onChange={onStyleRef} options={STYLE_REFS} />
           </Field>
           <Field label="Style mix" hint="Timbre adherence to reference.">
             <Slider
-              value={c.styleMix}
-              onChange={(v) => setSingle("styleMix", v)}
-              min={0}
-              max={1}
+              value={Number(styleRef.params.style_mix)}
+              onChange={(value) => updateParams(styleRef.id, { ...styleRef.params, style_mix: value })}
+              min={styleMix.min}
+              max={styleMix.max}
               step={0.05}
               format={(v) => v.toFixed(2)}
             />
           </Field>
           <Field label="Prosody mix" hint="Rhythm & intonation from reference.">
             <Slider
-              value={c.prosodyMix}
-              onChange={(v) => setSingle("prosodyMix", v)}
-              min={0}
-              max={1}
+              value={Number(styleRef.params.prosody_mix)}
+              onChange={(value) => updateParams(styleRef.id, { ...styleRef.params, prosody_mix: value })}
+              min={prosodyMix.min}
+              max={prosodyMix.max}
               step={0.05}
               format={(v) => v.toFixed(2)}
             />

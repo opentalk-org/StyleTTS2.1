@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 import type { SchemaValues } from "@/shared/schema-form/types";
-import { connect, deleteNodes, moveNodes, renameNode, zoomViewport } from "./logic";
+import { connect, deleteNodes, moveNodes, renameNode, runtimeConfigForGraph, zoomViewport } from "./logic";
 import type { PortAnchor, PortAnchorKey, RunSnapshot, RunStatus, Viewport, WireDraft, WorkflowEdge, WorkflowGraph, WorkflowSchema } from "./types";
 
 type WorkflowStore = {
@@ -55,8 +55,17 @@ export const useWorkflowStore = create<WorkflowStore>((set) => ({
   runs: [],
   snapshots: {},
   portAnchors: {},
-  setSchema: (schema) => set({ schema, runtimeConfig: structuredClone(schema.runtime_config_defaults) as SchemaValues }),
-  setGraph: (graph) => set({ graph, selectedNodeIds: [], wireDraft: null, portAnchors: {} }),
+  setSchema: (schema) => set((state) => {
+    const defaults = structuredClone(schema.runtime_config_defaults) as SchemaValues;
+    return { schema, runtimeConfig: runtimeConfigForGraph(schema, state.graph, defaults) };
+  }),
+  setGraph: (graph) => set((state) => ({
+    graph,
+    selectedNodeIds: [],
+    wireDraft: null,
+    portAnchors: {},
+    runtimeConfig: state.schema ? runtimeConfigForGraph(state.schema, graph, state.runtimeConfig) : state.runtimeConfig,
+  })),
   selectNode: (nodeId, additive = false) => set((state) => {
     if (nodeId === null) return { selectedNodeIds: [] };
     if (!additive) return { selectedNodeIds: [nodeId] };
@@ -66,7 +75,14 @@ export const useWorkflowStore = create<WorkflowStore>((set) => ({
     return { selectedNodeIds: [...selected] };
   }),
   selectNodes: (selectedNodeIds) => set({ selectedNodeIds }),
-  deleteSelection: () => set((state) => ({ graph: deleteNodes(state.graph, state.selectedNodeIds), selectedNodeIds: [] })),
+  deleteSelection: () => set((state) => {
+    const graph = deleteNodes(state.graph, state.selectedNodeIds);
+    return {
+      graph,
+      selectedNodeIds: [],
+      runtimeConfig: state.schema ? runtimeConfigForGraph(state.schema, graph, state.runtimeConfig) : state.runtimeConfig,
+    };
+  }),
   moveSelection: (dx, dy) => set((state) => ({ graph: moveNodes(state.graph, state.selectedNodeIds, dx, dy) })),
   renameSelectedNode: (nextId) => set((state) => {
     const previous = state.selectedNodeIds[0];

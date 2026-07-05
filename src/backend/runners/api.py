@@ -33,7 +33,6 @@ def runner_response(row: RunnerRead) -> RunnerStatusRead:
         hostname=heartbeat.hostname if heartbeat is not None else row.hostname,
         port=heartbeat.port if heartbeat is not None else row.port,
         gpu_index=heartbeat.gpu_index if heartbeat is not None else row.gpu_index,
-        resources=heartbeat.resources if heartbeat is not None else row.resources,
         online=online,
         stale=heartbeat is not None and not online,
         busy=bool(active_run_ids),

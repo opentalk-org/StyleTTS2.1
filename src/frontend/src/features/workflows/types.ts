@@ -72,6 +72,7 @@ export type WorkflowLaunchSource =
 
 export type WorkflowPayload = WorkflowGraph & {
   run_id: string | null;
+  runner_id: string | null;
   context: WorkflowRunContext;
 };
 

@@ -33,3 +33,14 @@ async def get_job_graph(run_id: str) -> InlineGraphRunRequest:
             return InlineGraphRunRequest.model_validate(item.graph_request)
     except KeyError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
+@router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_job(run_id: str) -> None:
+    try:
+        with database_session() as session:
+            jobs_crud.delete_job(session, run_id)
+    except KeyError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except jobs_crud.ActiveJobError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error

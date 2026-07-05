@@ -22,8 +22,10 @@ export function WorkflowInspector() {
   const loadNode = useLoadNodeMutation();
   const unloadNode = useUnloadNodeMutation();
   const [log, setLog] = useState<{ content: string; truncated: boolean; error: string | null } | null>(null);
-  const { schema, graph, selectedNodeIds, activeRunId, snapshots, inspectorOpen, inspectorTab, setInspectorTab, closeInspector, setGraph, deleteSelection, renameSelectedNode } = useWorkflowStore();
+  const { schema, graph, selectedNodeIds, activeRunId, runs, snapshots, inspectorOpen, inspectorTab, setInspectorTab, closeInspector, setGraph, deleteSelection, renameSelectedNode } = useWorkflowStore();
   const node = graph.nodes.find((item) => item.id === selectedNodeIds[0]);
+  const activeRun = activeRunId ? runs.find((run) => run.run_id === activeRunId) : undefined;
+  const lifecycleActive = activeRun?.state === "running";
   useEffect(() => {
     setLog(null);
     if (!activeRunId || !node || inspectorTab !== "logs") return;
@@ -71,8 +73,8 @@ export function WorkflowInspector() {
       {inspectorTab === "runtime" ? (
         <div className="grid gap-3">
           <div className="flex gap-2">
-            <Button disabled={!activeRunId || snapshot?.loaded === true} onClick={() => activeRunId && loadNode.mutate({ runId: activeRunId, nodeId: node.id })}>Load</Button>
-            <Button disabled={!activeRunId || snapshot?.loaded !== true} onClick={() => activeRunId && unloadNode.mutate({ runId: activeRunId, nodeId: node.id })}>Unload</Button>
+            <Button disabled={!activeRunId || !lifecycleActive || snapshot?.loaded === true} onClick={() => activeRunId && loadNode.mutate({ runId: activeRunId, nodeId: node.id })}>Load</Button>
+            <Button disabled={!activeRunId || !lifecycleActive || snapshot?.loaded !== true} onClick={() => activeRunId && unloadNode.mutate({ runId: activeRunId, nodeId: node.id })}>Unload</Button>
           </div>
           <SchemaForm schema={info.runtime} values={node.runtime} onChange={(runtime) => update({ runtime })} />
         </div>

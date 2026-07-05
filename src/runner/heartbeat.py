@@ -21,7 +21,6 @@ class RunnerHeartbeatPublisher:
         self.port = int(os.environ["RUNFLOW_RUNNER_PORT"]) if "RUNFLOW_RUNNER_PORT" in os.environ else 0
         gpu_index = os.environ["RUNFLOW_RUNNER_GPU_INDEX"] if "RUNFLOW_RUNNER_GPU_INDEX" in os.environ else None
         self.gpu_index = int(gpu_index) if gpu_index is not None else None
-        self.resources = {"accelerator": 1.0, "vram_gb": float(os.environ["RUNFLOW_RUNNER_VRAM_GB"] if "RUNFLOW_RUNNER_VRAM_GB" in os.environ else "8")}
 
     def register_runner(self) -> None:
         payload = RunnerCreate(
@@ -29,7 +28,6 @@ class RunnerHeartbeatPublisher:
             hostname=self.hostname,
             port=self.port,
             gpu_index=self.gpu_index,
-            resources=self.resources,
         )
         with database_session() as session:
             runner_crud.upsert_runner(session, payload)
@@ -46,7 +44,6 @@ class RunnerHeartbeatPublisher:
             process_id=os.getpid(),
             port=self.port,
             gpu_index=self.gpu_index,
-            resources=self.resources,
             active_run_ids=active_run_ids,
             created_at=datetime.now(UTC),
         )

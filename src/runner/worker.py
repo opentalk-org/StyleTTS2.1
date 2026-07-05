@@ -16,7 +16,11 @@ from runflow.runtime.scheduler import WindowedScheduler
 from runner.graphs import build_inline_graph
 from runner.heartbeat import RunnerHeartbeatPublisher
 from runner.node_logs import NodeLogManager, publish_node_log_response
-from shared.jetstream import COMMAND_STREAM, DEFAULT_NATS_URL, EVENT_STREAM, START_COMMAND_SUBJECT, RUNNER_COMMAND_DURABLE, connect, decode_json, encode_model, ensure_streams, event_subject, node_command_subject, node_log_command_subject, stop_command_subject
+from shared.jetstream import (
+    COMMAND_STREAM, DEFAULT_NATS_URL, EVENT_STREAM, RUNNER_COMMAND_DURABLE, START_COMMAND_SUBJECT,
+    connect, decode_json, encode_model, ensure_streams, event_subject,
+    node_command_subject, node_log_command_subject, start_command_subject, stop_command_subject,
+)
 from shared.logging_setup import get_logger
 from shared.schemas import InlineGraphRunRequest, NodeLifecycleCommand, RunEventResponse, RunnerEventMessage, StartGraphRunCommand, StopRunCommand
 
@@ -43,17 +47,18 @@ class RunnerWorker:
         self.logger.info("runner subscriptions starting")
         await asyncio.gather(
             heartbeat.run(lambda: list(self._active_runs.keys())),
-            self._consume_starts(),
+            self._consume_starts(START_COMMAND_SUBJECT, RUNNER_COMMAND_DURABLE),
+            self._consume_starts(start_command_subject(self.runner_id), f"{self.runner_id}-targeted-starts"),
             self._consume_commands(stop_command_subject(self.runner_id), f"{self.runner_id}-targeted-stops", self._handle_stop),
             self._consume_commands(node_command_subject(self.runner_id), f"{self.runner_id}-node-lifecycle", self._handle_node_lifecycle),
             self._consume_commands(node_log_command_subject(self.runner_id), f"{self.runner_id}-node-logs", self._handle_node_log),
         )
 
-    async def _consume_starts(self) -> None:
-        self.logger.info("consume starts subject=%s", START_COMMAND_SUBJECT)
+    async def _consume_starts(self, subject: str, durable: str) -> None:
+        self.logger.info("consume starts subject=%s durable=%s", subject, durable)
         subscription = await self._js().pull_subscribe(
-            START_COMMAND_SUBJECT,
-            durable=RUNNER_COMMAND_DURABLE,
+            subject,
+            durable=durable,
             stream=COMMAND_STREAM,
             config=ConsumerConfig(ack_wait=30),
         )

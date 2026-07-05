@@ -4,22 +4,25 @@ import { useNav } from "@/app/navStore";
 import { fetchWorkflowSchema } from "@/features/workflows/api";
 import { useWorkflowStore } from "@/features/workflows/store";
 import { Pager } from "@/shared/data/Pager";
+import { askConfirm } from "@/shared/feedback/ConfirmDialog";
 import { fmtAgo } from "@/shared/format";
 import { Button } from "@/shared/ui/Button";
 import { Card } from "@/shared/ui/Card";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { Select } from "@/shared/ui/Select";
 import { fetchJobGraph, type Job } from "./api";
-import { useJobsQuery } from "./query";
+import { useJobActions, useJobsQuery } from "./query";
 
 const STATE_LABEL: Record<Job["state"], string> = {
-  queued: "running",
+  queued: "queued",
   running: "running",
-  stopping: "running",
+  stopping: "stopping",
   stopped: "done",
   succeeded: "done",
   failed: "error",
 };
+
+const ACTIVE_STATES = new Set<Job["state"]>(["running", "stopping"]);
 
 export function JobsScreen() {
   const [limit, setLimit] = useState(100);
@@ -77,6 +80,8 @@ export function JobsScreen() {
 
 function JobRow({ job }: { job: Job }) {
   const [opening, setOpening] = useState(false);
+  const { remove, removing, stop, stopping } = useJobActions();
+  const active = ACTIVE_STATES.has(job.state);
   const openJob = async () => {
     setOpening(true);
     try {
@@ -91,9 +96,17 @@ function JobRow({ job }: { job: Job }) {
       setOpening(false);
     }
   };
+  const removeJob = () =>
+    askConfirm({
+      title: "Remove job?",
+      desc: `Remove "${job.name}" and prune its cached node logs. This cannot be undone.`,
+      danger: true,
+      label: "Remove job",
+      onConfirm: () => remove(job.run_id),
+    });
   const updatedAt = Date.parse(job.updated_at);
   return (
-    <div className="grid items-center gap-3 border-b border-line px-4 py-3 last:border-b-0" style={{ gridTemplateColumns: "110px minmax(180px,1fr) 150px auto" }}>
+    <div className="grid items-center gap-3 border-b border-line px-4 py-3 last:border-b-0" style={{ gridTemplateColumns: "110px minmax(180px,1fr) 150px 180px" }}>
       <span className={job.state === "failed" ? "text-red-600" : job.state === "succeeded" || job.state === "stopped" ? "text-emerald-700" : "text-blue-700"}>
         {STATE_LABEL[job.state]}
       </span>
@@ -102,9 +115,20 @@ function JobRow({ job }: { job: Job }) {
         <div className="truncate font-mono text-[11px] text-txt-mute">{job.run_id}</div>
       </div>
       <span className="text-xs text-txt-mute">{Number.isNaN(updatedAt) ? "-" : fmtAgo(updatedAt)}</span>
-      <Button variant="secondary" size="sm" icon="folder-open" onClick={openJob} disabled={opening}>
-        Open
-      </Button>
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" size="sm" icon="folder-open" onClick={openJob} disabled={opening}>
+          Open
+        </Button>
+        {active ? (
+          <Button variant="danger" size="sm" icon="x" onClick={() => stop(job.run_id)} disabled={stopping || job.state === "stopping"}>
+            Stop
+          </Button>
+        ) : (
+          <Button variant="danger" size="sm" icon="trash" onClick={removeJob} disabled={removing}>
+            Remove
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

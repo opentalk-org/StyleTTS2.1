@@ -28,7 +28,6 @@ def upsert_runner(session: Session, payload: RunnerCreate) -> Runner:
     item.hostname = payload.hostname
     item.port = payload.port
     item.gpu_index = payload.gpu_index
-    item.resources = payload.resources
     session.commit()
     session.refresh(item)
     return item

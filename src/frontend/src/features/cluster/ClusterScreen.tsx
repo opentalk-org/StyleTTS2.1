@@ -18,7 +18,6 @@ export function ClusterScreen() {
     hostname,
     port: Number(port),
     gpu_index: null,
-    resources: {},
   });
 
   return (
@@ -53,11 +52,6 @@ export function ClusterScreen() {
                   </div>
                 </div>
                 <div className="text-[12px] font-semibold text-txt-dim">GPU {runner.gpu_index ?? "auto"}</div>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {Object.entries(runner.resources).map(([key, value]) => (
-                  <span key={key} className="rounded-md bg-panel-2 px-2 py-1 text-[11px] font-semibold text-txt-dim">{key}: {value}</span>
-                ))}
               </div>
               <div className="mt-3 grid gap-1 text-[12px] text-txt-mute">
                 <div>Active runs: {runner.active_run_ids.length ? runner.active_run_ids.join(", ") : "none"}</div>

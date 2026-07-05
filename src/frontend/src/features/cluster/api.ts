@@ -6,7 +6,6 @@ export type Runner = {
   hostname: string;
   port: number;
   gpu_index: number | null;
-  resources: Record<string, number>;
   online: boolean;
   stale: boolean;
   busy: boolean;
@@ -25,7 +24,6 @@ export type RunnerRegisterPayload = {
   hostname: string;
   port: number;
   gpu_index: number | null;
-  resources: Record<string, number>;
 };
 
 export function fetchRunners(): Promise<RunnerPage> {

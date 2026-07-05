@@ -1,7 +1,6 @@
 import uuid
 
 from sqlalchemy import BigInteger, Integer, Text
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,4 +15,3 @@ class Runner(Base):
     hostname: Mapped[str] = mapped_column(Text, nullable=False)
     port: Mapped[int] = mapped_column(BigInteger, nullable=False)
     gpu_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    resources: Mapped[dict[str, float]] = mapped_column(JSONB, nullable=False, default=dict)

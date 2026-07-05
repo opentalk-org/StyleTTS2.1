@@ -1,23 +1,32 @@
+import { useState } from "react";
+
 import type { SchemaValues } from "@/shared/schema-form/types";
 import { Icon } from "@/shared/icons";
 import { IconButton } from "@/shared/ui/IconButton";
 import { Button } from "@/shared/ui/Button";
+import { Select } from "@/shared/ui/Select";
 
 import { FormSection } from "./FormSection";
-
-type OodSetValue = { id: string; name: string; line_count: number };
+import type { OodSetValue } from "./logic";
 
 /** Out-of-domain reference text sets: list with per-row delete plus upload/add. */
 export function OodEditor({
   values,
+  availableSets,
   onChange,
 }: {
   values: SchemaValues;
+  availableSets: OodSetValue[];
   onChange: (values: SchemaValues) => void;
 }) {
   const oodSets = values.sets as OodSetValue[];
-  const addOod = (name: string, lineCount: number) => {
-    onChange({ ...values, sets: [...oodSets, { id: `ood_${Date.now()}`, name, line_count: lineCount }] });
+  const choices = availableSets.filter((item) => !oodSets.some((selected) => selected.id === item.id));
+  const [selectedId, setSelectedId] = useState("");
+  const addOod = () => {
+    const item = choices.find((choice) => choice.id === selectedId);
+    if (!item) return;
+    onChange({ ...values, sets: [...oodSets, item] });
+    setSelectedId("");
   };
   const removeOod = (id: string) => {
     onChange({ ...values, sets: oodSets.filter((set) => set.id !== id) });
@@ -61,19 +70,21 @@ export function OodEditor({
       </div>
 
       <div className="flex gap-2">
-        <button
-          onClick={() =>
-            addOod("uploaded_set.txt", 64 + Math.floor(Math.random() * 400))
-          }
-          className="flex h-[38px] flex-1 items-center justify-center gap-1.5 rounded-md border-2 border-dashed border-line-2 bg-panel text-xs font-semibold text-txt-dim cursor-pointer"
-        >
-          <Icon name="upload" size={14} />
-          Upload .txt set
-        </button>
+        <div className="flex-1">
+          <Select
+            value={selectedId}
+            onChange={setSelectedId}
+            options={[
+              { value: "", label: choices.length ? "— select OOD text file —" : "No OOD text files available" },
+              ...choices.map((item) => ({ value: item.id, label: item.name })),
+            ]}
+          />
+        </div>
         <Button
           variant="ghost"
           icon="plus"
-          onClick={() => addOod("manual_prompts.txt", 24)}
+          disabled={!selectedId}
+          onClick={addOod}
         >
           Add set
         </Button>

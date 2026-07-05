@@ -21,6 +21,8 @@ from runflow.registry.type_registry import TypeRegistry
 from runflow.ui.schema_export import export_ui_schema
 from runner.nodes.registry import register_runner_nodes, register_runner_types_for_ui
 from shared.db import create_database_schema, database_session
+from shared.db.assets import crud as asset_crud
+from shared.db.assets.schemas import FileAssetRead
 from shared.db.datasets import crud as dataset_crud
 from shared.db.datasets.models import Dataset
 from shared.db.datasets.schemas import DatasetCreate, DatasetRead
@@ -96,6 +98,12 @@ async def list_datasets() -> list[DatasetRead]:
     with database_session() as session:
         rows = dataset_crud.list_dataset_file_counts(session)
         return [dataset_response(item, files) for item, files in rows]
+
+
+@app.get("/assets/files", response_model=list[FileAssetRead])
+async def list_file_assets(type_: str | None = None) -> list[FileAssetRead]:
+    with database_session() as session:
+        return [FileAssetRead.model_validate(item) for item in asset_crud.list_extra_files(session, type_)]
 
 
 @app.post("/datasets", response_model=DatasetRead, status_code=status.HTTP_201_CREATED)

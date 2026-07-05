@@ -1,11 +1,19 @@
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import delete, desc, func, select
 from sqlalchemy.orm import Session
 
 from shared.db.jobs.models import Job, NodeLog
 from shared.db.jobs.schemas import JobUpsert, NodeLogUpsert
+from shared.schemas import RunState
+
+
+ACTIVE_JOB_STATES = {RunState.RUNNING.value, RunState.STOPPING.value}
+
+
+class ActiveJobError(ValueError):
+    pass
 
 
 def list_jobs(session: Session, limit: int, offset: int) -> tuple[Sequence[Job], int]:
@@ -34,6 +42,15 @@ def upsert_job(session: Session, payload: JobUpsert) -> Job:
     session.commit()
     session.refresh(item)
     return item
+
+
+def delete_job(session: Session, run_id: str) -> None:
+    item = get_job(session, run_id)
+    if item.state in ACTIVE_JOB_STATES:
+        raise ActiveJobError(f"Stop job before removing it: {run_id}")
+    session.execute(delete(NodeLog).where(NodeLog.run_id == run_id))
+    session.delete(item)
+    session.commit()
 
 
 def get_node_log(session: Session, run_id: str, node_id: str) -> NodeLog:
