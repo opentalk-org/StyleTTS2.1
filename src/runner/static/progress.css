@@ -91,6 +91,22 @@
   color: var(--accent-2);
 }
 
+.node-role {
+  flex: none;
+  border-radius: 999px;
+  padding: 2px 6px;
+  background: #2b4250;
+  color: #56ccf2;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.node-metric-items strong {
+  color: #56ccf2;
+}
+
 .node-metric-state.running {
   border-color: #4fd1c5;
 }

@@ -16,6 +16,27 @@ function renderSettings() {
   renderSchemaForm(fields, info.settings, node.params, () => renderSettings());
 }
 
+function renderNodeRuntime() {
+  if (state.selection.size > 1) {
+    el.runtimeSettings.innerHTML = `<p class="empty">${state.selection.size} nodes selected.</p>`;
+    return;
+  }
+  const node = state.graph.nodes.find((item) => item.id === selectedId());
+  if (!node) {
+    el.runtimeSettings.innerHTML = `<p class="empty">Select a node to edit runtime config.</p>`;
+    return;
+  }
+  const info = nodeInfo(node.type);
+  renderSchemaForm(el.runtimeSettings, info.runtime, node.runtime, () => renderNodeRuntime());
+}
+
+function renderInspector() {
+  for (const button of el.tabs) button.classList.toggle("is-active", button.dataset.tab === state.rightTab);
+  for (const panel of el.tabPanels) panel.classList.toggle("is-active", panel.dataset.panel === state.rightTab);
+  renderSettings();
+  renderNodeRuntime();
+}
+
 function renderContextSettings() {
   renderSchemaForm(el.contextSettings, state.schema.runtime_config, state.runtimeConfig, () => renderContextSettings());
 }
@@ -34,7 +55,7 @@ function renameNode(node, nextId) {
 function graphPayload() {
   return {
     run_id: el.runId.value || null,
-    nodes: state.graph.nodes.map((node) => ({ id: node.id, type: node.type, params: node.params })),
+    nodes: state.graph.nodes.map((node) => ({ id: node.id, type: node.type, params: node.params, runtime: node.runtime })),
     edges: state.graph.edges,
     context: { work_dir: el.workDir.value, output_dir: el.outputDir.value, config: state.runtimeConfig },
   };
@@ -126,4 +147,10 @@ el.refresh.addEventListener("click", refreshRuns);
 el.clear.addEventListener("click", clearGraph);
 window.addEventListener("resize", renderEdges);
 window.addEventListener("keydown", onKeydown);
+for (const button of el.tabs) {
+  button.addEventListener("click", () => {
+    state.rightTab = button.dataset.tab;
+    renderInspector();
+  });
+}
 init().catch((error) => setLog(error.message));

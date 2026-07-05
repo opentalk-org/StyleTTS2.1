@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from runflow.core.node import Node
 from runflow.core.ports import Port
-from runflow.core.settings import NodeSettings
+from runflow.core.settings import StrictSettings
 from runflow.tmp_nodes.audio.datatypes import AUDIO_CHUNK, DIARIZATION_RESULT
 from runflow.tmp_nodes.audio.models import DiarizationResult, SpeakerTurn, stable_id
 from runflow.policies import BatchMode, BatchPolicy
 from runflow.policies import ResourcePolicy
 
 
-class SortformerSettings(NodeSettings):
+class SortformerSettings(StrictSettings):
     max_speakers: int = 2
 
 
@@ -29,7 +29,6 @@ class SortformerDiarizationNode(Node):
         BatchMode.MICRO_BATCH,
         preferred_size=4,
         max_size=8,
-        group_by=("sample_rate", "duration_bucket"),
         sort_by="duration",
     )
     RESOURCE_POLICY = ResourcePolicy(

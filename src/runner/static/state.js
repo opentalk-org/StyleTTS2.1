@@ -7,7 +7,10 @@ const el = {
   edges: document.querySelector("#edges"),
   nodes: document.querySelector("#nodes"),
   settings: document.querySelector("#settings"),
+  runtimeSettings: document.querySelector("#runtimeSettings"),
   contextSettings: document.querySelector("#contextSettings"),
+  tabs: document.querySelectorAll("[data-tab]"),
+  tabPanels: document.querySelectorAll("[data-panel]"),
   hint: document.querySelector("#connectHint"),
   runId: document.querySelector("#runId"),
   workDir: document.querySelector("#workDir"),
@@ -32,6 +35,7 @@ const state = {
   events: [],
   eventAfter: 0,
   runtimeConfig: {},
+  rightTab: "settings",
 };
 
 function schemaType(prop) {

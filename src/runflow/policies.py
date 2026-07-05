@@ -15,10 +15,7 @@ class BatchPolicy:
     preferred_size: int = 1
     max_size: int = 1
     timeout_ms: int = 0
-    group_by: tuple[str, ...] = ()
     sort_by: str | None = None
-    pad_to_multiple_of: int | None = None
-    drop_last: bool = False
 
 @dataclass(frozen=True)
 class ResourcePolicy:

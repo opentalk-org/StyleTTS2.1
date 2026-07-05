@@ -11,6 +11,5 @@ class CanaryNode(ASRNode):
         BatchMode.MICRO_BATCH,
         preferred_size=6,
         max_size=10,
-        group_by=("duration_bucket",),
         sort_by="duration",
     )

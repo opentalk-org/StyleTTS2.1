@@ -9,6 +9,9 @@ class GraphValidator:
         topological_sort(graph)
 
         for node in graph.nodes.values():
+            if node.IS_INPUT and node.INPUTS:
+                raise ValueError(f"Input node {node.id} must not declare input ports")
+
             incoming_ports = {edge.target.port for edge in graph.incoming_edges(node.id)}
             missing = []
             for name, port in node.INPUTS.items():

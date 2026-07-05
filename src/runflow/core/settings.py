@@ -5,9 +5,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 
-class NodeSettings(BaseModel):
-    """Base settings shared by all node types."""
-
+class StrictSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 

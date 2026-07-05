@@ -35,7 +35,14 @@ function selectedId() {
 /* ---- graph mutations ------------------------------------------------ */
 function addNode(type, x = 130, y = 120) {
   const info = nodeInfo(type);
-  const node = { id: `${type}_${state.seq++}`, type, x: x - state.pan.x, y: y - state.pan.y, params: structuredClone(info.settings_defaults) };
+  const node = {
+    id: `${type}_${state.seq++}`,
+    type,
+    x: x - state.pan.x,
+    y: y - state.pan.y,
+    params: structuredClone(info.settings_defaults),
+    runtime: structuredClone(info.runtime_defaults),
+  };
   state.graph.nodes.push(node);
   setSelection([node.id]);
   render();
@@ -102,13 +109,13 @@ function loadTemplate() {
   state.pan = { x: 0, y: 0 };
   state.graph = {
     nodes: [
-      { id: "input", type: "DirectoryInput", x: 40, y: 130, params: { directory: ".", patterns: ["pyproject.toml"], repeat_count: 80, sleep_sec: 0.01 } },
-      { id: "load_audio", type: "LoadAudio", x: 320, y: 110, params: { sample_rate: 16000, channels: 1, sleep_sec: 0.05 } },
-      { id: "vad", type: "VADDetect", x: 570, y: 20, params: { max_segment_sec: 30, padding_sec: 0.1, sleep_sec: 0.05 } },
-      { id: "cut_segments", type: "AudioCutBySegments", x: 570, y: 210, params: { sleep_sec: 0.03 } },
-      { id: "whisper", type: "Whisper", x: 830, y: 180, params: { language: "auto", sleep_sec: 0.15 } },
-      { id: "save_transcript", type: "SaveTranscript", x: 1090, y: 130, params: { output_dir: null, sleep_sec: 0.02 } },
-      { id: "save_audio", type: "SaveAudio", x: 1090, y: 320, params: { output_dir: null, sleep_sec: 0.02 } },
+      templateNode("input", "DirectoryInput", 40, 130, { directory: ".", patterns: ["pyproject.toml"], repeat_count: 80, sleep_sec: 0.01 }, { window_size: 10 }),
+      templateNode("load_audio", "LoadAudio", 320, 110, { sample_rate: 16000, channels: 1, sleep_sec: 0.05 }),
+      templateNode("vad", "VADDetect", 570, 20, { max_segment_sec: 30, padding_sec: 0.1, sleep_sec: 0.05 }),
+      templateNode("cut_segments", "AudioCutBySegments", 570, 210, { sleep_sec: 0.03 }),
+      templateNode("whisper", "Whisper", 830, 180, { language: "auto", sleep_sec: 0.15 }),
+      templateNode("save_transcript", "SaveTranscript", 1090, 130, { output_dir: null, sleep_sec: 0.02 }),
+      templateNode("save_audio", "SaveAudio", 1090, 320, { output_dir: null, sleep_sec: 0.02 }),
     ],
     edges: [
       { source_node: "input", source_port: "paths", target_node: "load_audio", target_port: "path" },
@@ -124,6 +131,18 @@ function loadTemplate() {
   state.seq = 1;
   state.wire = null;
   render();
+}
+
+function templateNode(id, type, x, y, params, runtime = {}) {
+  const info = nodeInfo(type);
+  return {
+    id,
+    type,
+    x,
+    y,
+    params,
+    runtime: { ...structuredClone(info.runtime_defaults), ...runtime },
+  };
 }
 
 /* ---- rails ---------------------------------------------------------- */
@@ -160,7 +179,7 @@ function renderLegend() {
 function render() {
   renderNodes();
   renderEdges();
-  renderSettings();
+  renderInspector();
   el.canvas.classList.toggle("has-nodes", state.graph.nodes.length > 0);
 }
 
@@ -178,7 +197,7 @@ function renderNodes() {
     card.style.transform = `translate(${node.x}px, ${node.y}px)`;
     card.dataset.id = node.id;
     card.innerHTML = `
-      <div class="node-title"><div class="node-name"><strong>${node.id}</strong><span class="type">${node.type}</span></div></div>
+      <div class="node-title"><div class="node-name"><strong>${node.id}</strong>${info.is_input ? '<span class="node-role">input</span>' : ''}<span class="type">${node.type}</span></div></div>
       <button class="node-del" type="button" aria-label="Delete node">&times;</button>
       ${nodeRunPanel(node.id)}
       <div class="ports">

@@ -3,9 +3,30 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
+from runflow.core.node_runtime import NodeRuntimeConfig, node_runtime_defaults
 from runflow.core.ports import Port
-from runflow.core.settings import NodeSettings, settings_defaults
+from runflow.core.settings import StrictSettings, settings_defaults
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
+
+
+def _runtime_defaults_for(cls: type["Node"]) -> dict[str, Any]:
+    defaults = node_runtime_defaults(cls.BATCH_POLICY, cls.RESOURCE_POLICY)
+    if cls.IS_INPUT:
+        defaults["window_size"] = 80
+    return defaults
+
+
+def _merge_runtime_defaults(defaults: dict[str, Any], overrides: Any) -> dict[str, Any]:
+    if overrides is None:
+        return defaults
+    merged = dict(defaults)
+    for key, value in dict(overrides).items():
+        current = merged.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            merged[key] = {**current, **value}
+            continue
+        merged[key] = value
+    return merged
 
 
 class Node(ABC):
@@ -19,15 +40,19 @@ class Node(ABC):
     CATEGORY: str = "Core"
     INPUTS: dict[str, Port] = {}
     OUTPUTS: dict[str, Port] = {}
-    SETTINGS: type[NodeSettings] = NodeSettings
+    SETTINGS: type[StrictSettings] = StrictSettings
+    IS_INPUT: bool = False
 
     BATCH_POLICY: BatchPolicy = BatchPolicy(BatchMode.DISABLED)
     RESOURCE_POLICY: ResourcePolicy = ResourcePolicy()
 
     def __init__(self, node_id: str | None = None, **params: Any):
+        runtime_config = params.pop("runtime", None)
         self.id = node_id or params.pop("id", self.NODE_TYPE)
         self.settings = self.SETTINGS(**params)
         self.params = self.settings.model_dump()
+        default_runtime = _runtime_defaults_for(type(self))
+        self.runtime = NodeRuntimeConfig.model_validate(_merge_runtime_defaults(default_runtime, runtime_config))
 
     async def setup(self, context: Any) -> None:
         """Load resources. Called by NodeManager."""
@@ -35,6 +60,9 @@ class Node(ABC):
 
     async def teardown(self, context: Any) -> None:
         """Release resources. Called by NodeManager."""
+        return None
+
+    def remaining_items(self, context: Any) -> int | None:
         return None
 
     @abstractmethod
@@ -46,25 +74,11 @@ class Node(ABC):
         return {
             "type": cls.NODE_TYPE,
             "category": cls.CATEGORY,
+            "is_input": cls.IS_INPUT,
             "inputs": {name: port.to_schema() for name, port in cls.INPUTS.items()},
             "outputs": {name: port.to_schema() for name, port in cls.OUTPUTS.items()},
             "settings": cls.SETTINGS.model_json_schema(),
             "settings_defaults": settings_defaults(cls.SETTINGS),
-            "batch_policy": {
-                "mode": cls.BATCH_POLICY.mode.value,
-                "preferred_size": cls.BATCH_POLICY.preferred_size,
-                "max_size": cls.BATCH_POLICY.max_size,
-                "timeout_ms": cls.BATCH_POLICY.timeout_ms,
-                "group_by": list(cls.BATCH_POLICY.group_by),
-                "sort_by": cls.BATCH_POLICY.sort_by,
-                "pad_to_multiple_of": cls.BATCH_POLICY.pad_to_multiple_of,
-                "drop_last": cls.BATCH_POLICY.drop_last,
-            },
-            "resource_policy": {
-                "resources": cls.RESOURCE_POLICY.requirements(),
-                "keep_loaded": cls.RESOURCE_POLICY.keep_loaded,
-                "exclusive_group": cls.RESOURCE_POLICY.exclusive_group,
-                "estimated_vram_gb": cls.RESOURCE_POLICY.estimated_vram_gb,
-                "unload_after_stage": cls.RESOURCE_POLICY.unload_after_stage,
-            },
+            "runtime": NodeRuntimeConfig.model_json_schema(),
+            "runtime_defaults": _runtime_defaults_for(cls),
         }

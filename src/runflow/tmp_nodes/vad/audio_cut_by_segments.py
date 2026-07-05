@@ -4,14 +4,14 @@ import asyncio
 
 from runflow.core.node import Node
 from runflow.core.ports import Port, PortMode
-from runflow.core.settings import NodeSettings
+from runflow.core.settings import StrictSettings
 from runflow.tmp_nodes.audio.datatypes import AUDIO_CHUNK, AUDIO_FILE, VAD_SEGMENTS
 from runflow.tmp_nodes.audio.models import AudioChunk, stable_id
 from runflow.policies import BatchMode, BatchPolicy
 from runflow.policies import ResourcePolicy
 
 
-class AudioCutBySegmentsSettings(NodeSettings):
+class AudioCutBySegmentsSettings(StrictSettings):
     sleep_sec: float = 0.0
 
 
@@ -28,7 +28,7 @@ class AudioCutBySegmentsNode(Node):
         "chunks": Port("chunks", AUDIO_CHUNK, mode=PortMode.STREAM),
     }
 
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=32, max_size=64, group_by=("sample_rate",))
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=32, max_size=64)
     RESOURCE_POLICY = ResourcePolicy(resources={"cpu_workers": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):

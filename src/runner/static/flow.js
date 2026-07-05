@@ -43,17 +43,25 @@ function nodeRunClass(nodeId) {
 
 function nodeRunPanel(nodeId) {
   const metrics = nodeMetrics(nodeId);
+  const node = state.graph.nodes.find((item) => item.id === nodeId);
+  if (node && nodeInfo(node.type).is_input) {
+    return `<div class="node-metrics">
+      <div class="node-metric node-metric-items"><strong>${metrics.remainingItems}</strong><span>items</span></div>
+    </div>`;
+  }
   return `<div class="node-metrics">
     <div class="node-metric node-metric-queue"><strong>${metrics.queued}</strong><span>queued</span></div>
   </div>`;
 }
 
 function nodeMetrics(nodeId) {
-  const metrics = { queued: 0, running: 0, failed: false, loaded: false };
+  const metrics = { queued: 0, remainingItems: 0, running: 0, failed: false, loaded: false };
   for (const event of state.events) {
     if (event.node_id !== nodeId) continue;
     if (event.kind === "node_loaded") metrics.loaded = true;
     if (event.kind === "node_unloaded") metrics.loaded = false;
+    if (event.kind === "input_items_discovered") metrics.remainingItems = Number(event.detail.item_count || 0);
+    if (event.kind === "input_items_remaining") metrics.remainingItems = Number(event.detail.item_count || 0);
     if (event.kind === "task_enqueued" || event.kind === "queue_depth") metrics.queued = Number(event.detail.queue_size || 0);
     if (event.kind === "batch_started") {
       metrics.running += 1;

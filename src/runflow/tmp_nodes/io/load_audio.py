@@ -5,14 +5,14 @@ from pathlib import Path
 
 from runflow.core.node import Node
 from runflow.core.ports import Port
-from runflow.core.settings import NodeSettings
+from runflow.core.settings import StrictSettings
 from runflow.tmp_nodes.audio.datatypes import AUDIO_FILE, FLOAT, INT, JSON, PATH
 from runflow.tmp_nodes.audio.models import AudioFile, stable_id
 from runflow.policies import BatchMode, BatchPolicy
 from runflow.policies import ResourcePolicy
 
 
-class LoadAudioSettings(NodeSettings):
+class LoadAudioSettings(StrictSettings):
     sample_rate: int = 16000
     channels: int = 1
     sleep_sec: float = 0.0

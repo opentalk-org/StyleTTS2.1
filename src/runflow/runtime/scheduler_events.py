@@ -13,25 +13,41 @@ class SchedulerEventEmitter:
     def __init__(self, context: ExecutionContext):
         self.context = context
 
-    async def run_started(self, input_items: list[Any], node_ids: Iterable[str]) -> None:
+    async def run_started(self, input_item_count: int, node_ids: Iterable[str]) -> None:
         await self.context.emit_event(
             "run_started",
-            message=f"run started with {len(input_items)} source item(s)",
-            detail={"source_items": len(input_items), "nodes": list(node_ids)},
+            message=f"run started with {input_item_count} input item(s)",
+            detail={"input_items": input_item_count, "nodes": list(node_ids)},
         )
 
-    async def window_started(self, window_index: int, item_count: int) -> None:
+    async def input_items_discovered(self, node: Node, item_count: int) -> None:
+        await self.context.emit_event(
+            "input_items_discovered",
+            message=f"{node.id} discovered {item_count} item(s)",
+            node_id=node.id,
+            detail={"item_count": item_count, "window_size": node.runtime.window_size},
+        )
+
+    async def input_items_remaining(self, node: Node, item_count: int | None) -> None:
+        await self.context.emit_event(
+            "input_items_remaining",
+            message=f"{node.id} has {item_count} item(s) remaining",
+            node_id=node.id,
+            detail={"item_count": item_count},
+        )
+
+    async def window_started(self, window_index: int, item_count: int, item_counts: dict[str, int]) -> None:
         await self.context.emit_event(
             "window_started",
             message=f"window {window_index} started with {item_count} item(s)",
-            detail={"item_count": item_count},
+            detail={"item_count": item_count, "item_counts": item_counts},
         )
 
-    async def window_completed(self, window_index: int, item_count: int) -> None:
+    async def window_completed(self, window_index: int, item_count: int, item_counts: dict[str, int]) -> None:
         await self.context.emit_event(
             "window_completed",
             message=f"window {window_index} completed",
-            detail={"item_count": item_count},
+            detail={"item_count": item_count, "item_counts": item_counts},
         )
 
     async def task_enqueued(self, node_id: str, task: Task, queue_size: int) -> None:
@@ -62,7 +78,7 @@ class SchedulerEventEmitter:
             detail={
                 "node_type": node.NODE_TYPE,
                 "lineage_ids": [task.lineage_id for task in batch],
-                "resources": node.RESOURCE_POLICY.requirements(),
+                "resources": node.runtime.resource_policy.resources,
             },
         )
 

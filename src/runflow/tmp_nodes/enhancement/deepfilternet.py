@@ -23,7 +23,6 @@ class DeepFilterNetNode(Node):
         BatchMode.MICRO_BATCH,
         preferred_size=12,
         max_size=24,
-        group_by=("sample_rate", "duration_bucket"),
         sort_by="duration",
     )
     RESOURCE_POLICY = ResourcePolicy(

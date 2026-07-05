@@ -4,13 +4,13 @@ import asyncio
 
 from runflow.core.node import Node
 from runflow.core.ports import Port
-from runflow.core.settings import NodeSettings
+from runflow.core.settings import StrictSettings
 from runflow.tmp_nodes.audio.datatypes import AUDIO_LIKE, TRANSCRIPT
 from runflow.tmp_nodes.audio.models import Transcript, stable_id
 from runflow.policies import ResourcePolicy
 
 
-class ASRSettings(NodeSettings):
+class ASRSettings(StrictSettings):
     language: str = "auto"
     sleep_sec: float = 0.0
 

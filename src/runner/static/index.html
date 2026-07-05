@@ -50,15 +50,23 @@
       </section>
 
       <aside class="rail rail--right">
-        <div class="rail-section">
-          <p class="eyebrow">Node</p>
-          <div id="settings" class="settings"></div>
-        </div>
-        <div class="rail-section">
-          <p class="eyebrow">Context</p>
-          <label class="field">Work dir<input id="workDir" type="text" value="work" spellcheck="false"></label>
-          <label class="field">Output dir<input id="outputDir" type="text" value="outputs" spellcheck="false"></label>
-          <div id="contextSettings" class="settings"></div>
+        <div class="rail-section rail-section--tabs">
+          <div class="tabs" role="tablist" aria-label="Inspector">
+            <button class="tab is-active" type="button" data-tab="settings">Settings</button>
+            <button class="tab" type="button" data-tab="runtime">Runtime</button>
+            <button class="tab" type="button" data-tab="context">Context</button>
+          </div>
+          <div id="settingsPanel" class="tab-panel is-active" data-panel="settings">
+            <div id="settings" class="settings"></div>
+          </div>
+          <div id="runtimePanel" class="tab-panel" data-panel="runtime">
+            <div id="runtimeSettings" class="settings"></div>
+          </div>
+          <div id="contextPanel" class="tab-panel" data-panel="context">
+            <label class="field">Work dir<input id="workDir" type="text" value="work" spellcheck="false"></label>
+            <label class="field">Output dir<input id="outputDir" type="text" value="outputs" spellcheck="false"></label>
+            <div id="contextSettings" class="settings"></div>
+          </div>
         </div>
         <div class="rail-section rail-section--runs">
           <p class="eyebrow">Runs <span id="activeCount" class="tag">0 active</span></p>

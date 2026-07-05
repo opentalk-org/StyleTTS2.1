@@ -16,16 +16,9 @@ from runflow.runtime.output_values import output_values
 from runflow.runtime.resource_pool import ResourcePool
 from runflow.runtime.routing import add_to_join_buffer, can_create_single_input_task
 from runflow.runtime.scheduler_events import SchedulerEventEmitter
-from runflow.runtime.window_manager import WindowManager
 
 
 class WindowedScheduler:
-    """Async, bounded-queue, windowed scheduler.
-
-    Nodes declare generic ResourcePolicy requirements, and ResourcePool decides
-    which workers can run at the same time.
-    """
-
     def __init__(self, graph: Graph, context: ExecutionContext):
         self.graph = graph
         self.context = context
@@ -39,7 +32,6 @@ class WindowedScheduler:
 
         self.queues: dict[str, asyncio.Queue[Task]] = {}
         self.join_buffers: dict[tuple[str, str], dict[str, list[Packet]]] = defaultdict(lambda: defaultdict(list))
-        self.queue_max_size = max(1, context.config.queue_max_size)
         self._active_tasks = 0
         self._active_condition: asyncio.Condition | None = None
         self._workers: list[asyncio.Task] = []
@@ -51,17 +43,26 @@ class WindowedScheduler:
 
     async def arun(self) -> None:
         self.validator.validate(self.graph)
-        input_items = self.context.input_items or self._discover_source_items()
-        windows = WindowManager.from_config(input_items, self.context.config.window)
-        await self.events.run_started(input_items, self.graph.nodes.keys())
+        input_nodes = self.graph.input_nodes()
+        remaining_counts = self._remaining_counts(input_nodes)
+        total_items = sum(remaining_counts.values())
+        await self.events.run_started(total_items, self.graph.nodes.keys())
+        for node in input_nodes:
+            await self.events.input_items_discovered(node, remaining_counts[node.id])
+            await self.events.input_items_remaining(node, remaining_counts[node.id])
 
         try:
-            for window_index, items in enumerate(windows.iter_windows()):
+            window_index = 0
+            while self._has_remaining_input_items(remaining_counts):
                 self.context.window_index = window_index
-                self.context.current_window_items = items
-                await self.events.window_started(window_index, len(items))
-                await self._run_window()
-                await self.events.window_completed(window_index, len(items))
+                await self.events.window_started(window_index, sum(remaining_counts.values()), remaining_counts)
+                await self._run_window(input_nodes, remaining_counts)
+                next_remaining_counts = self._remaining_counts(input_nodes)
+                self._ensure_input_progress(remaining_counts, next_remaining_counts)
+                processed_counts = self._processed_counts(remaining_counts, next_remaining_counts)
+                await self.events.window_completed(window_index, sum(processed_counts.values()), processed_counts)
+                remaining_counts = next_remaining_counts
+                window_index += 1
 
             self.artifact_store.write_index()
             await self.context.emit_event("run_completed", message="run completed")
@@ -69,18 +70,30 @@ class WindowedScheduler:
             await self._stop_workers()
             await self.node_manager.unload_all()
 
-    def _discover_source_items(self) -> list[Any]:
-        items: list[Any] = []
-        for node in self.graph.source_nodes():
-            list_items = getattr(node, "list_items", None)
-            if callable(list_items):
-                items.extend(list_items())
-                continue
+    def _remaining_counts(self, input_nodes: list[Node]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for node in input_nodes:
+            count = node.remaining_items(self.context)
+            if count is None:
+                raise RuntimeError(f"Input node {node.id} must return remaining item count")
+            counts[node.id] = count
+        return counts
 
-        return items
+    def _has_remaining_input_items(self, remaining_counts: dict[str, int]) -> bool:
+        return any(count > 0 for count in remaining_counts.values())
 
-    async def _run_window(self) -> None:
-        self.queues = {node_id: asyncio.Queue(maxsize=self.queue_max_size) for node_id in self.graph.nodes}
+    def _ensure_input_progress(self, before: dict[str, int], after: dict[str, int]) -> None:
+        if before == after and self._has_remaining_input_items(before):
+            raise RuntimeError("Input nodes did not consume any remaining items")
+
+    def _processed_counts(self, before: dict[str, int], after: dict[str, int]) -> dict[str, int]:
+        return {node_id: before[node_id] - after[node_id] for node_id in before}
+
+    async def _run_window(self, input_nodes: list[Node], remaining_counts: dict[str, int]) -> None:
+        self.queues = {
+            node_id: asyncio.Queue(maxsize=node.runtime.queue_max_size)
+            for node_id, node in self.graph.nodes.items()
+        }
         self.join_buffers.clear()
         self._active_tasks = 0
         self._active_condition = asyncio.Condition()
@@ -91,8 +104,8 @@ class WindowedScheduler:
         for node in self.graph.nodes.values():
             self._workers.append(asyncio.create_task(self._worker(node, 0), name=f"{node.id}:0"))
 
-        for source in self.graph.source_nodes():
-            if source.INPUTS:
+        for source in input_nodes:
+            if remaining_counts[source.id] <= 0:
                 continue
             await self._enqueue(
                 source.id,
@@ -164,7 +177,8 @@ class WindowedScheduler:
             await self.events.queue_depth(node.id, queue.qsize())
 
             try:
-                async with self.resource_pool.lease(node.RESOURCE_POLICY):
+                resource_policy = node.runtime.resource_policy.to_policy()
+                async with self.resource_pool.lease(resource_policy):
                     was_loaded = node.id in self.node_manager.loaded
                     await self.node_manager.ensure_loaded(node)
                     if not was_loaded and node.id in self.node_manager.loaded:
@@ -174,10 +188,12 @@ class WindowedScheduler:
                         await self.events.batch_started(node, worker_index, batch_index, batch)
                         try:
                             outputs = await node.execute([task.inputs for task in batch], self.context)
+                            if node.IS_INPUT:
+                                await self.events.input_items_remaining(node, node.remaining_items(self.context))
                             await self._route_outputs(node, batch, outputs, batch_index)
                             await self.events.batch_completed(node, worker_index, batch_index, batch, outputs)
                         finally:
-                            if node.RESOURCE_POLICY.unload_after_stage and not node.RESOURCE_POLICY.keep_loaded:
+                            if resource_policy.unload_after_stage and not resource_policy.keep_loaded:
                                 await self.node_manager.unload(node)
                                 await self.events.node_unloaded(node)
             except Exception as error:
@@ -196,10 +212,11 @@ class WindowedScheduler:
         queue: asyncio.Queue[Task],
     ) -> tuple[list[list[Task]], list[Task]]:
         tasks = [first]
-        max_size = max(1, node.BATCH_POLICY.max_size)
-        preferred_size = max(1, node.BATCH_POLICY.preferred_size)
+        batch_policy = node.runtime.batch_policy.to_policy()
+        max_size = batch_policy.max_size
+        preferred_size = batch_policy.preferred_size
         target_size = min(max_size, preferred_size)
-        timeout = max(0, node.BATCH_POLICY.timeout_ms) / 1000.0
+        timeout = batch_policy.timeout_ms / 1000.0
 
         while len(tasks) < target_size:
             try:
@@ -210,7 +227,7 @@ class WindowedScheduler:
             except (asyncio.TimeoutError, asyncio.QueueEmpty):
                 break
 
-        return self.batch_planner.build_batches(tasks, node.BATCH_POLICY), tasks
+        return self.batch_planner.build_batches(tasks, batch_policy), tasks
 
     async def _route_outputs(
         self,

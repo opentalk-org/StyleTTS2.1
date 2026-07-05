@@ -4,14 +4,14 @@ import asyncio
 
 from runflow.core.node import Node
 from runflow.core.ports import Port
-from runflow.core.settings import NodeSettings
+from runflow.core.settings import StrictSettings
 from runflow.tmp_nodes.audio.datatypes import AUDIO_FILE, VAD_SEGMENTS
 from runflow.tmp_nodes.audio.models import VadSegment, VadSegments, stable_id
 from runflow.policies import BatchMode, BatchPolicy
 from runflow.policies import ResourcePolicy
 
 
-class VADDetectSettings(NodeSettings):
+class VADDetectSettings(StrictSettings):
     max_segment_sec: float = 30.0
     padding_sec: float = 0.1
     sleep_sec: float = 0.0
@@ -29,7 +29,7 @@ class VADDetectNode(Node):
         "segments": Port("segments", VAD_SEGMENTS),
     }
 
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=16, max_size=32, group_by=("sample_rate",))
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=16, max_size=32)
     RESOURCE_POLICY = ResourcePolicy(resources={"cpu_workers": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):

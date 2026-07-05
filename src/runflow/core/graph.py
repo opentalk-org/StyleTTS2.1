@@ -63,6 +63,9 @@ class Graph:
         targets = {edge.target.node_id for edge in self.edges}
         return [node for node_id, node in self.nodes.items() if node_id not in targets]
 
+    def input_nodes(self) -> list[Node]:
+        return [node for node in self.nodes.values() if node.IS_INPUT]
+
     def sink_nodes(self) -> list[Node]:
         sources = {edge.source.node_id for edge in self.edges}
         return [node for node_id, node in self.nodes.items() if node_id not in sources]

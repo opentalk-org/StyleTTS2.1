@@ -20,7 +20,6 @@ class ExecutionContext:
     config: RuntimeConfig = field(default_factory=RuntimeConfig)
     input_items: list[Any] = field(default_factory=list)
     window_index: int = 0
-    current_window_items: list[Any] = field(default_factory=list)
     event_sink: Callable[[RunEvent], Awaitable[None] | None] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:

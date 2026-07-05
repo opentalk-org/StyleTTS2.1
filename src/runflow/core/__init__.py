@@ -1,9 +1,9 @@
 """Core graph, node, port, task, and datatype contracts."""
 
 from runflow.core.events import RunEvent
-from runflow.core.settings import NodeSettings
+from runflow.core.settings import StrictSettings
 
 __all__ = [
-    "NodeSettings",
     "RunEvent",
+    "StrictSettings",
 ]

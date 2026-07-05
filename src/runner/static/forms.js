@@ -20,7 +20,8 @@ function renderSchemaField(container, schema, name, prop, value, onChange) {
   const label = document.createElement("label");
   label.className = "field";
   label.textContent = name;
-  const input = document.createElement(type === "boolean" ? "select" : "input");
+  const input = document.createElement(type === "boolean" || resolved.enum ? "select" : "input");
+  if (resolved.enum) input.innerHTML = resolved.enum.map((item) => `<option>${item}</option>`).join("");
   if (type === "boolean") input.innerHTML = "<option>true</option><option>false</option>";
   if (type === "number" || type === "integer") input.type = "number";
   input.value = valueToText(value, resolved);
@@ -113,6 +114,7 @@ function valueToText(value, prop) {
 
 function textToValue(value, prop) {
   const type = schemaType(prop);
+  if (value === "" && (prop.anyOf || []).some((item) => item.type === "null")) return null;
   if (value === "" && !["string", "array"].includes(type)) return null;
   if (type === "integer") return Number.parseInt(value, 10);
   if (type === "number") return Number.parseFloat(value);

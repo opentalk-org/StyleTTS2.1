@@ -15,6 +15,7 @@ class GraphNodeRequest(BaseModel):
     id: str
     type: str
     params: dict[str, Any] = Field(default_factory=dict)
+    runtime: dict[str, Any] = Field(default_factory=dict)
 
 
 class GraphEdgeRequest(BaseModel):
@@ -39,7 +40,7 @@ def build_inline_graph(request: InlineGraphRunRequest) -> Graph:
         node = registry.create(
             node_type=node_data.type,
             node_id=node_data.id,
-            params=node_data.params,
+            params={**node_data.params, "runtime": node_data.runtime},
         )
         graph.add_node(node)
 

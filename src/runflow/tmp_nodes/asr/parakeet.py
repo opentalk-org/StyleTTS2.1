@@ -11,6 +11,5 @@ class ParakeetNode(ASRNode):
         BatchMode.MICRO_BATCH,
         preferred_size=16,
         max_size=24,
-        group_by=("duration_bucket",),
         sort_by="duration",
     )

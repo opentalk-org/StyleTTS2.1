@@ -20,7 +20,7 @@ class AudioCutBySpeakersNode(Node):
         "speaker_chunks": Port("speaker_chunks", SPEAKER_CHUNK, mode=PortMode.STREAM),
     }
 
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=32, max_size=64, group_by=("sample_rate",))
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=32, max_size=64)
     RESOURCE_POLICY = ResourcePolicy(resources={"cpu_workers": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):

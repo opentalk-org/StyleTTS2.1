@@ -11,6 +11,5 @@ class WhisperNode(ASRNode):
         BatchMode.MICRO_BATCH,
         preferred_size=8,
         max_size=12,
-        group_by=("duration_bucket",),
         sort_by="duration",
     )

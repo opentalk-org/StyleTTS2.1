@@ -8,14 +8,14 @@ from typing import Any
 
 from runflow.core.node import Node
 from runflow.core.ports import Port
-from runflow.core.settings import NodeSettings
+from runflow.core.settings import StrictSettings
 from runflow.tmp_nodes.audio.datatypes import AUDIO_LIKE, SAVE_RESULT, TRANSCRIPT
 from runflow.tmp_nodes.audio.models import SaveResult, Transcript, stable_id
 from runflow.policies import BatchMode, BatchPolicy
 from runflow.policies import ResourcePolicy
 
 
-class SaveArtifactSettings(NodeSettings):
+class SaveArtifactSettings(StrictSettings):
     output_dir: Path | None = None
     sleep_sec: float = 0.0
 
