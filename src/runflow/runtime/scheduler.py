@@ -11,6 +11,7 @@ from runflow.core.task import Packet, Task, lineage_from_value, metadata_from_va
 from runflow.planning.batch_planner import BatchPlanner
 from runflow.planning.graph_validator import GraphValidator
 from runflow.runtime.artifact_store import ArtifactStore
+from runflow.runtime.input_progress import ensure_input_progress, has_remaining_items, processed_counts, remaining_counts
 from runflow.runtime.node_manager import NodeManager
 from runflow.runtime.output_values import output_values
 from runflow.runtime.resource_pool import ResourcePool
@@ -44,24 +45,24 @@ class WindowedScheduler:
     async def arun(self) -> None:
         self.validator.validate(self.graph)
         input_nodes = self.graph.input_nodes()
-        remaining_counts = self._remaining_counts(input_nodes)
-        total_items = sum(remaining_counts.values())
+        counts = remaining_counts(input_nodes, self.context)
+        total_items = sum(counts.values())
         await self.events.run_started(total_items, self.graph.nodes.keys())
         for node in input_nodes:
-            await self.events.input_items_discovered(node, remaining_counts[node.id])
-            await self.events.input_items_remaining(node, remaining_counts[node.id])
+            await self.events.input_items_discovered(node, counts[node.id])
+            await self.events.input_items_remaining(node, counts[node.id])
 
         try:
             window_index = 0
-            while self._has_remaining_input_items(remaining_counts):
+            while has_remaining_items(counts):
                 self.context.window_index = window_index
-                await self.events.window_started(window_index, sum(remaining_counts.values()), remaining_counts)
-                await self._run_window(input_nodes, remaining_counts)
-                next_remaining_counts = self._remaining_counts(input_nodes)
-                self._ensure_input_progress(remaining_counts, next_remaining_counts)
-                processed_counts = self._processed_counts(remaining_counts, next_remaining_counts)
-                await self.events.window_completed(window_index, sum(processed_counts.values()), processed_counts)
-                remaining_counts = next_remaining_counts
+                await self.events.window_started(window_index, sum(counts.values()), counts)
+                await self._run_window(input_nodes, counts)
+                next_counts = remaining_counts(input_nodes, self.context)
+                ensure_input_progress(counts, next_counts)
+                processed = processed_counts(counts, next_counts)
+                await self.events.window_completed(window_index, sum(processed.values()), processed)
+                counts = next_counts
                 window_index += 1
 
             self.artifact_store.write_index()
@@ -69,25 +70,6 @@ class WindowedScheduler:
         finally:
             await self._stop_workers()
             await self.node_manager.unload_all()
-
-    def _remaining_counts(self, input_nodes: list[Node]) -> dict[str, int]:
-        counts: dict[str, int] = {}
-        for node in input_nodes:
-            count = node.remaining_items(self.context)
-            if count is None:
-                raise RuntimeError(f"Input node {node.id} must return remaining item count")
-            counts[node.id] = count
-        return counts
-
-    def _has_remaining_input_items(self, remaining_counts: dict[str, int]) -> bool:
-        return any(count > 0 for count in remaining_counts.values())
-
-    def _ensure_input_progress(self, before: dict[str, int], after: dict[str, int]) -> None:
-        if before == after and self._has_remaining_input_items(before):
-            raise RuntimeError("Input nodes did not consume any remaining items")
-
-    def _processed_counts(self, before: dict[str, int], after: dict[str, int]) -> dict[str, int]:
-        return {node_id: before[node_id] - after[node_id] for node_id in before}
 
     async def _run_window(self, input_nodes: list[Node], remaining_counts: dict[str, int]) -> None:
         self.queues = {

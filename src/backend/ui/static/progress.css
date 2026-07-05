@@ -8,6 +8,22 @@
   box-shadow: 0 0 0 2px rgba(231, 111, 81, 0.9), 0 16px 40px rgba(0, 0, 0, 0.4);
 }
 
+.node-open {
+  border: 0;
+  border-radius: 6px;
+  background: #10151c;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 6px 8px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.node-open:hover { color: var(--accent); }
+
 .node-state,
 .node-load,
 .node-queue {
@@ -48,7 +64,7 @@
 
 .node-metrics {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--line-soft);

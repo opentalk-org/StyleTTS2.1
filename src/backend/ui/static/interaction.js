@@ -132,7 +132,7 @@ function onNodesPointerDown(event) {
     return startWire(event, socket);
   }
   const card = event.target.closest(".node");
-  if (!card || event.target.closest(".node-del")) return;
+  if (!card || event.target.closest(".node-del") || event.target.closest(".node-open")) return;
   const id = card.dataset.id;
   event.stopPropagation();
 
@@ -148,6 +148,14 @@ function onNodesPointerDown(event) {
 }
 
 function onNodesClick(event) {
+  const open = event.target.closest(".node-open");
+  if (open) {
+    event.stopPropagation();
+    setSelection([open.closest(".node").dataset.id]);
+    openInspector("settings");
+    render();
+    return;
+  }
   const del = event.target.closest(".node-del");
   if (del) {
     event.stopPropagation();

@@ -6,6 +6,9 @@ const el = {
   canvasEmpty: document.querySelector("#canvasEmpty"),
   edges: document.querySelector("#edges"),
   nodes: document.querySelector("#nodes"),
+  popup: document.querySelector("#inspectorPopup"),
+  popupClose: document.querySelector("#popupCloseBtn"),
+  context: document.querySelector("#contextBtn"),
   settings: document.querySelector("#settings"),
   runtimeSettings: document.querySelector("#runtimeSettings"),
   contextSettings: document.querySelector("#contextSettings"),
@@ -32,10 +35,14 @@ const state = {
   pan: { x: 0, y: 0 },
   seq: 1,
   activeRunId: null,
+  runs: [],
   events: [],
   eventAfter: 0,
+  runSnapshot: null,
+  backendSocket: null,
   runtimeConfig: {},
   rightTab: "settings",
+  inspectorOpen: false,
 };
 
 function schemaType(prop) {

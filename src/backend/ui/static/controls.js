@@ -31,10 +31,22 @@ function renderNodeRuntime() {
 }
 
 function renderInspector() {
+  el.popup.hidden = !state.inspectorOpen;
   for (const button of el.tabs) button.classList.toggle("is-active", button.dataset.tab === state.rightTab);
   for (const panel of el.tabPanels) panel.classList.toggle("is-active", panel.dataset.panel === state.rightTab);
   renderSettings();
   renderNodeRuntime();
+}
+
+function openInspector(tab = "settings") {
+  state.rightTab = tab;
+  state.inspectorOpen = true;
+  renderInspector();
+}
+
+function closeInspector() {
+  state.inspectorOpen = false;
+  renderInspector();
 }
 
 function renderContextSettings() {
@@ -64,9 +76,10 @@ function graphPayload() {
 async function runGraph() {
   try {
     const result = await json("/graphs/runs", { method: "POST", body: JSON.stringify(graphPayload()) });
+    applyRunStatus(result);
     setActiveRun(result.run_id);
     setLog(`started ${result.run_id}`);
-    await refreshRuns();
+    await loadActiveRunState();
   } catch (error) {
     setLog(error.message);
   }
@@ -77,16 +90,18 @@ async function refreshRuns() {
     const data = await json("/runs");
     el.api.textContent = "online";
     el.api.className = "status status--ok";
-    el.active.textContent = `${data.active_runs} active`;
-    syncActiveRun(data);
-    el.runs.innerHTML = data.runs.map(runHtml).join("") || `<span class="empty">No runs yet.</span>`;
-    bindStopButtons();
-    await refreshEvents();
+    applyRunnerStatus(data);
+    await loadActiveRunState();
   } catch (error) {
     el.api.textContent = "offline";
     el.api.className = "status status--off";
     setLog(error.message);
   }
+}
+
+function renderRuns() {
+  el.runs.innerHTML = state.runs.map(runHtml).join("") || `<span class="empty">No runs yet.</span>`;
+  bindStopButtons();
 }
 
 function runHtml(run) {
@@ -101,21 +116,22 @@ function runHtml(run) {
 function bindStopButtons() {
   for (const button of el.runs.querySelectorAll("[data-stop]")) {
     button.addEventListener("click", async () => {
-      await json(`/runs/${encodeURIComponent(button.dataset.stop)}/stop`, { method: "POST" });
-      await refreshRuns();
+      const result = await json(`/runs/${encodeURIComponent(button.dataset.stop)}/stop`, { method: "POST" });
+      applyRunStatus(result);
     });
   }
   for (const row of el.runs.querySelectorAll("[data-run]")) {
     row.addEventListener("click", async () => {
       setActiveRun(row.dataset.run);
-      await refreshEvents();
+      await loadActiveRunState();
     });
   }
 }
 
 function onKeydown(event) {
   if (event.key === "Escape") {
-    if (state.wire) state.wire = null;
+    if (state.inspectorOpen) closeInspector();
+    else if (state.wire) state.wire = null;
     else state.selection = new Set();
     dragLoop.onUp = null;
     render();
@@ -134,8 +150,8 @@ async function init() {
   renderLegend();
   renderContextSettings();
   loadTemplate();
+  connectBackendSocket();
   await refreshRuns();
-  window.setInterval(refreshRuns, 300);
 }
 
 el.nodes.addEventListener("pointerdown", onNodesPointerDown);
@@ -145,6 +161,11 @@ el.template.addEventListener("click", loadTemplate);
 el.run.addEventListener("click", runGraph);
 el.refresh.addEventListener("click", refreshRuns);
 el.clear.addEventListener("click", clearGraph);
+el.context.addEventListener("click", () => openInspector("context"));
+el.popupClose.addEventListener("click", closeInspector);
+el.popup.addEventListener("click", (event) => {
+  if (event.target.closest("[data-close-popup]")) closeInspector();
+});
 window.addEventListener("resize", renderEdges);
 window.addEventListener("keydown", onKeydown);
 for (const button of el.tabs) {

@@ -17,6 +17,9 @@
         </header>
 
         <button id="templateBtn" type="button" class="btn btn-block">Load audio graph</button>
+        <div class="rail-section">
+          <button id="contextBtn" type="button" class="btn btn-block btn-ghost">Context</button>
+        </div>
 
         <div class="rail-section">
           <p class="eyebrow">Modules</p>
@@ -48,33 +51,37 @@
           <div id="nodes" class="nodes"></div>
         </div>
       </section>
-
-      <aside class="rail rail--right">
-        <div class="rail-section rail-section--tabs">
-          <div class="tabs" role="tablist" aria-label="Inspector">
-            <button class="tab is-active" type="button" data-tab="settings">Settings</button>
-            <button class="tab" type="button" data-tab="runtime">Runtime</button>
-            <button class="tab" type="button" data-tab="context">Context</button>
-          </div>
-          <div id="settingsPanel" class="tab-panel is-active" data-panel="settings">
-            <div id="settings" class="settings"></div>
-          </div>
-          <div id="runtimePanel" class="tab-panel" data-panel="runtime">
-            <div id="runtimeSettings" class="settings"></div>
-          </div>
-          <div id="contextPanel" class="tab-panel" data-panel="context">
-            <label class="field">Work dir<input id="workDir" type="text" value="work" spellcheck="false"></label>
-            <label class="field">Output dir<input id="outputDir" type="text" value="outputs" spellcheck="false"></label>
-            <div id="contextSettings" class="settings"></div>
-          </div>
+    </main>
+    <div id="inspectorPopup" class="popup" hidden>
+      <div class="popup-backdrop" data-close-popup></div>
+      <section class="popup-panel">
+        <header class="popup-head">
+          <strong>Inspector</strong>
+          <button id="popupCloseBtn" type="button" class="btn btn-ghost">Close</button>
+        </header>
+        <div class="tabs" role="tablist" aria-label="Inspector">
+          <button class="tab is-active" type="button" data-tab="settings">Settings</button>
+          <button class="tab" type="button" data-tab="runtime">Runtime</button>
+          <button class="tab" type="button" data-tab="context">Context</button>
         </div>
-        <div class="rail-section rail-section--runs">
+        <div id="settingsPanel" class="tab-panel is-active" data-panel="settings">
+          <div id="settings" class="settings"></div>
+        </div>
+        <div id="runtimePanel" class="tab-panel" data-panel="runtime">
+          <div id="runtimeSettings" class="settings"></div>
+        </div>
+        <div id="contextPanel" class="tab-panel" data-panel="context">
+          <label class="field">Work dir<input id="workDir" type="text" value="work" spellcheck="false"></label>
+          <label class="field">Output dir<input id="outputDir" type="text" value="outputs" spellcheck="false"></label>
+          <div id="contextSettings" class="settings"></div>
+        </div>
+        <div class="popup-runs">
           <p class="eyebrow">Runs <span id="activeCount" class="tag">0 active</span></p>
           <div id="runs" class="runs"></div>
         </div>
         <pre id="log" class="log"></pre>
-      </aside>
-    </main>
+      </section>
+    </div>
     <script src="/ui/state.js"></script>
     <script src="/ui/forms.js"></script>
     <script src="/ui/flow.js"></script>

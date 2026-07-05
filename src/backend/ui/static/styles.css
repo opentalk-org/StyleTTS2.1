@@ -29,7 +29,7 @@ body {
 
 .app {
   display: grid;
-  grid-template-columns: 246px minmax(420px, 1fr) 336px;
+  grid-template-columns: 246px minmax(420px, 1fr);
   height: 100vh;
   min-height: 600px;
 }
@@ -247,15 +247,17 @@ body {
 .node-del {
   position: absolute;
   top: 5px;
-  right: 6px;
   border: 0;
   background: transparent;
   color: var(--faint);
-  font-size: 16px;
   line-height: 1;
   padding: 2px 4px;
   cursor: pointer;
   opacity: 0;
+}
+.node-del {
+  right: 6px;
+  font-size: 16px;
 }
 .node:hover .node-del { opacity: 1; }
 .node-del:hover { color: var(--danger); }

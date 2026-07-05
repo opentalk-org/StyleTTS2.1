@@ -7,20 +7,63 @@
 
   outputs = { self, nixpkgs }:
     let
-      system = "x86_64-linux";
-      pkgs = import nixpkgs { inherit system; };
-      python = pkgs.python312;
+      imageSystem = "x86_64-linux";
+      devSystems = [
+        "aarch64-darwin"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "x86_64-linux"
+      ];
 
-      appEnv = python.withPackages (ps: [
-        ps.fastapi
-        ps."nats-py"
+      forAllDevSystems = nixpkgs.lib.genAttrs devSystems;
+
+      runflowDependencies = ps: [
         ps.pydantic
-        ps.uvicorn
-      ]);
+      ];
+
+      backendDependencies = ps:
+        runflowDependencies ps ++ [
+          ps.fastapi
+          ps."nats-py"
+          ps.uvicorn
+        ];
+
+      runnerDependencies = ps:
+        runflowDependencies ps ++ [
+          ps."nats-py"
+        ];
+
+      mkDevShell = system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+          python = pkgs.python312;
+          backendEnv = python.withPackages backendDependencies;
+          runnerEnv = python.withPackages runnerDependencies;
+          runflowEnv = python.withPackages runflowDependencies;
+        in
+        pkgs.mkShell {
+          packages = [
+            backendEnv
+            runnerEnv
+            runflowEnv
+            pkgs.nats-server
+            pkgs.postgresql_16
+          ];
+
+          shellHook = ''
+            export PYTHONPATH="$PWD/src:''${PYTHONPATH:-}"
+          '';
+        };
+
+      pkgs = import nixpkgs { system = imageSystem; };
+      python = pkgs.python312;
+      runflowEnv = python.withPackages runflowDependencies;
+      backendEnv = python.withPackages backendDependencies;
+      runnerEnv = python.withPackages runnerDependencies;
 
       runflowBackend = pkgs.writeShellApplication {
         name = "runflow-backend";
-        runtimeInputs = [ appEnv ];
+        runtimeInputs = [ backendEnv ];
         text = ''
           cd ${./.}
           export PYTHONPATH="${./src}:''${PYTHONPATH:-}"
@@ -30,7 +73,7 @@
 
       runflowRunner = pkgs.writeShellApplication {
         name = "runflow-runner";
-        runtimeInputs = [ appEnv ];
+        runtimeInputs = [ runnerEnv ];
         text = ''
           cd ${./.}
           export PYTHONPATH="${./src}:''${PYTHONPATH:-}"
@@ -145,50 +188,57 @@
       };
     in
     {
-      packages.${system}.image = pkgs.dockerTools.buildLayeredImage {
-        name = "runflow-studio-single-image";
-        tag = "latest";
+      devShells = forAllDevSystems (system: {
+        default = mkDevShell system;
+      });
 
-        contents = [
-          pkgs.bash
-          pkgs.cacert
-          pkgs.coreutils
-          pkgs.nats-server
-          pkgs.postgresql_16
-          runflowBackend
-          runflowRunner
-          entrypoint
-        ];
+      packages.${imageSystem} = rec {
+        image = pkgs.dockerTools.buildLayeredImage {
+          name = "runflow-studio-single-image";
+          tag = "latest";
 
-        config = {
-          Cmd = [ "${entrypoint}/bin/runflow-entrypoint" ];
-
-          ExposedPorts = {
-            "8000/tcp" = {};
-            "4222/tcp" = {};
-            "5432/tcp" = {};
-          };
-
-          Env = [
-            "PGDATA=/data/postgres"
-            "PGHOST=/tmp/postgres"
-            "PGPORT=5432"
-            "POSTGRES_DB=runflow"
-            "POSTGRES_USER=runflow"
-            "POSTGRES_PASSWORD=runflow"
-            "NATS_DATA=/data/nats"
-            "NATS_URL=nats://127.0.0.1:4222"
-            "BACKEND_PORT=8000"
-            "RUNNER_ID=runner-1"
+          contents = [
+            pkgs.bash
+            pkgs.cacert
+            pkgs.coreutils
+            pkgs.nats-server
+            pkgs.postgresql_16
+            runflowEnv
+            runflowBackend
+            runflowRunner
+            entrypoint
           ];
 
-          Volumes = {
-            "/data" = {};
+          config = {
+            Cmd = [ "${entrypoint}/bin/runflow-entrypoint" ];
+
+            ExposedPorts = {
+              "8000/tcp" = {};
+              "4222/tcp" = {};
+              "5432/tcp" = {};
+            };
+
+            Env = [
+              "PGDATA=/data/postgres"
+              "PGHOST=/tmp/postgres"
+              "PGPORT=5432"
+              "POSTGRES_DB=runflow"
+              "POSTGRES_USER=runflow"
+              "POSTGRES_PASSWORD=runflow"
+              "NATS_DATA=/data/nats"
+              "NATS_URL=nats://127.0.0.1:4222"
+              "BACKEND_PORT=8000"
+              "RUNNER_ID=runner-1"
+            ];
+
+            Volumes = {
+              "/data" = {};
+            };
           };
         };
-      };
 
-      packages.${system}.default = self.packages.${system}.image;
-      defaultPackage.${system} = self.packages.${system}.image;
+        default = image;
+      };
+      defaultPackage.${imageSystem} = self.packages.${imageSystem}.image;
     };
 }

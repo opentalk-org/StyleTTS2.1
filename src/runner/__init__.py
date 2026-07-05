@@ -1,7 +1,3 @@
-from runner.api import app
-from runner.service import RunnerManager
+from runner.worker import RunnerWorker
 
-__all__ = [
-    "RunnerManager",
-    "app",
-]
+__all__ = ["RunnerWorker"]

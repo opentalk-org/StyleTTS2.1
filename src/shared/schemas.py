@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -28,9 +28,24 @@ class RunContextRequest(BaseModel):
     input_items: list[Any] = Field(default_factory=list)
 
 
-class RunStartRequest(BaseModel):
-    workflow_path: Path
+class GraphNodeRequest(BaseModel):
+    id: str
+    type: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    runtime: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphEdgeRequest(BaseModel):
+    source_node: str
+    source_port: str
+    target_node: str
+    target_port: str
+
+
+class InlineGraphRunRequest(BaseModel):
     run_id: str | None = None
+    nodes: list[GraphNodeRequest]
+    edges: list[GraphEdgeRequest] = Field(default_factory=list)
     context: RunContextRequest = Field(default_factory=RunContextRequest)
 
 
@@ -67,3 +82,39 @@ class RunEventResponse(BaseModel):
     batch_size: int | None
     lineage_id: str | None
     detail: dict[str, Any]
+
+
+class NodeRunSnapshot(BaseModel):
+    node_id: str
+    status: str
+    loaded: bool
+    queue_size: int
+    remaining_items: int | None
+    running_batches: int
+    latest_batch_index: int | None
+    latest_message: str
+    error: str | None
+    counters: dict[str, int]
+
+
+class RunSnapshot(BaseModel):
+    run_id: str
+    total_event_count: int
+    retained_recent_events: int
+    error_count: int
+    event_counts: dict[str, int]
+    nodes: list[NodeRunSnapshot]
+
+
+class StopRunCommand(BaseModel):
+    command: Literal["stop"] = "stop"
+    run_id: str
+
+
+class StartGraphRunCommand(BaseModel):
+    command: Literal["start_graph"] = "start_graph"
+    request: InlineGraphRunRequest
+
+
+class RunnerEventMessage(BaseModel):
+    event: RunEventResponse

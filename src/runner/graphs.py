@@ -1,35 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
-
-from pydantic import BaseModel, Field
-
 from runflow.core.graph import Graph
 from runflow.registry.node_registry import NodeRegistry
 from runflow.tmp_nodes.register import register_builtin_nodes
-
-from runner.schemas import RunContextRequest
-
-
-class GraphNodeRequest(BaseModel):
-    id: str
-    type: str
-    params: dict[str, Any] = Field(default_factory=dict)
-    runtime: dict[str, Any] = Field(default_factory=dict)
-
-
-class GraphEdgeRequest(BaseModel):
-    source_node: str
-    source_port: str
-    target_node: str
-    target_port: str
-
-
-class InlineGraphRunRequest(BaseModel):
-    run_id: str | None = None
-    nodes: list[GraphNodeRequest]
-    edges: list[GraphEdgeRequest] = Field(default_factory=list)
-    context: RunContextRequest = Field(default_factory=RunContextRequest)
+from shared.schemas import InlineGraphRunRequest
 
 
 def build_inline_graph(request: InlineGraphRunRequest) -> Graph:

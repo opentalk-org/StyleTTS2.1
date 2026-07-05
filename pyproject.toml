@@ -9,6 +9,7 @@ description = "Typed async workflow runtime for batched node graphs."
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
+    "nats-py>=2.10",
     "pydantic>=2.9",
     "uvicorn[standard]>=0.30",
 ]
@@ -18,7 +19,7 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["runflow*", "runner*"]
+include = ["backend*", "runflow*", "runner*", "shared*"]
 
 [tool.setuptools.exclude-package-data]
 "*" = [".DS_Store"]
