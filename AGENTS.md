@@ -9,7 +9,8 @@ This project is a ComfyUI-style workflow system for typed, batched, concurrent p
 ## Repository layout
 
 - `src/runflow/` — core graph/runtime library. This must stay domain-agnostic.
-- `src/backend/` — backend/API layer that loads workflows, runs jobs, persists status, and exposes runtime results, it also contain project specific nodes like whisper.
+- `src/backend/` — backend/API layer that loads workflows, persists status, and exposes runtime results. it manage runners and serve data for frontend.
+- `src/runner` - runner that runs workflows using runflow, it expose api for it. it contain custom nodes
 - `src/frontend/` — visual editor/client UI for nodes, typed sockets, workflow editing, and job monitoring.
 
 ## Technology Stack
@@ -17,6 +18,7 @@ This project is a ComfyUI-style workflow system for typed, batched, concurrent p
 - backend: fastapi, sqlalchemy, alembic, pydantic, postgresql
 - frontend: react, tanstack query/form, tailwind css, zustand for local state
 - runflow: pydantic
+- runner: fastapi, sqlalchemy (the same db as backend, it use backend files like models/services), pydantic 
 
 ## Architecture rules
 

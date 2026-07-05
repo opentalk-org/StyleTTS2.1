@@ -1,18 +1,27 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from runflow.core.node import Node
 from runflow.core.ports import Port
+from runflow.core.settings import NodeSettings
 from runflow.tmp_nodes.audio.datatypes import AUDIO_FILE, FLOAT, INT, JSON, PATH
 from runflow.tmp_nodes.audio.models import AudioFile, stable_id
 from runflow.policies import BatchMode, BatchPolicy
 from runflow.policies import ResourcePolicy
 
 
+class LoadAudioSettings(NodeSettings):
+    sample_rate: int = 16000
+    channels: int = 1
+    sleep_sec: float = 0.0
+
+
 class LoadAudioNode(Node):
     NODE_TYPE = "LoadAudio"
     CATEGORY = "Audio / IO"
+    SETTINGS = LoadAudioSettings
 
     INPUTS = {
         "path": Port("path", PATH),
@@ -27,9 +36,11 @@ class LoadAudioNode(Node):
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=32, max_size=64)
     RESOURCE_POLICY = ResourcePolicy(resources={"cpu_workers": 1}, keep_loaded=True)
 
-    def execute(self, batch, context):
+    async def execute(self, batch, context):
         outputs = []
         for inputs in batch:
+            if self.settings.sleep_sec > 0:
+                await asyncio.sleep(self.settings.sleep_sec)
             path = Path(inputs["path"])
             sample_rate = int(self.params.get("sample_rate", 16000))
             channels = int(self.params.get("channels", 1))

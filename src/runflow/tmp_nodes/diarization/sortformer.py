@@ -2,15 +2,21 @@ from __future__ import annotations
 
 from runflow.core.node import Node
 from runflow.core.ports import Port
+from runflow.core.settings import NodeSettings
 from runflow.tmp_nodes.audio.datatypes import AUDIO_CHUNK, DIARIZATION_RESULT
 from runflow.tmp_nodes.audio.models import DiarizationResult, SpeakerTurn, stable_id
 from runflow.policies import BatchMode, BatchPolicy
 from runflow.policies import ResourcePolicy
 
 
+class SortformerSettings(NodeSettings):
+    max_speakers: int = 2
+
+
 class SortformerDiarizationNode(Node):
     NODE_TYPE = "SortformerDiarization"
     CATEGORY = "Audio / Diarization"
+    SETTINGS = SortformerSettings
 
     INPUTS = {
         "audio": Port("audio", AUDIO_CHUNK),
@@ -34,13 +40,13 @@ class SortformerDiarizationNode(Node):
         unload_after_stage=True,
     )
 
-    def setup(self, context):
+    async def setup(self, context):
         self.model = "placeholder_sortformer_model"
 
-    def teardown(self, context):
+    async def teardown(self, context):
         self.model = None
 
-    def execute(self, batch, context):
+    async def execute(self, batch, context):
         outputs = []
         max_speakers = int(self.params.get("max_speakers", 2))
         for inputs in batch:

@@ -1,38 +1,45 @@
 from __future__ import annotations
 
+import asyncio
+
 from runflow.core.node import Node
 
 
 class NodeManager:
-    """Keeps track of loaded nodes and evicts exclusive resource users."""
+    """Loads a node once, guarded by per-node locks.
+
+    Resource conflicts are handled by ResourcePool, not by hard-coded CPU/GPU
+    node types. This manager only controls setup/teardown lifecycle.
+    """
 
     def __init__(self, context):
         self.context = context
         self.loaded: dict[str, Node] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
 
-    def ensure_loaded(self, node: Node) -> None:
+    def _lock_for(self, node: Node) -> asyncio.Lock:
+        if node.id not in self._locks:
+            self._locks[node.id] = asyncio.Lock()
+        return self._locks[node.id]
+
+    async def ensure_loaded(self, node: Node) -> None:
         if node.id in self.loaded:
             return
+        async with self._lock_for(node):
+            if node.id in self.loaded:
+                return
+            await node.setup(self.context)
+            self.loaded[node.id] = node
 
-        self._evict_if_needed(node)
-        node.setup(self.context)
-        self.loaded[node.id] = node
-
-    def unload(self, node: Node) -> None:
+    async def unload(self, node: Node) -> None:
         if node.id not in self.loaded:
             return
-        node.teardown(self.context)
-        del self.loaded[node.id]
+        async with self._lock_for(node):
+            if node.id not in self.loaded:
+                return
+            await node.teardown(self.context)
+            del self.loaded[node.id]
 
-    def unload_all(self) -> None:
+    async def unload_all(self) -> None:
         for node in list(self.loaded.values()):
-            self.unload(node)
-
-    def _evict_if_needed(self, node: Node) -> None:
-        exclusive_key = node.RESOURCE_POLICY.exclusive_key()
-        if exclusive_key is None:
-            return
-
-        for loaded in list(self.loaded.values()):
-            if loaded.RESOURCE_POLICY.exclusive_key() == exclusive_key and loaded.id != node.id:
-                self.unload(loaded)
+            await self.unload(node)

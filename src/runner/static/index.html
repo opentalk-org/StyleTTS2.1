@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Runflow Studio</title>
+    <link rel="stylesheet" href="/ui/styles.css">
+    <link rel="stylesheet" href="/ui/panels.css">
+    <link rel="stylesheet" href="/ui/progress.css">
+  </head>
+  <body>
+    <main class="app">
+      <aside class="rail rail--left">
+        <header class="brand">
+          <div class="brand-mark">RUNFLOW<span>STUDIO</span></div>
+          <div id="apiState" class="status status--wait">checking</div>
+        </header>
+
+        <button id="templateBtn" type="button" class="btn btn-block">Load audio graph</button>
+
+        <div class="rail-section">
+          <p class="eyebrow">Modules</p>
+          <div id="palette" class="palette"></div>
+        </div>
+
+        <div class="rail-section">
+          <p class="eyebrow">Signals</p>
+          <div id="legend" class="legend"></div>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <div class="toolbar">
+          <div class="toolbar-lead">
+            <strong>Patch</strong>
+            <span id="connectHint">Drag background to pan · Shift-drag to box-select · Shift/⌘-click to multi-select · drag a jack to wire.</span>
+          </div>
+          <div class="toolbar-actions">
+            <input id="runId" type="text" placeholder="run id (optional)" spellcheck="false">
+            <button id="clearBtn" type="button" class="btn btn-ghost">Clear</button>
+            <button id="refreshBtn" type="button" class="btn btn-ghost">Refresh</button>
+            <button id="runBtn" type="button" class="btn btn-run">Run graph</button>
+          </div>
+        </div>
+        <div id="canvas" class="canvas">
+          <p id="canvasEmpty" class="canvas-empty">Pick a module from the left to start patching.</p>
+          <svg id="edges" class="edges"></svg>
+          <div id="nodes" class="nodes"></div>
+        </div>
+      </section>
+
+      <aside class="rail rail--right">
+        <div class="rail-section">
+          <p class="eyebrow">Node</p>
+          <div id="settings" class="settings"></div>
+        </div>
+        <div class="rail-section">
+          <p class="eyebrow">Context</p>
+          <label class="field">Work dir<input id="workDir" type="text" value="work" spellcheck="false"></label>
+          <label class="field">Output dir<input id="outputDir" type="text" value="outputs" spellcheck="false"></label>
+          <div id="contextSettings" class="settings"></div>
+        </div>
+        <div class="rail-section rail-section--runs">
+          <p class="eyebrow">Runs <span id="activeCount" class="tag">0 active</span></p>
+          <div id="runs" class="runs"></div>
+        </div>
+        <pre id="log" class="log"></pre>
+      </aside>
+    </main>
+    <script src="/ui/state.js"></script>
+    <script src="/ui/forms.js"></script>
+    <script src="/ui/flow.js"></script>
+    <script src="/ui/app.js"></script>
+    <script src="/ui/interaction.js"></script>
+    <script src="/ui/controls.js"></script>
+  </body>
+</html>

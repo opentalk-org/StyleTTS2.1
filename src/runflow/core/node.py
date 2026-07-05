@@ -4,7 +4,8 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from runflow.core.ports import Port
-from runflow.policies import BatchMode, BatchPolicy, CachePolicy, ResourcePolicy
+from runflow.core.settings import NodeSettings, settings_defaults
+from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 
 
 class Node(ABC):
@@ -18,25 +19,26 @@ class Node(ABC):
     CATEGORY: str = "Core"
     INPUTS: dict[str, Port] = {}
     OUTPUTS: dict[str, Port] = {}
+    SETTINGS: type[NodeSettings] = NodeSettings
 
     BATCH_POLICY: BatchPolicy = BatchPolicy(BatchMode.DISABLED)
     RESOURCE_POLICY: ResourcePolicy = ResourcePolicy()
-    CACHE_POLICY: CachePolicy = CachePolicy()
 
     def __init__(self, node_id: str | None = None, **params: Any):
         self.id = node_id or params.pop("id", self.NODE_TYPE)
-        self.params = params
+        self.settings = self.SETTINGS(**params)
+        self.params = self.settings.model_dump()
 
-    def setup(self, context: Any) -> None:
+    async def setup(self, context: Any) -> None:
         """Load resources. Called by NodeManager."""
         return None
 
-    def teardown(self, context: Any) -> None:
+    async def teardown(self, context: Any) -> None:
         """Release resources. Called by NodeManager."""
         return None
 
     @abstractmethod
-    def execute(self, batch: list[dict[str, Any]], context: Any) -> list[dict[str, Any]]:
+    async def execute(self, batch: list[dict[str, Any]], context: Any) -> list[dict[str, Any]]:
         raise NotImplementedError
 
     @classmethod
@@ -46,6 +48,8 @@ class Node(ABC):
             "category": cls.CATEGORY,
             "inputs": {name: port.to_schema() for name, port in cls.INPUTS.items()},
             "outputs": {name: port.to_schema() for name, port in cls.OUTPUTS.items()},
+            "settings": cls.SETTINGS.model_json_schema(),
+            "settings_defaults": settings_defaults(cls.SETTINGS),
             "batch_policy": {
                 "mode": cls.BATCH_POLICY.mode.value,
                 "preferred_size": cls.BATCH_POLICY.preferred_size,

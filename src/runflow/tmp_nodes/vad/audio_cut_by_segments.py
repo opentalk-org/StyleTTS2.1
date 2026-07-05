@@ -1,16 +1,24 @@
 from __future__ import annotations
 
+import asyncio
+
 from runflow.core.node import Node
 from runflow.core.ports import Port, PortMode
+from runflow.core.settings import NodeSettings
 from runflow.tmp_nodes.audio.datatypes import AUDIO_CHUNK, AUDIO_FILE, VAD_SEGMENTS
 from runflow.tmp_nodes.audio.models import AudioChunk, stable_id
 from runflow.policies import BatchMode, BatchPolicy
 from runflow.policies import ResourcePolicy
 
 
+class AudioCutBySegmentsSettings(NodeSettings):
+    sleep_sec: float = 0.0
+
+
 class AudioCutBySegmentsNode(Node):
     NODE_TYPE = "AudioCutBySegments"
     CATEGORY = "Audio / Segmentation"
+    SETTINGS = AudioCutBySegmentsSettings
 
     INPUTS = {
         "audio": Port("audio", AUDIO_FILE),
@@ -23,10 +31,12 @@ class AudioCutBySegmentsNode(Node):
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=32, max_size=64, group_by=("sample_rate",))
     RESOURCE_POLICY = ResourcePolicy(resources={"cpu_workers": 1}, keep_loaded=True)
 
-    def execute(self, batch, context):
+    async def execute(self, batch, context):
         outputs = []
         out_dir = context.node_dir(self.id)
         for inputs in batch:
+            if self.settings.sleep_sec > 0:
+                await asyncio.sleep(self.settings.sleep_sec)
             audio = inputs["audio"]
             vad = inputs["segments"]
             chunks = []

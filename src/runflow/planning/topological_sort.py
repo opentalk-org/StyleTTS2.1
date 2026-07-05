@@ -25,6 +25,6 @@ def topological_sort(graph: Graph) -> list[str]:
                 queue.append(target)
 
     if len(result) != len(graph.nodes):
-        raise ValueError("Graph contains a cycle or disconnected dependency issue")
+        raise ValueError("Graph contains a cycle")
 
     return result

@@ -23,7 +23,7 @@ class AudioCutBySpeakersNode(Node):
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=32, max_size=64, group_by=("sample_rate",))
     RESOURCE_POLICY = ResourcePolicy(resources={"cpu_workers": 1}, keep_loaded=True)
 
-    def execute(self, batch, context):
+    async def execute(self, batch, context):
         outputs = []
         out_dir = context.node_dir(self.id)
         for inputs in batch:

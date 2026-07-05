@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 from pathlib import Path
@@ -7,15 +8,22 @@ from typing import Any
 
 from runflow.core.node import Node
 from runflow.core.ports import Port
+from runflow.core.settings import NodeSettings
 from runflow.tmp_nodes.audio.datatypes import AUDIO_LIKE, SAVE_RESULT, TRANSCRIPT
 from runflow.tmp_nodes.audio.models import SaveResult, Transcript, stable_id
 from runflow.policies import BatchMode, BatchPolicy
 from runflow.policies import ResourcePolicy
 
 
+class SaveArtifactSettings(NodeSettings):
+    output_dir: Path | None = None
+    sleep_sec: float = 0.0
+
+
 class SaveAudioNode(Node):
     NODE_TYPE = "SaveAudio"
     CATEGORY = "Audio / IO"
+    SETTINGS = SaveArtifactSettings
 
     INPUTS = {
         "audio": Port("audio", AUDIO_LIKE),
@@ -27,11 +35,13 @@ class SaveAudioNode(Node):
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=128)
     RESOURCE_POLICY = ResourcePolicy(resources={"cpu_workers": 1}, keep_loaded=True)
 
-    def execute(self, batch, context):
-        out_dir = Path(self.params.get("output_dir", context.output_dir / "audio"))
+    async def execute(self, batch, context):
+        out_dir = self.settings.output_dir or context.output_dir / "audio"
         out_dir.mkdir(parents=True, exist_ok=True)
         outputs = []
         for inputs in batch:
+            if self.settings.sleep_sec > 0:
+                await asyncio.sleep(self.settings.sleep_sec)
             audio = inputs["audio"]
             source_path = Path(audio.path)
             suffix = source_path.suffix or ".wav"
@@ -55,6 +65,7 @@ class SaveAudioNode(Node):
 class SaveTranscriptNode(Node):
     NODE_TYPE = "SaveTranscript"
     CATEGORY = "Audio / IO"
+    SETTINGS = SaveArtifactSettings
 
     INPUTS = {
         "transcript": Port("transcript", TRANSCRIPT),
@@ -66,11 +77,13 @@ class SaveTranscriptNode(Node):
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=128)
     RESOURCE_POLICY = ResourcePolicy(resources={"cpu_workers": 1}, keep_loaded=True)
 
-    def execute(self, batch, context):
-        out_dir = Path(self.params.get("output_dir", context.output_dir / "transcripts"))
+    async def execute(self, batch, context):
+        out_dir = self.settings.output_dir or context.output_dir / "transcripts"
         out_dir.mkdir(parents=True, exist_ok=True)
         outputs = []
         for inputs in batch:
+            if self.settings.sleep_sec > 0:
+                await asyncio.sleep(self.settings.sleep_sec)
             transcript: Transcript = inputs["transcript"]
             out_path = out_dir / f"{transcript.id}.json"
             payload: dict[str, Any] = {

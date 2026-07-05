@@ -34,13 +34,13 @@ class DeepFilterNetNode(Node):
         unload_after_stage=True,
     )
 
-    def setup(self, context):
+    async def setup(self, context):
         self.model = "placeholder_deepfilternet_model"
 
-    def teardown(self, context):
+    async def teardown(self, context):
         self.model = None
 
-    def execute(self, batch, context):
+    async def execute(self, batch, context):
         outputs = []
         out_dir = context.node_dir(self.id)
         for inputs in batch:

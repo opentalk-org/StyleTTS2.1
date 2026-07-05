@@ -1,84 +1,73 @@
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
-from collections.abc import Iterable
-from pathlib import Path
 from typing import Any
 
 from runflow.core.context import ExecutionContext
-from runflow.core.graph import Edge, Graph
+from runflow.core.graph import Graph
 from runflow.core.node import Node
-from runflow.core.ports import PortMode
 from runflow.core.task import Packet, Task, lineage_from_value, metadata_from_value
 from runflow.planning.batch_planner import BatchPlanner
 from runflow.planning.graph_validator import GraphValidator
-from runflow.planning.stage_builder import StageBuilder
 from runflow.runtime.artifact_store import ArtifactStore
-from runflow.runtime.join_builder import build_join_tasks
 from runflow.runtime.node_manager import NodeManager
+from runflow.runtime.output_values import output_values
+from runflow.runtime.resource_pool import ResourcePool
+from runflow.runtime.routing import add_to_join_buffer, can_create_single_input_task
+from runflow.runtime.scheduler_events import SchedulerEventEmitter
 from runflow.runtime.window_manager import WindowManager
 
 
-def _is_stream_iterable(value: Any) -> bool:
-    if isinstance(value, (str, bytes, dict, Path)):
-        return False
-    return isinstance(value, Iterable)
+class WindowedScheduler:
+    """Async, bounded-queue, windowed scheduler.
 
-
-class WindowedBatchScheduler:
-    """Windowed, stage-batched executor.
-
-    It processes a bounded input window, runs each node in topological order,
-    batches per node using that node's BatchPolicy, and uses NodeManager to
-    avoid node setup switching per item.
+    Nodes declare generic ResourcePolicy requirements, and ResourcePool decides
+    which workers can run at the same time.
     """
 
     def __init__(self, graph: Graph, context: ExecutionContext):
         self.graph = graph
         self.context = context
         self.validator = GraphValidator()
-        self.stage_builder = StageBuilder()
+        self.events = SchedulerEventEmitter(context)
         self.batch_planner = BatchPlanner()
         self.node_manager = NodeManager(context)
         self.artifact_store = ArtifactStore(context.work_dir / context.run_id)
 
+        self.resource_pool = ResourcePool(limits=dict(context.config.resources))
+
+        self.queues: dict[str, asyncio.Queue[Task]] = {}
+        self.join_buffers: dict[tuple[str, str], dict[str, list[Packet]]] = defaultdict(lambda: defaultdict(list))
+        self.queue_max_size = max(1, context.config.queue_max_size)
+        self._active_tasks = 0
+        self._active_condition: asyncio.Condition | None = None
+        self._workers: list[asyncio.Task] = []
+        self._worker_errors: list[BaseException] = []
+        self._batch_sequence = 0
+
     def run(self) -> None:
+        asyncio.run(self.arun())
+
+    async def arun(self) -> None:
         self.validator.validate(self.graph)
         input_items = self.context.input_items or self._discover_source_items()
-        windows = WindowManager.from_config(input_items, self.context.config.get("window", {}))
-        stages = self.stage_builder.build(self.graph)
+        windows = WindowManager.from_config(input_items, self.context.config.window)
+        await self.events.run_started(input_items, self.graph.nodes.keys())
 
         try:
             for window_index, items in enumerate(windows.iter_windows()):
                 self.context.window_index = window_index
                 self.context.current_window_items = items
-                state: dict[tuple[str, str], list[Packet]] = defaultdict(list)
-
-                print(f"\n=== Window {window_index}: {len(items)} item(s) ===")
-                for stage in stages:
-                    for node in stage.nodes:
-                        tasks = self._build_tasks_for_node(node, state)
-                        if not tasks:
-                            continue
-
-                        self.node_manager.ensure_loaded(node)
-                        batches = self.batch_planner.build_batches(tasks, node.BATCH_POLICY)
-
-                        print(
-                            f"[{node.id}] {node.NODE_TYPE}: "
-                            f"{len(tasks)} task(s), {len(batches)} batch(es), "
-                            f"batch_policy={node.BATCH_POLICY.preferred_size}"
-                        )
-
-                        for batch in batches:
-                            self._execute_node_batch(node, batch, state)
-
-                        if node.RESOURCE_POLICY.unload_after_stage:
-                            self.node_manager.unload(node)
+                await self.events.window_started(window_index, len(items))
+                await self._run_window()
+                await self.events.window_completed(window_index, len(items))
 
             self.artifact_store.write_index()
+            await self.context.emit_event("run_completed", message="run completed")
         finally:
-            self.node_manager.unload_all()
+            await self._stop_workers()
+            await self.node_manager.unload_all()
 
     def _discover_source_items(self) -> list[Any]:
         items: list[Any] = []
@@ -88,69 +77,148 @@ class WindowedBatchScheduler:
                 items.extend(list_items())
                 continue
 
-            # Convenience fallback for path-listing source nodes. Runtime remains
-            # generic; this avoids forcing existing path-based examples to change.
-            list_paths = getattr(node, "list_paths", None)
-            if callable(list_paths):
-                items.extend(list_paths())
         return items
 
-    def _build_tasks_for_node(self, node: Node, state: dict[tuple[str, str], list[Packet]]) -> list[Task]:
-        incoming = self.graph.incoming_edges(node.id)
+    async def _run_window(self) -> None:
+        self.queues = {node_id: asyncio.Queue(maxsize=self.queue_max_size) for node_id in self.graph.nodes}
+        self.join_buffers.clear()
+        self._active_tasks = 0
+        self._active_condition = asyncio.Condition()
+        self._workers = []
+        self._worker_errors = []
+        self._batch_sequence = 0
 
-        # Source node.
-        if not incoming and not node.INPUTS:
-            return [
+        for node in self.graph.nodes.values():
+            self._workers.append(asyncio.create_task(self._worker(node, 0), name=f"{node.id}:0"))
+
+        for source in self.graph.source_nodes():
+            if source.INPUTS:
+                continue
+            await self._enqueue(
+                source.id,
                 Task(
-                    node_id=node.id,
+                    node_id=source.id,
                     inputs={},
                     input_packets={},
                     lineage_id=f"window:{self.context.window_index}",
-                )
-            ]
+                ),
+            )
 
-        by_target_port: dict[str, list[Packet]] = defaultdict(list)
-        for edge in incoming:
-            by_target_port[edge.target.port].extend(state.get((edge.source.node_id, edge.source.port), []))
+        await self._wait_until_idle()
+        await self._stop_workers()
 
-        # Single-input nodes should run once per packet. This also handles many
-        # upstream branches feeding the same input, for example three ASR nodes
-        # feeding SaveTranscript.transcript.
-        required_input_names = [name for name, port in node.INPUTS.items() if not port.optional and name not in node.params]
-        if len(required_input_names) == 1 and len(node.INPUTS) == 1:
-            port_name = required_input_names[0]
-            tasks = []
-            for packet in by_target_port.get(port_name, []):
-                tasks.append(
-                    Task(
-                        node_id=node.id,
-                        inputs={port_name: packet.value},
-                        input_packets={port_name: packet},
-                        lineage_id=packet.lineage_id,
-                        metadata=packet.metadata,
-                    )
-                )
-            return tasks
+    async def _stop_workers(self) -> None:
+        for worker in self._workers:
+            worker.cancel()
+        if self._workers:
+            await asyncio.gather(*self._workers, return_exceptions=True)
+        self._workers = []
 
-        # Multi-input join by lineage id.
-        lineages: dict[str, dict[str, list[Packet]]] = defaultdict(lambda: defaultdict(list))
-        for input_name, packets in by_target_port.items():
-            for packet in packets:
-                lineages[packet.lineage_id][input_name].append(packet)
+    def _raise_worker_errors(self) -> None:
+        errors = list(self._worker_errors)
 
-        tasks: list[Task] = []
-        for lineage_id, grouped in lineages.items():
-            if not all(name in grouped or name in node.params for name in required_input_names):
-                continue
+        if len(errors) == 1:
+            raise errors[0]
+        if errors:
+            raise ExceptionGroup("Scheduler worker failures", errors)
 
-            tasks.extend(build_join_tasks(node, lineage_id, grouped))
+    async def _enqueue(self, node_id: str, task: Task) -> None:
+        if self._active_condition is None:
+            raise RuntimeError("Scheduler is not running")
+        async with self._active_condition:
+            self._active_tasks += 1
+        await self.queues[node_id].put(task)
+        await self.events.task_enqueued(node_id, task, self.queues[node_id].qsize())
 
-        return tasks
+    async def _mark_task_done(self) -> None:
+        if self._active_condition is None:
+            raise RuntimeError("Scheduler is not running")
+        async with self._active_condition:
+            self._active_tasks -= 1
+            if self._active_tasks <= 0:
+                self._active_condition.notify_all()
 
-    def _execute_node_batch(self, node: Node, batch: list[Task], state: dict[tuple[str, str], list[Packet]]) -> None:
-        outputs = node.execute([task.inputs for task in batch], self.context)
+    async def _wait_until_idle(self) -> None:
+        if self._active_condition is None:
+            raise RuntimeError("Scheduler is not running")
+        async with self._active_condition:
+            await self._active_condition.wait_for(lambda: self._active_tasks == 0 or bool(self._worker_errors))
+        self._raise_worker_errors()
 
-        task_for_output: list[Task]
+    async def _record_worker_error(self, error: BaseException) -> None:
+        if self._active_condition is None:
+            raise RuntimeError("Scheduler is not running")
+        async with self._active_condition:
+            self._worker_errors.append(error)
+            self._active_condition.notify_all()
+
+    def _next_batch_index(self) -> int:
+        self._batch_sequence += 1
+        return self._batch_sequence
+
+    async def _worker(self, node: Node, worker_index: int) -> None:
+        queue = self.queues[node.id]
+        while True:
+            first = await queue.get()
+            batches, consumed_tasks = await self._collect_batches(node, first, queue)
+            await self.events.queue_depth(node.id, queue.qsize())
+
+            try:
+                async with self.resource_pool.lease(node.RESOURCE_POLICY):
+                    was_loaded = node.id in self.node_manager.loaded
+                    await self.node_manager.ensure_loaded(node)
+                    if not was_loaded and node.id in self.node_manager.loaded:
+                        await self.events.node_loaded(node)
+                    for batch in batches:
+                        batch_index = self._next_batch_index()
+                        await self.events.batch_started(node, worker_index, batch_index, batch)
+                        try:
+                            outputs = await node.execute([task.inputs for task in batch], self.context)
+                            await self._route_outputs(node, batch, outputs, batch_index)
+                            await self.events.batch_completed(node, worker_index, batch_index, batch, outputs)
+                        finally:
+                            if node.RESOURCE_POLICY.unload_after_stage and not node.RESOURCE_POLICY.keep_loaded:
+                                await self.node_manager.unload(node)
+                                await self.events.node_unloaded(node)
+            except Exception as error:
+                await self.events.node_failed(node, worker_index, error)
+                await self._record_worker_error(error)
+                raise
+            finally:
+                for _ in consumed_tasks:
+                    queue.task_done()
+                    await self._mark_task_done()
+
+    async def _collect_batches(
+        self,
+        node: Node,
+        first: Task,
+        queue: asyncio.Queue[Task],
+    ) -> tuple[list[list[Task]], list[Task]]:
+        tasks = [first]
+        max_size = max(1, node.BATCH_POLICY.max_size)
+        preferred_size = max(1, node.BATCH_POLICY.preferred_size)
+        target_size = min(max_size, preferred_size)
+        timeout = max(0, node.BATCH_POLICY.timeout_ms) / 1000.0
+
+        while len(tasks) < target_size:
+            try:
+                if timeout > 0:
+                    tasks.append(await asyncio.wait_for(queue.get(), timeout=timeout))
+                else:
+                    tasks.append(queue.get_nowait())
+            except (asyncio.TimeoutError, asyncio.QueueEmpty):
+                break
+
+        return self.batch_planner.build_batches(tasks, node.BATCH_POLICY), tasks
+
+    async def _route_outputs(
+        self,
+        node: Node,
+        batch: list[Task],
+        outputs: list[dict[str, Any]],
+        batch_index: int,
+    ) -> None:
         if len(outputs) == len(batch):
             task_for_output = batch
         elif len(batch) == 1:
@@ -162,17 +230,14 @@ class WindowedBatchScheduler:
 
         for task, output_dict in zip(task_for_output, outputs):
             for port_name, value in output_dict.items():
+                if port_name == "__progress__":
+                    await self.events.node_progress(node, value, batch_index)
+                    continue
                 if port_name not in node.OUTPUTS:
                     raise KeyError(f"{node.id} returned undeclared output port: {port_name}")
 
                 port = node.OUTPUTS[port_name]
-                values: list[Any]
-                if port.mode == PortMode.STREAM and _is_stream_iterable(value):
-                    values = list(value)
-                else:
-                    values = [value]
-
-                for item in values:
+                for item in output_values(node, port_name, port, value):
                     packet = Packet(
                         node_id=node.id,
                         port=port_name,
@@ -181,5 +246,35 @@ class WindowedBatchScheduler:
                         lineage_id=lineage_from_value(item, inherited=task.lineage_id),
                         metadata={**task.metadata, **metadata_from_value(item)},
                     )
-                    state[(node.id, port_name)].append(packet)
                     self.artifact_store.register_packet(packet)
+                    await self.events.packet_created(packet, batch_index)
+                    await self._deliver_packet(packet)
+
+    async def _deliver_packet(self, packet: Packet) -> None:
+        for edge in self.graph.outgoing_edges(packet.node_id):
+            if edge.source.port != packet.port:
+                continue
+
+            target_node = self.graph.nodes[edge.target.node_id]
+            target_port = edge.target.port
+            await self.events.packet_delivered(packet, target_node, target_port)
+
+            if can_create_single_input_task(target_node):
+                await self._enqueue(
+                    target_node.id,
+                    Task(
+                        node_id=target_node.id,
+                        inputs={target_port: packet.value},
+                        input_packets={target_port: packet},
+                        lineage_id=packet.lineage_id,
+                        metadata=packet.metadata,
+                    ),
+                )
+                continue
+
+            tasks = add_to_join_buffer(target_node, target_port, packet, self.join_buffers)
+            if not tasks:
+                await self.events.join_waiting(target_node, target_port, packet)
+            for task in tasks:
+                await self.events.join_ready(task)
+                await self._enqueue(target_node.id, task)

@@ -4,16 +4,18 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
+from runflow.core.config import RuntimeWindowConfig
+
 
 @dataclass(frozen=True)
 class WindowPolicy:
     """Generic runtime windowing policy.
 
     The runtime does not know whether an item is audio, an image, a document, a
-    URL, or a custom object. A window is just a bounded group of source items.
+    URL, or a custom object. A window is just a bounded group of input items.
 
     Limits are optional and can be combined:
-      * max_items: maximum number of source items in one window
+      * max_items: maximum number of input items in one window
       * max_cost: maximum accumulated item cost in one window
 
     `cost_fn` may be supplied by caller/runtime integration. By default every
@@ -31,7 +33,7 @@ class WindowPolicy:
 
 
 class WindowManager:
-    """Split arbitrary source items into bounded windows.
+    """Split arbitrary input items into bounded windows.
 
     This class is intentionally domain-agnostic. It never imports or references
     audio-specific types. Domain-specific nodes can still estimate item cost by
@@ -52,15 +54,10 @@ class WindowManager:
     def from_config(
         cls,
         items: Iterable[Any],
-        config: dict[str, Any] | None,
+        config: RuntimeWindowConfig,
         cost_fn: Callable[[Any], float] | None = None,
     ) -> "WindowManager":
-        cfg = dict(config or {})
-        # Runtime config is generic; no domain-specific source-item names here.
-        policy = WindowPolicy(
-            max_items=int(cfg.get("max_items", 10)),
-            max_cost=cfg.get("max_cost"),
-        )
+        policy = WindowPolicy(max_items=config.max_items, max_cost=config.max_cost)
         return cls(items=items, policy=policy, cost_fn=cost_fn)
 
     def iter_windows(self) -> Iterator[list[Any]]:

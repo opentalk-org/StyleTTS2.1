@@ -1,0 +1,87 @@
+.tag {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.runs { display: flex; flex-direction: column; gap: 7px; }
+
+.schema-group {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.schema-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.schema-title {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.map-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.map-row .btn {
+  min-height: 30px;
+  padding: 0 8px;
+}
+
+.run {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--surface-2);
+}
+
+.run-led { width: 8px; height: 8px; border-radius: 999px; background: currentColor; box-shadow: 0 0 7px currentColor; }
+.run-body { min-width: 0; }
+.run-id { display: block; font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-meta { display: block; color: var(--muted); font-family: var(--mono); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run .btn { min-height: 26px; padding: 0 9px; font-size: 11px; }
+
+.state-queued { color: var(--accent); }
+.state-running { color: #56ccf2; }
+.state-stopping { color: var(--accent); }
+.state-succeeded { color: var(--ok); }
+.state-failed { color: var(--danger); }
+.state-stopped { color: var(--faint); }
+
+.log {
+  overflow: auto;
+  min-height: 42px;
+  max-height: 130px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0a0e15;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+
+@media (max-width: 980px) {
+  .app { grid-template-columns: 1fr; height: auto; }
+  .workspace { height: 72vh; }
+}

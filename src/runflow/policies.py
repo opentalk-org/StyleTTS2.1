@@ -20,16 +20,6 @@ class BatchPolicy:
     pad_to_multiple_of: int | None = None
     drop_last: bool = False
 
-
-
-@dataclass(frozen=True)
-class CachePolicy:
-    enabled: bool = True
-    namespace: str | None = None
-    reuse_across_runs: bool = False
-
-
-
 @dataclass(frozen=True)
 class ResourcePolicy:
     resources: dict[str, float] = field(default_factory=lambda: {"cpu_workers": 1})

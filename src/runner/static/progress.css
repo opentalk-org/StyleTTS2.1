@@ -1,0 +1,151 @@
+.node.run-running {
+  border-color: #4fd1c5;
+  box-shadow: 0 0 0 3px rgba(79, 209, 197, 0.55), 0 0 24px rgba(79, 209, 197, 0.28), 0 16px 40px rgba(0, 0, 0, 0.35);
+  animation: pulse-node 900ms ease-in-out infinite alternate;
+}
+
+.node.run-failed {
+  box-shadow: 0 0 0 2px rgba(231, 111, 81, 0.9), 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+.node-state,
+.node-load,
+.node-queue {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: #0b1218;
+  background: var(--faint);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.node-state.running {
+  background: #4fd1c5;
+}
+
+.node-state.failed {
+  color: #fff;
+  background: var(--danger);
+}
+
+.node-queue {
+  background: var(--accent-2);
+}
+
+.node-load.loaded {
+  background: #56ccf2;
+}
+
+.node-load.unloaded {
+  color: var(--muted);
+  background: #10151c;
+}
+
+.node-metrics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.node-metric {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  padding: 6px;
+  background: #10151c;
+  text-align: center;
+}
+
+.node-metric strong {
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-metric span {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.node-metric-queue strong {
+  color: var(--accent-2);
+}
+
+.node-metric-state.running {
+  border-color: #4fd1c5;
+}
+
+.node-metric-state.running strong {
+  color: #4fd1c5;
+}
+
+.node-metric-state.failed {
+  border-color: var(--danger);
+}
+
+.node-metric-state.failed strong {
+  color: var(--danger);
+}
+
+.outputs .port span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes pulse-node {
+  from { opacity: 0.55; }
+  to { opacity: 1; }
+}
+
+.event-trace {
+  max-height: 180px;
+  margin-top: 8px;
+  color: #ffd7d1;
+  white-space: pre-wrap;
+}
+
+.progress {
+  position: relative;
+  height: 16px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #10151c;
+}
+
+.progress i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.progress span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 800;
+}
