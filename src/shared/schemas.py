@@ -139,3 +139,14 @@ class StartGraphRunCommand(BaseModel):
 
 class RunnerEventMessage(BaseModel):
     event: RunEventResponse
+
+
+class RunnerHeartbeatMessage(BaseModel):
+    runner_id: str
+    hostname: str
+    process_id: int
+    port: int
+    gpu_index: int | None
+    resources: dict[str, float]
+    active_run_ids: list[str]
+    created_at: datetime

@@ -1,0 +1,13 @@
+export type JsonSchema = {
+  type?: string;
+  title?: string;
+  default?: unknown;
+  enum?: string[];
+  properties?: Record<string, JsonSchema>;
+  additionalProperties?: JsonSchema | boolean;
+  anyOf?: JsonSchema[];
+  $ref?: string;
+  $defs?: Record<string, JsonSchema>;
+};
+
+export type SchemaValues = Record<string, unknown>;

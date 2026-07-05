@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from runflow.core.graph import Graph
 from runflow.registry.node_registry import NodeRegistry
-from runflow.tmp_nodes.register import register_builtin_nodes
+from runner.nodes.registry import register_runner_nodes
 from shared.schemas import InlineGraphRunRequest
 
 
 def build_inline_graph(request: InlineGraphRunRequest) -> Graph:
-    registry = register_builtin_nodes(NodeRegistry())
+    registry = register_runner_nodes(NodeRegistry())
     graph = Graph()
 
     for node_data in request.nodes:

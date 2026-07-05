@@ -7,13 +7,15 @@ import uuid
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from fastapi.staticfiles import StaticFiles
 
+from backend.runners import router as runners_router
+from backend.settings import router as settings_router
 from backend.nats_bus import BackendNatsBus
 from backend.service import BackendManager, DuplicateRunError
+from backend.workflows import workflow_router
 from runflow.registry.node_registry import NodeRegistry
 from runflow.registry.type_registry import TypeRegistry
-from runflow.tmp_nodes.audio.datatypes import register_audio_types
-from runflow.tmp_nodes.register import register_builtin_nodes
 from runflow.ui.schema_export import export_ui_schema
+from runner.nodes.registry import register_runner_nodes, register_runner_types_for_ui
 from shared.db import create_database_schema, database_session
 from shared.db.datasets import crud as dataset_crud
 from shared.db.datasets.models import Dataset
@@ -47,6 +49,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Runflow Backend", lifespan=lifespan)
 app.mount("/ui-old", StaticFiles(directory=old_static_dir, html=True), name="ui-old")
+app.include_router(runners_router)
+app.include_router(settings_router)
+app.include_router(workflow_router(manager))
 
 if "RUNFLOW_UI_STATIC_DIR" in os.environ:
     static_dir = Path(os.environ["RUNFLOW_UI_STATIC_DIR"])
@@ -60,8 +65,8 @@ async def health() -> dict[str, str]:
 
 @app.get("/schema")
 async def schema() -> dict:
-    node_registry = register_builtin_nodes(NodeRegistry())
-    type_registry = register_audio_types(TypeRegistry())
+    node_registry = register_runner_nodes(NodeRegistry())
+    type_registry = register_runner_types_for_ui(TypeRegistry())
     return export_ui_schema(node_registry, type_registry)
 
 

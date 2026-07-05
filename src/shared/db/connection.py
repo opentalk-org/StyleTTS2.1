@@ -12,6 +12,7 @@ from shared.db.base import Base
 from shared.db.datasets import models as dataset_models
 from shared.db.initialization import models as initialization_models
 from shared.db.runners import models as runner_models
+from shared.db.settings import models as settings_models
 from shared.db.voices import models as voice_models
 from shared.db.workflows import models as workflow_models
 

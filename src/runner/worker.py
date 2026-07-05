@@ -1,4 +1,3 @@
-import argparse
 import asyncio
 import traceback
 from datetime import UTC, datetime
@@ -15,9 +14,10 @@ from runflow.core.context import ExecutionContext
 from runflow.core.events import RunEvent
 from runflow.runtime.scheduler import WindowedScheduler
 from runner.graphs import build_inline_graph
+from runner.heartbeat import RunnerHeartbeatPublisher
 from runner.node_logs import NodeLogManager, publish_node_log_response
 from shared.jetstream import COMMAND_STREAM, DEFAULT_NATS_URL, EVENT_STREAM, START_COMMAND_SUBJECT, RUNNER_COMMAND_DURABLE, connect, decode_json, encode_model, ensure_streams, event_subject, node_command_subject, node_log_command_subject, stop_command_subject
-from shared.logging_setup import configure_logging, get_logger
+from shared.logging_setup import get_logger
 from shared.schemas import InlineGraphRunRequest, NodeLifecycleCommand, RunEventResponse, RunnerEventMessage, StartGraphRunCommand, StopRunCommand
 
 class RunnerWorker:
@@ -38,8 +38,11 @@ class RunnerWorker:
         nc = await connect(self.nats_url)
         self.js = nc.jetstream()
         await ensure_streams(self._js())
+        heartbeat = RunnerHeartbeatPublisher(self.runner_id, self._js())
+        heartbeat.register_runner()
         self.logger.info("runner subscriptions starting")
         await asyncio.gather(
+            heartbeat.run(lambda: list(self._active_runs.keys())),
             self._consume_starts(),
             self._consume_commands(stop_command_subject(self.runner_id), f"{self.runner_id}-targeted-stops", self._handle_stop),
             self._consume_commands(node_command_subject(self.runner_id), f"{self.runner_id}-node-lifecycle", self._handle_node_lifecycle),
@@ -281,18 +284,3 @@ class RunnerWorker:
         if self.js is None:
             raise RuntimeError("JetStream is not connected")
         return self.js
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--runner-id", default=f"runner_{uuid4().hex[:8]}")
-    parser.add_argument("--nats-url", default=DEFAULT_NATS_URL)
-    return parser.parse_args()
-
-def main() -> None:
-    args = parse_args()
-    configure_logging("runner")
-    worker = RunnerWorker(runner_id=args.runner_id, nats_url=args.nats_url)
-    asyncio.run(worker.run())
-
-if __name__ == "__main__":
-    main()

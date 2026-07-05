@@ -16,6 +16,7 @@ EVENT_STREAM = "RUNFLOW_EVENTS"
 
 COMMAND_SUBJECTS = ["runflow.commands.>"]
 EVENT_SUBJECTS = ["runflow.events.*", "runflow.logs.*"]
+RUNNER_HEARTBEAT_SUBJECT = "runflow.runners.heartbeat"
 
 START_COMMAND_SUBJECT = "runflow.commands.start"
 STOP_COMMAND_SUBJECT = "runflow.commands.stop"
@@ -26,6 +27,7 @@ LOG_RESPONSE_SUBJECT_PREFIX = "runflow.logs"
 
 RUNNER_COMMAND_DURABLE = "runflow-runners"
 BACKEND_EVENT_DURABLE = "runflow-backend-events"
+BACKEND_HEARTBEAT_DURABLE = "runflow-backend-runner-heartbeats"
 
 
 async def connect(url: str = DEFAULT_NATS_URL) -> NatsClient:
@@ -77,7 +79,7 @@ async def ensure_streams(js: JetStreamContext) -> None:
         js,
         StreamConfig(
             name=EVENT_STREAM,
-            subjects=EVENT_SUBJECTS,
+            subjects=[*EVENT_SUBJECTS, RUNNER_HEARTBEAT_SUBJECT],
             retention=RetentionPolicy.LIMITS,
             storage=StorageType.FILE,
             max_age=60 * 60 * 6,

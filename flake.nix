@@ -17,50 +17,7 @@
 
       forAllDevSystems = nixpkgs.lib.genAttrs devSystems;
 
-      rustfsVersion = "1.0.0-beta.8";
-      rustfsAssets = {
-        aarch64-darwin = {
-          asset = "rustfs-macos-aarch64-v${rustfsVersion}.zip";
-          hash = "1vc7g8db66d7q9krpihm31qynka26256jp1pljrq2w991lbf90bd";
-        };
-        aarch64-linux = {
-          asset = "rustfs-linux-aarch64-musl-v${rustfsVersion}.zip";
-          hash = "0ashi7m1rgfxl6jg7wrsvlidw9adzzf4cg0yqa2lyqzcf18g80vh";
-        };
-        x86_64-darwin = {
-          asset = "rustfs-macos-x86_64-v${rustfsVersion}.zip";
-          hash = "0fi8y1bz1q7df6gkl8nnahky6jh84k30yz365qw0rpp5kalxxrsf";
-        };
-        x86_64-linux = {
-          asset = "rustfs-linux-x86_64-musl-v${rustfsVersion}.zip";
-          hash = "1bxffbxar04frcvibh01s9iigzpkhwgk4p18pi1axi1yya1gqxc1";
-        };
-      };
-
-      mkRustfs = pkgs:
-        let
-          asset = rustfsAssets.${pkgs.system};
-        in
-        pkgs.stdenvNoCC.mkDerivation {
-          pname = "rustfs";
-          version = rustfsVersion;
-          src = pkgs.fetchurl {
-            url = "https://github.com/rustfs/rustfs/releases/download/${rustfsVersion}/${asset.asset}";
-            sha256 = asset.hash;
-          };
-          dontUnpack = true;
-          nativeBuildInputs = [ pkgs.unzip ];
-          installPhase = ''
-            runHook preInstall
-            if unzip -t "$src" >/dev/null 2>&1; then
-              unzip -q "$src" rustfs
-              install -Dm755 rustfs "$out/bin/rustfs"
-            else
-              install -Dm755 "$src" "$out/bin/rustfs"
-            fi
-            runHook postInstall
-          '';
-        };
+      mkRustfs = pkgs: import ./nix/rustfs-package.nix { inherit pkgs; };
 
       runflowDependencies = ps: [
         ps.pydantic
@@ -82,18 +39,7 @@
           ps."nats-py"
         ];
 
-      mkFrontendStatic = pkgs: pkgs.buildNpmPackage {
-        pname = "runflow-studio-frontend";
-        version = "0.1.0";
-        src = ./src/frontend;
-        npmDepsHash = "sha256-dIwSK4LCcKc8IX2hgSyUIctHuygcoKK9tbpm2b9y6bI=";
-        installPhase = ''
-          runHook preInstall
-          mkdir -p $out
-          cp -r dist/* $out/
-          runHook postInstall
-        '';
-      };
+      mkFrontendStatic = pkgs: import ./nix/frontend-static.nix { inherit pkgs; };
 
       mkDevShell = system:
         let
@@ -127,6 +73,11 @@
             ];
             text = builtins.readFile ./nix/frontend-dev.sh;
           };
+          runnerLaunch = pkgs.writeShellApplication {
+            name = "runflow-runner-launch";
+            runtimeInputs = [ runnerEnv pkgs.bash pkgs.coreutils pkgs.gnugrep ];
+            text = builtins.readFile ./nix/runner-launch.sh;
+          };
         in
         pkgs.mkShell {
           packages = [
@@ -136,6 +87,7 @@
             runflowEnv
             runflowDev
             frontendDev
+            runnerLaunch
             pkgs.nats-server
             pkgs.nodejs_22
             pkgs.pgbouncer
@@ -173,10 +125,15 @@
         text = ''
           cd ${./.}
           export PYTHONPATH="${./src}:''${PYTHONPATH:-}"
-          exec python -m runner.worker \
+          exec python -m runner.cli \
             --runner-id "''${RUNNER_ID:-runner-1}" \
             --nats-url "''${NATS_URL:-nats://127.0.0.1:4222}"
         '';
+      };
+      runnerLaunch = pkgs.writeShellApplication {
+        name = "runflow-runner-launch";
+        runtimeInputs = [ runnerEnv pkgs.bash pkgs.coreutils pkgs.gnugrep runflowRunner ];
+        text = builtins.readFile ./nix/runner-launch.sh;
       };
 
       entrypoint = pkgs.writeShellApplication {
@@ -193,6 +150,7 @@
           rustfs
           runflowBackend
           runflowRunner
+          runnerLaunch
         ];
         text = builtins.readFile ./nix/entrypoint.sh;
       };

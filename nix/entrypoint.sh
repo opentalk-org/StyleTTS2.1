@@ -8,7 +8,8 @@ export POSTGRES_DB="${POSTGRES_DB:-runflow}"
 export POSTGRES_USER="${POSTGRES_USER:-runflow}"
 export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-runflow}"
 export NATS_DATA="${NATS_DATA:-/data/nats}"
-export NATS_URL="${NATS_URL:-nats://127.0.0.1:4222}"
+export NATS_PORT="${NATS_PORT:-4222}"
+export NATS_URL="${NATS_URL:-nats://127.0.0.1:$NATS_PORT}"
 export RUSTFS_DATA="${RUSTFS_DATA:-/data/rustfs}"
 export RUSTFS_VOLUMES="${RUSTFS_VOLUMES:-$RUSTFS_DATA}"
 export RUSTFS_ADDRESS="${RUSTFS_ADDRESS:-0.0.0.0:9000}"
@@ -21,6 +22,11 @@ export AWS_ACCESS_KEY_ID="$RUSTFS_ACCESS_KEY"
 export AWS_SECRET_ACCESS_KEY="$RUSTFS_SECRET_KEY"
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 export AWS_ENDPOINT_URL="${AWS_ENDPOINT_URL:-http://127.0.0.1:9000}"
+export RUNFLOW_S3_BUCKET="${RUNFLOW_S3_BUCKET:-$RUSTFS_BUCKET}"
+export RUNFLOW_S3_ENDPOINT_URL="${RUNFLOW_S3_ENDPOINT_URL:-$AWS_ENDPOINT_URL}"
+export RUNFLOW_S3_REGION="${RUNFLOW_S3_REGION:-$AWS_REGION}"
+export RUNFLOW_S3_ACCESS_KEY_ID="${RUNFLOW_S3_ACCESS_KEY_ID:-$RUSTFS_ACCESS_KEY}"
+export RUNFLOW_S3_SECRET_ACCESS_KEY="${RUNFLOW_S3_SECRET_ACCESS_KEY:-$RUSTFS_SECRET_KEY}"
 export BACKEND_PORT="${BACKEND_PORT:-8000}"
 export DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGBOUNCER_PORT/$POSTGRES_DB"
 export RUNFLOW_PGBOUNCER_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGBOUNCER_PORT/$POSTGRES_DB"
@@ -112,7 +118,7 @@ until pg_isready -h 127.0.0.1 -p "$PGBOUNCER_PORT" -d "$POSTGRES_DB"; do
 done
 
 echo "Starting NATS JetStream"
-nats-server -js -sd "$NATS_DATA" -p 4222 > /tmp/nats.log 2>&1 &
+nats-server -js -sd "$NATS_DATA" -p "$NATS_PORT" > /tmp/nats.log 2>&1 &
 pid_nats=$!
 
 until grep -q "Server is ready" /tmp/nats.log 2>/dev/null; do
@@ -147,15 +153,25 @@ echo "Starting Runflow backend"
 runflow-backend &
 pid_backend=$!
 
-echo "Starting Runflow runner"
-runflow-runner &
-pid_runner=$!
+until python -c "from urllib.request import urlopen; urlopen('http://127.0.0.1:$BACKEND_PORT/health', timeout=1).read()" >/dev/null 2>&1; do
+  if ! kill -0 "$pid_backend" 2>/dev/null; then
+    echo "Backend exited before becoming ready"
+    exit 1
+  fi
+  sleep 1
+done
+
+echo "Starting Runflow runners"
+runflow-runner-launch &
+pid_runners=$!
 
 shutdown() {
   echo "Stopping services"
-  kill "$pid_backend" "$pid_runner" "$pid_rustfs" "$pid_nats" "$pid_pgbouncer" 2>/dev/null || true
+  kill "$pid_backend" "$pid_runners" 2>/dev/null || true
+  sleep 1
+  kill "$pid_rustfs" "$pid_nats" "$pid_pgbouncer" 2>/dev/null || true
   pg_ctl -D "$PGDATA" stop -m fast || true
 }
 
 trap shutdown EXIT INT TERM
-wait -n "$pid_backend" "$pid_runner" "$pid_rustfs" "$pid_nats" "$pid_pgbouncer"
+wait -n "$pid_backend" "$pid_runners" "$pid_rustfs" "$pid_nats" "$pid_pgbouncer"

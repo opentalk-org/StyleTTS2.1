@@ -11,8 +11,16 @@ def list_workflows(session: Session) -> Sequence[Workflow]:
     return many(session, Workflow)
 
 
+def get_workflow(session: Session, workflow_id) -> Workflow:
+    item = session.get(Workflow, workflow_id)
+    if item is None:
+        raise KeyError(f"Workflow not found: {workflow_id}")
+    return item
+
+
 def create_workflow(session: Session, payload: WorkflowCreate) -> Workflow:
-    item = Workflow(**payload.model_dump())
+    data = payload.model_dump(mode="json")
+    item = Workflow(**data)
     session.add(item)
     session.commit()
     session.refresh(item)

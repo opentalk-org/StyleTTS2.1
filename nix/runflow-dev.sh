@@ -1,7 +1,8 @@
 set -euo pipefail
 
 export NATS_DATA="${NATS_DATA:-.data/nats}"
-export NATS_URL="${NATS_URL:-nats://127.0.0.1:4222}"
+export NATS_PORT="${NATS_PORT:-4222}"
+export NATS_URL="${NATS_URL:-nats://127.0.0.1:$NATS_PORT}"
 export PGDATA="${PGDATA:-.data/postgres}"
 export PGHOST="${PGHOST:-.data/postgres-socket}"
 export PGPORT="${PGPORT:-5432}"
@@ -26,6 +27,11 @@ export AWS_ACCESS_KEY_ID="$RUSTFS_ACCESS_KEY"
 export AWS_SECRET_ACCESS_KEY="$RUSTFS_SECRET_KEY"
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 export AWS_ENDPOINT_URL="${AWS_ENDPOINT_URL:-http://$RUSTFS_ADDRESS}"
+export RUNFLOW_S3_BUCKET="${RUNFLOW_S3_BUCKET:-$RUSTFS_BUCKET}"
+export RUNFLOW_S3_ENDPOINT_URL="${RUNFLOW_S3_ENDPOINT_URL:-$AWS_ENDPOINT_URL}"
+export RUNFLOW_S3_REGION="${RUNFLOW_S3_REGION:-$AWS_REGION}"
+export RUNFLOW_S3_ACCESS_KEY_ID="${RUNFLOW_S3_ACCESS_KEY_ID:-$RUSTFS_ACCESS_KEY}"
+export RUNFLOW_S3_SECRET_ACCESS_KEY="${RUNFLOW_S3_SECRET_ACCESS_KEY:-$RUSTFS_SECRET_KEY}"
 export RUNFLOW_PGBOUNCER_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGBOUNCER_PORT/$POSTGRES_DB"
 export PYTHONPATH="$PWD/src:${PYTHONPATH:-}"
 
@@ -126,10 +132,10 @@ until pg_isready -h 127.0.0.1 -p "$PGBOUNCER_PORT" -d "$POSTGRES_DB"; do
 done
 
 echo "Starting NATS JetStream on $NATS_URL"
-nats-server -js -sd "$NATS_DATA" -p 4222 &
+nats-server -js -sd "$NATS_DATA" -p "$NATS_PORT" &
 pid_nats=$!
 
-until python -c 'import socket; socket.create_connection(("127.0.0.1", 4222), 1).close()' >/dev/null 2>&1; do
+until python -c "import socket; socket.create_connection(('127.0.0.1', $NATS_PORT), 1).close()" >/dev/null 2>&1; do
   if ! kill -0 "$pid_nats" 2>/dev/null; then
     echo "NATS exited before becoming ready"
     exit 1
@@ -166,6 +172,14 @@ echo "Legacy static UI is available at http://$BACKEND_HOST:$BACKEND_PORT/ui-old
 uvicorn backend.api:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" &
 pid_backend=$!
 
+until python -c "from urllib.request import urlopen; urlopen('http://127.0.0.1:$BACKEND_PORT/health', timeout=1).read()" >/dev/null 2>&1; do
+  if ! kill -0 "$pid_backend" 2>/dev/null; then
+    echo "Backend exited before becoming ready"
+    exit 1
+  fi
+  sleep 1
+done
+
 echo "Starting frontend at http://$FRONTEND_HOST:$FRONTEND_PORT"
 (
   cd src/frontend
@@ -176,15 +190,17 @@ echo "Starting frontend at http://$FRONTEND_HOST:$FRONTEND_PORT"
 ) &
 pid_frontend=$!
 
-echo "Starting runner $RUNNER_ID"
-python -m runner.worker --runner-id "$RUNNER_ID" --nats-url "$NATS_URL" &
-pid_runner=$!
+echo "Starting runners"
+bash nix/runner-launch.sh &
+pid_runners=$!
 
 shutdown() {
   echo "Stopping Runflow dev services"
-  kill "$pid_runner" "$pid_frontend" "$pid_backend" "$pid_rustfs" "$pid_nats" "$pid_pgbouncer" 2>/dev/null || true
+  kill "$pid_runners" "$pid_frontend" "$pid_backend" 2>/dev/null || true
+  sleep 1
+  kill "$pid_rustfs" "$pid_nats" "$pid_pgbouncer" 2>/dev/null || true
   pg_ctl -D "$PGDATA" stop -m fast >/dev/null 2>&1 || true
 }
 
 trap shutdown EXIT INT TERM
-wait -n "$pid_backend" "$pid_frontend" "$pid_runner" "$pid_rustfs" "$pid_nats" "$pid_pgbouncer"
+wait -n "$pid_backend" "$pid_frontend" "$pid_runners" "$pid_rustfs" "$pid_nats" "$pid_pgbouncer"

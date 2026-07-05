@@ -16,11 +16,11 @@ class ObjectStoreConfig:
     @classmethod
     def from_env(cls) -> "ObjectStoreConfig":
         return cls(
-            bucket=os.environ["RUNFLOW_S3_BUCKET"],
-            endpoint_url=os.environ["RUNFLOW_S3_ENDPOINT_URL"],
-            region_name=os.environ["RUNFLOW_S3_REGION"],
-            access_key_id=os.environ["RUNFLOW_S3_ACCESS_KEY_ID"],
-            secret_access_key=os.environ["RUNFLOW_S3_SECRET_ACCESS_KEY"],
+            bucket=os.environ.get("RUNFLOW_S3_BUCKET", "runflow"),
+            endpoint_url=os.environ.get("RUNFLOW_S3_ENDPOINT_URL", "http://127.0.0.1:9000"),
+            region_name=os.environ.get("RUNFLOW_S3_REGION", "us-east-1"),
+            access_key_id=os.environ.get("RUNFLOW_S3_ACCESS_KEY_ID", "runflow"),
+            secret_access_key=os.environ.get("RUNFLOW_S3_SECRET_ACCESS_KEY", "runflow-secret"),
         )
 
 

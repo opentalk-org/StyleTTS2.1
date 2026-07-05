@@ -1,18 +1,21 @@
 import asyncio
+import os
 from uuid import uuid4
 
 from nats.aio.client import Client as NatsClient
-from nats.errors import TimeoutError as NatsTimeoutError
+from nats.errors import ConnectionClosedError, ConnectionReconnectingError, TimeoutError as NatsTimeoutError
 from nats.js.client import JetStreamContext
 from nats.js.errors import FetchTimeoutError
 
 from backend.service import BackendManager
 from shared.jetstream import (
+    BACKEND_HEARTBEAT_DURABLE,
     BACKEND_EVENT_DURABLE,
     COMMAND_STREAM,
     DEFAULT_NATS_URL,
     EVENT_STREAM,
     EVENT_SUBJECTS,
+    RUNNER_HEARTBEAT_SUBJECT,
     START_COMMAND_SUBJECT,
     connect,
     decode_json,
@@ -23,6 +26,7 @@ from shared.jetstream import (
     node_log_response_subject,
     stop_command_subject,
 )
+from backend.runners.service import runner_live_registry
 from shared.logging_setup import get_logger
 from shared.schemas import (
     InlineGraphRunRequest,
@@ -30,19 +34,21 @@ from shared.schemas import (
     NodeLogRequestCommand,
     NodeLogResponseMessage,
     RunnerEventMessage,
+    RunnerHeartbeatMessage,
     StartGraphRunCommand,
     StopRunCommand,
 )
 
 
 class BackendNatsBus:
-    def __init__(self, manager: BackendManager, url: str = DEFAULT_NATS_URL) -> None:
+    def __init__(self, manager: BackendManager, url: str | None = None) -> None:
         self.logger = get_logger("backend.nats")
         self.manager = manager
-        self.url = url
+        self.url = url if url is not None else os.environ.get("NATS_URL", DEFAULT_NATS_URL)
         self.nc: NatsClient | None = None
         self.js: JetStreamContext | None = None
         self._event_task: asyncio.Task[None] | None = None
+        self._heartbeat_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         self.logger.info("connecting to nats url=%s", self.url)
@@ -50,6 +56,7 @@ class BackendNatsBus:
         self.js = self.nc.jetstream()
         await ensure_streams(self.js)
         self._event_task = asyncio.create_task(self._consume_events(), name="backend:nats-events")
+        self._heartbeat_task = asyncio.create_task(self._consume_heartbeats(), name="backend:nats-heartbeats")
         self.logger.info("nats event consumer started")
 
     async def stop(self) -> None:
@@ -58,9 +65,17 @@ class BackendNatsBus:
             self._event_task.cancel()
             await asyncio.gather(self._event_task, return_exceptions=True)
             self._event_task = None
+        if self._heartbeat_task is not None:
+            self.logger.info("stopping nats heartbeat consumer")
+            self._heartbeat_task.cancel()
+            await asyncio.gather(self._heartbeat_task, return_exceptions=True)
+            self._heartbeat_task = None
         if self.nc is not None:
             self.logger.info("draining nats connection")
-            await self.nc.drain()
+            try:
+                await self.nc.drain()
+            except (ConnectionClosedError, ConnectionReconnectingError):
+                self.logger.info("nats connection closed before drain completed")
             self.nc = None
             self.js = None
 
@@ -135,10 +150,32 @@ class BackendNatsBus:
                     payload = decode_json(message.data)
                     event_message = RunnerEventMessage.model_validate(payload)
                     await self.manager.record_event(event_message.event)
-                    await message.ack()
                 except Exception:
                     self.logger.exception("failed to record runner event")
                     raise
+                finally:
+                    await message.ack()
+
+    async def _consume_heartbeats(self) -> None:
+        subscription = await self._js().pull_subscribe(
+            RUNNER_HEARTBEAT_SUBJECT,
+            durable=BACKEND_HEARTBEAT_DURABLE,
+            stream=EVENT_STREAM,
+        )
+        while True:
+            try:
+                messages = await subscription.fetch(50, timeout=1)
+            except (FetchTimeoutError, NatsTimeoutError):
+                continue
+            for message in messages:
+                try:
+                    payload = decode_json(message.data)
+                    runner_live_registry.record(RunnerHeartbeatMessage.model_validate(payload))
+                except Exception:
+                    self.logger.exception("failed to record runner heartbeat")
+                    raise
+                finally:
+                    await message.ack()
 
     def _js(self) -> JetStreamContext:
         if self.js is None:
