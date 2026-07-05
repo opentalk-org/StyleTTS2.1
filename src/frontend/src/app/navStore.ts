@@ -1,0 +1,43 @@
+import { create } from "zustand";
+
+export type Screen =
+  | "datasets"
+  | "voices"
+  | "audio"
+  | "editor"
+  | "statistics"
+  | "workflows"
+  | "checkpoints"
+  | "training"
+  | "runs"
+  | "testing"
+  | "cluster"
+  | "jobs"
+  | "settings";
+
+type NavStore = {
+  screen: Screen;
+  navCollapsed: boolean;
+  connected: boolean;
+  backendUrl: string;
+  /** Set when opening the segment editor from the Audio Files table. */
+  activeFileIndex: number | null;
+  go: (screen: Screen) => void;
+  toggleNav: () => void;
+  setBackendUrl: (url: string) => void;
+  connect: () => void;
+  openEditor: (fileIndex: number) => void;
+};
+
+export const useNav = create<NavStore>((set) => ({
+  screen: "training",
+  navCollapsed: false,
+  connected: false,
+  backendUrl: "http://localhost:8200",
+  activeFileIndex: null,
+  go: (screen) => set({ screen }),
+  toggleNav: () => set((s) => ({ navCollapsed: !s.navCollapsed })),
+  setBackendUrl: (backendUrl) => set({ backendUrl }),
+  connect: () => set({ connected: true }),
+  openEditor: (activeFileIndex) => set({ screen: "editor", activeFileIndex }),
+}));

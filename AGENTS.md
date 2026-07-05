@@ -37,6 +37,16 @@ This project is a ComfyUI-style workflow system for typed, batched, concurrent p
 - Backend features should separate request/response schemas, database models, persistence operations, actions or services, and route/API wiring. Prefer names such as `schemas`, `models`, `crud`, `actions`, `service`, and `api` within the feature.
 - `runflow` features should keep domain concepts local to the capability they implement, with schemas, datatypes, ports, policies, execution logic, and tests grouped by feature instead of by technical file type.
 
+## Frontend implementation
+
+- Stack is already installed under `src/frontend`: Vite + React + TypeScript, Tailwind v4, TanStack Query, TanStack Form, Zustand. Do not add a new toolchain.
+- Tailwind is v4 and **config-less** (`@import "tailwindcss"` in `src/frontend/src/index.css`). There is no `tailwind.config.js`. Define the color palette and design tokens in an `@theme` block in `index.css`, then use them as normal Tailwind utility classes.
+- Reusable, domain-agnostic UI (buttons, inputs, badges, table/virtual-list primitives, layout shell) lives in a single `src/frontend/src/shared/` folder. Reuse these instead of re-styling per feature. Do not scatter shared primitives across features.
+- Each feature folder under `src/frontend/src/features/<feature>/` keeps its own `api.ts`, `query.ts`, `logic.ts`, and `components.tsx` (split further into a local `components/` folder when a feature grows past the file-size limit).
+- Large lists (datasets, audio files, jobs — target is ~5 million rows) **must** be virtualized with `@tanstack/react-virtual`. Never render a full row set into the DOM; window it. Assume any list view can hit millions of rows.
+- Zustand holds local UI/client state; TanStack Query owns server state and caching. Do not duplicate server data into Zustand.
+- Current milestone is a UI scaffold: features use mockup data and mockup actions (no real backend calls yet). Keep mock data behind the same `api.ts`/`query.ts` seam a real backend would use, so wiring the backend later is a drop-in swap.
+
 ## Development workflow
 
 - Before changing behavior, find the relevant test, example, or smoke workflow and run it before and after the change.

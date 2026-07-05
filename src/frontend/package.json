@@ -11,6 +11,9 @@
   "dependencies": {
     "@tanstack/react-form": "latest",
     "@tanstack/react-query": "latest",
+    "@tanstack/react-virtual": "latest",
+    "clsx": "latest",
+    "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
     "zustand": "latest"
