@@ -7,6 +7,7 @@ from runflow.tmp_nodes.diarization.audio_cut_by_speakers import AudioCutBySpeake
 from runflow.tmp_nodes.diarization.sortformer import SortformerDiarizationNode
 from runflow.tmp_nodes.enhancement.deepfilternet import DeepFilterNetNode
 from runflow.tmp_nodes.io.directory_input import DirectoryInputNode
+from runflow.tmp_nodes.io.find_audio import FindAudioNode
 from runflow.tmp_nodes.io.load_audio import LoadAudioNode
 from runflow.tmp_nodes.io.save_audio import SaveAudioNode, SaveTranscriptNode
 from runflow.tmp_nodes.vad.audio_cut_by_segments import AudioCutBySegmentsNode
@@ -17,6 +18,7 @@ from runflow.registry.node_registry import NodeRegistry
 def register_builtin_nodes(registry: NodeRegistry) -> NodeRegistry:
     for node_cls in [
         DirectoryInputNode,
+        FindAudioNode,
         LoadAudioNode,
         VADDetectNode,
         AudioCutBySegmentsNode,

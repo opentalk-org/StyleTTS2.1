@@ -1,13 +1,9 @@
-from __future__ import annotations
-
-from collections import deque
 from dataclasses import dataclass, field
 
 from shared.schemas import NodeRunSnapshot, RunEventResponse, RunSnapshot
 
 
-RECENT_EVENT_LIMIT = 1000
-ERROR_EVENT_KINDS = {"node_failed", "run_failed"}
+ERROR_EVENT_KINDS = {"node_failed", "node_lifecycle_failed", "run_failed"}
 
 
 @dataclass
@@ -24,12 +20,16 @@ class NodeState:
     counters: dict[str, int] = field(default_factory=dict)
 
     def to_snapshot(self) -> NodeRunSnapshot:
+        remaining_items = self.remaining_items
+        if "input_items_discovered" in self.counters:
+            completed = self.counters["tasks_completed"] if "tasks_completed" in self.counters else 0
+            remaining_items = max(0, self.counters["input_items_discovered"] - completed)
         return NodeRunSnapshot(
             node_id=self.node_id,
             status=self.status,
             loaded=self.loaded,
             queue_size=self.queue_size,
-            remaining_items=self.remaining_items,
+            remaining_items=remaining_items,
             running_batches=self.running_batches,
             latest_batch_index=self.latest_batch_index,
             latest_message=self.latest_message,
@@ -40,32 +40,22 @@ class NodeState:
 
 @dataclass
 class RunEventStore:
-    recent_limit: int = RECENT_EVENT_LIMIT
     total_event_count: int = 0
     event_counts: dict[str, int] = field(default_factory=dict)
     node_states: dict[str, NodeState] = field(default_factory=dict)
     errors: list[RunEventResponse] = field(default_factory=list)
-    recent_events: deque[RunEventResponse] = field(init=False)
-
-    def __post_init__(self) -> None:
-        self.recent_events = deque(maxlen=self.recent_limit)
 
     def record(self, event: RunEventResponse) -> None:
         self.total_event_count += 1
         self._increment_event_count(event.kind)
         self._update_node_state(event)
-        self.recent_events.append(event)
         if event.kind in ERROR_EVENT_KINDS:
             self.errors.append(event)
-
-    def recent_after(self, after: int) -> list[RunEventResponse]:
-        return [event for event in self.recent_events if event.sequence > after]
 
     def snapshot(self, run_id: str) -> RunSnapshot:
         return RunSnapshot(
             run_id=run_id,
             total_event_count=self.total_event_count,
-            retained_recent_events=len(self.recent_events),
             error_count=len(self.errors),
             event_counts=dict(self.event_counts),
             nodes=[state.to_snapshot() for state in self.node_states.values()],
@@ -95,7 +85,11 @@ class RunEventStore:
             state.loaded = True
         elif event.kind == "node_unloaded":
             state.loaded = False
-        elif event.kind == "input_items_discovered" or event.kind == "input_items_remaining":
+        elif event.kind == "input_items_discovered":
+            item_count = event.detail["item_count"]
+            state.remaining_items = int(item_count) if item_count is not None else None
+            self._add_node_counter(state, "input_items_discovered", int(item_count or 0))
+        elif event.kind == "input_items_remaining":
             item_count = event.detail["item_count"]
             state.remaining_items = int(item_count) if item_count is not None else None
         elif event.kind == "task_enqueued" or event.kind == "queue_depth":
@@ -111,11 +105,14 @@ class RunEventStore:
             self._increment_node_counter(state, "batches_completed")
         elif event.kind == "packet_created":
             self._increment_node_counter(state, "packets_created")
+            self._increment_node_counter(state, "tasks_completed")
         elif event.kind == "packet_delivered":
             self._increment_node_counter(state, "packets_delivered")
         elif event.kind == "node_failed":
             state.running_batches = 0
             state.status = "failed"
+            state.error = event.message
+        elif event.kind == "node_lifecycle_failed":
             state.error = event.message
 
     def _update_target_node(self, event: RunEventResponse, state: NodeState) -> None:
@@ -126,3 +123,8 @@ class RunEventStore:
         if name not in state.counters:
             state.counters[name] = 0
         state.counters[name] += 1
+
+    def _add_node_counter(self, state: NodeState, name: str, amount: int) -> None:
+        if name not in state.counters:
+            state.counters[name] = 0
+        state.counters[name] += amount

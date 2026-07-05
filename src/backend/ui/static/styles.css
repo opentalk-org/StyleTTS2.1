@@ -9,6 +9,7 @@
   --muted: #79839a;
   --faint: #4b5567;
   --accent: #f4b23e;
+  --accent-2: #8bd450;
   --accent-dim: rgba(244, 178, 62, 0.16);
   --danger: #e5484d;
   --ok: #38b26a;
@@ -35,18 +36,13 @@ body {
 }
 
 /* ---- rails ---------------------------------------------------------- */
-.rail {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-  overflow: auto;
-  padding: 16px 14px;
-  background: var(--surface);
-}
+.rail { display: flex; flex-direction: column; gap: 22px; overflow: auto; padding: 16px 14px; background: var(--surface); }
 .rail--left { border-right: 1px solid var(--line); }
 .rail--right { border-left: 1px solid var(--line); }
 .rail-section { display: flex; flex-direction: column; gap: 9px; }
 .rail-section--runs { flex: 1; min-height: 120px; }
+.rail-context[hidden] { display: none; }
+.rail-context { display: grid; gap: 10px; padding: 10px; border: 1px solid var(--line-soft); border-radius: 7px; background: #10151c; }
 
 .eyebrow {
   margin: 0;
@@ -117,6 +113,9 @@ body {
   color: var(--accent);
 }
 .btn-run:hover { background: var(--accent); color: #16130a; }
+.btn-stop { border-color: var(--danger); background: rgba(229, 72, 77, 0.15); color: var(--danger); }
+.btn-stop:hover { background: var(--danger); color: #1b0b0d; }
+.btn:disabled { cursor: not-allowed; opacity: 0.65; }
 
 /* ---- palette -------------------------------------------------------- */
 .palette { display: flex; flex-direction: column; gap: 10px; }
@@ -171,6 +170,7 @@ body {
 .toolbar-lead strong { font-size: 13px; letter-spacing: 0.02em; }
 .toolbar-lead span { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
 .toolbar-actions { display: flex; gap: 8px; }
+.toolbar-actions .btn { min-width: 34px; }
 .toolbar-actions input {
   width: 150px;
   font-family: var(--mono);
@@ -209,6 +209,7 @@ body {
 /* let clicks on empty space fall through to the canvas (pan / marquee); only
    the node cards themselves capture the pointer. */
 .nodes { pointer-events: none; }
+.nodes { transform-origin: 0 0; }
 .marquee {
   position: absolute;
   border: 1px dashed var(--accent);

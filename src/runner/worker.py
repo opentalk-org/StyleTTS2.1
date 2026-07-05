@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 import argparse
 import asyncio
 import traceback
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
+from nats.errors import TimeoutError as NatsTimeoutError
 from nats.aio.msg import Msg
 from nats.js.api import ConsumerConfig
 from nats.js.client import JetStreamContext
@@ -15,41 +15,39 @@ from runflow.core.context import ExecutionContext
 from runflow.core.events import RunEvent
 from runflow.runtime.scheduler import WindowedScheduler
 from runner.graphs import build_inline_graph
-from shared.jetstream import (
-    COMMAND_STREAM,
-    DEFAULT_NATS_URL,
-    EVENT_STREAM,
-    START_COMMAND_SUBJECT,
-    RUNNER_COMMAND_DURABLE,
-    connect,
-    decode_json,
-    encode_model,
-    ensure_streams,
-    event_subject,
-    stop_command_subject,
-)
-from shared.schemas import InlineGraphRunRequest, RunEventResponse, RunnerEventMessage, StartGraphRunCommand, StopRunCommand
-
+from runner.node_logs import NodeLogManager, publish_node_log_response
+from shared.jetstream import COMMAND_STREAM, DEFAULT_NATS_URL, EVENT_STREAM, START_COMMAND_SUBJECT, RUNNER_COMMAND_DURABLE, connect, decode_json, encode_model, ensure_streams, event_subject, node_command_subject, node_log_command_subject, stop_command_subject
+from shared.logging_setup import configure_logging, get_logger
+from shared.schemas import InlineGraphRunRequest, NodeLifecycleCommand, RunEventResponse, RunnerEventMessage, StartGraphRunCommand, StopRunCommand
 
 class RunnerWorker:
     def __init__(self, runner_id: str, nats_url: str = DEFAULT_NATS_URL) -> None:
+        self.logger = get_logger(f"runner.{runner_id}")
         self.runner_id = runner_id
         self.nats_url = nats_url
         self.js: JetStreamContext | None = None
         self._active_runs: dict[str, asyncio.Task[None]] = {}
+        self._active_schedulers: dict[str, WindowedScheduler] = {}
+        self._run_work_dirs: dict[str, Path] = {}
+        self._pending_stops: set[str] = set()
         self._sequences: dict[str, int] = {}
         self._sequence_lock = asyncio.Lock()
 
     async def run(self) -> None:
+        self.logger.info("connecting to nats url=%s", self.nats_url)
         nc = await connect(self.nats_url)
         self.js = nc.jetstream()
         await ensure_streams(self._js())
+        self.logger.info("runner subscriptions starting")
         await asyncio.gather(
             self._consume_starts(),
-            self._consume_stops(stop_command_subject(self.runner_id), f"{self.runner_id}-targeted-stops"),
+            self._consume_commands(stop_command_subject(self.runner_id), f"{self.runner_id}-targeted-stops", self._handle_stop),
+            self._consume_commands(node_command_subject(self.runner_id), f"{self.runner_id}-node-lifecycle", self._handle_node_lifecycle),
+            self._consume_commands(node_log_command_subject(self.runner_id), f"{self.runner_id}-node-logs", self._handle_node_log),
         )
 
     async def _consume_starts(self) -> None:
+        self.logger.info("consume starts subject=%s", START_COMMAND_SUBJECT)
         subscription = await self._js().pull_subscribe(
             START_COMMAND_SUBJECT,
             durable=RUNNER_COMMAND_DURABLE,
@@ -59,12 +57,13 @@ class RunnerWorker:
         while True:
             try:
                 messages = await subscription.fetch(1, timeout=1)
-            except FetchTimeoutError:
+            except (FetchTimeoutError, NatsTimeoutError):
                 continue
             for message in messages:
                 asyncio.create_task(self._handle_start(message), name=f"runner:{self.runner_id}:start")
 
-    async def _consume_stops(self, subject: str, durable: str) -> None:
+    async def _consume_commands(self, subject: str, durable: str, handler) -> None:
+        self.logger.info("consume commands subject=%s durable=%s", subject, durable)
         subscription = await self._js().pull_subscribe(
             subject,
             durable=durable,
@@ -74,10 +73,10 @@ class RunnerWorker:
         while True:
             try:
                 messages = await subscription.fetch(10, timeout=1)
-            except FetchTimeoutError:
+            except (FetchTimeoutError, NatsTimeoutError):
                 continue
             for message in messages:
-                await self._handle_stop(message)
+                await handler(message)
 
     async def _handle_start(self, message: Msg) -> None:
         payload = decode_json(message.data)
@@ -88,12 +87,26 @@ class RunnerWorker:
             await message.ack()
             return
 
-        await self._publish_custom_event(run_id, "run_claimed", "run claimed", {"runner_id": self.runner_id})
+        self.logger.info("run claimed run_id=%s", run_id)
+        await self._publish_custom_event(
+            run_id,
+            "run_claimed",
+            "run claimed",
+            {"runner_id": self.runner_id, "request": request.model_dump(mode="json")},
+        )
         task = asyncio.create_task(self._execute_run(run_id, request), name=f"runflow:{run_id}")
         self._active_runs[run_id] = task
+        if run_id in self._pending_stops:
+            self.logger.info("applying pending stop run_id=%s", run_id)
+            self._pending_stops.discard(run_id)
+            task.cancel()
         heartbeat = asyncio.create_task(self._heartbeat(message, task), name=f"runflow:{run_id}:ack-heartbeat")
         try:
             await task
+            await message.ack()
+        except asyncio.CancelledError:
+            self.logger.info("run stopped before execution started run_id=%s", run_id)
+            await self._publish_custom_event(run_id, "run_stopped", "run stopped", {"runner_id": self.runner_id})
             await message.ack()
         finally:
             heartbeat.cancel()
@@ -105,26 +118,72 @@ class RunnerWorker:
         command = StopRunCommand.model_validate(payload)
         task = self._active_runs.get(command.run_id)
         if task is not None:
+            self.logger.info("stop command run_id=%s", command.run_id)
             task.cancel()
+        else:
+            self.logger.info("stop command pending run_id=%s", command.run_id)
+            self._pending_stops.add(command.run_id)
         await message.ack()
 
-    async def _execute_run(self, run_id: str, request: InlineGraphRunRequest) -> None:
-        graph = build_inline_graph(request)
-        context = self._context(request, run_id)
-        context.event_sink = self._publish_run_event
-        scheduler = WindowedScheduler(graph, context)
+    async def _handle_node_lifecycle(self, message: Msg) -> None:
+        payload = decode_json(message.data)
+        command = NodeLifecycleCommand.model_validate(payload)
+        scheduler = self._active_schedulers.get(command.run_id)
         try:
+            if scheduler is None:
+                raise RuntimeError(f"Run is not active on runner {self.runner_id}: {command.run_id}")
+            if command.command == "load_node":
+                self.logger.info("load node command run_id=%s node_id=%s", command.run_id, command.node_id)
+                await scheduler.load_node(command.node_id)
+            elif command.command == "unload_node":
+                self.logger.info("unload node command run_id=%s node_id=%s", command.run_id, command.node_id)
+                await scheduler.unload_node(command.node_id)
+            else:
+                raise RuntimeError(f"Unsupported node lifecycle command: {command.command}")
+        except Exception as error:
+            self.logger.exception("node lifecycle command failed")
+            await self._publish_custom_event(
+                command.run_id,
+                "node_lifecycle_failed",
+                f"{command.node_id} lifecycle failed: {type(error).__name__}: {error}",
+                {"runner_id": self.runner_id, "traceback": "".join(traceback.format_exception(error))},
+                command.node_id,
+            )
+        await message.ack()
+
+    async def _handle_node_log(self, message: Msg) -> None:
+        await publish_node_log_response(self._js(), message, self._run_work_dir, self.logger)
+
+    async def _execute_run(self, run_id: str, request: InlineGraphRunRequest) -> None:
+        log_manager: NodeLogManager | None = None
+        try:
+            self.logger.info("run starting run_id=%s", run_id)
+            graph = build_inline_graph(request)
+            context = self._context(request, run_id)
+            self._run_work_dirs[run_id] = context.work_dir
+            context.event_sink = self._publish_run_event
+            log_manager = NodeLogManager(context.work_dir, run_id)
+            log_manager.attach(list(graph.nodes.values()))
+            scheduler = WindowedScheduler(graph, context)
+            self._active_schedulers[run_id] = scheduler
             await scheduler.arun()
+            self.logger.info("run completed run_id=%s", run_id)
         except asyncio.CancelledError:
+            self.logger.info("run stopped run_id=%s", run_id)
             await self._publish_custom_event(run_id, "run_stopped", "run stopped", {"runner_id": self.runner_id})
         except Exception as error:
             message = f"{type(error).__name__}: {error}"
+            self.logger.exception("run failed run_id=%s", run_id)
             await self._publish_custom_event(
                 run_id,
                 "run_failed",
                 message,
                 {"runner_id": self.runner_id, "traceback": "".join(traceback.format_exception(error))},
             )
+        finally:
+            if log_manager is not None:
+                log_manager.detach()
+            self._active_schedulers.pop(run_id, None)
 
     async def _heartbeat(self, message: Msg, task: asyncio.Task[None]) -> None:
         while not task.done():
@@ -141,6 +200,7 @@ class RunnerWorker:
         kind: str,
         message: str,
         detail: dict[str, object],
+        node_id: str | None = None,
     ) -> None:
         response = RunEventResponse(
             sequence=await self._next_sequence(run_id),
@@ -148,7 +208,7 @@ class RunnerWorker:
             run_id=run_id,
             created_at=datetime.now(UTC),
             message=message,
-            node_id=None,
+            node_id=node_id,
             port=None,
             target_node_id=None,
             target_port=None,
@@ -207,15 +267,20 @@ class RunnerWorker:
         )
 
     def _run_id(self, request: InlineGraphRunRequest) -> str:
-        if request.run_id is not None:
-            return request.run_id
-        return f"graph_{uuid4().hex[:8]}"
+        return request.run_id if request.run_id is not None else f"graph_{uuid4().hex[:8]}"
+
+    def _run_work_dir(self, run_id: str) -> Path:
+        scheduler = self._active_schedulers.get(run_id)
+        if scheduler is not None:
+            return scheduler.context.work_dir
+        if run_id not in self._run_work_dirs:
+            raise RuntimeError(f"Unknown run log directory: {run_id}")
+        return self._run_work_dirs[run_id]
 
     def _js(self) -> JetStreamContext:
         if self.js is None:
             raise RuntimeError("JetStream is not connected")
         return self.js
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -223,12 +288,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--nats-url", default=DEFAULT_NATS_URL)
     return parser.parse_args()
 
-
 def main() -> None:
     args = parse_args()
+    configure_logging("runner")
     worker = RunnerWorker(runner_id=args.runner_id, nats_url=args.nats_url)
     asyncio.run(worker.run())
-
 
 if __name__ == "__main__":
     main()

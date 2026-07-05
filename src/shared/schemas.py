@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -31,6 +29,8 @@ class RunContextRequest(BaseModel):
 class GraphNodeRequest(BaseModel):
     id: str
     type: str
+    x: float = 0
+    y: float = 0
     params: dict[str, Any] = Field(default_factory=dict)
     runtime: dict[str, Any] = Field(default_factory=dict)
 
@@ -100,7 +100,6 @@ class NodeRunSnapshot(BaseModel):
 class RunSnapshot(BaseModel):
     run_id: str
     total_event_count: int
-    retained_recent_events: int
     error_count: int
     event_counts: dict[str, int]
     nodes: list[NodeRunSnapshot]
@@ -109,6 +108,28 @@ class RunSnapshot(BaseModel):
 class StopRunCommand(BaseModel):
     command: Literal["stop"] = "stop"
     run_id: str
+
+
+class NodeLifecycleCommand(BaseModel):
+    command: Literal["load_node", "unload_node"]
+    run_id: str
+    node_id: str
+
+
+class NodeLogRequestCommand(BaseModel):
+    command: Literal["read_node_log"] = "read_node_log"
+    request_id: str
+    run_id: str
+    node_id: str
+
+
+class NodeLogResponseMessage(BaseModel):
+    request_id: str
+    run_id: str
+    node_id: str
+    content: str
+    truncated: bool
+    error: str | None = None
 
 
 class StartGraphRunCommand(BaseModel):

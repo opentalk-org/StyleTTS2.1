@@ -1,8 +1,8 @@
-from __future__ import annotations
-
 import asyncio
+from uuid import uuid4
 
 from nats.aio.client import Client as NatsClient
+from nats.errors import TimeoutError as NatsTimeoutError
 from nats.js.client import JetStreamContext
 from nats.js.errors import FetchTimeoutError
 
@@ -18,13 +18,26 @@ from shared.jetstream import (
     decode_json,
     encode_model,
     ensure_streams,
+    node_command_subject,
+    node_log_command_subject,
+    node_log_response_subject,
     stop_command_subject,
 )
-from shared.schemas import InlineGraphRunRequest, RunnerEventMessage, StartGraphRunCommand, StopRunCommand
+from shared.logging_setup import get_logger
+from shared.schemas import (
+    InlineGraphRunRequest,
+    NodeLifecycleCommand,
+    NodeLogRequestCommand,
+    NodeLogResponseMessage,
+    RunnerEventMessage,
+    StartGraphRunCommand,
+    StopRunCommand,
+)
 
 
 class BackendNatsBus:
     def __init__(self, manager: BackendManager, url: str = DEFAULT_NATS_URL) -> None:
+        self.logger = get_logger("backend.nats")
         self.manager = manager
         self.url = url
         self.nc: NatsClient | None = None
@@ -32,23 +45,28 @@ class BackendNatsBus:
         self._event_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
+        self.logger.info("connecting to nats url=%s", self.url)
         self.nc = await connect(self.url)
         self.js = self.nc.jetstream()
         await ensure_streams(self.js)
         self._event_task = asyncio.create_task(self._consume_events(), name="backend:nats-events")
+        self.logger.info("nats event consumer started")
 
     async def stop(self) -> None:
         if self._event_task is not None:
+            self.logger.info("stopping nats event consumer")
             self._event_task.cancel()
             await asyncio.gather(self._event_task, return_exceptions=True)
             self._event_task = None
         if self.nc is not None:
+            self.logger.info("draining nats connection")
             await self.nc.drain()
             self.nc = None
             self.js = None
 
     async def publish_start_graph(self, request: InlineGraphRunRequest) -> None:
         command = StartGraphRunCommand(request=request)
+        self.logger.info("publish start command run_id=%s", request.run_id)
         await self._js().publish(
             START_COMMAND_SUBJECT,
             encode_model(command),
@@ -59,11 +77,47 @@ class BackendNatsBus:
         if runner_id is None:
             return
         command = StopRunCommand(run_id=run_id)
+        self.logger.info("publish stop command run_id=%s runner_id=%s", run_id, runner_id)
         await self._js().publish(
             stop_command_subject(runner_id),
             encode_model(command),
             stream=COMMAND_STREAM,
         )
+
+    async def publish_node_lifecycle(self, run_id: str, node_id: str, command: str, runner_id: str | None) -> None:
+        if runner_id is None:
+            return
+        payload = NodeLifecycleCommand(command=command, run_id=run_id, node_id=node_id)
+        self.logger.info(
+            "publish node lifecycle command run_id=%s node_id=%s command=%s runner_id=%s",
+            run_id,
+            node_id,
+            command,
+            runner_id,
+        )
+        await self._js().publish(
+            node_command_subject(runner_id),
+            encode_model(payload),
+            stream=COMMAND_STREAM,
+        )
+
+    async def request_node_log(self, run_id: str, node_id: str, runner_id: str | None) -> NodeLogResponseMessage:
+        if runner_id is None:
+            raise RuntimeError(f"Run has no claimed runner: {run_id}")
+        request_id = uuid4().hex
+        response_subject = node_log_response_subject(request_id)
+        subscription = await self._js().pull_subscribe(response_subject, stream=EVENT_STREAM)
+        payload = NodeLogRequestCommand(request_id=request_id, run_id=run_id, node_id=node_id)
+        self.logger.info("publish node log request run_id=%s node_id=%s runner_id=%s", run_id, node_id, runner_id)
+        await self._js().publish(node_log_command_subject(runner_id), encode_model(payload), stream=COMMAND_STREAM)
+        try:
+            messages = await subscription.fetch(1, timeout=5)
+        except (FetchTimeoutError, NatsTimeoutError) as error:
+            raise RuntimeError(f"Timed out reading node log from runner: {runner_id}") from error
+        message = messages[0]
+        response = NodeLogResponseMessage.model_validate(decode_json(message.data))
+        await message.ack()
+        return response
 
     async def _consume_events(self) -> None:
         subscription = await self._js().pull_subscribe(
@@ -74,13 +128,17 @@ class BackendNatsBus:
         while True:
             try:
                 messages = await subscription.fetch(50, timeout=1)
-            except FetchTimeoutError:
+            except (FetchTimeoutError, NatsTimeoutError):
                 continue
             for message in messages:
-                payload = decode_json(message.data)
-                event_message = RunnerEventMessage.model_validate(payload)
-                await self.manager.record_event(event_message.event)
-                await message.ack()
+                try:
+                    payload = decode_json(message.data)
+                    event_message = RunnerEventMessage.model_validate(payload)
+                    await self.manager.record_event(event_message.event)
+                    await message.ack()
+                except Exception:
+                    self.logger.exception("failed to record runner event")
+                    raise
 
     def _js(self) -> JetStreamContext:
         if self.js is None:

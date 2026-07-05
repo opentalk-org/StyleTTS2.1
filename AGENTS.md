@@ -40,6 +40,8 @@ This project is a ComfyUI-style workflow system for typed, batched, concurrent p
 ## Development workflow
 
 - Before changing behavior, find the relevant test, example, or smoke workflow and run it before and after the change.
+- Start the local NATS JetStream, backend, and one runner with `nix develop --command runflow-dev`.
+- Open the UI at `http://127.0.0.1:8000/ui`; stop the local stack with Ctrl-C.
 - For backend or frontend changes, use the package manager and commands already present in that subproject. Do not introduce a new toolchain unless requested.
 - When adding a new node type, update the registry/schema export path so the frontend can discover its ports and parameters.
 - THERE IS NO TESTS AND DONT ADD THEM.

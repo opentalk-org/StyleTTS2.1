@@ -49,7 +49,6 @@ class NodeRuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     queue_max_size: int = Field(default=64, ge=1)
-    window_size: int | None = Field(default=None, ge=1)
     batch_policy: BatchPolicyConfig = Field(default_factory=BatchPolicyConfig)
     resource_policy: ResourcePolicyConfig = Field(default_factory=ResourcePolicyConfig)
 

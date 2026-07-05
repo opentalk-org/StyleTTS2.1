@@ -19,6 +19,7 @@ class ASRNode(Node):
     CATEGORY = "Audio / ASR"
     MODEL_NAME = "asr"
     SETTINGS = ASRSettings
+    QUEUE_MAX_SIZE = 256
 
     INPUTS = {
         "audio": Port("audio", AUDIO_LIKE),

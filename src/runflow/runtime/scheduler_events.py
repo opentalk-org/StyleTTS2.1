@@ -25,7 +25,7 @@ class SchedulerEventEmitter:
             "input_items_discovered",
             message=f"{node.id} discovered {item_count} item(s)",
             node_id=node.id,
-            detail={"item_count": item_count, "window_size": node.runtime.window_size},
+            detail={"item_count": item_count, "queue_max_size": node.runtime.queue_max_size},
         )
 
     async def input_items_remaining(self, node: Node, item_count: int | None) -> None:
@@ -34,20 +34,6 @@ class SchedulerEventEmitter:
             message=f"{node.id} has {item_count} item(s) remaining",
             node_id=node.id,
             detail={"item_count": item_count},
-        )
-
-    async def window_started(self, window_index: int, item_count: int, item_counts: dict[str, int]) -> None:
-        await self.context.emit_event(
-            "window_started",
-            message=f"window {window_index} started with {item_count} item(s)",
-            detail={"item_count": item_count, "item_counts": item_counts},
-        )
-
-    async def window_completed(self, window_index: int, item_count: int, item_counts: dict[str, int]) -> None:
-        await self.context.emit_event(
-            "window_completed",
-            message=f"window {window_index} completed",
-            detail={"item_count": item_count, "item_counts": item_counts},
         )
 
     async def task_enqueued(self, node_id: str, task: Task, queue_size: int) -> None:
@@ -90,7 +76,7 @@ class SchedulerEventEmitter:
             worker_index=worker_index,
             batch_index=batch_index,
             batch_size=len(batch),
-            detail={"output_items": len(outputs)},
+            detail={"input_items": len(batch), "output_items": len(outputs)},
         )
 
     async def node_failed(self, node: Node, worker_index: int, error: Exception) -> None:

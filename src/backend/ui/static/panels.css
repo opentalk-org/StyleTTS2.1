@@ -30,7 +30,7 @@
   right: 32px;
   bottom: 32px;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 12px;
   width: min(760px, calc(100vw - 64px));
   overflow: auto;
@@ -54,12 +54,6 @@
 
 .popup-head .btn {
   min-height: 30px;
-}
-
-.popup-runs {
-  display: grid;
-  gap: 8px;
-  min-height: 90px;
 }
 
 .tabs {
@@ -128,6 +122,38 @@
   min-height: 30px;
   padding: 0 8px;
 }
+
+.node-logs {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+}
+
+.node-log-body {
+  overflow: auto;
+  min-height: 340px;
+  max-height: calc(100vh - 220px);
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #080c12;
+  color: #c5ccd8;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.log-note,
+.log-error {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.log-note { color: var(--muted); }
+.log-error { color: var(--danger); }
 
 .run {
   display: grid;

@@ -21,8 +21,8 @@ class DeepFilterNetNode(Node):
 
     BATCH_POLICY = BatchPolicy(
         BatchMode.MICRO_BATCH,
-        preferred_size=12,
-        max_size=24,
+        preferred_size=16,
+        max_size=64,
         sort_by="duration",
     )
     RESOURCE_POLICY = ResourcePolicy(

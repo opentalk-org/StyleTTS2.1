@@ -1,5 +1,5 @@
-from __future__ import annotations
-
+import asyncio
+import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -8,10 +8,12 @@ from uuid import uuid4
 
 from fastapi import WebSocket
 
+from shared.logging_setup import get_logger
 from shared.event_store import RunEventStore
 from shared.schemas import (
     InlineGraphRunRequest,
     RunEventResponse,
+    NodeLogResponseMessage,
     RunnerStatus,
     RunSnapshot,
     RunState,
@@ -31,6 +33,12 @@ class CommandBus(Protocol):
     async def publish_stop(self, run_id: str, runner_id: str | None) -> None:
         ...
 
+    async def publish_node_lifecycle(self, run_id: str, node_id: str, command: str, runner_id: str | None) -> None:
+        ...
+
+    async def request_node_log(self, run_id: str, node_id: str, runner_id: str | None) -> NodeLogResponseMessage:
+        ...
+
 
 @dataclass
 class BackendRunRecord:
@@ -38,6 +46,7 @@ class BackendRunRecord:
     workflow_path: Path
     state: RunState
     created_at: datetime
+    graph_request: InlineGraphRunRequest | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
     error: str | None = None
@@ -59,9 +68,11 @@ class BackendRunRecord:
 
 class BackendManager:
     def __init__(self) -> None:
+        self.logger = get_logger("backend.manager")
         self._runs: dict[str, BackendRunRecord] = {}
         self._hub = WebSocketHub()
         self._command_bus: CommandBus | None = None
+        self._snapshot_tasks: dict[str, asyncio.Task[None]] = {}
 
     def set_command_bus(self, command_bus: CommandBus) -> None:
         self._command_bus = command_bus
@@ -77,8 +88,10 @@ class BackendManager:
             workflow_path=Path("inline_graph"),
             state=RunState.QUEUED,
             created_at=self._now(),
+            graph_request=command_request,
         )
         self._runs[run_id] = record
+        self.logger.info("queue run run_id=%s", run_id)
         await self._command_bus_checked().publish_start_graph(command_request)
         await self._broadcast_run_status(record)
         return record.to_status()
@@ -89,9 +102,29 @@ class BackendManager:
             if record.runner_id is None:
                 return record.to_status()
             record.state = RunState.STOPPING
+            self.logger.info("stop run run_id=%s runner_id=%s", run_id, record.runner_id)
             await self._command_bus_checked().publish_stop(run_id, record.runner_id)
             await self._broadcast_run_status(record)
         return record.to_status()
+
+    async def load_node(self, run_id: str, node_id: str) -> RunStatus:
+        return await self._publish_node_lifecycle(run_id, node_id, "load_node")
+
+    async def unload_node(self, run_id: str, node_id: str) -> RunStatus:
+        return await self._publish_node_lifecycle(run_id, node_id, "unload_node")
+
+    async def node_log(self, run_id: str, node_id: str) -> NodeLogResponseMessage:
+        record = self._record(run_id)
+        if record.runner_id is None:
+            raise RuntimeError(f"Run has no claimed runner: {run_id}")
+        self.logger.info("read node log run_id=%s node_id=%s runner_id=%s", run_id, node_id, record.runner_id)
+        return await self._command_bus_checked().request_node_log(run_id, node_id, record.runner_id)
+
+    async def graph(self, run_id: str) -> InlineGraphRunRequest:
+        record = self._record(run_id)
+        if record.graph_request is None:
+            raise RuntimeError(f"Run graph is not available: {run_id}")
+        return record.graph_request
 
     async def status(self, run_id: str) -> RunStatus:
         return self._record(run_id).to_status()
@@ -101,9 +134,6 @@ class BackendManager:
         active_states = {RunState.QUEUED, RunState.RUNNING, RunState.STOPPING}
         active_runs = [run for run in runs if run.state in active_states]
         return RunnerStatus(total_runs=len(runs), active_runs=len(active_runs), runs=runs)
-
-    async def events(self, run_id: str, after: int = 0) -> list[RunEventResponse]:
-        return self._record(run_id).event_store.recent_after(after)
 
     async def errors(self, run_id: str) -> list[RunEventResponse]:
         return list(self._record(run_id).event_store.errors)
@@ -115,14 +145,10 @@ class BackendManager:
         record = self._ensure_record(event.run_id)
         record.event_store.record(event)
         self._apply_lifecycle_event(record, event)
-        await self._hub.broadcast_global(
-            {
-                "type": "run_event",
-                "status": record.to_status().model_dump(mode="json"),
-                "event": event.model_dump(mode="json"),
-                "snapshot": record.event_store.snapshot(event.run_id).model_dump(mode="json"),
-            },
-        )
+        if self._is_immediate_event(event.kind):
+            await self._broadcast_run_snapshot(record)
+            return
+        self._schedule_run_snapshot(record.run_id)
 
     async def connect_socket(self, websocket: WebSocket) -> None:
         await self._hub.connect_global(websocket)
@@ -130,7 +156,7 @@ class BackendManager:
             status = await self.list_statuses()
             await websocket.send_json({"type": "runner_status", "status": status.model_dump(mode="json")})
             while True:
-                await websocket.receive_text()
+                self._handle_socket_message(websocket, await websocket.receive_text())
         finally:
             self._hub.disconnect_global(websocket)
 
@@ -142,22 +168,70 @@ class BackendManager:
             },
         )
 
+    async def _broadcast_run_snapshot(self, record: BackendRunRecord) -> None:
+        task = self._snapshot_tasks.pop(record.run_id, None)
+        if task is not None and task is not asyncio.current_task():
+            task.cancel()
+        await self._hub.broadcast_run(
+            record.run_id,
+            {
+                "type": "run_snapshot",
+                "run_id": record.run_id,
+                "status": record.to_status().model_dump(mode="json"),
+                "snapshot": record.event_store.snapshot(record.run_id).model_dump(mode="json"),
+            },
+        )
+
+    def _schedule_run_snapshot(self, run_id: str) -> None:
+        task = self._snapshot_tasks.get(run_id)
+        if task is None or task.done():
+            self._snapshot_tasks[run_id] = asyncio.create_task(self._broadcast_run_snapshot_later(run_id))
+
+    async def _broadcast_run_snapshot_later(self, run_id: str) -> None:
+        await asyncio.sleep(0.1)
+        if run_id in self._runs:
+            await self._broadcast_run_snapshot(self._runs[run_id])
+
+    def _is_immediate_event(self, kind: str) -> bool:
+        return kind in {
+            "run_claimed",
+            "run_started",
+            "run_completed",
+            "run_stopped",
+            "run_failed",
+            "node_failed",
+            "node_lifecycle_failed",
+            "node_loaded",
+            "node_unloaded",
+        }
+
+    def _handle_socket_message(self, websocket: WebSocket, raw_message: str) -> None:
+        message = json.loads(raw_message)
+        if message["type"] == "watch_run":
+            self._hub.watch_run(websocket, message["run_id"])
+
     def _apply_lifecycle_event(self, record: BackendRunRecord, event: RunEventResponse) -> None:
         if event.kind == "run_claimed":
             record.runner_id = str(event.detail["runner_id"])
+            record.graph_request = InlineGraphRunRequest.model_validate(event.detail["request"])
+            self.logger.info("run claimed run_id=%s runner_id=%s", record.run_id, record.runner_id)
         elif event.kind == "run_started":
             record.state = RunState.RUNNING
             record.started_at = event.created_at
+            self.logger.info("run started run_id=%s", record.run_id)
         elif event.kind == "run_completed":
             record.state = RunState.SUCCEEDED
             record.finished_at = event.created_at
+            self.logger.info("run completed run_id=%s", record.run_id)
         elif event.kind == "run_stopped":
             record.state = RunState.STOPPED
             record.finished_at = event.created_at
+            self.logger.info("run stopped run_id=%s", record.run_id)
         elif event.kind == "run_failed":
             record.state = RunState.FAILED
             record.finished_at = event.created_at
             record.error = event.message
+            self.logger.error("run failed run_id=%s error=%s", record.run_id, event.message)
 
     def _ensure_record(self, run_id: str) -> BackendRunRecord:
         if run_id not in self._runs:
@@ -178,6 +252,20 @@ class BackendManager:
         if self._command_bus is None:
             raise RuntimeError("NATS command bus is not connected")
         return self._command_bus
+
+    async def _publish_node_lifecycle(self, run_id: str, node_id: str, command: str) -> RunStatus:
+        record = self._record(run_id)
+        if record.runner_id is None:
+            raise RuntimeError(f"Run has no claimed runner: {run_id}")
+        self.logger.info(
+            "node lifecycle command run_id=%s node_id=%s command=%s runner_id=%s",
+            run_id,
+            node_id,
+            command,
+            record.runner_id,
+        )
+        await self._command_bus_checked().publish_node_lifecycle(run_id, node_id, command, record.runner_id)
+        return record.to_status()
 
     def _inline_run_id(self, request: InlineGraphRunRequest) -> str:
         if request.run_id is not None:

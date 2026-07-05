@@ -28,7 +28,7 @@ function startPan(event) {
     moved = true;
     state.pan.x = origin.px + moveEvent.clientX - origin.x;
     state.pan.y = origin.py + moveEvent.clientY - origin.y;
-    applyPan();
+    applyViewport();
     renderEdges();
   });
 }
@@ -41,8 +41,8 @@ function startNodeDrag(event) {
     .map((node) => ({ node, nx: node.x, ny: node.y, card: el.nodes.querySelector(`.node[data-id="${CSS.escape(node.id)}"]`) }));
   dragLoop.onUp = null;
   dragLoop((moveEvent) => {
-    const dx = moveEvent.clientX - start.x;
-    const dy = moveEvent.clientY - start.y;
+    const dx = (moveEvent.clientX - start.x) / state.zoom;
+    const dy = (moveEvent.clientY - start.y) / state.zoom;
     for (const item of group) {
       item.node.x = item.nx + dx;
       item.node.y = item.ny + dy;
@@ -132,7 +132,7 @@ function onNodesPointerDown(event) {
     return startWire(event, socket);
   }
   const card = event.target.closest(".node");
-  if (!card || event.target.closest(".node-del") || event.target.closest(".node-open")) return;
+  if (!card || event.target.closest(".node-del") || event.target.closest(".node-open") || event.target.closest(".node-load-action")) return;
   const id = card.dataset.id;
   event.stopPropagation();
 
@@ -148,6 +148,18 @@ function onNodesPointerDown(event) {
 }
 
 function onNodesClick(event) {
+  const load = event.target.closest("[data-node-load]");
+  if (load) {
+    event.stopPropagation();
+    controlNodeLifecycle(load.dataset.nodeLoad, "load");
+    return;
+  }
+  const unload = event.target.closest("[data-node-unload]");
+  if (unload) {
+    event.stopPropagation();
+    controlNodeLifecycle(unload.dataset.nodeUnload, "unload");
+    return;
+  }
   const open = event.target.closest(".node-open");
   if (open) {
     event.stopPropagation();
@@ -167,4 +179,9 @@ function onCanvasPointerDown(event) {
   if (event.target !== el.canvas && event.target !== el.canvasEmpty) return;
   if (event.shiftKey) startMarquee(event);
   else startPan(event);
+}
+
+function onCanvasWheel(event) {
+  event.preventDefault();
+  zoomBy(event.deltaY < 0 ? 1.1 : 0.9, { x: event.clientX, y: event.clientY });
 }

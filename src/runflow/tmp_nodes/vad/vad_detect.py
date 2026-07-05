@@ -29,7 +29,7 @@ class VADDetectNode(Node):
         "segments": Port("segments", VAD_SEGMENTS),
     }
 
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=16, max_size=32)
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=16, max_size=64)
     RESOURCE_POLICY = ResourcePolicy(resources={"cpu_workers": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):

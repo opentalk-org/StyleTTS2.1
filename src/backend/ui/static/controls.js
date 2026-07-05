@@ -36,17 +36,23 @@ function renderInspector() {
   for (const panel of el.tabPanels) panel.classList.toggle("is-active", panel.dataset.panel === state.rightTab);
   renderSettings();
   renderNodeRuntime();
+  renderNodeLogs();
 }
 
 function openInspector(tab = "settings") {
   state.rightTab = tab;
   state.inspectorOpen = true;
   renderInspector();
+  if (tab === "logs") loadSelectedNodeLog();
 }
 
 function closeInspector() {
   state.inspectorOpen = false;
   renderInspector();
+}
+
+function toggleContextPanel() {
+  el.contextPanel.hidden = !el.contextPanel.hidden;
 }
 
 function renderContextSettings() {
@@ -67,7 +73,7 @@ function renameNode(node, nextId) {
 function graphPayload() {
   return {
     run_id: el.runId.value || null,
-    nodes: state.graph.nodes.map((node) => ({ id: node.id, type: node.type, params: node.params, runtime: node.runtime })),
+    nodes: state.graph.nodes.map((node) => ({ id: node.id, type: node.type, x: node.x, y: node.y, params: node.params, runtime: node.runtime })),
     edges: state.graph.edges,
     context: { work_dir: el.workDir.value, output_dir: el.outputDir.value, config: state.runtimeConfig },
   };
@@ -80,6 +86,58 @@ async function runGraph() {
     setActiveRun(result.run_id);
     setLog(`started ${result.run_id}`);
     await loadActiveRunState();
+  } catch (error) {
+    setLog(error.message);
+  }
+}
+
+function activeRunStatus() {
+  if (!state.activeRunId) return null;
+  return state.runs.find((run) => run.run_id === state.activeRunId) || null;
+}
+
+async function stopActiveRun() {
+  const run = activeRunStatus();
+  if (!run || !isActiveRunState(run.state)) return;
+  try {
+    const result = await json(`/runs/${encodeURIComponent(run.run_id)}/stop`, { method: "POST" });
+    applyRunStatus(result);
+    setLog(`stop requested for ${run.run_id}`);
+  } catch (error) {
+    setLog(error.message);
+  }
+}
+
+async function onRunButtonClick() {
+  const run = activeRunStatus();
+  if (run && isActiveRunState(run.state)) {
+    await stopActiveRun();
+    return;
+  }
+  await runGraph();
+}
+
+function renderRunButton() {
+  const run = activeRunStatus();
+  const stopping = run && run.state === "stopping";
+  const stoppingDisabled = Boolean(stopping);
+  const canStop = run && isActiveRunState(run.state);
+  el.run.textContent = stopping ? "Stopping..." : canStop ? "Stop run" : "Run graph";
+  el.run.disabled = stoppingDisabled;
+  el.run.classList.toggle("btn-stop", Boolean(canStop));
+}
+
+async function controlNodeLifecycle(nodeId, action) {
+  if (!state.activeRunId) {
+    setLog("start or select a run before controlling node lifecycle");
+    return;
+  }
+  try {
+    const runId = encodeURIComponent(state.activeRunId);
+    const node = encodeURIComponent(nodeId);
+    const result = await json(`/runs/${runId}/nodes/${node}/${action}`, { method: "POST" });
+    applyRunStatus(result);
+    setLog(`${action} requested for ${nodeId}`);
   } catch (error) {
     setLog(error.message);
   }
@@ -101,25 +159,18 @@ async function refreshRuns() {
 
 function renderRuns() {
   el.runs.innerHTML = state.runs.map(runHtml).join("") || `<span class="empty">No runs yet.</span>`;
-  bindStopButtons();
+  bindRunRows();
+  renderRunButton();
 }
 
 function runHtml(run) {
-  const stop = ["queued", "running", "stopping"].includes(run.state) ? `<button class="btn" data-stop="${run.run_id}">Stop</button>` : "<span></span>";
   return `<article class="run">
     <i class="run-led state-${run.state}"></i>
     <div class="run-body" data-run="${run.run_id}"><span class="run-id">${run.run_id}</span><span class="run-meta">${run.state} · ${run.workflow_path} · ${run.event_count} events</span></div>
-    ${stop}
   </article>`;
 }
 
-function bindStopButtons() {
-  for (const button of el.runs.querySelectorAll("[data-stop]")) {
-    button.addEventListener("click", async () => {
-      const result = await json(`/runs/${encodeURIComponent(button.dataset.stop)}/stop`, { method: "POST" });
-      applyRunStatus(result);
-    });
-  }
+function bindRunRows() {
   for (const row of el.runs.querySelectorAll("[data-run]")) {
     row.addEventListener("click", async () => {
       setActiveRun(row.dataset.run);
@@ -157,11 +208,15 @@ async function init() {
 el.nodes.addEventListener("pointerdown", onNodesPointerDown);
 el.nodes.addEventListener("click", onNodesClick);
 el.canvas.addEventListener("pointerdown", onCanvasPointerDown);
+el.canvas.addEventListener("wheel", onCanvasWheel, { passive: false });
 el.template.addEventListener("click", loadTemplate);
-el.run.addEventListener("click", runGraph);
+el.run.addEventListener("click", onRunButtonClick);
 el.refresh.addEventListener("click", refreshRuns);
 el.clear.addEventListener("click", clearGraph);
-el.context.addEventListener("click", () => openInspector("context"));
+el.zoomIn.addEventListener("click", () => zoomBy(1.2));
+el.zoomOut.addEventListener("click", () => zoomBy(0.8));
+el.zoomReset.addEventListener("click", () => setZoom(1));
+el.context.addEventListener("click", toggleContextPanel);
 el.popupClose.addEventListener("click", closeInspector);
 el.popup.addEventListener("click", (event) => {
   if (event.target.closest("[data-close-popup]")) closeInspector();
@@ -172,6 +227,7 @@ for (const button of el.tabs) {
   button.addEventListener("click", () => {
     state.rightTab = button.dataset.tab;
     renderInspector();
+    if (state.rightTab === "logs") loadSelectedNodeLog();
   });
 }
 init().catch((error) => setLog(error.message));

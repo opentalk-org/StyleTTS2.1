@@ -5,3 +5,6 @@ __pycache__/
 work/
 outputs/
 cache/
+.data/
+node_modules/
+dist/

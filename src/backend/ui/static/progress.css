@@ -1,7 +1,6 @@
 .node.run-running {
   border-color: #4fd1c5;
-  box-shadow: 0 0 0 3px rgba(79, 209, 197, 0.55), 0 0 24px rgba(79, 209, 197, 0.28), 0 16px 40px rgba(0, 0, 0, 0.35);
-  animation: pulse-node 900ms ease-in-out infinite alternate;
+  box-shadow: 0 0 0 2px rgba(79, 209, 197, 0.45), 0 16px 40px rgba(0, 0, 0, 0.35);
 }
 
 .node.run-failed {
@@ -26,6 +25,7 @@
 
 .node-state,
 .node-load,
+.node-run-state,
 .node-queue {
   display: inline-flex;
   align-items: center;
@@ -62,9 +62,56 @@
   background: #10151c;
 }
 
+.node-lifecycle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  align-content: start;
+}
+
+.node-lifecycle .node-load {
+  grid-column: 1 / -1;
+  justify-content: center;
+  min-height: 22px;
+}
+
+.node-lifecycle .node-run-state {
+  grid-column: 1 / -1;
+  justify-content: center;
+  min-height: 22px;
+}
+
+.node-run-state.running {
+  background: #4fd1c5;
+}
+
+.node-run-state.idle {
+  color: var(--muted);
+  background: #10151c;
+}
+
+.node-load-action {
+  min-width: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  padding: 4px 5px;
+  background: #10151c;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.node-load-action:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .node-metrics {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(92px, auto) auto;
   gap: 6px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--line-soft);
@@ -127,8 +174,16 @@
   border-color: #4fd1c5;
 }
 
+.node-metric-state.queued {
+  border-color: var(--accent-2);
+}
+
 .node-metric-state.running strong {
   color: #4fd1c5;
+}
+
+.node-metric-state.queued strong {
+  color: var(--accent-2);
 }
 
 .node-metric-state.failed {
@@ -143,11 +198,6 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-@keyframes pulse-node {
-  from { opacity: 0.55; }
-  to { opacity: 1; }
 }
 
 .event-trace {

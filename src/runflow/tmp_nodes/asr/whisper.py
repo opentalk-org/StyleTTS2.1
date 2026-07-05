@@ -9,7 +9,8 @@ class WhisperNode(ASRNode):
     MODEL_NAME = "whisper"
     BATCH_POLICY = BatchPolicy(
         BatchMode.MICRO_BATCH,
-        preferred_size=8,
-        max_size=12,
+        preferred_size=64,
+        max_size=64,
+        timeout_ms=1000,
         sort_by="duration",
     )

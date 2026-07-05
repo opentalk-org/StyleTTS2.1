@@ -38,8 +38,8 @@ function addNode(type, x = 130, y = 120) {
   const node = {
     id: `${type}_${state.seq++}`,
     type,
-    x: x - state.pan.x,
-    y: y - state.pan.y,
+    x: (x - state.pan.x) / state.zoom,
+    y: (y - state.pan.y) / state.zoom,
     params: structuredClone(info.settings_defaults),
     runtime: structuredClone(info.runtime_defaults),
   };
@@ -99,35 +99,49 @@ function connect(sourceNode, sourcePort, targetNode, targetPort) {
     setLog(`can't wire ${sourceType} → ${targetType}: signal types don't match`);
     return render();
   }
-  // one edge per input socket: a fresh wire replaces whatever fed it
-  state.graph.edges = state.graph.edges.filter((edge) => !(edge.target_node === targetNode && edge.target_port === targetPort));
-  state.graph.edges.push({ source_node: sourceNode, source_port: sourcePort, target_node: targetNode, target_port: targetPort });
+  const edge = { source_node: sourceNode, source_port: sourcePort, target_node: targetNode, target_port: targetPort };
+  const duplicate = state.graph.edges.some((item) => JSON.stringify(item) === JSON.stringify(edge));
+  if (!duplicate) state.graph.edges.push(edge);
   render();
 }
 
 function loadTemplate() {
   state.pan = { x: 0, y: 0 };
+  state.zoom = 1;
   state.graph = {
     nodes: [
-      templateNode("input", "DirectoryInput", 40, 130, { directory: ".", patterns: ["pyproject.toml"], repeat_count: 80, sleep_sec: 0.01 }, { window_size: 10 }),
-      templateNode("load_audio", "LoadAudio", 320, 110, { sample_rate: 16000, channels: 1, sleep_sec: 0.05 }),
-      templateNode("vad", "VADDetect", 570, 20, { max_segment_sec: 30, padding_sec: 0.1, sleep_sec: 0.05 }),
-      templateNode("cut_segments", "AudioCutBySegments", 570, 210, { sleep_sec: 0.03 }),
-      templateNode("whisper", "Whisper", 830, 180, { language: "auto", sleep_sec: 0.15 }),
-      templateNode("save_transcript", "SaveTranscript", 1090, 130, { output_dir: null, sleep_sec: 0.02 }),
-      templateNode("save_audio", "SaveAudio", 1090, 320, { output_dir: null, sleep_sec: 0.02 }),
+      templateNode("find_audio", "FindAudio", 40, 210, { directory: ".", patterns: ["*.wav", "*.mp3", "*.flac"], repeat_count: 1000, sleep_sec: 0 }, { queue_max_size: 256 }),
+      templateNode("load_audio", "LoadAudio", 300, 210, { sample_rate: 16000, channels: 1, sleep_sec: 0.001 }),
+      templateNode("vad", "VADDetect", 560, 120, { max_segment_sec: 30, padding_sec: 0.1, sleep_sec: 0.001 }),
+      templateNode("split_vad", "AudioCutBySegments", 560, 300, { sleep_sec: 0.001 }),
+      templateNode("sortformer", "SortformerDiarization", 820, 210, { max_speakers: 2 }),
+      templateNode("split_speakers", "AudioCutBySpeakers", 1080, 210, {}),
+      templateNode("deepfilternet", "DeepFilterNet", 1340, 210, {}),
+      templateNode("whisper", "Whisper", 1600, 40, { language: "auto", sleep_sec: 0.001 }),
+      templateNode("canary", "Canary", 1600, 210, { language: "auto", sleep_sec: 0.001 }),
+      templateNode("parakeet", "Parakeet", 1600, 380, { language: "auto", sleep_sec: 0.001 }),
+      templateNode("save_audio", "SaveAudio", 1860, 40, { output_dir: null, sleep_sec: 0.001 }),
+      templateNode("save_transcripts", "SaveTranscript", 1860, 260, { output_dir: null, sleep_sec: 0.001 }),
     ],
     edges: [
-      { source_node: "input", source_port: "paths", target_node: "load_audio", target_port: "path" },
+      { source_node: "find_audio", source_port: "paths", target_node: "load_audio", target_port: "path" },
       { source_node: "load_audio", source_port: "audio", target_node: "vad", target_port: "audio" },
-      { source_node: "load_audio", source_port: "audio", target_node: "cut_segments", target_port: "audio" },
-      { source_node: "vad", source_port: "segments", target_node: "cut_segments", target_port: "segments" },
-      { source_node: "cut_segments", source_port: "chunks", target_node: "whisper", target_port: "audio" },
-      { source_node: "cut_segments", source_port: "chunks", target_node: "save_audio", target_port: "audio" },
-      { source_node: "whisper", source_port: "transcript", target_node: "save_transcript", target_port: "transcript" },
+      { source_node: "load_audio", source_port: "audio", target_node: "split_vad", target_port: "audio" },
+      { source_node: "vad", source_port: "segments", target_node: "split_vad", target_port: "segments" },
+      { source_node: "split_vad", source_port: "chunks", target_node: "sortformer", target_port: "audio" },
+      { source_node: "split_vad", source_port: "chunks", target_node: "split_speakers", target_port: "audio" },
+      { source_node: "sortformer", source_port: "diarization", target_node: "split_speakers", target_port: "diarization" },
+      { source_node: "split_speakers", source_port: "speaker_chunks", target_node: "deepfilternet", target_port: "audio" },
+      { source_node: "deepfilternet", source_port: "audio", target_node: "whisper", target_port: "audio" },
+      { source_node: "deepfilternet", source_port: "audio", target_node: "canary", target_port: "audio" },
+      { source_node: "deepfilternet", source_port: "audio", target_node: "parakeet", target_port: "audio" },
+      { source_node: "deepfilternet", source_port: "audio", target_node: "save_audio", target_port: "audio" },
+      { source_node: "whisper", source_port: "transcript", target_node: "save_transcripts", target_port: "transcript" },
+      { source_node: "canary", source_port: "transcript", target_node: "save_transcripts", target_port: "transcript" },
+      { source_node: "parakeet", source_port: "transcript", target_node: "save_transcripts", target_port: "transcript" },
     ],
   };
-  setSelection(["input"]);
+  setSelection(["find_audio"]);
   state.seq = 1;
   state.wire = null;
   render();
@@ -183,12 +197,27 @@ function render() {
   el.canvas.classList.toggle("has-nodes", state.graph.nodes.length > 0);
 }
 
-function applyPan() {
-  el.nodes.style.transform = `translate(${state.pan.x}px, ${state.pan.y}px)`;
+function applyViewport() {
+  el.nodes.style.transform = `translate(${state.pan.x}px, ${state.pan.y}px) scale(${state.zoom})`;
+  el.zoomReset.textContent = `${Math.round(state.zoom * 100)}%`;
 }
 
+function setZoom(nextZoom, anchor = null) {
+  const next = Math.max(0.25, Math.min(2, nextZoom));
+  const box = el.canvas.getBoundingClientRect();
+  const point = anchor || { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+  const canvasPoint = { x: point.x - box.left, y: point.y - box.top };
+  const graphPoint = { x: (canvasPoint.x - state.pan.x) / state.zoom, y: (canvasPoint.y - state.pan.y) / state.zoom };
+  state.zoom = next;
+  state.pan = { x: canvasPoint.x - graphPoint.x * state.zoom, y: canvasPoint.y - graphPoint.y * state.zoom };
+  applyViewport();
+  renderEdges();
+}
+
+function zoomBy(multiplier, anchor = null) { setZoom(state.zoom * multiplier, anchor); }
+
 function renderNodes() {
-  applyPan();
+  applyViewport();
   el.nodes.innerHTML = "";
   for (const node of state.graph.nodes) {
     const info = nodeInfo(node.type);

@@ -1,6 +1,5 @@
-from __future__ import annotations
-
 import asyncio
+import logging
 from collections import defaultdict
 from typing import Any
 
@@ -11,18 +10,19 @@ from runflow.core.task import Packet, Task, lineage_from_value, metadata_from_va
 from runflow.planning.batch_planner import BatchPlanner
 from runflow.planning.graph_validator import GraphValidator
 from runflow.runtime.artifact_store import ArtifactStore
-from runflow.runtime.input_progress import ensure_input_progress, has_remaining_items, processed_counts, remaining_counts
+from runflow.runtime.input_progress import remaining_counts
 from runflow.runtime.node_manager import NodeManager
 from runflow.runtime.output_values import output_values
 from runflow.runtime.resource_pool import ResourcePool
 from runflow.runtime.routing import add_to_join_buffer, can_create_single_input_task
 from runflow.runtime.scheduler_events import SchedulerEventEmitter
-
+from runflow.runtime.topology import topological_nodes
 
 class WindowedScheduler:
     def __init__(self, graph: Graph, context: ExecutionContext):
         self.graph = graph
         self.context = context
+        self.logger = logging.getLogger(f"runflow.scheduler.{context.run_id}")
         self.validator = GraphValidator()
         self.events = SchedulerEventEmitter(context)
         self.batch_planner = BatchPlanner()
@@ -38,11 +38,25 @@ class WindowedScheduler:
         self._workers: list[asyncio.Task] = []
         self._worker_errors: list[BaseException] = []
         self._batch_sequence = 0
-
     def run(self) -> None:
         asyncio.run(self.arun())
 
+    async def load_node(self, node_id: str) -> None:
+        node = self.graph.nodes[node_id]
+        was_loaded = node.id in self.node_manager.loaded
+        await self.node_manager.ensure_loaded(node)
+        if not was_loaded and node.id in self.node_manager.loaded:
+            await self.events.node_loaded(node)
+
+    async def unload_node(self, node_id: str) -> None:
+        node = self.graph.nodes[node_id]
+        was_loaded = node.id in self.node_manager.loaded
+        await self.node_manager.unload(node)
+        if was_loaded and node.id not in self.node_manager.loaded:
+            await self.events.node_unloaded(node)
+
     async def arun(self) -> None:
+        self.logger.info("run starting nodes=%s", len(self.graph.nodes))
         self.validator.validate(self.graph)
         input_nodes = self.graph.input_nodes()
         counts = remaining_counts(input_nodes, self.context)
@@ -53,25 +67,16 @@ class WindowedScheduler:
             await self.events.input_items_remaining(node, counts[node.id])
 
         try:
-            window_index = 0
-            while has_remaining_items(counts):
-                self.context.window_index = window_index
-                await self.events.window_started(window_index, sum(counts.values()), counts)
-                await self._run_window(input_nodes, counts)
-                next_counts = remaining_counts(input_nodes, self.context)
-                ensure_input_progress(counts, next_counts)
-                processed = processed_counts(counts, next_counts)
-                await self.events.window_completed(window_index, sum(processed.values()), processed)
-                counts = next_counts
-                window_index += 1
-
+            await self._run_until_idle(input_nodes, counts)
             self.artifact_store.write_index()
             await self.context.emit_event("run_completed", message="run completed")
+            self.logger.info("run completed")
         finally:
             await self._stop_workers()
-            await self.node_manager.unload_all()
+            for node_id in list(self.node_manager.loaded):
+                await self.unload_node(node_id)
 
-    async def _run_window(self, input_nodes: list[Node], remaining_counts: dict[str, int]) -> None:
+    async def _run_until_idle(self, input_nodes: list[Node], remaining_counts: dict[str, int]) -> None:
         self.queues = {
             node_id: asyncio.Queue(maxsize=node.runtime.queue_max_size)
             for node_id, node in self.graph.nodes.items()
@@ -83,21 +88,13 @@ class WindowedScheduler:
         self._worker_errors = []
         self._batch_sequence = 0
 
-        for node in self.graph.nodes.values():
-            self._workers.append(asyncio.create_task(self._worker(node, 0), name=f"{node.id}:0"))
+        for priority, node in enumerate(topological_nodes(self.graph)):
+            self._workers.append(asyncio.create_task(self._worker(node, 0, priority), name=f"{node.id}:0"))
 
         for source in input_nodes:
             if remaining_counts[source.id] <= 0:
                 continue
-            await self._enqueue(
-                source.id,
-                Task(
-                    node_id=source.id,
-                    inputs={},
-                    input_packets={},
-                    lineage_id=f"window:{self.context.window_index}",
-                ),
-            )
+            await self._enqueue_input(source)
 
         await self._wait_until_idle()
         await self._stop_workers()
@@ -151,7 +148,7 @@ class WindowedScheduler:
         self._batch_sequence += 1
         return self._batch_sequence
 
-    async def _worker(self, node: Node, worker_index: int) -> None:
+    async def _worker(self, node: Node, worker_index: int, resource_priority: int) -> None:
         queue = self.queues[node.id]
         while True:
             first = await queue.get()
@@ -160,25 +157,25 @@ class WindowedScheduler:
 
             try:
                 resource_policy = node.runtime.resource_policy.to_policy()
-                async with self.resource_pool.lease(resource_policy):
-                    was_loaded = node.id in self.node_manager.loaded
-                    await self.node_manager.ensure_loaded(node)
-                    if not was_loaded and node.id in self.node_manager.loaded:
-                        await self.events.node_loaded(node)
-                    for batch in batches:
-                        batch_index = self._next_batch_index()
+                while batches:
+                    batch = batches.pop(0)
+                    batch_index = self._next_batch_index()
+                    async with self.resource_pool.lease(resource_policy, resource_priority):
+                        await self.load_node(node.id)
+                        node.logger.info("batch starting worker=%s batch=%s size=%s", worker_index, batch_index, len(batch))
                         await self.events.batch_started(node, worker_index, batch_index, batch)
-                        try:
-                            outputs = await node.execute([task.inputs for task in batch], self.context)
-                            if node.IS_INPUT:
-                                await self.events.input_items_remaining(node, node.remaining_items(self.context))
-                            await self._route_outputs(node, batch, outputs, batch_index)
-                            await self.events.batch_completed(node, worker_index, batch_index, batch, outputs)
-                        finally:
-                            if resource_policy.unload_after_stage and not resource_policy.keep_loaded:
-                                await self.node_manager.unload(node)
-                                await self.events.node_unloaded(node)
+                        outputs = await node.execute([task.inputs for task in batch], self.context)
+                        if node.IS_INPUT:
+                            await self.events.input_items_remaining(node, node.remaining_items(self.context))
+                        if resource_policy.unload_after_stage and not resource_policy.keep_loaded:
+                            await self.unload_node(node.id)
+                    await self.events.batch_completed(node, worker_index, batch_index, batch, outputs)
+                    node.logger.info("batch completed worker=%s batch=%s input_items=%s output_items=%s", worker_index, batch_index, len(batch), len(outputs))
+                    await self._route_outputs(node, batch, outputs, batch_index)
+                    if node.IS_INPUT and node.remaining_items(self.context) > 0:
+                        await self._enqueue_input(node)
             except Exception as error:
+                node.logger.exception("node worker failed")
                 await self.events.node_failed(node, worker_index, error)
                 await self._record_worker_error(error)
                 raise
@@ -187,17 +184,10 @@ class WindowedScheduler:
                     queue.task_done()
                     await self._mark_task_done()
 
-    async def _collect_batches(
-        self,
-        node: Node,
-        first: Task,
-        queue: asyncio.Queue[Task],
-    ) -> tuple[list[list[Task]], list[Task]]:
+    async def _collect_batches(self, node: Node, first: Task, queue: asyncio.Queue[Task]) -> tuple[list[list[Task]], list[Task]]:
         tasks = [first]
         batch_policy = node.runtime.batch_policy.to_policy()
-        max_size = batch_policy.max_size
-        preferred_size = batch_policy.preferred_size
-        target_size = min(max_size, preferred_size)
+        target_size = min(batch_policy.max_size, batch_policy.preferred_size)
         timeout = batch_policy.timeout_ms / 1000.0
 
         while len(tasks) < target_size:
@@ -208,8 +198,23 @@ class WindowedScheduler:
                     tasks.append(queue.get_nowait())
             except (asyncio.TimeoutError, asyncio.QueueEmpty):
                 break
-
+        while timeout > 0 and len(tasks) < node.runtime.queue_max_size:
+            try:
+                tasks.append(await asyncio.wait_for(queue.get(), timeout=timeout))
+            except (asyncio.TimeoutError, asyncio.QueueEmpty):
+                break
         return self.batch_planner.build_batches(tasks, batch_policy), tasks
+
+    async def _enqueue_input(self, node: Node) -> None:
+        await self._enqueue(
+            node.id,
+            Task(
+                node_id=node.id,
+                inputs={},
+                input_packets={},
+                lineage_id=f"input:{node.id}:{self.context.window_index}",
+            ),
+        )
 
     async def _route_outputs(
         self,

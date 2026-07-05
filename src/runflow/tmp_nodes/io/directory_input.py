@@ -60,10 +60,7 @@ class DirectoryInputNode(Node):
         outputs = []
         out_dir = context.node_dir(self.id)
         start = self._cursor
-        window_size = self.runtime.window_size
-        if window_size is None:
-            raise RuntimeError(f"Input node {self.id} requires runtime.window_size")
-        items = self._items[start:start + window_size]
+        items = self._items[start:start + self.runtime.queue_max_size]
         for index, path in enumerate(items):
             if self.settings.sleep_sec > 0:
                 await asyncio.sleep(self.settings.sleep_sec)

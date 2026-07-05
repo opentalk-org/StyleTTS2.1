@@ -27,8 +27,8 @@ class SortformerDiarizationNode(Node):
 
     BATCH_POLICY = BatchPolicy(
         BatchMode.MICRO_BATCH,
-        preferred_size=4,
-        max_size=8,
+        preferred_size=16,
+        max_size=64,
         sort_by="duration",
     )
     RESOURCE_POLICY = ResourcePolicy(

@@ -9,7 +9,8 @@ class CanaryNode(ASRNode):
     MODEL_NAME = "canary"
     BATCH_POLICY = BatchPolicy(
         BatchMode.MICRO_BATCH,
-        preferred_size=6,
-        max_size=10,
+        preferred_size=64,
+        max_size=64,
+        timeout_ms=1000,
         sort_by="duration",
     )

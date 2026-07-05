@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 from typing import Any
 
@@ -17,11 +15,14 @@ COMMAND_STREAM = "RUNFLOW_COMMANDS"
 EVENT_STREAM = "RUNFLOW_EVENTS"
 
 COMMAND_SUBJECTS = ["runflow.commands.>"]
-EVENT_SUBJECTS = ["runflow.events.*"]
+EVENT_SUBJECTS = ["runflow.events.*", "runflow.logs.*"]
 
 START_COMMAND_SUBJECT = "runflow.commands.start"
 STOP_COMMAND_SUBJECT = "runflow.commands.stop"
+NODE_COMMAND_SUBJECT = "runflow.commands.node"
+NODE_LOG_COMMAND_SUBJECT = "runflow.commands.logs"
 EVENT_SUBJECT_PREFIX = "runflow.events"
+LOG_RESPONSE_SUBJECT_PREFIX = "runflow.logs"
 
 RUNNER_COMMAND_DURABLE = "runflow-runners"
 BACKEND_EVENT_DURABLE = "runflow-backend-events"
@@ -37,6 +38,18 @@ def event_subject(run_id: str) -> str:
 
 def stop_command_subject(runner_id: str) -> str:
     return f"{STOP_COMMAND_SUBJECT}.{runner_id}"
+
+
+def node_command_subject(runner_id: str) -> str:
+    return f"{NODE_COMMAND_SUBJECT}.{runner_id}"
+
+
+def node_log_command_subject(runner_id: str) -> str:
+    return f"{NODE_LOG_COMMAND_SUBJECT}.{runner_id}"
+
+
+def node_log_response_subject(request_id: str) -> str:
+    return f"{LOG_RESPONSE_SUBJECT_PREFIX}.{request_id}"
 
 
 def encode_model(model: BaseModel) -> bytes:
@@ -74,6 +87,9 @@ async def ensure_streams(js: JetStreamContext) -> None:
 
 async def _ensure_stream(js: JetStreamContext, config: StreamConfig) -> None:
     try:
-        await js.stream_info(config.name)
+        info = await js.stream_info(config.name)
     except NotFoundError:
         await js.add_stream(config=config)
+        return
+    if sorted(info.config.subjects) != sorted(config.subjects):
+        await js.update_stream(config=config)

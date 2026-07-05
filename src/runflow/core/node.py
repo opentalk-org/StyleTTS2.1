@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -11,8 +10,7 @@ from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 
 def _runtime_defaults_for(cls: type["Node"]) -> dict[str, Any]:
     defaults = node_runtime_defaults(cls.BATCH_POLICY, cls.RESOURCE_POLICY)
-    if cls.IS_INPUT:
-        defaults["window_size"] = 80
+    defaults["queue_max_size"] = cls.QUEUE_MAX_SIZE
     return defaults
 
 
@@ -45,10 +43,12 @@ class Node(ABC):
 
     BATCH_POLICY: BatchPolicy = BatchPolicy(BatchMode.DISABLED)
     RESOURCE_POLICY: ResourcePolicy = ResourcePolicy()
+    QUEUE_MAX_SIZE: int = 64
 
     def __init__(self, node_id: str | None = None, **params: Any):
         runtime_config = params.pop("runtime", None)
         self.id = node_id or params.pop("id", self.NODE_TYPE)
+        self.logger = logging.getLogger(f"runflow.node.{self.NODE_TYPE}.{self.id}")
         self.settings = self.SETTINGS(**params)
         self.params = self.settings.model_dump()
         default_runtime = _runtime_defaults_for(type(self))

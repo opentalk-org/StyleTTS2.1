@@ -32,7 +32,7 @@ class SaveAudioNode(Node):
         "result": Port("result", SAVE_RESULT),
     }
 
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=128)
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
     RESOURCE_POLICY = ResourcePolicy(resources={"cpu_workers": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
@@ -74,7 +74,7 @@ class SaveTranscriptNode(Node):
         "result": Port("result", SAVE_RESULT),
     }
 
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=128)
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
     RESOURCE_POLICY = ResourcePolicy(resources={"cpu_workers": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
