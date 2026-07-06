@@ -5,7 +5,9 @@ from pydantic import Field
 from runflow.core.node import Node
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
-from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
+from runflow.policies import BatchMode, BatchPolicy
+from runner.nodes.audio_enhancement.denoise import DeepFilterNetDenoiseNode, DeepFilterNetSettings
+from runner.nodes.audio_enhancement.normalize import NormalizeLoudnessNode, NormalizeSettings
 from runner.nodes.datatypes import AUDIO, JSON
 from runner.nodes.models import Audio, stable_id
 
@@ -19,20 +21,6 @@ class VadSettings(StrictSettings):
 
 class CutAudioSettings(StrictSettings):
     fade_ms: int = Field(default=0, ge=0, le=100)
-
-
-class NormalizeSettings(StrictSettings):
-    target_lufs: float = Field(default=-23.0, ge=-40.0, le=-6.0)
-    target_rms_db: float = Field(default=-20.0, ge=-40.0, le=0.0)
-    silence_threshold_db: float = Field(default=-40.0, ge=-80.0, le=0.0)
-    padding_ms: int = Field(default=120, ge=0, le=1000)
-    prevent_clipping: bool = True
-    peak_cap_percent: int = Field(default=95, ge=50, le=100)
-
-
-class DeepFilterNetSettings(StrictSettings):
-    model: str = "deepfilternet3"
-    strength: float = Field(default=0.8, ge=0.0, le=1.0)
 
 
 class StatisticsSettings(StrictSettings):
@@ -94,29 +82,6 @@ class CutAudioBySpeakersNode(Node):
             assert isinstance(audio, Audio), f"unsupported audio input: {type(audio).__name__}"
             outputs.append({"audio": audio})
         return outputs
-
-
-class DeepFilterNetDenoiseNode(Node):
-    NODE_TYPE = "DeepFilterNetDenoise"
-    CATEGORY = "Audio / Enhancement"
-    SETTINGS = DeepFilterNetSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO)}
-    RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 4})
-
-    async def execute(self, batch, context):
-        return [{"audio": inputs["audio"]} for inputs in batch]
-
-
-class NormalizeLoudnessNode(Node):
-    NODE_TYPE = "NormalizeLoudness"
-    CATEGORY = "Audio / Enhancement"
-    SETTINGS = NormalizeSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO)}
-
-    async def execute(self, batch, context):
-        return [{"audio": inputs["audio"]} for inputs in batch]
 
 
 class CalculateAudioStatsNode(Node):

@@ -8,11 +8,11 @@ from runner.nodes.audio_processing import (
     CalculateAudioStatsNode,
     CutAudioBySegmentsNode,
     CutAudioBySpeakersNode,
-    DeepFilterNetDenoiseNode,
-    NormalizeLoudnessNode,
     SortformerDiarizationNode,
     VadDetectNode,
 )
+from runner.nodes.audio_enhancement.denoise import DeepFilterNetDenoiseNode
+from runner.nodes.audio_enhancement.normalize import NormalizeLoudnessNode
 from runner.nodes.audio_segments.writeback import (
     LoadAudioSegmentsNode,
     SaveAudioRecordNode,
