@@ -44,10 +44,6 @@ from runner.nodes.testing import (
     TestingTextPromptNode,
 )
 from runner.nodes.training import (
-    ASSET_BUNDLE_OR_JSON,
-    AsrModelTrainingNode,
-    CHECKPOINT_REF_OR_JSON,
-    F0ModelTrainingNode,
     ListDatasetAudioIdsNode,
     PhonemeAlphabetNode,
     PrefetchCheckpointNode,
@@ -57,9 +53,11 @@ from runner.nodes.training import (
     SelectOodTextSetsNode,
     SelectTrainingAssetsNode,
     SelectTrainingDatasetNode,
-    StyleTtsFinetuneNode,
     TrainingRunInputNode,
 )
+from runner.nodes.training_config import ASSET_BUNDLE_OR_JSON, CHECKPOINT_REF_OR_JSON, BuildStyleTtsFinetuneConfigNode
+from runner.nodes.training_execution import AsrModelTrainingNode, F0ModelTrainingNode, StyleTtsFinetuneNode
+from runner.nodes.training_manifest import TRAINING_SEGMENT_INPUT, BuildTrainingManifestNode
 
 
 def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
@@ -113,6 +111,8 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         PrefetchCheckpointNode,
         PrefetchTrainingAssetsNode,
         PrefetchOodTextSetsNode,
+        BuildTrainingManifestNode,
+        BuildStyleTtsFinetuneConfigNode,
         StyleTtsFinetuneNode,
         F0ModelTrainingNode,
         AsrModelTrainingNode,
@@ -136,4 +136,5 @@ def register_runner_types_for_ui(registry: TypeRegistry) -> TypeRegistry:
     register_runner_types(registry)
     registry.register(CHECKPOINT_REF_OR_JSON)
     registry.register(ASSET_BUNDLE_OR_JSON)
+    registry.register(TRAINING_SEGMENT_INPUT)
     return registry
