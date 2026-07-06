@@ -15,7 +15,7 @@ from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.asr.audio import extract_wav_range, wav_info
 from runner.nodes.assets.model_downloads import single_checkpoint_file
 from runner.nodes.datatypes import AUDIO, CHECKPOINT_REF, JSON
-from runner.nodes.models import Audio, CheckpointRef, stable_id
+from runner.nodes.models import Audio, AudioSegment, CheckpointRef, stable_id
 from shared.log_streams import route_output_to_logger
 from runner.nodes.statistics.audio_features import AnalyzeAudioFeaturesNode, AudioFeatureSettings, analyze_audio_features
 
@@ -119,17 +119,15 @@ class CutAudioBySegmentsNode(Node):
     NODE_TYPE = "CutAudioBySegments"
     CATEGORY = "Audio / Segmentation"
     SETTINGS = CutAudioSettings
-    INPUTS = {"audio": Port("audio", AUDIO), "segment": Port("segment", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO)}
+    INPUTS = {"audio": Port("audio", AUDIO)}
+    OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}
 
     async def execute(self, batch, context):
         outputs = []
         for inputs in batch:
             audio = inputs["audio"]
-            segment = inputs["segment"]
             assert isinstance(audio, Audio), f"unsupported audio input: {type(audio).__name__}"
-            assert isinstance(segment, Audio), f"unsupported segment input: {type(segment).__name__}"
-            outputs.append({"audio": cut_audio_by_segment(audio, segment, self.settings)})
+            outputs.extend({"audio": item} for item in cut_audio_by_segments(audio, self.settings))
         return outputs
 
 
@@ -233,21 +231,41 @@ def speaker_audio_segments(audio: Audio, segments: list[DiarizationSegment], set
     return outputs
 
 
-def cut_audio_by_segment(audio: Audio, segment: Audio, settings: CutAudioSettings) -> Audio:
+def cut_audio_by_segments(audio: Audio, settings: CutAudioSettings) -> list[Audio]:
+    assert audio.data is not None, f"audio bytes are required: {audio.id}"
+    assert audio.segments, f"audio segments are required: {audio.id}"
+    return [cut_audio_by_segment(audio, segment, settings, index) for index, segment in enumerate(audio.segments)]
+
+
+def cut_audio_by_segment(audio: Audio, segment: AudioSegment, settings: CutAudioSettings, index: int = 0) -> Audio:
     del settings
-    local_start = max(0.0, segment.start - audio.start)
+    local_start = max(0.0, float(segment.start) - audio.start)
     local_end = max(local_start, segment.end - audio.start)
     assert local_end <= audio.duration + 1e-6, f"segment outside audio bounds: {segment.id}"
     info = wav_info(audio.data)
     data = extract_wav_range(audio.data, local_start, local_end, info)
-    segment_id = stable_id("audio", audio.audio_file_id, audio.id, segment.id, local_start, local_end)
-    return replace(
+    duration = max(0.0, local_end - local_start)
+    cut_id = stable_id("audio", audio.audio_file_id, audio.id, segment.id, index, local_start, local_end)
+    relative_segment = replace(
         segment,
+        start=0.0,
+        end=duration,
+        metadata={
+            **segment.metadata,
+            "source_start": segment.start,
+            "source_end": segment.end,
+        },
+    )
+    return Audio(
         audio_file_id=audio.audio_file_id,
+        name=segment.name or audio.name,
         data=data,
         sample_rate=int(info["sample_rate"]),
         channels=int(info["channels"]),
-        id=segment_id,
+        start=0.0,
+        end=duration,
+        confidence=segment.confidence if segment.confidence is not None else audio.confidence,
+        id=cut_id,
         lineage_id=stable_id("lineage", audio.lineage_id, segment.lineage_id),
         metadata={
             **audio.metadata,
@@ -255,7 +273,17 @@ def cut_audio_by_segment(audio: Audio, segment: Audio, settings: CutAudioSetting
             "source_audio_id": str(audio.audio_file_id),
             "source_audio_node_id": audio.id,
             "source_segment_id": segment.id,
+            "source_segment_entry_id": segment.segment_id,
+            "source_start": segment.start,
+            "source_end": segment.end,
+            "text": segment.text,
+            "phon": segment.phon,
+            "speaker": segment.speaker,
+            "voice_id": str(segment.voice_id) if segment.voice_id is not None else None,
         },
+        byte_length=len(data),
+        virtual=audio.virtual,
+        segments=[relative_segment],
     )
 
 

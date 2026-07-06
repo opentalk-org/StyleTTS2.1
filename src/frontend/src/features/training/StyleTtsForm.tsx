@@ -10,7 +10,7 @@ import { AlphabetEditor } from "./AlphabetEditor";
 import { AssetSlot } from "./AssetSlot";
 import { FormSection } from "./FormSection";
 import { FormSelect } from "./FormSelect";
-import { checkpointOptions, checkpointSymbolCount, datasetOptions, oodSetValues, pretrainedAssetOptions, styleTtsParamsForBaseCheckpoint, trainingNode, type TrainingWorkflowSpec, updateNodeParams } from "./logic";
+import { checkpointOptions, checkpointSymbolCount, datasetOptions, oodSetValues, pretrainedAssetOptions, styleTtsParamsForBaseCheckpoint, trainingNode, type TrainingWorkflowSpec, updateNodeParams, updateTrainingParams } from "./logic";
 import { OodEditor } from "./OodEditor";
 import { useCreateTrainingConfigMutation, useTrainingConfigsQuery } from "./query";
 import { SettingField, SettingNumberInput, settingLabel } from "./SettingsField";
@@ -55,11 +55,12 @@ export function StyleTtsForm({
   const seqSeconds = Number(values.max_sequence_seconds);
   const frames = Math.round((seqSeconds * 24000) / 300);
   const updateParams = (nodeId: string, params: SchemaValues) => onChange(updateNodeParams(graph, nodeId, params));
+  const updateTraining = (params: SchemaValues) => onChange(updateTrainingParams(graph, spec, params));
   const selectedCheckpoint = (checkpoints.data ?? []).find((item) => item.id === String(checkpoint.params.checkpoint_id));
   const selectBaseCheckpoint = (checkpoint_id: string) => {
     const nextCheckpoint = (checkpoints.data ?? []).find((item) => item.id === checkpoint_id);
     let next = updateNodeParams(graph, checkpoint.id, { ...checkpoint.params, checkpoint_id });
-    next = updateNodeParams(next, training.id, styleTtsParamsForBaseCheckpoint(nextCheckpoint, values));
+    next = updateTrainingParams(next, spec, styleTtsParamsForBaseCheckpoint(nextCheckpoint, values));
     onChange(next);
   };
 
@@ -67,7 +68,7 @@ export function StyleTtsForm({
     <>
       <FormSection title="Identity & data" tag="Run">
         <div className="grid grid-cols-2 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="display_name" onChange={(params) => updateParams(training.id, params)} />
+          <SettingField schema={settingsSchema} values={values} name="display_name" onChange={updateTraining} />
           <Field label="Training dataset">
             <FormSelect
               defaultValue=""
@@ -79,7 +80,7 @@ export function StyleTtsForm({
         </div>
         <div className="h-3.5" />
         <div className="grid grid-cols-2 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="validation_samples" onChange={(params) => updateParams(training.id, params)} />
+          <SettingField schema={settingsSchema} values={values} name="validation_samples" onChange={updateTraining} />
           <Field label="Base checkpoint" hint="Required — finetuning resumes from here.">
             <FormSelect
               defaultValue=""
@@ -130,39 +131,39 @@ export function StyleTtsForm({
 
       <FormSection title="Optimization" tag="Optimizer">
         <div className="grid grid-cols-3 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="batch_size" onChange={(params) => updateParams(training.id, params)} />
-          <SettingField schema={settingsSchema} values={values} name="learning_rate" onChange={(params) => updateParams(training.id, params)} />
-          <SettingField schema={settingsSchema} values={values} name="numeric_precision" onChange={(params) => updateParams(training.id, params)} />
+          <SettingField schema={settingsSchema} values={values} name="batch_size" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="learning_rate" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="numeric_precision" onChange={updateTraining} />
         </div>
         <div className="mt-4 mb-2.5 text-xs font-semibold text-txt-dim">
           Gradient clipping (max norm)
         </div>
         <div className="grid grid-cols-3 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="clip_total" onChange={(params) => updateParams(training.id, params)} />
-          <SettingField schema={settingsSchema} values={values} name="clip_diffusion" onChange={(params) => updateParams(training.id, params)} />
-          <SettingField schema={settingsSchema} values={values} name="clip_slm" onChange={(params) => updateParams(training.id, params)} />
+          <SettingField schema={settingsSchema} values={values} name="clip_total" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="clip_diffusion" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="clip_slm" onChange={updateTraining} />
         </div>
       </FormSection>
 
       <FormSection title="Schedule" tag="Epochs & sequence">
         <div className="grid grid-cols-3 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="epochs_base" onChange={(params) => updateParams(training.id, params)} />
-          <SettingField schema={settingsSchema} values={values} name="epochs_diffusion" onChange={(params) => updateParams(training.id, params)} />
-          <SettingField schema={settingsSchema} values={values} name="epochs_joint" onChange={(params) => updateParams(training.id, params)} />
+          <SettingField schema={settingsSchema} values={values} name="epochs_base" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="epochs_diffusion" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="epochs_joint" onChange={updateTraining} />
         </div>
         <div className="h-3.5" />
         <div className="grid grid-cols-3 gap-3.5">
-          <SettingNumberInput schema={settingsSchema} values={values} name="max_sequence_seconds" hint={`≈ ${frames} frames @ 300 hop`} step={0.5} onChange={(params) => updateParams(training.id, params)} />
-          <SettingField schema={settingsSchema} values={values} name="save_interval_epochs" onChange={(params) => updateParams(training.id, params)} />
-          <SettingField schema={settingsSchema} values={values} name="decoder" onChange={(params) => updateParams(training.id, params)} />
+          <SettingNumberInput schema={settingsSchema} values={values} name="max_sequence_seconds" hint={`≈ ${frames} frames @ 300 hop`} step={0.5} onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="save_interval_epochs" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="decoder" onChange={updateTraining} />
         </div>
       </FormSection>
 
       <FormSection title="SLM adversarial" tag="Discriminator">
         <div className="grid grid-cols-3 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="slm_weight" onChange={(params) => updateParams(training.id, params)} />
-          <SettingField schema={settingsSchema} values={values} name="diffusion_samples" onChange={(params) => updateParams(training.id, params)} />
-          <SettingField schema={settingsSchema} values={values} name="slm_scale" onChange={(params) => updateParams(training.id, params)} />
+          <SettingField schema={settingsSchema} values={values} name="slm_weight" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="diffusion_samples" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="slm_scale" onChange={updateTraining} />
         </div>
         <div className="mt-4 flex flex-col gap-3">
           {TOGGLE_ROWS.map((r) => (
@@ -173,7 +174,7 @@ export function StyleTtsForm({
               </span>
               <Toggle
                 checked={Boolean(values[r.key])}
-                onChange={(value) => updateParams(training.id, { ...values, [r.key]: value })}
+                onChange={(value) => updateTraining({ ...values, [r.key]: value })}
               />
             </label>
           ))}

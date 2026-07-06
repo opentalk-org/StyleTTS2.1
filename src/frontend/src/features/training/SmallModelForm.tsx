@@ -7,7 +7,7 @@ import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
 import { AlphabetEditor } from "./AlphabetEditor";
 import { FormSection } from "./FormSection";
 import { FormSelect } from "./FormSelect";
-import { checkpointOptions, checkpointSymbolCount, datasetOptions, trainingNode, type TrainingWorkflowSpec, updateNodeParams } from "./logic";
+import { checkpointOptions, checkpointSymbolCount, datasetOptions, trainingNode, type TrainingWorkflowSpec, updateNodeParams, updateTrainingParams } from "./logic";
 import { useCreateTrainingConfigMutation, useTrainingConfigsQuery } from "./query";
 import { SettingField } from "./SettingsField";
 
@@ -39,6 +39,7 @@ export function SmallModelForm({
   const settingsSchema = trainingInfo.settings;
   const values = training.params;
   const updateParams = (nodeId: string, params: SchemaValues) => onChange(updateNodeParams(graph, nodeId, params));
+  const updateTraining = (params: SchemaValues) => onChange(updateTrainingParams(graph, spec, params));
   const checkpointType = isAsr ? "asr" : "f0";
   const selectedCheckpoint = (checkpoints.data ?? []).find((item) => item.id === String(checkpoint.params.checkpoint_id));
 
@@ -49,7 +50,7 @@ export function SmallModelForm({
         tag={isAsr ? "Aligner" : "Pitch extractor"}
       >
         <div className="grid grid-cols-2 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="display_name" onChange={(params) => updateParams(training.id, params)} />
+          <SettingField schema={settingsSchema} values={values} name="display_name" onChange={updateTraining} />
           <Field label="Training dataset">
             <FormSelect
               defaultValue=""
@@ -69,20 +70,20 @@ export function SmallModelForm({
               options={checkpointOptions(checkpoints.data ?? [], checkpointType, "— train from scratch —")}
             />
           </Field>
-          <SettingField schema={settingsSchema} values={values} name="validation_samples" onChange={(params) => updateParams(training.id, params)} />
+          <SettingField schema={settingsSchema} values={values} name="validation_samples" onChange={updateTraining} />
         </div>
       </FormSection>
 
       <FormSection title="Optimization" tag="Optimizer">
         <div className={isAsr ? "grid grid-cols-4 gap-3.5" : "grid grid-cols-3 gap-3.5"}>
-          <SettingField schema={settingsSchema} values={values} name="batch_size" onChange={(params) => updateParams(training.id, params)} />
-          <SettingField schema={settingsSchema} values={values} name="learning_rate" onChange={(params) => updateParams(training.id, params)} />
-          <SettingField schema={settingsSchema} values={values} name="epochs" onChange={(params) => updateParams(training.id, params)} />
-          {isAsr ? <SettingField schema={settingsSchema} values={values} name="dataloader_workers" onChange={(params) => updateParams(training.id, params)} /> : null}
+          <SettingField schema={settingsSchema} values={values} name="batch_size" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="learning_rate" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="epochs" onChange={updateTraining} />
+          {isAsr ? <SettingField schema={settingsSchema} values={values} name="dataloader_workers" onChange={updateTraining} /> : null}
         </div>
         <div className="h-3.5" />
         <div className="grid grid-cols-2 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="save_interval_epochs" onChange={(params) => updateParams(training.id, params)} />
+          <SettingField schema={settingsSchema} values={values} name="save_interval_epochs" onChange={updateTraining} />
           <div />
         </div>
       </FormSection>

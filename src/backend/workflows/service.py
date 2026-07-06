@@ -6,9 +6,9 @@ from shared.schemas import GraphNodeRequest, InlineGraphRunRequest
 
 
 SOURCE_NODE_TYPES = {
-    "selected_audio": "SelectedAudioSource",
-    "dataset_audio": "DatasetAudioSource",
-    "all_audio": "AllAudioSource",
+    "selected_audio": "AudioSource",
+    "dataset_audio": "AudioSource",
+    "all_audio": "AudioSource",
 }
 
 
@@ -49,11 +49,11 @@ def _apply_launch_source(
 
 def _source_params(launch_source: WorkflowLaunchSource) -> dict:
     if launch_source.kind == "selected_audio":
-        return {"audio_file_ids": [str(audio_id) for audio_id in launch_source.audio_file_ids]}
+        return {"source": "selected", "audio_file_ids": [str(audio_id) for audio_id in launch_source.audio_file_ids], "include_virtual": launch_source.include_virtual}
     if launch_source.kind == "dataset_audio":
         if launch_source.dataset_id is None:
             raise ValueError("dataset_audio launch source requires dataset_id")
-        return {"dataset_id": str(launch_source.dataset_id), "include_virtual": launch_source.include_virtual}
+        return {"source": "dataset", "dataset_id": str(launch_source.dataset_id), "include_virtual": launch_source.include_virtual}
     if launch_source.kind == "all_audio":
-        return {"include_virtual": launch_source.include_virtual}
+        return {"source": "all", "include_virtual": launch_source.include_virtual}
     raise ValueError(f"Unknown launch source: {launch_source.kind}")

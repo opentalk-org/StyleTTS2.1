@@ -60,7 +60,7 @@ const SWEEP_NODES = [
   { id: "checkpoint", type: "SelectCheckpoint", x: 64, y: 500 },
   { id: "prefetch_checkpoint", type: "PrefetchCheckpoint", x: 330, y: 500 },
   { id: "style_sweep", type: "StyleReferenceSweep", x: 64, y: 680 },
-  { id: "sweep_synthesis", type: "StyleTtsSweepSynthesis", x: 640, y: 420 },
+  { id: "sweep_synthesis", type: "StyleTtsSynthesis", x: 640, y: 420 },
   { id: "save_audio", type: "SaveAudioRecord", x: 910, y: 420 },
 ];
 
@@ -75,7 +75,7 @@ const SWEEP_EDGES: WorkflowEdge[] = [
   { source_node: "prefetch_checkpoint", source_port: "checkpoint", target_node: "sweep_synthesis", target_port: "checkpoint" },
   { source_node: "prompt", source_port: "prompt_text", target_node: "sweep_synthesis", target_port: "prompt_text" },
   { source_node: "phonemizer", source_port: "phonemes", target_node: "sweep_synthesis", target_port: "phonemes" },
-  { source_node: "style_sweep", source_port: "style_reference_batch", target_node: "sweep_synthesis", target_port: "style_reference_batch" },
+  { source_node: "style_sweep", source_port: "style_reference", target_node: "sweep_synthesis", target_port: "style_reference" },
   { source_node: "sweep_synthesis", source_port: "audio", target_node: "save_audio", target_port: "audio" },
 ];
 

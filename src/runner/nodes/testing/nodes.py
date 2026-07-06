@@ -97,15 +97,15 @@ class SelectStyleReferenceNode(TestingInputPayloadNode):
 class StyleReferenceSweepNode(TestingInputPayloadNode):
     NODE_TYPE = "StyleReferenceSweep"
     SETTINGS = StyleReferenceSweepSettings
-    OUTPUT_FIELD = "style_reference_batch"
-    OUTPUTS = {"style_reference_batch": Port("style_reference_batch", JSON)}
+    OUTPUT_FIELD = "style_reference"
+    OUTPUTS = {"style_reference": Port("style_reference", JSON)}
 
     async def execute(self, batch, context):
         if not self.settings.voices:
             raise ValueError("StyleReferenceSweep requires at least one style reference audio id")
         return [
             {
-                "style_reference_batch": {
+                "style_reference": {
                     "kind": "style_reference_batch",
                     "references": [
                         audio_file_style_reference(reference_id)

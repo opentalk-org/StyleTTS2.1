@@ -30,7 +30,6 @@ class AsrModelTrainingNode(Node):
     CATEGORY = "Training"
     SETTINGS = AsrTrainingSettings
     INPUTS = {
-        "audio_file_ids": Port("audio_file_ids", JSON),
         "pretrained_checkpoint": Port("pretrained_checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
         "phoneme_alphabet": Port("phoneme_alphabet", JSON, join_mode=JoinMode.BROADCAST),
         "training_manifest": Port("training_manifest", TRAINING_MANIFEST),

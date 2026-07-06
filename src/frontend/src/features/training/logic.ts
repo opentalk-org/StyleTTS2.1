@@ -15,6 +15,7 @@ export type TrainingNodeIds = {
   dataset: string;
   checkpoint: string;
   training: string;
+  manifest: string;
   assets?: string;
   alphabet?: string;
   oodSets?: string;
@@ -39,7 +40,8 @@ const STYLE_TTS_NODES = [
   { id: "alphabet", type: "PhonemeAlphabet", x: 64, y: 820 },
   { id: "ood_sets", type: "SelectOodTextSets", x: 64, y: 1020 },
   { id: "prefetch_ood_sets", type: "PrefetchOodTextSets", x: 330, y: 1020 },
-  { id: "styletts", type: "StyleTtsFinetune", x: 620, y: 620 },
+  { id: "manifest", type: "BuildTrainingManifest", x: 620, y: 380 },
+  { id: "styletts", type: "StyleTtsFinetune", x: 860, y: 560 },
 ];
 
 const STYLE_TTS_EDGES: WorkflowEdge[] = [
@@ -49,13 +51,16 @@ const STYLE_TTS_EDGES: WorkflowEdge[] = [
   { source_node: "run", source_port: "run", target_node: "alphabet", target_port: "run" },
   { source_node: "run", source_port: "run", target_node: "ood_sets", target_port: "run" },
   { source_node: "dataset", source_port: "dataset_ref", target_node: "audio_ids", target_port: "dataset_ref" },
-  { source_node: "audio_ids", source_port: "audio_file_ids", target_node: "styletts", target_port: "audio_file_ids" },
   { source_node: "base_checkpoint", source_port: "checkpoint_ref", target_node: "prefetch_checkpoint", target_port: "checkpoint_ref" },
-  { source_node: "prefetch_checkpoint", source_port: "checkpoint", target_node: "styletts", target_port: "base_checkpoint" },
   { source_node: "assets", source_port: "asset_refs", target_node: "prefetch_assets", target_port: "asset_refs" },
-  { source_node: "prefetch_assets", source_port: "assets", target_node: "styletts", target_port: "pretrained_assets" },
-  { source_node: "alphabet", source_port: "phoneme_alphabet", target_node: "styletts", target_port: "phoneme_alphabet" },
   { source_node: "ood_sets", source_port: "ood_text_set_refs", target_node: "prefetch_ood_sets", target_port: "ood_text_set_refs" },
+  { source_node: "audio_ids", source_port: "audio_file_ids", target_node: "manifest", target_port: "audio_file_ids" },
+  { source_node: "prefetch_checkpoint", source_port: "checkpoint", target_node: "manifest", target_port: "base_checkpoint" },
+  { source_node: "prefetch_assets", source_port: "assets", target_node: "manifest", target_port: "assets" },
+  { source_node: "alphabet", source_port: "phoneme_alphabet", target_node: "manifest", target_port: "phoneme_alphabet" },
+  { source_node: "manifest", source_port: "training_manifest", target_node: "styletts", target_port: "training_manifest" },
+  { source_node: "prefetch_checkpoint", source_port: "checkpoint", target_node: "styletts", target_port: "base_checkpoint" },
+  { source_node: "prefetch_assets", source_port: "assets", target_node: "styletts", target_port: "pretrained_assets" },
   { source_node: "prefetch_ood_sets", source_port: "ood_text_sets", target_node: "styletts", target_port: "ood_text_sets" },
 ];
 
@@ -65,16 +70,19 @@ const F0_NODES = [
   { id: "audio_ids", type: "ListDatasetAudioIds", x: 330, y: 220 },
   { id: "pretrained", type: "SelectCheckpoint", x: 64, y: 420 },
   { id: "prefetch_checkpoint", type: "PrefetchCheckpoint", x: 330, y: 420 },
-  { id: "f0", type: "F0ModelTraining", x: 620, y: 320 },
+  { id: "manifest", type: "BuildTrainingManifest", x: 620, y: 260 },
+  { id: "f0", type: "F0ModelTraining", x: 860, y: 320 },
 ];
 
 const F0_EDGES: WorkflowEdge[] = [
   { source_node: "run", source_port: "run", target_node: "dataset", target_port: "run" },
   { source_node: "run", source_port: "run", target_node: "pretrained", target_port: "run" },
   { source_node: "dataset", source_port: "dataset_ref", target_node: "audio_ids", target_port: "dataset_ref" },
-  { source_node: "audio_ids", source_port: "audio_file_ids", target_node: "f0", target_port: "audio_file_ids" },
   { source_node: "pretrained", source_port: "checkpoint_ref", target_node: "prefetch_checkpoint", target_port: "checkpoint_ref" },
+  { source_node: "audio_ids", source_port: "audio_file_ids", target_node: "manifest", target_port: "audio_file_ids" },
+  { source_node: "prefetch_checkpoint", source_port: "checkpoint", target_node: "manifest", target_port: "base_checkpoint" },
   { source_node: "prefetch_checkpoint", source_port: "checkpoint", target_node: "f0", target_port: "pretrained_checkpoint" },
+  { source_node: "manifest", source_port: "training_manifest", target_node: "f0", target_port: "training_manifest" },
 ];
 
 const ASR_NODES = [
@@ -84,7 +92,8 @@ const ASR_NODES = [
   { id: "pretrained", type: "SelectCheckpoint", x: 64, y: 420 },
   { id: "prefetch_checkpoint", type: "PrefetchCheckpoint", x: 330, y: 420 },
   { id: "alphabet", type: "PhonemeAlphabet", x: 64, y: 620 },
-  { id: "asr", type: "AsrModelTraining", x: 620, y: 420 },
+  { id: "manifest", type: "BuildTrainingManifest", x: 620, y: 320 },
+  { id: "asr", type: "AsrModelTraining", x: 860, y: 420 },
 ];
 
 const ASR_EDGES: WorkflowEdge[] = [
@@ -92,10 +101,13 @@ const ASR_EDGES: WorkflowEdge[] = [
   { source_node: "run", source_port: "run", target_node: "pretrained", target_port: "run" },
   { source_node: "run", source_port: "run", target_node: "alphabet", target_port: "run" },
   { source_node: "dataset", source_port: "dataset_ref", target_node: "audio_ids", target_port: "dataset_ref" },
-  { source_node: "audio_ids", source_port: "audio_file_ids", target_node: "asr", target_port: "audio_file_ids" },
   { source_node: "pretrained", source_port: "checkpoint_ref", target_node: "prefetch_checkpoint", target_port: "checkpoint_ref" },
+  { source_node: "audio_ids", source_port: "audio_file_ids", target_node: "manifest", target_port: "audio_file_ids" },
+  { source_node: "prefetch_checkpoint", source_port: "checkpoint", target_node: "manifest", target_port: "base_checkpoint" },
+  { source_node: "alphabet", source_port: "phoneme_alphabet", target_node: "manifest", target_port: "phoneme_alphabet" },
   { source_node: "prefetch_checkpoint", source_port: "checkpoint", target_node: "asr", target_port: "pretrained_checkpoint" },
   { source_node: "alphabet", source_port: "phoneme_alphabet", target_node: "asr", target_port: "phoneme_alphabet" },
+  { source_node: "manifest", source_port: "training_manifest", target_node: "asr", target_port: "training_manifest" },
 ];
 
 export const TRAINING_WORKFLOWS: Record<TrainTab, TrainingWorkflowSpec> = {
@@ -110,6 +122,7 @@ export const TRAINING_WORKFLOWS: Record<TrainTab, TrainingWorkflowSpec> = {
       assets: "assets",
       alphabet: "alphabet",
       oodSets: "ood_sets",
+      manifest: "manifest",
       training: "styletts",
     },
   },
@@ -118,14 +131,14 @@ export const TRAINING_WORKFLOWS: Record<TrainTab, TrainingWorkflowSpec> = {
     label: "F0 model",
     nodes: F0_NODES,
     edges: F0_EDGES,
-    ids: { dataset: "dataset", checkpoint: "pretrained", training: "f0" },
+    ids: { dataset: "dataset", checkpoint: "pretrained", manifest: "manifest", training: "f0" },
   },
   asr: {
     value: "asr",
     label: "ASR model",
     nodes: ASR_NODES,
     edges: ASR_EDGES,
-    ids: { dataset: "dataset", checkpoint: "pretrained", alphabet: "alphabet", training: "asr" },
+    ids: { dataset: "dataset", checkpoint: "pretrained", alphabet: "alphabet", manifest: "manifest", training: "asr" },
   },
 };
 
@@ -165,6 +178,15 @@ export function updateNodeParams(graph: WorkflowGraph, nodeId: string, params: S
     ...graph,
     nodes: graph.nodes.map((node) => (node.id === nodeId ? { ...node, params } : node)),
   };
+}
+
+export function updateTrainingParams(graph: WorkflowGraph, spec: TrainingWorkflowSpec, params: SchemaValues): WorkflowGraph {
+  let next = updateNodeParams(graph, spec.ids.training, params);
+  if ("validation_samples" in params) {
+    const manifest = trainingNode(next, spec.ids.manifest);
+    next = updateNodeParams(next, manifest.id, { ...manifest.params, validation_samples: params.validation_samples });
+  }
+  return next;
 }
 
 export function assertTrainingNodes(schema: WorkflowSchema, spec: TrainingWorkflowSpec) {

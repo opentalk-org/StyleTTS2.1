@@ -8,7 +8,7 @@ from runflow.core.node import Node
 from runflow.core.ports import JoinMode, Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import CHECKPOINT_REF, JSON, TRAINING_MANIFEST, TRAINING_RESULT
+from runner.nodes.datatypes import CHECKPOINT_REF, TRAINING_MANIFEST, TRAINING_RESULT
 from runner.nodes.models import TrainingManifest
 from runner.nodes.training.common.results import (
     NoopAimRun,
@@ -38,7 +38,6 @@ class F0ModelTrainingNode(Node):
     CATEGORY = "Training"
     SETTINGS = F0TrainingSettings
     INPUTS = {
-        "audio_file_ids": Port("audio_file_ids", JSON),
         "pretrained_checkpoint": Port("pretrained_checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
         "training_manifest": Port("training_manifest", TRAINING_MANIFEST),
     }

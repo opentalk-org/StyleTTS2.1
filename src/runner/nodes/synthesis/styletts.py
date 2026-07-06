@@ -36,9 +36,6 @@ class StyleTtsSynthesisSettings(StrictSettings):
     f0_inner_filename: str = Field(default="", title="F0 inner file")
     plbert_checkpoint_id: UUID | None = Field(default=None, title="PL-BERT checkpoint")
     output_name: str = Field(default="styletts_synthesis.wav", title="Output name")
-
-
-class StyleTtsSweepSynthesisSettings(StyleTtsSynthesisSettings):
     samples_per_reference: int = Field(default=1, title="Samples per reference", ge=1, le=16)
 
 
@@ -56,38 +53,33 @@ class StyleTtsSynthesisNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, exclusive_group="accelerator")
 
     async def execute(self, batch, context):
-        return [
-            await asyncio.to_thread(
-                synthesize_styletts,
-                self.NODE_TYPE,
-                self.settings,
-                inputs,
-                str(context.run_id),
-                0,
-                None,
-            )
-            for inputs in batch
-        ]
-
-
-class StyleTtsSweepSynthesisNode(Node):
-    NODE_TYPE = "StyleTtsSweepSynthesis"
-    CATEGORY = "Synthesis"
-    SETTINGS = StyleTtsSweepSynthesisSettings
-    INPUTS = {
-        "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
-        "prompt_text": Port("prompt_text", JSON),
-        "phonemes": Port("phonemes", JSON),
-        "style_reference_batch": Port("style_reference_batch", JSON),
-    }
-    OUTPUTS = {"synthesis_result": Port("synthesis_result", SYNTHESIS_RESULT), "audio": Port("audio", AUDIO)}
-    RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, exclusive_group="accelerator")
-
-    async def execute(self, batch, context):
         outputs = []
         for inputs in batch:
-            outputs.extend(await asyncio.to_thread(_synthesize_sweep, self, inputs, str(context.run_id)))
+            outputs.extend(await asyncio.to_thread(synthesize_styletts_items, self.NODE_TYPE, self.settings, inputs, str(context.run_id)))
         return outputs
+
+
+def synthesize_styletts_items(
+    node_type: str,
+    settings: StyleTtsSynthesisSettings,
+    inputs: dict[str, Any],
+    run_id: str,
+) -> list[dict[str, Audio | SynthesisResult]]:
+    style_reference = inputs["style_reference"]
+    if isinstance(style_reference, dict) and style_reference.get("kind") == "style_reference_batch":
+        outputs = []
+        runtime: Any | None = None
+        references = style_reference_batch_items(style_reference)
+        samples = _sweep_sample_count(style_reference, settings.samples_per_reference)
+        for reference_index, reference in enumerate(references):
+            for sample_index in range(samples):
+                output_index = reference_index * samples + sample_index
+                synthesis_inputs = {**inputs, "style_reference": reference}
+                if runtime is None:
+                    runtime = _load_runtime_for_inputs(settings, synthesis_inputs, output_index)
+                outputs.append(synthesize_styletts(node_type, settings, synthesis_inputs, run_id, output_index, runtime))
+        return outputs
+    return [synthesize_styletts(node_type, settings, inputs, run_id, 0, None)]
 
 
 def synthesize_styletts(
@@ -121,21 +113,6 @@ def style_reference_batch_items(value: dict[str, Any]) -> list[dict[str, Any]]:
     assert isinstance(references, list), "style_reference_batch references must be a list"
     assert references, "style_reference_batch requires at least one reference"
     return references
-
-
-def _synthesize_sweep(node: StyleTtsSweepSynthesisNode, inputs: dict[str, Any], run_id: str) -> list[dict[str, Audio | SynthesisResult]]:
-    references = style_reference_batch_items(inputs["style_reference_batch"])
-    samples = _sweep_sample_count(inputs["style_reference_batch"], node.settings.samples_per_reference)
-    outputs = []
-    runtime: Any | None = None
-    for reference_index, reference in enumerate(references):
-        for sample_index in range(samples):
-            synthesis_inputs = {**inputs, "style_reference": reference}
-            output_index = reference_index * samples + sample_index
-            if runtime is None:
-                runtime = _load_runtime_for_inputs(node.settings, synthesis_inputs, output_index)
-            outputs.append(synthesize_styletts(node.NODE_TYPE, node.settings, synthesis_inputs, run_id, output_index, runtime))
-    return outputs
 
 
 def _load_runtime_for_inputs(

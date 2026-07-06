@@ -3,24 +3,26 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import JoinMode, Port, PortMode
+from runflow.core.ports import JoinMode, Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import ASSET_BUNDLE, AUDIO, CHECKPOINT_REF, JSON, TRAINING_MANIFEST
-from runner.nodes.models import AssetBundleRef, Audio, AudioSegment, CheckpointRef, TrainingManifest, stable_id
+from runner.nodes.datatypes import ASSET_BUNDLE, CHECKPOINT_REF, JSON, TRAINING_MANIFEST
+from runner.nodes.models import AssetBundleRef, AudioRecordRef, AudioSegment, CheckpointRef, TrainingManifest, stable_id
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 
+DEFAULT_MANIFEST_OUTPUT_DIR = Path("data/training/manifests")
+
 
 class BuildTrainingManifestSettings(StrictSettings):
-    dataset_id: UUID = Field(title="Dataset")
     validation_samples: int = Field(default=32, title="Validation samples", ge=1, le=512)
-    output_dir: Path = Field(title="Output directory")
+    output_dir: Path = Field(default=DEFAULT_MANIFEST_OUTPUT_DIR, title="Output directory")
     root_path: str = Field(default="", title="Manifest root path")
 
 
@@ -37,7 +39,7 @@ class BuildTrainingManifestNode(Node):
     CATEGORY = "Training / Preparation"
     SETTINGS = BuildTrainingManifestSettings
     INPUTS = {
-        "audio": Port("audio", AUDIO, mode=PortMode.LIST),
+        "audio_file_ids": Port("audio_file_ids", JSON),
         "base_checkpoint": Port("base_checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
         "assets": Port("assets", ASSET_BUNDLE, join_mode=JoinMode.BROADCAST, optional=True, default=None),
         "phoneme_alphabet": Port("phoneme_alphabet", JSON, join_mode=JoinMode.BROADCAST, optional=True, default={}),
@@ -46,21 +48,31 @@ class BuildTrainingManifestNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [
-            {
+        outputs = []
+        for inputs in batch:
+            selection = audio_file_selection(inputs["audio_file_ids"])
+            settings = manifest_settings_for_run(self.settings, context.run_id)
+            outputs.append({
                 "training_manifest": build_training_manifest(
-                    segments=flatten_audio_segments(inputs["audio"]),
+                    dataset_id=selection.dataset_id,
+                    segments=segments_from_audio_file_ids(selection.audio_file_ids),
                     base_checkpoint=_typed_checkpoint(inputs["base_checkpoint"]),
                     assets=_typed_assets(inputs["assets"]),
                     phoneme_alphabet=phoneme_alphabet_symbols(inputs["phoneme_alphabet"]),
-                    settings=self.settings,
+                    settings=settings,
                 )
-            }
-            for inputs in batch
-        ]
+            })
+        return outputs
+
+
+@dataclass(frozen=True)
+class AudioFileSelection:
+    dataset_id: UUID
+    audio_file_ids: list[UUID]
 
 
 def build_training_manifest(
+    dataset_id: UUID,
     segments: list[AudioSegment],
     base_checkpoint: CheckpointRef,
     assets: AssetBundleRef | None,
@@ -96,9 +108,9 @@ def build_training_manifest(
     all_lines = train_lines + validation_lines
     _write_text_sidecar(sidecar_path, groups, ordered_audio_ids)
 
-    manifest_id = stable_id("training_manifest", settings.dataset_id, base_checkpoint.id, len(all_lines))
+    manifest_id = stable_id("training_manifest", dataset_id, base_checkpoint.id, len(all_lines))
     return TrainingManifest(
-        dataset_id=settings.dataset_id,
+        dataset_id=dataset_id,
         audio_file_ids=ordered_audio_ids,
         base_checkpoint=base_checkpoint,
         phoneme_alphabet=phoneme_alphabet,
@@ -130,13 +142,65 @@ def phoneme_alphabet_symbols(value: dict) -> list[str]:
     raise TypeError("phoneme alphabet symbols must be a string or list")
 
 
-def flatten_audio_segments(values: list[Audio]) -> list[AudioSegment]:
+def manifest_settings_for_run(settings: BuildTrainingManifestSettings, run_id: object) -> BuildTrainingManifestSettings:
+    if settings.output_dir != DEFAULT_MANIFEST_OUTPUT_DIR:
+        return settings
+    return settings.model_copy(update={"output_dir": DEFAULT_MANIFEST_OUTPUT_DIR / str(run_id)})
+
+
+def segments_from_audio_file_ids(audio_file_ids: list[UUID]) -> list[AudioSegment]:
     segments: list[AudioSegment] = []
-    for value in values:
-        if not isinstance(value, Audio):
-            raise TypeError(f"unsupported training audio input: {type(value).__name__}")
-        segments.extend(value.segments)
+    with database_session() as session:
+        for audio_file_id in audio_file_ids:
+            item = audio_crud.get_audio_file(session, audio_file_id)
+            ref = AudioRecordRef(item.id, item.name, item.duration, item.byte_length, item.virtual, item.metadata_)
+            segments.extend(
+                _audio_segment_from_dict(ref, segment)
+                for segment in audio_crud.list_audio_segments(session, item.id)
+            )
     return segments
+
+
+def audio_file_selection(value: dict[str, Any]) -> AudioFileSelection:
+    dataset_id = UUID(str(value["dataset_id"]))
+    raw_ids = value["ids"]
+    if not isinstance(raw_ids, list):
+        raise TypeError("audio_file_ids.ids must be a list")
+    return AudioFileSelection(dataset_id, [UUID(str(audio_file_id)) for audio_file_id in raw_ids])
+
+
+def _audio_segment_from_dict(ref: AudioRecordRef, segment: dict[str, Any]) -> AudioSegment:
+    segment_id = str(segment["id"])
+    metadata = dict(segment["metadata"]) if isinstance(segment.get("metadata"), dict) else {}
+    metadata.setdefault("type_", _segment_type(segment))
+    return AudioSegment(
+        source_audio_id=ref.audio_file_id,
+        name=ref.name,
+        start=float(segment["start"]),
+        end=float(segment["end"]),
+        sample_rate=int(ref.metadata["sample_rate"]),
+        channels=int(ref.metadata["channels"]) if "channels" in ref.metadata else 1,
+        text=str(segment["text"]),
+        phon=str(segment["phon"]),
+        id=stable_id("segment", ref.audio_file_id, segment_id),
+        lineage_id=stable_id("segment_lineage", ref.audio_file_id, segment_id),
+        segment_id=segment_id,
+        speaker=str(segment["speaker"]) if "speaker" in segment else None,
+        voice_id=_optional_uuid(segment["voice_id"]) if "voice_id" in segment else None,
+        metadata=metadata,
+    )
+
+
+def _segment_type(segment: dict[str, Any]) -> str:
+    if segment.get("type_"):
+        return str(segment["type_"])
+    metadata = segment.get("metadata")
+    if isinstance(metadata, dict):
+        if metadata.get("type_"):
+            return str(metadata["type_"])
+        if metadata.get("model"):
+            return str(metadata["model"])
+    return "manual"
 
 
 def _usable_groups(segments: list[AudioSegment], audio_dir: Path) -> dict[UUID, list[AudioSegment]]:
@@ -241,3 +305,9 @@ def _typed_assets(value: AssetBundleRef | dict | None) -> AssetBundleRef | None:
     if value is None or isinstance(value, AssetBundleRef):
         return value
     raise TypeError("BuildTrainingManifest requires resolved AssetBundleRef values for assets")
+
+
+def _optional_uuid(value: object) -> UUID | None:
+    if value is None or value == "":
+        return None
+    return UUID(str(value))

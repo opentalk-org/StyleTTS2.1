@@ -95,12 +95,10 @@ class StyleTtsFinetuneNode(Node):
     CATEGORY = "Training"
     SETTINGS = StyleTtsFinetuneSettings
     INPUTS = {
-        "audio_file_ids": Port("audio_file_ids", JSON),
+        "training_manifest": Port("training_manifest", TRAINING_MANIFEST),
         "base_checkpoint": Port("base_checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
         "pretrained_assets": Port("pretrained_assets", ASSET_BUNDLE, join_mode=JoinMode.BROADCAST),
-        "phoneme_alphabet": Port("phoneme_alphabet", JSON, join_mode=JoinMode.BROADCAST),
         "ood_text_sets": Port("ood_text_sets", JSON, join_mode=JoinMode.BROADCAST),
-        "training_config": Port("training_config", JSON),
     }
     OUTPUTS = {"training_result": Port("training_result", TRAINING_RESULT)}
     BATCH_POLICY = BatchPolicy(BatchMode.DISABLED)
@@ -109,7 +107,14 @@ class StyleTtsFinetuneNode(Node):
     async def execute(self, batch, context):
         outputs = []
         for inputs in batch:
-            config_path = _prepare_styletts_config(inputs["training_config"], str(context.run_id))
+            training_config = build_styletts_finetune_config(
+                manifest=inputs["training_manifest"],
+                base_checkpoint=_typed_checkpoint(inputs["base_checkpoint"]),
+                pretrained_assets=_typed_assets(inputs["pretrained_assets"]),
+                ood_text_sets=inputs["ood_text_sets"],
+                settings=BuildStyleTtsFinetuneConfigSettings(**self.settings.model_dump()),
+            )
+            config_path = _prepare_styletts_config(training_config, str(context.run_id))
             _run_styletts_train(config_path)
             outputs.append({"training_result": _latest_epoch_result(str(context.run_id))})
         return outputs

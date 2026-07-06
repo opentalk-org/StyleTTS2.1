@@ -212,17 +212,6 @@ def _segment_sort_key(segment: dict[str, Any]) -> tuple[float, float, str, str]:
     )
 
 
-def _refs_by_source(session: Any, group: SegmentGroup) -> list[tuple[AudioRecordRef, list[AudioSegment]]]:
-    grouped: dict[UUID, list[AudioSegment]] = {}
-    for segment in group.segments:
-        grouped.setdefault(segment.source_audio_id, []).append(segment)
-    refs = []
-    for source_audio_id, segments in grouped.items():
-        item = audio_crud.get_audio_file(session, source_audio_id)
-        refs.append((AudioRecordRef(item.id, item.name, item.duration, item.byte_length, item.virtual, item.metadata_), segments))
-    return refs
-
-
 def _segment_type(segment: dict[str, Any]) -> str:
     if segment.get("type_"):
         return str(segment["type_"])
@@ -235,11 +224,6 @@ def _segment_type(segment: dict[str, Any]) -> str:
     return "manual"
 
 
-def _assert_group_target(ref: AudioRecordRef, group: SegmentGroup) -> None:
-    for segment in group.segments:
-        assert segment.source_audio_id == ref.audio_file_id, f"segment belongs to different audio record: {segment.id}"
-
-
 def _segment_entry_id(segment: AudioSegment) -> str:
     return segment.segment_id or segment.id
 
@@ -248,13 +232,6 @@ def _optional_uuid(value: object) -> UUID | None:
     if value is None or value == "":
         return None
     return UUID(str(value))
-
-
-def _segment_writeback_output(segment: AudioSegment, kind: str) -> dict[str, AudioSegment | SaveResult]:
-    return {
-        "segment": segment,
-        "save_result": _save_result(f"db/audio/{segment.source_audio_id}/segments/{_segment_entry_id(segment)}", kind, segment.lineage_id, {}),
-    }
 
 
 def _save_result(path: str, kind: str, lineage_id: str, metadata: dict[str, Any]) -> SaveResult:
