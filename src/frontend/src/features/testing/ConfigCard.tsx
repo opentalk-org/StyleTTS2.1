@@ -1,19 +1,13 @@
-import { useCheckpoints } from "@/features/checkpoints/store";
-import { seedStyleRefs } from "@/mock/data";
 import type { SchemaValues } from "@/shared/schema-form/types";
-import { showToast } from "@/shared/feedback/Toast";
 import { Card } from "@/shared/ui/Card";
 import { Field } from "@/shared/ui/form/Field";
 import { Slider } from "@/shared/ui/form/Slider";
-import { Select, type Option } from "@/shared/ui/Select";
+import { Select } from "@/shared/ui/Select";
 import { Textarea } from "@/shared/ui/Textarea";
+import { useAudioFilesQuery } from "../audio/query";
+import { useCheckpointsQuery } from "../checkpoints/query";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
-import { checkpointOptions, enumOptions, numericSetting, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
-
-const STYLE_REFS: Option[] = [
-  ...seedStyleRefs().map((r) => ({ value: r.id, label: `${r.name}  (${r.voice})` })),
-  { value: "upload", label: "⤴ Upload reference…" },
-];
+import { checkpointOptions, checkpointWeightOptions, enumOptions, numericSetting, styleReferenceOptions, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
 
 function GroupTitle({ children }: { children: string }) {
   return (
@@ -44,7 +38,8 @@ export function ConfigCard({
   spec: TestingWorkflowSpec;
   onChange: (graph: WorkflowGraph) => void;
 }) {
-  const checkpoints = useCheckpoints((s) => s.checkpoints);
+  const checkpoints = useCheckpointsQuery();
+  const audioFiles = useAudioFilesQuery({ query: "", dataset: "all", sort: "updated", limit: 100, offset: 0 });
   if (!spec.ids.styleRef || !spec.ids.synthesis) {
     throw new Error("Single testing workflow ids are incomplete");
   }
@@ -58,14 +53,7 @@ export function ConfigCard({
   const styleMix = numericSetting(schema, styleRef, "style_mix");
   const prosodyMix = numericSetting(schema, styleRef, "prosody_mix");
   const updateParams = (nodeId: string, params: SchemaValues) => onChange(updateNodeParams(graph, nodeId, params));
-
-  const onStyleRef = (v: string) => {
-    if (v === "upload") {
-      showToast("Choose a .wav style reference");
-      return;
-    }
-    updateParams(styleRef.id, { ...styleRef.params, reference_id: v });
-  };
+  const selectedCheckpoint = (checkpoints.data ?? []).find((item) => item.id === String(checkpoint.params.checkpoint_id));
 
   return (
     <Card className="flex flex-col gap-5 rounded-xl px-6 py-[22px]">
@@ -131,14 +119,14 @@ export function ConfigCard({
             <Select
               value={String(checkpoint.params.checkpoint_id)}
               onChange={(checkpoint_id) => updateParams(checkpoint.id, { ...checkpoint.params, checkpoint_id })}
-              options={checkpointOptions(checkpoints)}
+              options={checkpointOptions(checkpoints.data ?? [])}
             />
           </Field>
           <Field label="Weights file">
             <Select
               value={String(synthesis.params.weights_file)}
               onChange={(weights_file) => updateParams(synthesis.id, { ...synthesis.params, weights_file })}
-              options={enumOptions(schema, synthesis, "weights_file")}
+              options={checkpointWeightOptions(selectedCheckpoint)}
             />
           </Field>
         </FieldGrid>
@@ -150,7 +138,11 @@ export function ConfigCard({
         <GroupTitle>Style reference</GroupTitle>
         <FieldGrid>
           <Field label="Reference">
-            <Select value={String(styleRef.params.reference_id)} onChange={onStyleRef} options={STYLE_REFS} />
+            <Select
+              value={String(styleRef.params.reference_id)}
+              onChange={(reference_id) => updateParams(styleRef.id, { ...styleRef.params, reference_id })}
+              options={styleReferenceOptions(audioFiles.data?.rows ?? [])}
+            />
           </Field>
           <Field label="Style mix" hint="Timbre adherence to reference.">
             <Slider

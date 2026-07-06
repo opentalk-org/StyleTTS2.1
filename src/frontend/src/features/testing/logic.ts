@@ -4,6 +4,7 @@ import type { Option } from "@/shared/ui/Select";
 
 import type { AudioFile } from "../audio/api";
 import type { Checkpoint } from "../checkpoints/api";
+import type { Voice } from "../voices/api";
 import type { WorkflowGraph, WorkflowNode, WorkflowSchema } from "../workflows/types";
 import type { TestingWorkflowSpec } from "./workflows";
 
@@ -25,7 +26,7 @@ export type SingleConfig = {
 export type SweepConfig = {
   ckpt: string;
   text: string;
-  voices: string[];
+  voices: { id: string; name: string }[];
   n: number;
   alphabetSymbols: string;
 };
@@ -83,15 +84,16 @@ export function singleConfigFromGraph(graph: WorkflowGraph, spec: TestingWorkflo
   };
 }
 
-export function sweepConfigFromGraph(graph: WorkflowGraph, spec: TestingWorkflowSpec): SweepConfig {
+export function sweepConfigFromGraph(graph: WorkflowGraph, spec: TestingWorkflowSpec, availableVoices: Voice[] = []): SweepConfig {
   const prompt = testingNode(graph, spec.ids.prompt);
   const checkpoint = testingNode(graph, spec.ids.checkpoint);
   const alphabet = testingNode(graph, spec.ids.alphabet);
   const styleSweep = testingNode(graph, requiredNodeId(spec.ids.styleSweep, "sweep style references"));
+  const voiceIds = stringArrayParam(styleSweep.params.voices);
   return {
     ckpt: String(checkpoint.params.checkpoint_id),
     text: String(prompt.params.text),
-    voices: stringArrayParam(styleSweep.params.voices),
+    voices: voiceIds.map((id) => ({ id, name: voiceName(id, availableVoices) })),
     n: Number(styleSweep.params.samples_per_voice),
     alphabetSymbols: String(alphabet.params.symbols),
   };
@@ -221,5 +223,11 @@ function weightFiles(checkpoint: Checkpoint | undefined): string[] {
 }
 
 function deterministicUnit(seed: number): number {
-  return Math.sin(seed) * 10000 % 1;
+  const value = Math.sin(seed) * 10000;
+  return value - Math.floor(value);
+}
+
+function voiceName(id: string, voices: Voice[]): string {
+  const voice = voices.find((item) => item.id === id);
+  return voice ? voice.name : id;
 }

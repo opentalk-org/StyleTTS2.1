@@ -204,6 +204,12 @@ export function oodSetValues(assets: FileAsset[]): OodSetValue[] {
   }));
 }
 
+export function checkpointSymbolCount(checkpoint: Checkpoint | undefined): number | null {
+  if (!checkpoint) return null;
+  const value = Number(checkpoint.metadata.symbols);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 function lineCount(asset: FileAsset): number {
   const value = Number(asset.metadata.line_count);
   return Number.isFinite(value) ? value : 0;

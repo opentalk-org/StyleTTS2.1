@@ -58,7 +58,7 @@ class TestingRunInputNode(Node):
     async def execute(self, batch, context):
         assert not self._emitted, f"input node already emitted: {self.id}"
         self._emitted = True
-        return [{"run": {"node_type": self.NODE_TYPE, "source": "mock"}}]
+        return [{"run": {"node_type": self.NODE_TYPE, "source": "workflow"}}]
 
 
 class MockTestingInputNode(Node):
@@ -103,7 +103,7 @@ class TestingPromptPhonemizerNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [{"phonemes": {"prompt": inputs["prompt_text"], "alphabet": inputs["phoneme_alphabet"], "source": "mock"}} for inputs in batch]
+        return [{"phonemes": {"prompt": inputs["prompt_text"], "alphabet": inputs["phoneme_alphabet"], "source": "phonemizer"}} for inputs in batch]
 
 
 class StyleTtsSynthesisNode(Node):

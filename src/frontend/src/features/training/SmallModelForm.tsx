@@ -7,7 +7,7 @@ import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
 import { AlphabetEditor } from "./AlphabetEditor";
 import { FormSection } from "./FormSection";
 import { FormSelect } from "./FormSelect";
-import { checkpointOptions, datasetOptions, trainingNode, type TrainingWorkflowSpec, updateNodeParams } from "./logic";
+import { checkpointOptions, checkpointSymbolCount, datasetOptions, trainingNode, type TrainingWorkflowSpec, updateNodeParams } from "./logic";
 import { SettingField } from "./SettingsField";
 
 /** Compact finetune form for the F0 pitch extractor and ASR aligner models. */
@@ -37,6 +37,7 @@ export function SmallModelForm({
   const values = training.params;
   const updateParams = (nodeId: string, params: SchemaValues) => onChange(updateNodeParams(graph, nodeId, params));
   const checkpointType = isAsr ? "asr" : "f0";
+  const selectedCheckpoint = (checkpoints.data ?? []).find((item) => item.id === String(checkpoint.params.checkpoint_id));
 
   return (
     <>
@@ -83,7 +84,13 @@ export function SmallModelForm({
         </div>
       </FormSection>
 
-      {alphabet ? <AlphabetEditor values={alphabet.params} onChange={(params) => updateParams(alphabet.id, params)} /> : null}
+      {alphabet ? (
+        <AlphabetEditor
+          values={alphabet.params}
+          baseSymbolCount={checkpointSymbolCount(selectedCheckpoint)}
+          onChange={(params) => updateParams(alphabet.id, params)}
+        />
+      ) : null}
     </>
   );
 }

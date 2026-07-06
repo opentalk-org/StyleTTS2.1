@@ -120,7 +120,7 @@ class TrainingRunInputNode(Node):
     async def execute(self, batch, context):
         assert not self._emitted, f"input node already emitted: {self.id}"
         self._emitted = True
-        return [{"run": {"node_type": self.NODE_TYPE, "source": "mock"}}]
+        return [{"run": {"node_type": self.NODE_TYPE, "source": "workflow"}}]
 
 
 class MockTrainingInputNode(Node):
@@ -130,7 +130,7 @@ class MockTrainingInputNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [{self.OUTPUT_FIELD: {"node_type": self.NODE_TYPE, "run": inputs["run"], "source": "mock"}} for inputs in batch]
+        return [{self.OUTPUT_FIELD: {"node_type": self.NODE_TYPE, "run": inputs["run"], "source": "workflow_settings"}} for inputs in batch]
 
 
 class SelectTrainingDatasetNode(MockTrainingInputNode):
@@ -190,7 +190,7 @@ class PrefetchCheckpointNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [{"checkpoint": {"source": inputs["checkpoint_ref"], "cache": "mock"}} for inputs in batch]
+        return [{"checkpoint": {"source": inputs["checkpoint_ref"], "cache": "asset"}} for inputs in batch]
 
 
 class PrefetchTrainingAssetsNode(Node):
@@ -201,7 +201,7 @@ class PrefetchTrainingAssetsNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [{"assets": {"source": inputs["asset_refs"], "cache": "mock"}} for inputs in batch]
+        return [{"assets": {"source": inputs["asset_refs"], "cache": "asset"}} for inputs in batch]
 
 
 class PrefetchOodTextSetsNode(Node):
@@ -212,7 +212,7 @@ class PrefetchOodTextSetsNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [{"ood_text_sets": {"source": inputs["ood_text_set_refs"], "cache": "mock"}} for inputs in batch]
+        return [{"ood_text_sets": {"source": inputs["ood_text_set_refs"], "cache": "asset"}} for inputs in batch]
 
 
 class StyleTtsFinetuneNode(Node):

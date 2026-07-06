@@ -10,7 +10,7 @@ import { AlphabetEditor } from "./AlphabetEditor";
 import { AssetSlot } from "./AssetSlot";
 import { FormSection } from "./FormSection";
 import { FormSelect } from "./FormSelect";
-import { checkpointOptions, datasetOptions, fileAssetOptions, oodSetValues, trainingNode, type TrainingWorkflowSpec, updateNodeParams } from "./logic";
+import { checkpointOptions, checkpointSymbolCount, datasetOptions, fileAssetOptions, oodSetValues, trainingNode, type TrainingWorkflowSpec, updateNodeParams } from "./logic";
 import { OodEditor } from "./OodEditor";
 import { SettingField, SettingNumberInput, settingLabel } from "./SettingsField";
 
@@ -51,6 +51,7 @@ export function StyleTtsForm({
   const seqSeconds = Number(values.max_sequence_seconds);
   const frames = Math.round((seqSeconds * 24000) / 300);
   const updateParams = (nodeId: string, params: SchemaValues) => onChange(updateNodeParams(graph, nodeId, params));
+  const selectedCheckpoint = (checkpoints.data ?? []).find((item) => item.id === String(checkpoint.params.checkpoint_id));
 
   return (
     <>
@@ -103,7 +104,11 @@ export function StyleTtsForm({
         </div>
       </FormSection>
 
-      <AlphabetEditor values={alphabet.params} onChange={(params) => updateParams(alphabet.id, params)} />
+      <AlphabetEditor
+        values={alphabet.params}
+        baseSymbolCount={checkpointSymbolCount(selectedCheckpoint)}
+        onChange={(params) => updateParams(alphabet.id, params)}
+      />
 
       <FormSection title="Optimization" tag="Optimizer">
         <div className="grid grid-cols-3 gap-3.5">

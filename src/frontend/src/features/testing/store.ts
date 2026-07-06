@@ -34,7 +34,7 @@ export type TestingStore = {
 };
 
 function id(prefix: string): string {
-  return prefix + Math.random().toString(16).slice(2, 6);
+  return prefix + crypto.randomUUID().slice(0, 8);
 }
 
 export const useTesting = create<TestingStore>((set) => ({
@@ -85,7 +85,7 @@ export const useTesting = create<TestingStore>((set) => ({
     for (const voice of sw.voices) {
       for (let i = 0; i < sw.n; i++) {
         const rid = id("sw_");
-        out.push({ id: rid, voice, sample: i + 1, dur: synthDuration(rid, i), file: rid + ".wav" });
+        out.push({ id: rid, voice: voice.name, sample: i + 1, dur: synthDuration(rid, i), file: rid + ".wav" });
       }
     }
     set({ sweepResults: out });

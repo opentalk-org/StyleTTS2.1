@@ -3,12 +3,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { showToast } from "@/shared/feedback/Toast";
 import { fetchRunGraph, fetchRuns, fetchRunSnapshot, fetchSavedWorkflows, fetchWorkflowSchema, loadRunNode, saveWorkflow, startGraph, stopRun, unloadRunNode } from "./api";
 
+const STATUS_STALE_MS = 10_000;
+
 export function useWorkflowSchemaQuery() {
   return useQuery({ queryKey: ["workflow-schema"], queryFn: fetchWorkflowSchema });
 }
 
 export function useRunsQuery() {
-  return useQuery({ queryKey: ["runs"], queryFn: fetchRuns, refetchInterval: 2000 });
+  return useQuery({
+    queryKey: ["runs"],
+    queryFn: fetchRuns,
+    staleTime: STATUS_STALE_MS,
+    refetchOnWindowFocus: false,
+  });
 }
 
 export function useSavedWorkflowsQuery() {
@@ -31,7 +38,8 @@ export function useRunSnapshotQuery(runId: string | null) {
     queryKey: ["run-snapshot", runId],
     queryFn: () => fetchRunSnapshot(runId as string),
     enabled: runId !== null,
-    refetchInterval: 2000,
+    staleTime: STATUS_STALE_MS,
+    refetchOnWindowFocus: false,
   });
 }
 

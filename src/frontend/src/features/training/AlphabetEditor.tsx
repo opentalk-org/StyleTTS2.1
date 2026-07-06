@@ -1,15 +1,11 @@
 import { useState } from "react";
 
-import { showToast } from "@/shared/feedback/Toast";
 import { Icon } from "@/shared/icons";
 import { Textarea } from "@/shared/ui/Textarea";
-import { Button } from "@/shared/ui/Button";
 import { Select } from "@/shared/ui/Select";
 
 import { FormSection } from "./FormSection";
 import type { SchemaValues } from "@/shared/schema-form/types";
-
-const BASE_SYMBOLS = 178;
 
 const PRESETS = [
   { value: "ipa", label: "IPA · default" },
@@ -21,16 +17,18 @@ const PRESETS = [
 /** Phoneme alphabet editor: preset picker, live symbol count, and a base-count advisory. */
 export function AlphabetEditor({
   values,
+  baseSymbolCount,
   onChange,
 }: {
   values: SchemaValues;
+  baseSymbolCount: number | null;
   onChange: (values: SchemaValues) => void;
 }) {
   const alphabet = String(values.symbols);
   const [preset, setPreset] = useState(String(values.preset));
 
   const count = alphabet.trim().split(/\s+/).filter(Boolean).length;
-  const matches = count === BASE_SYMBOLS;
+  const matches = baseSymbolCount !== null && count === baseSymbolCount;
 
   return (
     <FormSection title="Phoneme alphabet" tag="Symbols">
@@ -45,13 +43,6 @@ export function AlphabetEditor({
             options={PRESETS}
           />
         </div>
-        <Button
-          variant="ghost"
-          icon="plus"
-          onClick={() => showToast("Preset saved", preset)}
-        >
-          Save preset
-        </Button>
         <div className="flex h-[38px] items-center gap-1.5 rounded-md bg-blue-50 px-3.5">
           <span className="text-[18px] font-extrabold tabular-nums text-blue-600">
             {count}
@@ -67,16 +58,20 @@ export function AlphabetEditor({
         className="min-h-[76px] text-[15px] font-mono leading-[1.7]"
       />
 
-      {matches ? (
+      {baseSymbolCount === null ? (
+        <div className="mt-2.5 text-xs font-semibold text-txt-mute">
+          Select a checkpoint with symbol metadata to compare embedding size.
+        </div>
+      ) : matches ? (
         <div className="mt-2.5 flex items-center gap-2 text-xs font-semibold text-emerald-700">
           <Icon name="check-circle" size={15} strokeWidth={2.2} className="text-emerald-600" />
-          Matches base checkpoint ({BASE_SYMBOLS} symbols).
+          Matches selected checkpoint ({baseSymbolCount} symbols).
         </div>
       ) : (
         <div className="mt-2.5 flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2.5">
           <Icon name="alert" size={15} className="mt-px text-amber-600" />
           <span className="text-xs font-semibold leading-[1.45] text-amber-700">
-            Symbol count ({count}) differs from base checkpoint ({BASE_SYMBOLS}).
+            Symbol count ({count}) differs from selected checkpoint ({baseSymbolCount}).
             Embeddings for new symbols will be re-initialized.
           </span>
         </div>

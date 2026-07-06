@@ -1,5 +1,3 @@
-import { useCheckpoints } from "@/features/checkpoints/store";
-import { SPEAKERS } from "@/mock/constants";
 import { WaveformPlayer } from "@/shared/media/WaveformPlayer";
 import { Icon } from "@/shared/icons";
 import type { SchemaValues } from "@/shared/schema-form/types";
@@ -10,9 +8,13 @@ import { Slider } from "@/shared/ui/form/Slider";
 import { Select } from "@/shared/ui/Select";
 import { Textarea } from "@/shared/ui/Textarea";
 import { cn } from "@/shared/ui/cn";
+import { useCheckpointsQuery } from "../checkpoints/query";
+import { useVoicesQuery } from "../voices/query";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
 import { checkpointOptions, enumOptions, numericSetting, sweepConfigFromGraph, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
 import { useTesting } from "./store";
+
+const VOICE_QUERY = { query: "", limit: 200, offset: 0 };
 
 function VoiceChip({ name, on, onClick }: { name: string; on: boolean; onClick: () => void }) {
   return (
@@ -43,7 +45,8 @@ export function SweepPanel({
   spec: TestingWorkflowSpec;
   onChange: (graph: WorkflowGraph) => void;
 }) {
-  const checkpoints = useCheckpoints((s) => s.checkpoints);
+  const checkpoints = useCheckpointsQuery();
+  const voicesQuery = useVoicesQuery(VOICE_QUERY);
   const results = useTesting((s) => s.sweepResults);
   const genSweep = useTesting((s) => s.genSweep);
   if (!spec.ids.styleSweep) throw new Error("Sweep testing workflow ids are incomplete");
@@ -52,14 +55,15 @@ export function SweepPanel({
   const alphabet = testingNode(graph, spec.ids.alphabet);
   const styleSweep = testingNode(graph, spec.ids.styleSweep);
   const samples = numericSetting(schema, styleSweep, "samples_per_voice");
-  const sweep = sweepConfigFromGraph(graph, spec);
-  const selected = SPEAKERS.filter((voice) => sweep.voices.includes(voice));
+  const voices = voicesQuery.data?.rows ?? [];
+  const sweep = sweepConfigFromGraph(graph, spec, voices);
+  const selectedIds = selectedVoiceIds(styleSweep.params.voices);
   const updateParams = (nodeId: string, params: SchemaValues) => onChange(updateNodeParams(graph, nodeId, params));
-  const toggleVoice = (voice: string) => {
-    const voices = sweep.voices.includes(voice)
-      ? sweep.voices.filter((item) => item !== voice)
-      : [...sweep.voices, voice];
-    updateParams(styleSweep.id, { ...styleSweep.params, voices });
+  const toggleVoice = (voiceId: string) => {
+    const nextVoices = selectedIds.includes(voiceId)
+      ? selectedIds.filter((item) => item !== voiceId)
+      : [...selectedIds, voiceId];
+    updateParams(styleSweep.id, { ...styleSweep.params, voices: nextVoices });
   };
 
   return (
@@ -77,7 +81,7 @@ export function SweepPanel({
             <Select
               value={String(checkpoint.params.checkpoint_id)}
               onChange={(checkpoint_id) => updateParams(checkpoint.id, { ...checkpoint.params, checkpoint_id })}
-              options={checkpointOptions(checkpoints)}
+              options={checkpointOptions(checkpoints.data ?? [])}
             />
           </Field>
           <Field label="Phoneme alphabet">
@@ -90,9 +94,13 @@ export function SweepPanel({
         </div>
         <Field label="Voices">
           <div className="flex flex-wrap gap-2">
-            {SPEAKERS.map((n) => (
-              <VoiceChip key={n} name={n} on={selected.includes(n)} onClick={() => toggleVoice(n)} />
-            ))}
+            {voices.length ? (
+              voices.map((voice) => (
+                <VoiceChip key={voice.id} name={voice.name} on={selectedIds.includes(voice.id)} onClick={() => toggleVoice(voice.id)} />
+              ))
+            ) : (
+              <span className="text-xs text-txt-mute">No voices available.</span>
+            )}
           </div>
         </Field>
         <div className="flex items-end gap-4">
@@ -109,9 +117,9 @@ export function SweepPanel({
           </div>
           <div className="flex-1" />
           <span className="text-xs text-txt-mute">
-            {selected.length} voices × {sweep.n} = {selected.length * sweep.n} samples
+            {sweep.voices.length} voices × {sweep.n} = {sweep.voices.length * sweep.n} samples
           </span>
-          <Button variant="primary" size="lg" icon="sparkles" onClick={() => genSweep(sweepConfigFromGraph(graph, spec))}>
+          <Button variant="primary" size="lg" icon="sparkles" onClick={() => genSweep(sweepConfigFromGraph(graph, spec, voices))}>
             Generate sweep
           </Button>
         </div>
@@ -144,4 +152,9 @@ export function SweepPanel({
       )}
     </div>
   );
+}
+
+function selectedVoiceIds(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new Error("Testing sweep voices must be an array");
+  return value.map((item) => String(item));
 }

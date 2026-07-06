@@ -2,8 +2,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { createRunner, fetchRunners } from "./api";
 
+const RUNNER_REFRESH_MS = 15_000;
+
 export function useRunnersQuery() {
-  return useQuery({ queryKey: ["runners"], queryFn: fetchRunners, refetchInterval: 3000 });
+  return useQuery({
+    queryKey: ["runners"],
+    queryFn: fetchRunners,
+    staleTime: RUNNER_REFRESH_MS,
+    refetchInterval: RUNNER_REFRESH_MS,
+    refetchOnWindowFocus: false,
+  });
 }
 
 export function useCreateRunnerMutation() {
