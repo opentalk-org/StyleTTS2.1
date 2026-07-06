@@ -3,6 +3,7 @@ import type { Option } from "@/shared/ui/Select";
 
 import type { FileAsset } from "../assets/api";
 import type { Checkpoint } from "../checkpoints/api";
+import { checkpointDecoderType, checkpointMultispeaker, checkpointSymbolCount as checkpointSymbolCountFromMetadata } from "../checkpoints/logic";
 import type { Dataset } from "../datasets/api";
 import { typeAccepts } from "../workflows/logic";
 import type { WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowSchema } from "../workflows/types";
@@ -200,7 +201,7 @@ export function datasetOptions(datasets: Dataset[]): Option[] {
 }
 
 export function checkpointOptions(checkpoints: Checkpoint[], type: string, placeholder: string): Option[] {
-  const rows = checkpoints.filter((checkpoint) => checkpoint.type_ === type);
+  const rows = checkpoints.filter((checkpoint) => checkpointTypeKey(checkpoint.type_) === checkpointTypeKey(type));
   return [
     { value: "", label: rows.length ? placeholder : `No ${type} checkpoints available` },
     ...rows.map((checkpoint) => ({ value: checkpoint.id, label: checkpoint.name })),
@@ -214,6 +215,18 @@ export function fileAssetOptions(assets: FileAsset[], placeholder: string): Opti
   ];
 }
 
+export function pretrainedAssetOptions(files: FileAsset[], checkpoints: Checkpoint[], type: string, placeholder: string): Option[] {
+  const checkpointRows = checkpoints.filter((checkpoint) => checkpointTypeKey(checkpoint.type_) === checkpointTypeKey(type));
+  const rows = [
+    ...files.map((asset) => ({ value: asset.id, label: asset.name })),
+    ...checkpointRows.map((checkpoint) => ({ value: checkpoint.id, label: `${checkpoint.name} · checkpoint` })),
+  ];
+  return [
+    { value: "", label: rows.length ? placeholder : "No assets available" },
+    ...rows,
+  ];
+}
+
 export function oodSetValues(assets: FileAsset[]): OodSetValue[] {
   return assets.map((asset) => ({
     id: asset.id,
@@ -223,12 +236,35 @@ export function oodSetValues(assets: FileAsset[]): OodSetValue[] {
 }
 
 export function checkpointSymbolCount(checkpoint: Checkpoint | undefined): number | null {
-  if (!checkpoint) return null;
-  const value = Number(checkpoint.metadata.symbols);
-  return Number.isFinite(value) && value > 0 ? value : null;
+  return checkpointSymbolCountFromMetadata(checkpoint);
+}
+
+export function styleTtsParamsForBaseCheckpoint(checkpoint: Checkpoint | undefined, current: SchemaValues): SchemaValues {
+  const decoder = checkpointDecoderType(checkpoint);
+  const multispeaker = checkpointMultispeaker(checkpoint);
+  return {
+    ...current,
+    ...(decoder === "hifigan" || decoder === "istftnet" ? { decoder } : {}),
+    ...(multispeaker === null ? {} : { multispeaker }),
+  };
 }
 
 function lineCount(asset: FileAsset): number {
   const value = Number(asset.metadata.line_count);
   return Number.isFinite(value) ? value : 0;
+}
+
+function checkpointTypeKey(type: string): string {
+  const normalized = type.trim().toLowerCase();
+  const aliases: Record<string, string> = {
+    styletts2: "styletts2",
+    "styletts2_model": "styletts2",
+    f0: "f0",
+    f0_model: "f0",
+    asr: "asr",
+    asr_bundle: "asr",
+    plbert: "plbert",
+    "pl-bert": "plbert",
+  };
+  return aliases[normalized] ?? normalized;
 }

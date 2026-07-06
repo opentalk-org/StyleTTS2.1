@@ -31,6 +31,14 @@ def workflow_router(manager: BackendManager) -> APIRouter:
         except KeyError as error:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
+    @router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)
+    async def delete_workflow(workflow_id: UUID) -> None:
+        try:
+            with database_session() as session:
+                crud.delete_workflow(session, workflow_id)
+        except KeyError as error:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
     @router.post("/{workflow_id}/compile", response_model=WorkflowCompileResponse)
     async def compile_workflow(workflow_id: UUID, payload: WorkflowCompileRequest | None = None) -> WorkflowCompileResponse:
         workflow = await get_workflow(workflow_id)

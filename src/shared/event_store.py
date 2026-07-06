@@ -4,6 +4,7 @@ from shared.schemas import NodeRunSnapshot, RunEventResponse, RunSnapshot
 
 
 ERROR_EVENT_KINDS = {"node_failed", "node_lifecycle_failed", "run_failed"}
+ACTIVE_NODE_STATUSES = {"queued", "running"}
 
 
 @dataclass
@@ -49,6 +50,7 @@ class RunEventStore:
         self.total_event_count += 1
         self._increment_event_count(event.kind)
         self._update_node_state(event)
+        self._update_terminal_run_state(event)
         if event.kind in ERROR_EVENT_KINDS:
             self.errors.append(event)
 
@@ -118,6 +120,25 @@ class RunEventStore:
     def _update_target_node(self, event: RunEventResponse, state: NodeState) -> None:
         if event.kind == "packet_delivered":
             self._increment_node_counter(state, "packets_received")
+
+    def _update_terminal_run_state(self, event: RunEventResponse) -> None:
+        if event.kind == "run_stopped":
+            self._finish_active_nodes("stopped", event.message)
+        elif event.kind == "run_failed":
+            self._finish_active_nodes("failed", event.message)
+        elif event.kind == "run_completed":
+            self._finish_active_nodes("idle", event.message)
+
+    def _finish_active_nodes(self, status: str, message: str) -> None:
+        for state in self.node_states.values():
+            if state.status not in ACTIVE_NODE_STATUSES and state.running_batches == 0:
+                continue
+            state.running_batches = 0
+            state.queue_size = 0
+            state.status = status
+            state.latest_message = message
+            if status == "failed" and state.error is None:
+                state.error = message
 
     def _increment_node_counter(self, state: NodeState, name: str) -> None:
         if name not in state.counters:

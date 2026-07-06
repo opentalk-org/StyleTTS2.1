@@ -4,3 +4,13 @@ export function defaultBackendUrl(): string {
   if (import.meta.env.DEV) return "http://127.0.0.1:8000";
   return window.location.origin;
 }
+
+/** URL of the Aim experiment tracker UI (served on port 43800 alongside the stack). */
+export function defaultAimUrl(): string {
+  const configuredUrl = import.meta.env.VITE_AIM_URL;
+  if (configuredUrl) return configuredUrl;
+  if (import.meta.env.DEV) return "http://127.0.0.1:43800";
+  const url = new URL(window.location.origin);
+  url.port = "43800";
+  return url.toString();
+}

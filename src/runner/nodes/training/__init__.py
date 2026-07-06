@@ -11,6 +11,6 @@ from runner.nodes.training.common.inputs import (
     SelectTrainingDatasetNode,
     TrainingRunInputNode,
 )
-from runner.nodes.training.common.manifest import TRAINING_SEGMENT_INPUT, BuildTrainingManifestNode
+from runner.nodes.training.common.manifest import BuildTrainingManifestNode
 from runner.nodes.training.f0.nodes import F0ModelTrainingNode
 from runner.nodes.training.styletts.nodes import BuildStyleTtsFinetuneConfigNode, StyleTtsFinetuneNode

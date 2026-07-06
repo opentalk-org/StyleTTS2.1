@@ -47,7 +47,7 @@ def publish_finetune_epoch_bundle_from_training_config(
     meta = {
         "multispeaker": bool(mp["multispeaker"]),
         "decoder_type": str(dec["type"]).strip().lower(),
-        "symbols": str(config["symbols"]),
+        "symbols": _symbol_list(config["symbols"]),
     }
 
     run_seg = slugify_segment((run_name or "").strip(), max_len=64)
@@ -92,3 +92,11 @@ def publish_finetune_epoch_bundle_from_training_config(
             ),
         )
     logger.info("finetune_publish registered row job_id=%s path=%s", job_id, checkpoint.path)
+
+
+def _symbol_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [part for part in value.split(" ") if part]
+    if isinstance(value, list):
+        return [str(part) for part in value if part is not None and str(part)]
+    return []

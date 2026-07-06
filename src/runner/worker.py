@@ -24,6 +24,12 @@ from shared.jetstream import (
 from shared.logging_setup import get_logger
 from shared.schemas import InlineGraphRunRequest, NodeLifecycleCommand, RunEventResponse, RunnerEventMessage, StartGraphRunCommand, StopRunCommand
 
+# A start command is attempted once and never redelivered. A run that fails is
+# reported as run_failed and acked, so redelivery only ever happens when a start
+# is left un-acked (runner crash / ack timeout); capping delivery to 1 keeps such
+# a command from being re-dispatched forever and re-running the graph in a loop.
+START_COMMAND_MAX_DELIVER = 1
+
 class RunnerWorker:
     def __init__(self, runner_id: str, nats_url: str = DEFAULT_NATS_URL) -> None:
         self.logger = get_logger(f"runner.{runner_id}")
@@ -60,12 +66,12 @@ class RunnerWorker:
             subject,
             durable=durable,
             stream=COMMAND_STREAM,
-            config=ConsumerConfig(ack_wait=30),
+            config=ConsumerConfig(ack_wait=30, max_deliver=START_COMMAND_MAX_DELIVER),
         )
         while True:
             try:
                 messages = await subscription.fetch(1, timeout=1)
-            except (FetchTimeoutError, NatsTimeoutError):
+            except (FetchTimeoutError, NatsTimeoutError, asyncio.TimeoutError):
                 continue
             for message in messages:
                 asyncio.create_task(self._handle_start(message), name=f"runner:{self.runner_id}:start")
@@ -81,7 +87,7 @@ class RunnerWorker:
         while True:
             try:
                 messages = await subscription.fetch(10, timeout=1)
-            except (FetchTimeoutError, NatsTimeoutError):
+            except (FetchTimeoutError, NatsTimeoutError, asyncio.TimeoutError):
                 continue
             for message in messages:
                 await handler(message)

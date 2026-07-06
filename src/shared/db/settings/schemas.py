@@ -14,3 +14,12 @@ class StorageSettingsPayload(BaseModel):
 class StorageSettingsRead(StorageSettingsPayload):
     id: UUID
     model_config = ConfigDict(from_attributes=True)
+
+
+class IntegrationSettingsPayload(BaseModel):
+    hf_token: str = ""
+
+
+class IntegrationSettingsRead(IntegrationSettingsPayload):
+    id: UUID
+    model_config = ConfigDict(from_attributes=True)

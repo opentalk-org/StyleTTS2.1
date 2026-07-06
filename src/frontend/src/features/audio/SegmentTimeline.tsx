@@ -8,6 +8,8 @@ import { WaveformPeaks } from "./WaveformPeaks";
 
 const LANE_H = 30;
 const MIN_BODY = 96;
+const MAX_BODY = 240;
+const MAX_RENDER_LANES = 8;
 const MIN_SEG = 0.1;
 const TICK_TARGETS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900];
 
@@ -84,10 +86,11 @@ export function SegmentTimeline({
   const indexOf = new Map(segs.map((g, i) => [g.id, i]));
 
   const inView = segs.filter((g) => g.end > viewStart && g.start < viewEnd);
-  const tooMany = inView.length > 200;
   const sorted = [...inView].sort((a, b) => a.start - b.start);
-  const { placed, lanes } = assignLanes(tooMany ? [] : sorted);
-  const bodyH = Math.max(MIN_BODY, lanes * LANE_H);
+  const laneLayout = assignLanes(sorted);
+  const tooDense = inView.length > 200 || laneLayout.lanes > MAX_RENDER_LANES;
+  const { placed, lanes } = tooDense ? { placed: [], lanes: 1 } : laneLayout;
+  const bodyH = Math.min(MAX_BODY, Math.max(MIN_BODY, lanes * LANE_H));
   const laneH = bodyH / lanes;
   const pct = (t: number) => ((t - viewStart) / span) * 100;
 
@@ -193,10 +196,10 @@ export function SegmentTimeline({
             );
           })}
 
-          {tooMany ? (
+          {tooDense ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <span className="rounded-full bg-panel/80 px-3 py-1 text-[11px] font-semibold text-txt-dim">
-                {inView.length} segments in view — zoom in to edit on the timeline
+                {inView.length} segments / {laneLayout.lanes} lanes in view - zoom in to edit on the timeline
               </span>
             </div>
           ) : null}

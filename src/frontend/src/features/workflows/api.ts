@@ -1,4 +1,4 @@
-import { backendRequest } from "@/app/backend";
+import { backendFetch, backendRequest } from "@/app/backend";
 
 import type { NodeRunSnapshot, RunSnapshot, RunStatus, RunnerStatus, SaveWorkflowPayload, SavedWorkflow, WorkflowPayload, WorkflowSchema } from "./types";
 
@@ -16,6 +16,11 @@ export function saveWorkflow(payload: SaveWorkflowPayload): Promise<SavedWorkflo
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+
+export async function deleteWorkflow(id: string): Promise<void> {
+  const response = await backendFetch(`/workflows/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!response.ok) throw new Error(`Backend request failed: ${response.status}`);
 }
 
 export function startGraph(payload: WorkflowPayload): Promise<RunStatus> {

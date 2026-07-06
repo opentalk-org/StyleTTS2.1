@@ -8,6 +8,7 @@ import { AlphabetEditor } from "./AlphabetEditor";
 import { FormSection } from "./FormSection";
 import { FormSelect } from "./FormSelect";
 import { checkpointOptions, checkpointSymbolCount, datasetOptions, trainingNode, type TrainingWorkflowSpec, updateNodeParams } from "./logic";
+import { useCreateTrainingConfigMutation, useTrainingConfigsQuery } from "./query";
 import { SettingField } from "./SettingsField";
 
 /** Compact finetune form for the F0 pitch extractor and ASR aligner models. */
@@ -26,6 +27,8 @@ export function SmallModelForm({
 }) {
   const datasets = useDatasetsQuery();
   const checkpoints = useCheckpointsQuery();
+  const alphabets = useTrainingConfigsQuery("phoneme_alphabet");
+  const createAlphabet = useCreateTrainingConfigMutation("phoneme_alphabet");
   const isAsr = variant === "asr";
   const training = trainingNode(graph, spec.ids.training);
   const dataset = trainingNode(graph, spec.ids.dataset);
@@ -87,8 +90,16 @@ export function SmallModelForm({
       {alphabet ? (
         <AlphabetEditor
           values={alphabet.params}
+          presets={alphabets.data ?? []}
           baseSymbolCount={checkpointSymbolCount(selectedCheckpoint)}
           onChange={(params) => updateParams(alphabet.id, params)}
+          onSave={(name, symbols) =>
+            createAlphabet.mutate({
+              name,
+              type_: "phoneme_alphabet",
+              metadata: { preset: "custom", symbols: symbols.trim().split(/\s+/).filter(Boolean) },
+            })
+          }
         />
       ) : null}
     </>

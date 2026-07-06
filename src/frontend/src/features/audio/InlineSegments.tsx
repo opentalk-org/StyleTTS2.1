@@ -35,7 +35,10 @@ export function InlineSegments({ file }: { file: AudioFile }) {
             {fmtClock(g.start)}-{fmtClock(g.end)}
           </span>
           <div className="min-w-0">
-            <div className="truncate text-[12.5px] text-txt">{g.text}</div>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-[12.5px] text-txt">{g.text}</span>
+              <span className="flex-none rounded bg-panel-2 px-1.5 py-0.5 text-[10px] font-semibold text-txt-mute">{segmentTypeLabel(g.type_)}</span>
+            </div>
             <div className="mt-px truncate font-mono text-[11.5px] text-blue-600">{g.phon}</div>
           </div>
         </div>
@@ -43,4 +46,12 @@ export function InlineSegments({ file }: { file: AudioFile }) {
       {file.segments > CAP ? <span className="ml-2 mt-1 text-xs font-semibold text-txt-mute">+ {file.segments - CAP} more segments</span> : null}
     </div>
   );
+}
+
+function segmentTypeLabel(type: string | undefined): string {
+  if (!type || type === "manual") return "Manual";
+  if (type === "whisper") return "Whisper";
+  if (type === "parakeet") return "Parakeet";
+  if (type === "canary") return "Canary";
+  return type;
 }

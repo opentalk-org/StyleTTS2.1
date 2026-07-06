@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { useNav } from "@/app/navStore";
-import { fetchWorkflowSchema } from "@/features/workflows/api";
+import { fetchRunSnapshot, fetchWorkflowSchema } from "@/features/workflows/api";
 import { useWorkflowStore } from "@/features/workflows/store";
 import { Pager } from "@/shared/data/Pager";
 import { askConfirm } from "@/shared/feedback/ConfirmDialog";
@@ -17,7 +17,7 @@ const STATE_LABEL: Record<Job["state"], string> = {
   queued: "queued",
   running: "running",
   stopping: "stopping",
-  stopped: "done",
+  stopped: "stopped",
   succeeded: "done",
   failed: "error",
 };
@@ -91,6 +91,8 @@ function JobRow({ job }: { job: Job }) {
       workflow.setGraph({ nodes: graph.nodes, edges: graph.edges });
       workflow.setRuntimeConfig(graph.context.config);
       workflow.setActiveRunId(job.run_id);
+      const snapshot = await fetchRunSnapshot(job.run_id).catch(() => null);
+      if (snapshot) workflow.applyRunSnapshot(job.run_id, snapshot);
       useNav.getState().go("workflows");
     } finally {
       setOpening(false);
@@ -98,16 +100,18 @@ function JobRow({ job }: { job: Job }) {
   };
   const removeJob = () =>
     askConfirm({
-      title: "Remove job?",
-      desc: `Remove "${job.name}" and prune its cached node logs. This cannot be undone.`,
+      title: active ? "Stop and remove job?" : "Remove job?",
+      desc: active
+        ? `"${job.name}" is still running. Removing it stops the run and prunes its cached node logs. This cannot be undone.`
+        : `Remove "${job.name}" and prune its cached node logs. This cannot be undone.`,
       danger: true,
-      label: "Remove job",
+      label: active ? "Stop and remove" : "Remove job",
       onConfirm: () => remove(job.run_id),
     });
   const updatedAt = Date.parse(job.updated_at);
   return (
     <div className="grid items-center gap-3 border-b border-line px-4 py-3 last:border-b-0" style={{ gridTemplateColumns: "110px minmax(180px,1fr) 150px 180px" }}>
-      <span className={job.state === "failed" ? "text-red-600" : job.state === "succeeded" || job.state === "stopped" ? "text-emerald-700" : "text-blue-700"}>
+      <span className={job.state === "failed" ? "text-red-600" : job.state === "succeeded" ? "text-emerald-700" : job.state === "stopped" ? "text-amber-700" : "text-blue-700"}>
         {STATE_LABEL[job.state]}
       </span>
       <div className="min-w-0">
@@ -120,14 +124,13 @@ function JobRow({ job }: { job: Job }) {
           Open
         </Button>
         {active ? (
-          <Button variant="danger" size="sm" icon="x" onClick={() => stop(job.run_id)} disabled={stopping || job.state === "stopping"}>
+          <Button variant="secondary" size="sm" icon="x" onClick={() => stop(job.run_id)} disabled={stopping || job.state === "stopping"}>
             Stop
           </Button>
-        ) : (
-          <Button variant="danger" size="sm" icon="trash" onClick={removeJob} disabled={removing}>
-            Remove
-          </Button>
-        )}
+        ) : null}
+        <Button variant="danger" size="sm" icon="trash" onClick={removeJob} disabled={removing}>
+          Remove
+        </Button>
       </div>
     </div>
   );

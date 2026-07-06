@@ -182,6 +182,23 @@
         text = (pythonEnvExports pythonRuntime) + builtins.readFile ./nix/runner-launch.sh;
       };
 
+      runflowAim = pkgs.writeShellApplication {
+        name = "runflow-aim";
+        runtimeInputs = pythonTools;
+        text = (pythonEnvExports pythonRuntime) + ''
+          cd ${./.}
+          export PYTHONPATH="${./src}"
+          AIM_REPO="''${AIM_REPO:-/data/aim}"
+          AIM_HOST="''${AIM_HOST:-0.0.0.0}"
+          AIM_PORT="''${AIM_PORT:-43800}"
+          mkdir -p "$AIM_REPO"
+          if [ ! -d "$AIM_REPO/.aim" ]; then
+            uv run --frozen aim init --repo "$AIM_REPO" || echo "aim init failed; continuing without Aim UI"
+          fi
+          exec uv run --frozen aim up --repo "$AIM_REPO" --host "$AIM_HOST" --port "$AIM_PORT"
+        '';
+      };
+
       entrypoint = pkgs.writeShellApplication {
         name = "runflow-entrypoint";
         runtimeInputs = [
@@ -197,6 +214,7 @@
           runflowBackend
           runflowRunner
           runnerLaunch
+          runflowAim
         ] ++ pythonTools;
         text = builtins.readFile ./nix/entrypoint.sh;
       };
@@ -236,6 +254,7 @@
               frontendStatic
               runflowBackend
               runflowRunner
+              runflowAim
               entrypoint
             ] ++ pythonRuntime.runtimeExecutableDeps ++ pythonRuntime.runtimeLibs;
 
@@ -248,6 +267,7 @@
                 "9001/tcp" = {};
                 "4222/tcp" = {};
                 "6432/tcp" = {};
+                "43800/tcp" = {};
               };
 
               Env = [

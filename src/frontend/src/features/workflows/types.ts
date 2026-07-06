@@ -4,6 +4,7 @@ export type WorkflowPort = {
   name: string;
   type: string;
   mode: string;
+  join_mode: "item" | "broadcast";
   optional: boolean;
   default: unknown;
   description: string;

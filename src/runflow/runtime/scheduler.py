@@ -14,6 +14,7 @@ from runflow.runtime.input_progress import remaining_counts
 from runflow.runtime.node_manager import NodeManager
 from runflow.runtime.output_values import output_values
 from runflow.runtime.resource_pool import ResourcePool
+from runflow.runtime.join_builder import NodeJoinBuffers
 from runflow.runtime.routing import add_to_join_buffer, can_create_single_input_task
 from runflow.runtime.scheduler_events import SchedulerEventEmitter
 from runflow.runtime.topology import topological_nodes
@@ -32,7 +33,7 @@ class WindowedScheduler:
         self.resource_pool = ResourcePool(limits=dict(context.config.resources))
 
         self.queues: dict[str, asyncio.Queue[Task]] = {}
-        self.join_buffers: dict[tuple[str, str], dict[str, list[Packet]]] = defaultdict(lambda: defaultdict(list))
+        self.join_buffers: dict[str, NodeJoinBuffers] = defaultdict(NodeJoinBuffers)
         self._active_tasks = 0
         self._active_condition: asyncio.Condition | None = None
         self._workers: list[asyncio.Task] = []

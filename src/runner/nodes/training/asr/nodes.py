@@ -6,7 +6,7 @@ import yaml
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
+from runflow.core.ports import JoinMode, Port
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import CHECKPOINT_REF, JSON, TRAINING_MANIFEST, TRAINING_RESULT
 from runner.nodes.models import TrainingManifest
@@ -31,8 +31,8 @@ class AsrModelTrainingNode(Node):
     SETTINGS = AsrTrainingSettings
     INPUTS = {
         "audio_file_ids": Port("audio_file_ids", JSON),
-        "pretrained_checkpoint": Port("pretrained_checkpoint", CHECKPOINT_REF),
-        "phoneme_alphabet": Port("phoneme_alphabet", JSON),
+        "pretrained_checkpoint": Port("pretrained_checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
+        "phoneme_alphabet": Port("phoneme_alphabet", JSON, join_mode=JoinMode.BROADCAST),
         "training_manifest": Port("training_manifest", TRAINING_MANIFEST),
     }
     OUTPUTS = {"training_result": Port("training_result", TRAINING_RESULT)}

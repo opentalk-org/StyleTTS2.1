@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -13,12 +14,17 @@ from runner.nodes.assets.catalog_runtime.http import download_url_bytes, downloa
 from runner.nodes.assets.catalog_runtime.types import CheckpointSpec, ExtraFileSpec
 
 
-def ensure_checkpoint_bundle(spec: CheckpointSpec) -> tuple[Checkpoint, bool]:
+_LOGGER = logging.getLogger(__name__)
+
+
+def ensure_checkpoint_bundle(spec: CheckpointSpec, *, logger: logging.Logger | None = None) -> tuple[Checkpoint, bool]:
+    log = logger or _LOGGER
     with database_session() as session:
         existing = _find_checkpoint(session, spec.key)
         if existing is not None:
             path = asset_crud.get_checkpoint_path(session, existing.id)
             if spec.is_valid(path):
+                log.info("catalog checkpoint cached key=%s name=%s (reusing existing)", spec.key, spec.name)
                 metadata = _checkpoint_metadata(spec, path, existing.metadata_)
                 updated = asset_crud.update_checkpoint(
                     session,
@@ -26,11 +32,13 @@ def ensure_checkpoint_bundle(spec: CheckpointSpec) -> tuple[Checkpoint, bool]:
                     CheckpointUpdate(name=spec.name, folder_path=None, type_=spec.type_.value, metadata=metadata),
                 )
                 return updated, True
+        log.info("catalog checkpoint download starting key=%s name=%s files=%s", spec.key, spec.name, len(spec.files))
         with TemporaryDirectory(prefix=f"runflow-catalog-{spec.key}-") as tmp:
             folder = Path(tmp)
-            _download_checkpoint_files(spec, folder)
+            _download_checkpoint_files(spec, folder, log)
             if not spec.is_valid(folder):
                 raise ValueError(f"{spec.key}_bundle_invalid_after_download")
+            log.info("catalog checkpoint download complete key=%s name=%s", spec.key, spec.name)
             metadata = _checkpoint_metadata(spec, folder, {})
             if existing is None:
                 created = asset_crud.create_checkpoint(
@@ -46,20 +54,23 @@ def ensure_checkpoint_bundle(spec: CheckpointSpec) -> tuple[Checkpoint, bool]:
             return updated, False
 
 
-def ensure_extra_file(spec: ExtraFileSpec) -> tuple[ExtraFile, bool]:
+def ensure_extra_file(spec: ExtraFileSpec, *, logger: logging.Logger | None = None) -> tuple[ExtraFile, bool]:
+    log = logger or _LOGGER
     with database_session() as session:
         existing = _find_extra_file(session, spec.key)
         metadata = {**spec.metadata, "catalog_key": spec.key}
         if existing is not None:
             path = asset_crud.get_extra_file_path(session, existing.id)
             if path.read_bytes().strip():
+                log.info("catalog extra file cached key=%s name=%s (reusing existing)", spec.key, spec.name)
                 updated = asset_crud.update_extra_file(
                     session,
                     existing.id,
                     ExtraFileUpdate(name=spec.name, data=None, type_=spec.type_.value, metadata=metadata),
                 )
                 return updated, True
-        data = download_url_bytes(spec.url, error_prefix=f"{spec.key}_download_failed")
+        log.info("catalog extra file download starting key=%s name=%s", spec.key, spec.name)
+        data = download_url_bytes(spec.url, error_prefix=f"{spec.key}_download_failed", logger=log)
         if not data.strip():
             raise ValueError(f"{spec.key}_download_empty")
         if existing is None:
@@ -105,9 +116,13 @@ def extra_file_payload(item: ExtraFile, *, skipped: bool) -> dict[str, Any]:
     }
 
 
-def _download_checkpoint_files(spec: CheckpointSpec, folder: Path) -> None:
-    for file in spec.files:
-        download_url_to_file(file.url, folder / file.name, error_prefix=f"{spec.key}_download_failed")
+def _download_checkpoint_files(spec: CheckpointSpec, folder: Path, logger: logging.Logger) -> None:
+    total = len(spec.files)
+    for index, file in enumerate(spec.files, start=1):
+        logger.info("catalog file download key=%s file=%s index=%s/%s", spec.key, file.name, index, total)
+        download_url_to_file(
+            file.url, folder / file.name, error_prefix=f"{spec.key}_download_failed", logger=logger
+        )
 
 
 def _checkpoint_metadata(spec: CheckpointSpec, folder: Path, current: dict[str, Any]) -> dict[str, Any]:

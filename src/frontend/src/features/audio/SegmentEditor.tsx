@@ -73,6 +73,32 @@ export function SegmentEditor() {
     else element.pause();
   }, [playing]);
 
+  // Smooth playhead: while playing, sample the media clock every animation frame
+  // (~60fps) rather than leaning on the audio element's `timeupdate` event, which
+  // only fires every ~250-350ms and makes the cursor and time readout visibly jump.
+  useEffect(() => {
+    const element = audioRef.current;
+    if (!playing || !element) return;
+    let raf = 0;
+    const tick = () => {
+      const state = useEditor.getState();
+      let next = element.currentTime;
+      if (state.loop && state.abA != null && state.abB != null) {
+        const lo = Math.min(state.abA, state.abB);
+        const hi = Math.max(state.abA, state.abB);
+        if (next >= hi) {
+          element.currentTime = lo;
+          next = lo;
+        }
+      }
+      state.seek(next);
+      state.followPlayhead();
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing]);
+
   if (activeAudioFileId === null) return <></>;
   if (audio.isLoading) return <div className="p-7 text-sm text-txt-mute">Loading segment editor...</div>;
   if (audio.isError || !audio.data || fileId !== activeAudioFileId) return <div className="p-7 text-sm text-txt-mute">Audio file is unavailable.</div>;
@@ -106,20 +132,6 @@ export function SegmentEditor() {
         ref={audioRef}
         src={contentUrl}
         preload="metadata"
-        onTimeUpdate={(event) => {
-          const state = useEditor.getState();
-          let next = event.currentTarget.currentTime;
-          if (state.loop && state.abA != null && state.abB != null) {
-            const lo = Math.min(state.abA, state.abB);
-            const hi = Math.max(state.abA, state.abB);
-            if (next >= hi) {
-              event.currentTarget.currentTime = lo;
-              next = lo;
-            }
-          }
-          state.seek(next);
-          state.followPlayhead();
-        }}
         onEnded={() => {
           if (useEditor.getState().playing) useEditor.getState().togglePlay();
         }}

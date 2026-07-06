@@ -1,32 +1,34 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
+from runner.nodes.assets.model_downloads import single_checkpoint_file
 
-PARAKEET_MODEL_NAME = "nvidia/parakeet-tdt-0.6b-v3"
 
-
-def load_parakeet_model(cache_dir: Path) -> Any:
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    os.environ["NEMO_CACHE_DIR"] = str(cache_dir / "nemo")
-    os.environ["HF_HOME"] = str(cache_dir / "huggingface")
+def load_parakeet_model(checkpoint_dir: Path) -> Any:
     try:
         import nemo.collections.asr as nemo_asr
     except ImportError as exc:
         raise RuntimeError("nemo_toolkit_not_installed") from exc
-    model = nemo_asr.models.ASRModel.from_pretrained(model_name=PARAKEET_MODEL_NAME)
+    weights = single_checkpoint_file(checkpoint_dir, (".nemo",))
+    model = nemo_asr.models.ASRModel.restore_from(restore_path=str(weights))
     model.change_attention_model(self_attention_model="rel_pos_local_attn", att_context_size=[256, 256])
     model.eval()
     return _maybe_cuda_half(model)
 
 
-def transcribe_wavs_to_segments(model: Any, wav_paths: list[Path], durations_sec: list[float]) -> list[list[tuple[float, float, str]]]:
+def transcribe_wavs_to_segments(
+    model: Any,
+    wav_paths: list[Path],
+    durations_sec: list[float],
+    *,
+    batch_size: int,
+) -> list[list[tuple[float, float, str]]]:
     import torch
 
     with torch.no_grad():
-        outputs = model.transcribe([str(path) for path in wav_paths], timestamps=True)
+        outputs = model.transcribe([str(path) for path in wav_paths], batch_size=batch_size, timestamps=True)
     return [_segments_from_hypothesis(output, durations_sec[index]) for index, output in enumerate(outputs)]
 
 

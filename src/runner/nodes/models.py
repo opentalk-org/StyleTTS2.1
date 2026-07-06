@@ -22,12 +22,20 @@ class AudioRecordRef:
     virtual: bool
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def id(self) -> str:
+        return stable_id("audio_ref", self.audio_file_id)
+
+    @property
+    def lineage_id(self) -> str:
+        return self.id
+
 
 @dataclass(frozen=True)
 class Audio:
     audio_file_id: UUID
     name: str
-    data: bytes
+    data: bytes | None
     sample_rate: int
     channels: int
     start: float
@@ -36,6 +44,9 @@ class Audio:
     id: str
     lineage_id: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    byte_length: int = 0
+    virtual: bool = False
+    segments: list[AudioSegment] = field(default_factory=list)
 
     @property
     def duration(self) -> float:

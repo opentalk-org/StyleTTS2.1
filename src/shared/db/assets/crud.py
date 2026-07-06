@@ -77,6 +77,13 @@ def list_extra_files(session: Session, type_: str | None = None) -> Sequence[Ext
     return session.execute(statement).scalars().all()
 
 
+def list_configs(session: Session, type_: str | None = None) -> Sequence[Config]:
+    statement = select(Config)
+    if type_ is not None:
+        statement = statement.where(Config.type_ == type_)
+    return session.execute(statement).scalars().all()
+
+
 def read_checkpoint(session: Session, checkpoint_id: UUID) -> bytes:
     item = one(session, Checkpoint, checkpoint_id)
     return object_store().download(item.path)

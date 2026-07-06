@@ -61,7 +61,7 @@ export function AudioToolbar() {
       fields: [
         { key: "files", type: "drop", label: "Drop audio files here or click to browse", hint: "WAV, FLAC, MP3, OGG, M4A", accept: "audio/*,.wav,.flac,.mp3,.ogg,.m4a", multiple: true },
         { key: "target", type: "select", label: "Add to dataset", default: target, options: [{ value: "", label: "No dataset" }, ...datasets.map((d) => ({ value: d.id, label: `${d.name} (${d.files})` }))] },
-        { key: "speaker", type: "select", label: "Assign speaker", default: "", options: [{ value: "", label: "No speaker" }, ...SPEAKERS.map((s) => ({ value: s, label: s }))] },
+        { key: "speaker", type: "select", label: "Assign voice", default: "", options: [{ value: "", label: "None" }, ...SPEAKERS.map((s) => ({ value: s, label: s }))] },
       ],
       onSubmit: (values) => {
         void submitUpload(values);

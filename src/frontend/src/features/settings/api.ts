@@ -22,3 +22,22 @@ export function updateStorageSettings(payload: StorageSettingsPayload): Promise<
     body: JSON.stringify(payload),
   });
 }
+
+export type IntegrationSettings = {
+  id: string;
+  hf_token: string;
+};
+
+export type IntegrationSettingsPayload = Omit<IntegrationSettings, "id">;
+
+export function fetchIntegrationSettings(): Promise<IntegrationSettings> {
+  return backendRequest<IntegrationSettings>("/settings/integrations");
+}
+
+export function updateIntegrationSettings(payload: IntegrationSettingsPayload): Promise<IntegrationSettings> {
+  return backendRequest<IntegrationSettings>("/settings/integrations", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}

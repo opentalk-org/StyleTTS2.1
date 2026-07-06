@@ -1,10 +1,11 @@
+import { copyText } from "@/shared/clipboard";
 import { askConfirm } from "@/shared/feedback/ConfirmDialog";
 import { showToast } from "@/shared/feedback/Toast";
 import { Icon } from "@/shared/icons";
 import { Badge } from "@/shared/ui/Badge";
 import { IconButton } from "@/shared/ui/IconButton";
 import type { Checkpoint } from "./api";
-import { checkpointTone } from "./logic";
+import { checkpointDecoderType, checkpointSpeakerMode, checkpointSymbolCount, checkpointSymbols, checkpointTone } from "./logic";
 import { useCheckpointActions } from "./query";
 
 /** Column template shared by the grouped checkpoint tables. */
@@ -27,9 +28,18 @@ export function CheckpointRow({ checkpoint: c }: { checkpoint: Checkpoint }) {
     const n = window.prompt("Rename checkpoint", c.name);
     if (n && n.trim()) rename(c, n.trim());
   };
-  const symbols = Number(c.metadata.symbols ?? 0);
-  const spkMode = String(c.metadata.spkMode ?? c.metadata.speaker_mode ?? "");
-  const decoder = String(c.metadata.decoder ?? "");
+  const symbols = checkpointSymbolCount(c);
+  const symbolList = checkpointSymbols(c);
+  const spkMode = checkpointSpeakerMode(c);
+  const decoder = checkpointDecoderType(c);
+
+  const copySymbols = async () => {
+    const payload = symbolList.length ? symbolList.join(" ") : String(symbols ?? "");
+    if (!payload) return;
+    const ok = await copyText(payload);
+    if (ok) showToast(`${symbols} symbols copied`);
+    else showToast("Could not copy symbols", undefined, "error");
+  };
 
   return (
     <div
@@ -48,9 +58,10 @@ export function CheckpointRow({ checkpoint: c }: { checkpoint: Checkpoint }) {
       <div className="flex flex-wrap items-center gap-2.5 text-[11.5px] text-txt-mute">
         {spkMode ? <span>spk: {spkMode}</span> : null}
         {decoder ? <span>dec: {decoder}</span> : null}
-        {symbols ? (
+        {symbols !== null ? (
           <button
-            onClick={() => showToast(`${symbols} symbols copied`)}
+            onClick={copySymbols}
+            title={symbolList.length ? "Copy phoneme symbols" : "Copy symbol count"}
             className="inline-flex items-center gap-1 rounded bg-panel-2 px-1.5 py-0.5 font-mono text-[11px] text-txt-dim cursor-pointer"
           >
             <Icon name="copy" size={11} strokeWidth={2} />

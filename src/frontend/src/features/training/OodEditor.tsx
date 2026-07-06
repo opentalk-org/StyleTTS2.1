@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { type ChangeEvent, useRef, useState } from "react";
 
 import type { SchemaValues } from "@/shared/schema-form/types";
+import { showToast } from "@/shared/feedback/Toast";
 import { Icon } from "@/shared/icons";
 import { IconButton } from "@/shared/ui/IconButton";
 import { Button } from "@/shared/ui/Button";
@@ -9,19 +10,23 @@ import { Select } from "@/shared/ui/Select";
 import { FormSection } from "./FormSection";
 import type { OodSetValue } from "./logic";
 
-/** Out-of-domain reference text sets: list with per-row delete plus upload/add. */
+/** Out-of-domain reference text sets: select bucket files or upload a new one. */
 export function OodEditor({
   values,
   availableSets,
   onChange,
+  onCreate,
 }: {
   values: SchemaValues;
   availableSets: OodSetValue[];
   onChange: (values: SchemaValues) => void;
+  onCreate: (payload: { name: string; content: string }) => Promise<OodSetValue>;
 }) {
   const oodSets = values.sets as OodSetValue[];
   const choices = availableSets.filter((item) => !oodSets.some((selected) => selected.id === item.id));
   const [selectedId, setSelectedId] = useState("");
+  const [creating, setCreating] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const addOod = () => {
     const item = choices.find((choice) => choice.id === selectedId);
     if (!item) return;
@@ -30,6 +35,26 @@ export function OodEditor({
   };
   const removeOod = (id: string) => {
     onChange({ ...values, sets: oodSets.filter((set) => set.id !== id) });
+  };
+  const uploadOod = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setCreating(true);
+    try {
+      const content = (await file.text()).trim();
+      if (!content) {
+        showToast("That file is empty", undefined, "error");
+        return;
+      }
+      const name = file.name.replace(/\.[^.]+$/, "").trim() || file.name;
+      const item = await onCreate({ name, content });
+      onChange({ ...values, sets: [...oodSets, item] });
+    } catch {
+      showToast("Could not upload OOD text file", undefined, "error");
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
@@ -87,6 +112,19 @@ export function OodEditor({
           onClick={addOod}
         >
           Add set
+        </Button>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-line bg-panel px-3 py-3">
+        <p className="text-xs text-txt-mute">Upload a text file — one prompt per line.</p>
+        <input ref={fileRef} type="file" accept=".txt,text/plain" className="hidden" onChange={uploadOod} />
+        <Button
+          variant="secondary"
+          icon="upload"
+          disabled={creating}
+          onClick={() => fileRef.current?.click()}
+        >
+          {creating ? "Uploading…" : "Upload file"}
         </Button>
       </div>
     </FormSection>

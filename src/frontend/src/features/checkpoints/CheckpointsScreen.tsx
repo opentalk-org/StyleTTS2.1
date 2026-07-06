@@ -1,6 +1,5 @@
 import { useState } from "react";
 
-import { showToast } from "@/shared/feedback/Toast";
 import { Icon } from "@/shared/icons";
 import { Card } from "@/shared/ui/Card";
 import { EmptyState } from "@/shared/ui/EmptyState";
@@ -9,14 +8,16 @@ import { SearchInput } from "@/shared/ui/SearchInput";
 import { SectionTitle } from "@/shared/ui/SectionTitle";
 import { Select } from "@/shared/ui/Select";
 import { CheckpointRow } from "./CheckpointRow";
-import { CATALOG, groupCheckpoints } from "./logic";
-import { useCheckpointsQuery } from "./query";
+import { CATALOG, groupCatalogItems, groupCheckpoints } from "./logic";
+import { useCatalogDownloadMutation, useCheckpointsQuery } from "./query";
 
 export function CheckpointsScreen() {
   const [query, setQuery] = useState("");
   const [type, setType] = useState("all");
   const checkpoints = useCheckpointsQuery();
+  const catalogDownload = useCatalogDownloadMutation();
   const groups = groupCheckpoints(checkpoints.data ?? [], query, type);
+  const catalogGroups = groupCatalogItems(CATALOG);
 
   return (
     <div className="mx-auto max-w-[1080px] px-7 pb-16 pt-5">
@@ -29,9 +30,13 @@ export function CheckpointsScreen() {
           options={[
             { value: "all", label: "All types" },
             { value: "styletts2", label: "StyleTTS2" },
-            { value: "asr", label: "ASR" },
+            { value: "asr", label: "ASR aligner" },
             { value: "f0", label: "F0" },
             { value: "plbert", label: "PL-BERT" },
+            { value: "whisper", label: "Whisper" },
+            { value: "parakeet", label: "Parakeet" },
+            { value: "canary", label: "Canary" },
+            { value: "sortformer", label: "Sortformer" },
           ]}
         />
       </div>
@@ -69,21 +74,38 @@ export function CheckpointsScreen() {
 
       <div className="mt-6">
         <SectionTitle className="mb-3">Pretrained catalog</SectionTitle>
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
-          {CATALOG.map((item) => (
-            <Card key={item.file} className="flex items-center gap-3 p-4">
-              <div className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[9px] bg-blue-50 text-blue-600">
-                <Icon name="box" size={18} strokeWidth={2.2} />
+        <div className="grid gap-5">
+          {Object.entries(catalogGroups).map(([group, items]) => items.length ? (
+            <section key={group} className="grid gap-2.5">
+              <div className="flex items-center gap-2 text-xs font-semibold text-txt-dim">
+                <Icon name={group === "Transcription" ? "mic" : group === "StyleTTS2" ? "volume" : group === "Diarization" ? "audio-lines" : "box"} size={14} strokeWidth={2} className="text-txt-mute" />
+                <span>{group}</span>
+                <span className="font-mono text-[10px] text-txt-mute">{items.length}</span>
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-bold text-txt">{item.name}</div>
-                <div className="font-mono text-[11px] text-txt-mute">
-                  {item.file} · {item.size}
-                </div>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
+                {items.map((item) => (
+                  <Card key={`${item.catalogKey}:${item.item}`} className="flex items-center gap-3 p-4">
+                    <div className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[9px] bg-blue-50 text-blue-600">
+                      <Icon name="box" size={18} strokeWidth={2.2} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px] font-bold text-txt">{item.name}</div>
+                      <div className="font-mono text-[11px] text-txt-mute">
+                        {item.file} · {item.size}
+                      </div>
+                    </div>
+                    <IconButton
+                      icon="download"
+                      title="Download"
+                      disabled={catalogDownload.isPending}
+                      className={catalogDownload.isPending ? "cursor-wait opacity-50" : undefined}
+                      onClick={() => catalogDownload.mutate(item)}
+                    />
+                  </Card>
+                ))}
               </div>
-              <IconButton icon="download" title="Download" onClick={() => showToast("Download queued", item.file)} />
-            </Card>
-          ))}
+            </section>
+          ) : null)}
         </div>
       </div>
     </div>

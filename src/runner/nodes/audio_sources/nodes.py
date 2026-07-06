@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Literal
 from uuid import UUID
 
 from pydantic import Field
@@ -9,8 +10,8 @@ from runflow.core.node import Node
 from runflow.core.ports import Port, PortMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import AUDIO_REF
-from runner.nodes.models import AudioRecordRef, stable_id
+from runner.nodes.datatypes import AUDIO
+from runner.nodes.models import Audio, stable_id
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 from shared.db.audio.models import AudioFile
@@ -18,26 +19,21 @@ from shared.db.common import one
 from shared.db.datasets.models import Dataset
 
 
-class SelectedAudioSourceSettings(StrictSettings):
-    audio_file_ids: list[UUID]
-    include_virtual: bool = False
-
-
-class DatasetAudioSourceSettings(StrictSettings):
-    dataset_id: UUID
-    include_virtual: bool = False
-
-
-class AllAudioSourceSettings(StrictSettings):
+class AudioSourceSettings(StrictSettings):
+    source: Literal["selected", "dataset", "all"] = "all"
+    audio_file_ids: list[UUID] = Field(default_factory=list)
+    dataset_id: UUID | None = None
     include_virtual: bool = False
     limit: int | None = Field(default=None, ge=1)
 
 
 class AudioSourceNode(Node):
+    NODE_TYPE = "AudioSource"
     CATEGORY = "Audio / Sources"
+    SETTINGS = AudioSourceSettings
     IS_INPUT = True
     INPUTS = {}
-    OUTPUTS = {"audio_ref": Port("audio_ref", AUDIO_REF, mode=PortMode.STREAM)}
+    OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     def __init__(self, node_id: str | None = None, **params):
@@ -52,25 +48,45 @@ class AudioSourceNode(Node):
         end = self._cursor + self.runtime.queue_max_size
         items = self._items[self._cursor:end]
         self._cursor += len(items)
-        return [{"audio_ref": item} for item in items]
+        return [{"audio": item} for item in items]
 
-    def _load_refs(self) -> list[AudioRecordRef]:
-        raise NotImplementedError
+    def _load_refs(self) -> list[Audio]:
+        with database_session() as session:
+            if self.settings.source == "selected":
+                items = [audio_crud.get_audio_file(session, audio_file_id) for audio_file_id in self.settings.audio_file_ids]
+            elif self.settings.source == "dataset":
+                if self.settings.dataset_id is None:
+                    raise ValueError("AudioSource dataset mode requires dataset_id")
+                dataset = one(session, Dataset, self.settings.dataset_id)
+                items = list(dataset.audio_files)
+            else:
+                items = audio_crud.list_audio_files(session)
+            refs = [self._ref(item) for item in items if self._visible(item)]
+        if self.settings.limit is not None:
+            refs = refs[: self.settings.limit]
+        return self._with_source_batch(refs)
 
-    def _ref(self, item: AudioFile) -> AudioRecordRef:
-        return AudioRecordRef(
+    def _ref(self, item: AudioFile) -> Audio:
+        return Audio(
             audio_file_id=item.id,
             name=item.name,
-            duration=item.duration,
+            data=None,
+            sample_rate=int(item.metadata_.get("sample_rate", 0) or 0),
+            channels=int(item.metadata_.get("channels", 0) or 0),
+            start=0.0,
+            end=item.duration,
+            confidence=1.0,
+            id=stable_id("audio", item.id, item.name),
+            lineage_id=stable_id("audio_ref", item.id),
+            metadata=item.metadata_,
             byte_length=item.byte_length,
             virtual=item.virtual,
-            metadata=item.metadata_,
         )
 
     def _visible(self, item: AudioFile) -> bool:
         return self.settings.include_virtual or not item.virtual
 
-    def _with_source_batch(self, refs: list[AudioRecordRef]) -> list[AudioRecordRef]:
+    def _with_source_batch(self, refs: list[Audio]) -> list[Audio]:
         batch_id = stable_id("audio_source", self.id, *(ref.audio_file_id for ref in refs))
         return [
             replace(
@@ -83,35 +99,3 @@ class AudioSourceNode(Node):
             )
             for ref in refs
         ]
-
-
-class SelectedAudioSourceNode(AudioSourceNode):
-    NODE_TYPE = "SelectedAudioSource"
-    SETTINGS = SelectedAudioSourceSettings
-
-    def _load_refs(self) -> list[AudioRecordRef]:
-        with database_session() as session:
-            items = [audio_crud.get_audio_file(session, audio_file_id) for audio_file_id in self.settings.audio_file_ids]
-            return self._with_source_batch([self._ref(item) for item in items if self._visible(item)])
-
-
-class DatasetAudioSourceNode(AudioSourceNode):
-    NODE_TYPE = "DatasetAudioSource"
-    SETTINGS = DatasetAudioSourceSettings
-
-    def _load_refs(self) -> list[AudioRecordRef]:
-        with database_session() as session:
-            dataset = one(session, Dataset, self.settings.dataset_id)
-            return self._with_source_batch([self._ref(item) for item in dataset.audio_files if self._visible(item)])
-
-
-class AllAudioSourceNode(AudioSourceNode):
-    NODE_TYPE = "AllAudioSource"
-    SETTINGS = AllAudioSourceSettings
-
-    def _load_refs(self) -> list[AudioRecordRef]:
-        with database_session() as session:
-            refs = [self._ref(item) for item in audio_crud.list_audio_files(session) if self._visible(item)]
-        if self.settings.limit is None:
-            return self._with_source_batch(refs)
-        return self._with_source_batch(refs[: self.settings.limit])

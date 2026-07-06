@@ -78,7 +78,7 @@ async def publish_node_log_response(js: JetStreamContext, message: Msg, work_dir
     truncated = False
     error_message = None
     try:
-        work_dir = work_dir_for_run(command.run_id)
+        work_dir = command.work_dir if command.work_dir is not None else work_dir_for_run(command.run_id)
         content, truncated = read_node_log(work_dir, command.run_id, command.node_id)
     except Exception as error:
         error_message = f"{type(error).__name__}: {error}"

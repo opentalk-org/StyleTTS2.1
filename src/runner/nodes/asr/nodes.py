@@ -1,31 +1,77 @@
 from __future__ import annotations
 
+import asyncio
+import re
+from dataclasses import replace
+from enum import Enum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
+from uuid import UUID
 
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
+from runflow.core.ports import JoinMode, Port
 from runflow.core.settings import StrictSettings
-from runflow.core.types import UnionDataType
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
-from runner.nodes.asr.audio import wav_duration, write_segment_wavs, write_temp_wav
-from runner.nodes.asr.parakeet import load_parakeet_model, transcribe_wavs_to_segments
+from runner.nodes.asr.audio import wav_duration, write_temp_wav
+from runner.nodes.asr.canary import load_canary_model, transcribe_wavs_to_segments as canary_transcribe_wavs
+from runner.nodes.asr.parakeet import load_parakeet_model, transcribe_wavs_to_segments as parakeet_transcribe_wavs
 from runner.nodes.asr.whisper import load_whisper_model, transcribe_wav_to_segments, transcribe_wav_to_text
-from runner.nodes.datatypes import AUDIO, SEGMENT_GROUP, TRANSCRIPT
-from runner.nodes.models import Audio, AudioSegment, SegmentGroup, Transcript, stable_id
-from shared.db import database_session
-from shared.db.audio import crud as audio_crud
-
-
-ASR_SOURCE = UnionDataType("ASR_SOURCE", (AUDIO, SEGMENT_GROUP), "Audio or segment group for transcription", "#DC2626")
+from runner.nodes.datatypes import AUDIO, CHECKPOINT_REF
+from runner.nodes.models import Audio, AudioSegment, CheckpointRef, stable_id
+from shared.log_streams import route_output_to_logger
 
 
 class TranscribeSettings(StrictSettings):
     language: str = "auto"
     batch_size: int = Field(default=16, ge=1, le=128)
-    model_cache_dir: str = Field(default="", title="Model cache directory")
+    segment_batch_size: int = Field(default=16, ge=1, le=128)
+
+
+class WhisperTranscribeSettings(StrictSettings):
+    language: str = Field(default="auto", title="Language")
+
+
+class ParakeetTranscribeSettings(StrictSettings):
+    batch_size: int = Field(default=16, ge=1, le=128)
+    segment_batch_size: int = Field(default=16, ge=1, le=128)
+
+
+class CanaryLanguage(str, Enum):
+    AUTO = "auto"
+    BG = "bg"
+    HR = "hr"
+    CS = "cs"
+    DA = "da"
+    NL = "nl"
+    EN = "en"
+    ET = "et"
+    FI = "fi"
+    FR = "fr"
+    DE = "de"
+    EL = "el"
+    HU = "hu"
+    IT = "it"
+    LV = "lv"
+    LT = "lt"
+    MT = "mt"
+    PL = "pl"
+    PT = "pt"
+    RO = "ro"
+    SK = "sk"
+    SL = "sl"
+    ES = "es"
+    SV = "sv"
+    RU = "ru"
+    UK = "uk"
+
+
+class CanaryTranscribeSettings(StrictSettings):
+    language: CanaryLanguage = Field(default=CanaryLanguage.PL, title="Source language")
+    target_language: CanaryLanguage = Field(default=CanaryLanguage.PL, title="Target language")
+    punctuation_and_capitalization: bool = Field(default=True, title="Punctuation and capitalization")
+    batch_size: int = Field(default=16, ge=1, le=128)
     segment_batch_size: int = Field(default=16, ge=1, le=128)
 
 
@@ -33,176 +79,196 @@ class TranscribeNode(Node):
     CATEGORY = "Audio / ASR"
     MODEL_NAME = "asr"
     SETTINGS = TranscribeSettings
-    INPUTS = {"source": Port("source", ASR_SOURCE)}
-    OUTPUTS = {"transcript": Port("transcript", TRANSCRIPT)}
+    INPUTS = {"checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST), "audio": Port("audio", AUDIO)}
+    OUTPUTS = {"audio": Port("audio", AUDIO)}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=16, max_size=64, sort_by="duration")
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, keep_loaded=True, exclusive_group="accelerator")
 
     def __init__(self, node_id: str | None = None, **params: Any):
         super().__init__(node_id=node_id, **params)
         self._model: Any | None = None
+        self._loaded_checkpoint_id: UUID | None = None
 
-    async def setup(self, context: Any) -> None:
-        cache_dir = self._cache_dir(context)
-        self._model = self._load_model(cache_dir)
+    async def teardown(self, context: Any) -> None:
+        self._model = None
+        self._loaded_checkpoint_id = None
 
     async def execute(self, batch, context):
-        if self._model is None:
-            await self.setup(context)
+        checkpoint = _typed_checkpoint(batch[0]["checkpoint"])
+        await self._ensure_model(checkpoint)
         outputs = []
         for index, inputs in enumerate(batch, start=1):
-            source = inputs["source"]
+            audio = inputs["audio"]
             await context.report_progress(self.id, index, len(batch), f"{self.MODEL_NAME} transcribed {index}/{len(batch)}")
-            outputs.append({"transcript": self._transcribe_source(source, context)})
+            # route_output_to_logger wraps a synchronous call only (no await inside) so tqdm from
+            # transcription reaches the node log without capturing other coroutines' output.
+            with route_output_to_logger(self.logger):
+                transcribed = self._transcribe_audio(audio)
+            outputs.append({"audio": transcribed})
         return outputs
 
-    def _cache_dir(self, context: Any) -> Path:
-        if self.settings.model_cache_dir:
-            return Path(self.settings.model_cache_dir)
-        return context.cache_dir / "asr" / self.MODEL_NAME
+    async def _ensure_model(self, checkpoint: CheckpointRef) -> None:
+        if self._model is not None and self._loaded_checkpoint_id == checkpoint.checkpoint_id:
+            return
+        self._model = await asyncio.to_thread(self._load_model_logged, checkpoint.path)
+        self._loaded_checkpoint_id = checkpoint.checkpoint_id
 
-    def _load_model(self, cache_dir: Path) -> Any:
+    def _load_model_logged(self, checkpoint_dir: Path) -> Any:
+        self.logger.info("loading %s model from checkpoint", self.MODEL_NAME)
+        with route_output_to_logger(self.logger):
+            return self._load_model(checkpoint_dir)
+
+    def _load_model(self, checkpoint_dir: Path) -> Any:
         raise NotImplementedError
 
-    def _transcribe_source(self, source: Audio | SegmentGroup, context: Any) -> Transcript:
-        if isinstance(source, Audio):
-            return self._transcribe_audio(source)
-        if isinstance(source, SegmentGroup):
-            return self._transcribe_group(source)
-        raise TypeError(f"unsupported ASR source: {type(source).__name__}")
-
-    def _transcribe_audio(self, audio: Audio) -> Transcript:
+    def _transcribe_audio(self, audio: Audio) -> Audio:
+        assert audio.data is not None, f"audio bytes are required for transcription: {audio.id}"
         path = write_temp_wav(audio.data)
         try:
             spans = self._transcribe_full_path(path, audio.duration)
         finally:
             path.unlink(missing_ok=True)
-        return _audio_transcript(self.MODEL_NAME, audio, spans, self.settings.language)
-
-    def _transcribe_group(self, group: SegmentGroup) -> Transcript:
-        data = _read_group_audio(group)
-        ranges = [(segment.start, segment.end) for segment in group.segments]
-        paths = write_segment_wavs(data, ranges)
-        try:
-            texts = self._transcribe_segment_paths(paths)
-        finally:
-            for path in paths:
-                path.unlink(missing_ok=True)
-        spans = _group_spans(group.segments, texts)
-        return _group_transcript(self.MODEL_NAME, group, spans, self.settings.language)
+        return _audio_with_transcript_segments(self.MODEL_NAME, audio, spans, self._transcript_language())
 
     def _transcribe_full_path(self, path: Path, duration_sec: float) -> list[tuple[float, float, str]]:
         raise NotImplementedError
 
     def _transcribe_segment_paths(self, paths: list[Path]) -> list[str]:
         raise NotImplementedError
+
+    def _transcript_language(self) -> str:
+        return str(getattr(self.settings, "language", "auto"))
 
 
 class WhisperTranscribeNode(TranscribeNode):
     NODE_TYPE = "WhisperTranscribe"
     MODEL_NAME = "whisper"
+    SETTINGS = WhisperTranscribeSettings
 
-    def _load_model(self, cache_dir: Path) -> Any:
-        return load_whisper_model(cache_dir)
+    def _load_model(self, checkpoint_dir: Path) -> Any:
+        return load_whisper_model(checkpoint_dir)
 
     def _transcribe_full_path(self, path: Path, duration_sec: float) -> list[tuple[float, float, str]]:
-        return transcribe_wav_to_segments(self._model, path, duration_sec)
+        return transcribe_wav_to_segments(self._model, path, duration_sec, self.settings.language)
 
     def _transcribe_segment_paths(self, paths: list[Path]) -> list[str]:
-        return [transcribe_wav_to_text(self._model, path) for path in paths]
+        return [transcribe_wav_to_text(self._model, path, self.settings.language) for path in paths]
 
 
 class ParakeetTranscribeNode(TranscribeNode):
     NODE_TYPE = "ParakeetTranscribe"
     MODEL_NAME = "parakeet"
+    SETTINGS = ParakeetTranscribeSettings
 
-    def _load_model(self, cache_dir: Path) -> Any:
-        return load_parakeet_model(cache_dir)
+    def _load_model(self, checkpoint_dir: Path) -> Any:
+        return load_parakeet_model(checkpoint_dir)
 
     def _transcribe_full_path(self, path: Path, duration_sec: float) -> list[tuple[float, float, str]]:
-        batches = transcribe_wavs_to_segments(self._model, [path], [duration_sec])
+        batches = parakeet_transcribe_wavs(self._model, [path], [duration_sec], batch_size=self.settings.batch_size)
         return batches[0] if batches else []
 
     def _transcribe_segment_paths(self, paths: list[Path]) -> list[str]:
         durations = [wav_duration(path.read_bytes()) for path in paths]
-        batches = transcribe_wavs_to_segments(self._model, paths, durations)
+        batches = parakeet_transcribe_wavs(self._model, paths, durations, batch_size=self.settings.segment_batch_size)
         return [_joined_text(spans) for spans in batches]
 
 
-def _read_group_audio(group: SegmentGroup) -> bytes:
-    source_ids = {segment.source_audio_id for segment in group.segments}
-    assert len(source_ids) == 1, f"segment group has multiple source audio ids: {group.id}"
-    with database_session() as session:
-        return audio_crud.read_audio_file(session, next(iter(source_ids)))
+class CanaryTranscribeNode(TranscribeNode):
+    NODE_TYPE = "CanaryTranscribe"
+    MODEL_NAME = "canary"
+    SETTINGS = CanaryTranscribeSettings
+
+    def _load_model(self, checkpoint_dir: Path) -> Any:
+        return load_canary_model(checkpoint_dir)
+
+    def _transcribe_full_path(self, path: Path, duration_sec: float) -> list[tuple[float, float, str]]:
+        prompt = self._prompt_settings()
+        batches = canary_transcribe_wavs(self._model, [path], [duration_sec], **prompt)
+        return batches[0] if batches else []
+
+    def _transcribe_segment_paths(self, paths: list[Path]) -> list[str]:
+        durations = [wav_duration(path.read_bytes()) for path in paths]
+        batches = canary_transcribe_wavs(self._model, paths, durations, **self._prompt_settings(self.settings.segment_batch_size))
+        return [_joined_text(spans) for spans in batches]
+
+    def _prompt_settings(self, batch_size: int | None = None) -> dict[str, Any]:
+        source_language = self.settings.language.value
+        target_language = self.settings.target_language.value
+        if source_language == CanaryLanguage.AUTO.value or target_language == CanaryLanguage.AUTO.value:
+            raise ValueError("canary_language_auto_unsupported")
+        return {
+            "source_language": source_language,
+            "target_language": target_language,
+            "pnc": self.settings.punctuation_and_capitalization,
+            "batch_size": batch_size or self.settings.batch_size,
+        }
 
 
-def _audio_transcript(
+def _typed_checkpoint(value: CheckpointRef | dict[str, Any]) -> CheckpointRef:
+    if isinstance(value, CheckpointRef):
+        return value
+    raise TypeError("transcription requires a resolved CheckpointRef")
+
+
+def _audio_with_transcript_segments(
     model_name: str,
     audio: Audio,
     spans: list[tuple[float, float, str]],
     language: str,
-) -> Transcript:
-    filtered = [(start, end, text) for start, end, text in spans if text.strip()]
+) -> Audio:
+    filtered = [
+        (audio.start + start, audio.start + end, text)
+        for start, end, raw_text in spans
+        if (text := _clean_transcript_text(raw_text))
+    ]
     text = _joined_text(filtered)
     transcript_id = stable_id("transcript", model_name, audio.audio_file_id, audio.id)
-    return Transcript(
-        text=text,
-        model=model_name,
-        source_audio_id=audio.audio_file_id,
-        start=audio.start,
-        end=audio.end,
-        speaker=None,
-        id=transcript_id,
-        lineage_id=stable_id("lineage", model_name, audio.lineage_id),
-        segments=[_span_payload(transcript_id, index, start, end, text) for index, (start, end, text) in enumerate(filtered)],
-        metadata={**audio.metadata, "language": language, "sample_rate": audio.sample_rate, "channels": audio.channels},
+    speaker = _diarized_speaker(audio)
+    segments = [
+        AudioSegment(
+            source_audio_id=audio.audio_file_id,
+            name=f"{model_name}:{audio.name}",
+            start=start,
+            end=end,
+            sample_rate=audio.sample_rate,
+            channels=audio.channels,
+            text=item_text,
+            phon="",
+            id=stable_id("segment", transcript_id, index),
+            lineage_id=stable_id("segment_lineage", audio.lineage_id, transcript_id, index),
+            segment_id=stable_id("transcript_segment", transcript_id, index),
+            speaker=speaker,
+            metadata={"transcript_id": transcript_id, "transcript_segment_index": index, "model": model_name, "type_": model_name},
+        )
+        for index, (start, end, item_text) in enumerate(filtered)
+    ]
+    return replace(
+        audio,
+        segments=segments,
+        metadata={
+            **audio.metadata,
+            "language": language,
+            "model": model_name,
+            "type_": model_name,
+            "transcript_id": transcript_id,
+            "transcript_text": text,
+            "sample_rate": audio.sample_rate,
+            "channels": audio.channels,
+        },
     )
 
 
-def _group_transcript(
-    model_name: str,
-    group: SegmentGroup,
-    spans: list[tuple[AudioSegment, str]],
-    language: str,
-) -> Transcript:
-    text = " ".join(item_text.strip() for _segment, item_text in spans if item_text.strip()).strip()
-    source_id = group.segments[0].source_audio_id
-    transcript_id = stable_id("transcript", model_name, group.id)
-    return Transcript(
-        text=text,
-        model=model_name,
-        source_audio_id=source_id,
-        start=min(segment.start for segment in group.segments),
-        end=max(segment.end for segment in group.segments),
-        speaker=group.segments[0].speaker,
-        id=transcript_id,
-        lineage_id=stable_id("lineage", model_name, group.lineage_id),
-        segments=[_segment_payload(transcript_id, index, segment, item_text) for index, (segment, item_text) in enumerate(spans)],
-        metadata={**group.metadata, "language": language, "source_group_id": group.id},
-    )
-
-
-def _group_spans(segments: list[AudioSegment], texts: list[str]) -> list[tuple[AudioSegment, str]]:
-    if len(texts) != len(segments):
-        raise ValueError("ASR segment output count mismatch")
-    return [(segment, text) for segment, text in zip(segments, texts, strict=True)]
-
-
-def _span_payload(transcript_id: str, index: int, start: float, end: float, text: str) -> dict[str, Any]:
-    return {"id": stable_id("transcript_segment", transcript_id, index), "start": start, "end": end, "text": text, "phon": "", "speaker": ""}
-
-
-def _segment_payload(transcript_id: str, index: int, segment: AudioSegment, text: str) -> dict[str, Any]:
-    return {
-        "id": stable_id("transcript_segment", transcript_id, index, segment.segment_id or segment.id),
-        "source_segment_id": segment.segment_id or segment.id,
-        "start": segment.start,
-        "end": segment.end,
-        "text": text,
-        "phon": segment.phon,
-        "speaker": segment.speaker or "",
-    }
+def _clean_transcript_text(text: str) -> str:
+    cleaned = re.sub(r"<\|[^|]+\|>", "", text).strip()
+    return cleaned if cleaned.strip(". \t\r\n") else ""
 
 
 def _joined_text(spans: list[tuple[float, float, str]]) -> str:
     return " ".join(text.strip() for _start, _end, text in spans if text.strip()).strip()
+
+
+def _diarized_speaker(audio: Audio) -> str | None:
+    if "diarization" not in audio.metadata:
+        return None
+    speaker = audio.metadata.get("speaker")
+    return str(speaker) if speaker else None

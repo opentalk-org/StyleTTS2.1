@@ -2,7 +2,12 @@ from fastapi import APIRouter
 
 from shared.db import database_session
 from shared.db.settings import crud
-from shared.db.settings.schemas import StorageSettingsPayload, StorageSettingsRead
+from shared.db.settings.schemas import (
+    IntegrationSettingsPayload,
+    IntegrationSettingsRead,
+    StorageSettingsPayload,
+    StorageSettingsRead,
+)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -17,3 +22,15 @@ async def get_storage_settings() -> StorageSettingsRead:
 async def update_storage_settings(payload: StorageSettingsPayload) -> StorageSettingsRead:
     with database_session() as session:
         return StorageSettingsRead.model_validate(crud.update_storage_settings(session, payload))
+
+
+@router.get("/integrations", response_model=IntegrationSettingsRead)
+async def get_integration_settings() -> IntegrationSettingsRead:
+    with database_session() as session:
+        return IntegrationSettingsRead.model_validate(crud.get_integration_settings(session))
+
+
+@router.put("/integrations", response_model=IntegrationSettingsRead)
+async def update_integration_settings(payload: IntegrationSettingsPayload) -> IntegrationSettingsRead:
+    with database_session() as session:
+        return IntegrationSettingsRead.model_validate(crud.update_integration_settings(session, payload))

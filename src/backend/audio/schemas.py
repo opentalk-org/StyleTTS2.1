@@ -15,6 +15,7 @@ class AudioSegmentRead(BaseModel):
     text: str
     phon: str
     speaker: str
+    type_: str = "manual"
 
 
 class AudioSegmentWrite(BaseModel):
@@ -24,6 +25,7 @@ class AudioSegmentWrite(BaseModel):
     text: str
     phon: str
     speaker: str
+    type_: str = "manual"
 
 
 class AudioFileListItem(BaseModel):

@@ -21,7 +21,7 @@ export function uploadAction(datasets: Dataset[]) {
     fields: [
       { type: "drop", label: "Drop audio files here or click to browse", hint: "WAV, FLAC, MP3 · up to 2 GB per file" },
       { key: "target", type: "select", label: "Add to dataset", default: options[0]?.value ?? "", options },
-      { key: "speaker", type: "select", label: "Assign speaker", default: SPEAKERS[0]!, options: SPEAKERS.map((s) => ({ value: s, label: s })) },
+      { key: "speaker", type: "select", label: "Assign voice", default: "", options: [{ value: "", label: "None" }, ...SPEAKERS.map((s) => ({ value: s, label: s }))] },
     ],
     onSubmit: () => {
       showToast("Upload queued");
@@ -174,7 +174,7 @@ export function assignVoiceAction(count?: number) {
     title: "Assign voice to segments",
     submitLabel: "Assign",
     fields: [
-      { key: "voice", type: "select", label: "Voice", default: SPEAKERS[0]!, options: SPEAKERS.map((s) => ({ value: s, label: s })) },
+      { key: "voice", type: "select", label: "Voice", default: "", options: [{ value: "", label: "None" }, ...SPEAKERS.map((s) => ({ value: s, label: s }))] },
     ],
     onSubmit: () => showToast(`Assigned voice to ${scope(count)}`),
   });

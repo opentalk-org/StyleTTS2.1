@@ -8,17 +8,13 @@ from uuid import UUID
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port, PortMode
+from runflow.core.ports import JoinMode, Port, PortMode
 from runflow.core.settings import StrictSettings
-from runflow.core.types import UnionDataType
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import ASSET_BUNDLE, AUDIO_SEGMENT, CHECKPOINT_REF, JSON, SEGMENT_GROUP, TRAINING_MANIFEST
-from runner.nodes.models import AssetBundleRef, AudioSegment, CheckpointRef, SegmentGroup, TrainingManifest, stable_id
+from runner.nodes.datatypes import ASSET_BUNDLE, AUDIO, CHECKPOINT_REF, JSON, TRAINING_MANIFEST
+from runner.nodes.models import AssetBundleRef, Audio, AudioSegment, CheckpointRef, TrainingManifest, stable_id
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
-
-
-TRAINING_SEGMENT_INPUT = UnionDataType("TRAINING_SEGMENT_INPUT", (AUDIO_SEGMENT, SEGMENT_GROUP), "Segment or segment group")
 
 
 class BuildTrainingManifestSettings(StrictSettings):
@@ -41,10 +37,10 @@ class BuildTrainingManifestNode(Node):
     CATEGORY = "Training / Preparation"
     SETTINGS = BuildTrainingManifestSettings
     INPUTS = {
-        "segments": Port("segments", TRAINING_SEGMENT_INPUT, mode=PortMode.LIST),
-        "base_checkpoint": Port("base_checkpoint", CHECKPOINT_REF),
-        "assets": Port("assets", ASSET_BUNDLE, optional=True, default=None),
-        "phoneme_alphabet": Port("phoneme_alphabet", JSON, optional=True, default={}),
+        "audio": Port("audio", AUDIO, mode=PortMode.LIST),
+        "base_checkpoint": Port("base_checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
+        "assets": Port("assets", ASSET_BUNDLE, join_mode=JoinMode.BROADCAST, optional=True, default=None),
+        "phoneme_alphabet": Port("phoneme_alphabet", JSON, join_mode=JoinMode.BROADCAST, optional=True, default={}),
     }
     OUTPUTS = {"training_manifest": Port("training_manifest", TRAINING_MANIFEST)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
@@ -53,7 +49,7 @@ class BuildTrainingManifestNode(Node):
         return [
             {
                 "training_manifest": build_training_manifest(
-                    segments=flatten_segment_inputs(inputs["segments"]),
+                    segments=flatten_audio_segments(inputs["audio"]),
                     base_checkpoint=_typed_checkpoint(inputs["base_checkpoint"]),
                     assets=_typed_assets(inputs["assets"]),
                     phoneme_alphabet=phoneme_alphabet_symbols(inputs["phoneme_alphabet"]),
@@ -134,15 +130,12 @@ def phoneme_alphabet_symbols(value: dict) -> list[str]:
     raise TypeError("phoneme alphabet symbols must be a string or list")
 
 
-def flatten_segment_inputs(values: list[AudioSegment | SegmentGroup]) -> list[AudioSegment]:
+def flatten_audio_segments(values: list[Audio]) -> list[AudioSegment]:
     segments: list[AudioSegment] = []
     for value in values:
-        if isinstance(value, AudioSegment):
-            segments.append(value)
-        elif isinstance(value, SegmentGroup):
-            segments.extend(value.segments)
-        else:
-            raise TypeError(f"unsupported training segment input: {type(value).__name__}")
+        if not isinstance(value, Audio):
+            raise TypeError(f"unsupported training audio input: {type(value).__name__}")
+        segments.extend(value.segments)
     return segments
 
 

@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 
-from shared.db.settings.models import StorageSettings
-from shared.db.settings.schemas import StorageSettingsPayload
+from shared.db.settings.models import IntegrationSettings, StorageSettings
+from shared.db.settings.schemas import IntegrationSettingsPayload, StorageSettingsPayload
 from shared.storage import ObjectStoreConfig
 
 
@@ -23,6 +23,25 @@ def update_storage_settings(session: Session, payload: StorageSettingsPayload) -
     item.region_name = payload.region_name
     item.access_key_id = payload.access_key_id
     item.secret_access_key = payload.secret_access_key
+    session.commit()
+    session.refresh(item)
+    return item
+
+
+def get_integration_settings(session: Session) -> IntegrationSettings:
+    item = session.query(IntegrationSettings).order_by(IntegrationSettings.id).first()
+    if item is not None:
+        return item
+    item = IntegrationSettings(**IntegrationSettingsPayload().model_dump())
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return item
+
+
+def update_integration_settings(session: Session, payload: IntegrationSettingsPayload) -> IntegrationSettings:
+    item = get_integration_settings(session)
+    item.hf_token = payload.hf_token
     session.commit()
     session.refresh(item)
     return item

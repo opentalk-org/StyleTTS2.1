@@ -6,10 +6,58 @@ export const TYPE_TONE: Record<string, Tone> = {
   asr: "emerald",
   f0: "amber",
   plbert: "gray",
+  whisper: "emerald",
+  parakeet: "emerald",
+  canary: "emerald",
+  sortformer: "amber",
 };
 
 export function checkpointTone(type: string): Tone {
   return TYPE_TONE[type] ?? "gray";
+}
+
+export function checkpointSymbolCount(checkpoint: Checkpoint | undefined): number | null {
+  if (!checkpoint) return null;
+  const raw = checkpoint.metadata.symbols;
+  if (Array.isArray(raw)) return raw.length;
+  const count = Number(raw);
+  return Number.isFinite(count) && count > 0 ? count : null;
+}
+
+/** The actual symbol tokens (phoneme alphabet) when the checkpoint stores them as a list. */
+export function checkpointSymbols(checkpoint: Checkpoint | undefined): string[] {
+  if (!checkpoint) return [];
+  const raw = checkpoint.metadata.symbols;
+  return Array.isArray(raw) ? raw.map((symbol) => String(symbol)) : [];
+}
+
+export function checkpointDecoderType(checkpoint: Checkpoint | undefined): string {
+  if (!checkpoint) return "";
+  return String(checkpoint.metadata.decoder_type ?? checkpoint.metadata.decoder ?? "").trim().toLowerCase();
+}
+
+export function checkpointMultispeaker(checkpoint: Checkpoint | undefined): boolean | null {
+  if (!checkpoint) return null;
+  const raw = checkpoint.metadata.multispeaker;
+  if (typeof raw === "boolean") return raw;
+  if (typeof raw === "string") {
+    const normalized = raw.trim().toLowerCase();
+    if (["true", "multi", "multispeaker"].includes(normalized)) return true;
+    if (["false", "single", "single_speaker"].includes(normalized)) return false;
+  }
+  const legacy = checkpoint.metadata.spkMode ?? checkpoint.metadata.speaker_mode;
+  if (typeof legacy === "string") {
+    const normalized = legacy.trim().toLowerCase();
+    if (normalized === "multi") return true;
+    if (normalized === "single") return false;
+  }
+  return null;
+}
+
+export function checkpointSpeakerMode(checkpoint: Checkpoint | undefined): string {
+  const multispeaker = checkpointMultispeaker(checkpoint);
+  if (multispeaker === null) return "";
+  return multispeaker ? "multi" : "single";
 }
 
 export function groupCheckpoints(items: Checkpoint[], query: string, type: string): Record<string, Checkpoint[]> {
@@ -22,9 +70,241 @@ export function groupCheckpoints(items: Checkpoint[], query: string, type: strin
   return groups;
 }
 
-export const CATALOG: { name: string; file: string; size: string }[] = [
-  { name: "StyleTTS2 · LibriTTS", file: "styletts2_libritts.pth", size: "1.2 GB" },
-  { name: "StyleTTS2 · LJSpeech", file: "styletts2_ljspeech.pth", size: "842 MB" },
-  { name: "PL-BERT · multilingual", file: "plbert_ml.t7", size: "420 MB" },
-  { name: "ASR · base aligner", file: "asr_base.pth", size: "310 MB" },
+export type CatalogItem = {
+  name: string;
+  file: string;
+  size: string;
+  group: "StyleTTS2" | "Training assets" | "Transcription" | "Diarization";
+  catalogKey: string;
+  item: string;
+};
+
+export function groupCatalogItems(items: CatalogItem[]): Record<CatalogItem["group"], CatalogItem[]> {
+  const groups: Record<CatalogItem["group"], CatalogItem[]> = {
+    StyleTTS2: [],
+    "Training assets": [],
+    Transcription: [],
+    Diarization: [],
+  };
+  for (const item of items) groups[item.group].push(item);
+  return groups;
+}
+
+export const CATALOG: CatalogItem[] = [
+  {
+    name: "StyleTTS2 · LibriTTS",
+    file: "epochs_2nd_00020.pth",
+    size: "1.2 GB",
+    group: "StyleTTS2",
+    catalogKey: "official_checkpoints",
+    item: "official_styletts2_libritts",
+  },
+  {
+    name: "StyleTTS2 · LJSpeech",
+    file: "epoch_2nd_00100.pth",
+    size: "842 MB",
+    group: "StyleTTS2",
+    catalogKey: "official_checkpoints",
+    item: "official_styletts2_ljspeech",
+  },
+  {
+    name: "StyleTTS2 · Vokan",
+    file: "epoch_2nd_00012.pth",
+    size: "842 MB",
+    group: "StyleTTS2",
+    catalogKey: "vokan_checkpoint",
+    item: "vokan_styletts2",
+  },
+  {
+    name: "PL-BERT · multilingual",
+    file: "step_1100000.t7",
+    size: "420 MB",
+    group: "Training assets",
+    catalogKey: "papercup_multilingual_pl_bert",
+    item: "papercup_multilingual_pl_bert",
+  },
+  {
+    name: "ASR · base aligner",
+    file: "epoch_00080.pth",
+    size: "310 MB",
+    group: "Training assets",
+    catalogKey: "styletts2_utils",
+    item: "styletts2_utils_asr",
+  },
+  {
+    name: "F0 · JDC",
+    file: "bst.t7",
+    size: "18 MB",
+    group: "Training assets",
+    catalogKey: "styletts2_utils",
+    item: "styletts2_utils_f0",
+  },
+  {
+    name: "PL-BERT · StyleTTS2 utils",
+    file: "step_1000000.t7",
+    size: "420 MB",
+    group: "Training assets",
+    catalogKey: "styletts2_utils",
+    item: "styletts2_utils_plbert",
+  },
+  {
+    name: "Whisper · tiny",
+    file: "tiny.pt",
+    size: "75 MB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "whisper:tiny",
+  },
+  {
+    name: "Whisper · tiny.en",
+    file: "tiny.en.pt",
+    size: "75 MB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "whisper:tiny.en",
+  },
+  {
+    name: "Whisper · base",
+    file: "base.pt",
+    size: "142 MB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "whisper:base",
+  },
+  {
+    name: "Whisper · base.en",
+    file: "base.en.pt",
+    size: "142 MB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "whisper:base.en",
+  },
+  {
+    name: "Whisper · small",
+    file: "small.pt",
+    size: "462 MB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "whisper:small",
+  },
+  {
+    name: "Whisper · small.en",
+    file: "small.en.pt",
+    size: "462 MB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "whisper:small.en",
+  },
+  {
+    name: "Whisper · medium",
+    file: "medium.pt",
+    size: "1.5 GB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "whisper:medium",
+  },
+  {
+    name: "Whisper · medium.en",
+    file: "medium.en.pt",
+    size: "1.5 GB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "whisper:medium.en",
+  },
+  {
+    name: "Whisper · large",
+    file: "large.pt",
+    size: "2.9 GB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "whisper:large",
+  },
+  {
+    name: "Whisper · large-v1",
+    file: "large-v1.pt",
+    size: "2.9 GB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "whisper:large-v1",
+  },
+  {
+    name: "Whisper · large-v2",
+    file: "large-v2.pt",
+    size: "2.9 GB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "whisper:large-v2",
+  },
+  {
+    name: "Whisper · large-v3",
+    file: "large-v3.pt",
+    size: "2.9 GB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "whisper:large-v3",
+  },
+  {
+    name: "Whisper · turbo",
+    file: "large-v3-turbo.pt",
+    size: "1.5 GB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "whisper:turbo",
+  },
+  {
+    name: "Parakeet · TDT 0.6B v2",
+    file: "parakeet-tdt-0.6b-v2.nemo",
+    size: "2.4 GB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "parakeet:nvidia/parakeet-tdt-0.6b-v2",
+  },
+  {
+    name: "Parakeet · TDT 0.6B v3",
+    file: "parakeet-tdt-0.6b-v3.nemo",
+    size: "2.4 GB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "parakeet:nvidia/parakeet-tdt-0.6b-v3",
+  },
+  {
+    name: "Canary · 1B v2",
+    file: "canary-1b-v2.nemo",
+    size: "6.4 GB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "canary:nvidia/canary-1b-v2",
+  },
+  {
+    name: "Canary · 1B",
+    file: "canary-1b.nemo",
+    size: "4.9 GB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "canary:nvidia/canary-1b",
+  },
+  {
+    name: "Canary · 1B Flash",
+    file: "canary-1b-flash.nemo",
+    size: "3.9 GB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "canary:nvidia/canary-1b-flash",
+  },
+  {
+    name: "Canary · 180M Flash",
+    file: "canary-180m-flash.nemo",
+    size: "730 MB",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "canary:nvidia/canary-180m-flash",
+  },
+  {
+    name: "Sortformer · 4spk v1",
+    file: "diar_sortformer_4spk-v1.nemo",
+    size: "460 MB",
+    group: "Diarization",
+    catalogKey: "asr_models",
+    item: "sortformer:nvidia/diar_sortformer_4spk-v1",
+  },
 ];

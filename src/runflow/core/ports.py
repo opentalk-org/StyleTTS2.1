@@ -13,11 +13,17 @@ class PortMode(str, Enum):
     STREAM = "stream"
 
 
+class JoinMode(str, Enum):
+    ITEM = "item"
+    BROADCAST = "broadcast"
+
+
 @dataclass(frozen=True)
 class Port:
     name: str
     dtype: DataType | UnionDataType
     mode: PortMode = PortMode.SINGLE
+    join_mode: JoinMode = JoinMode.ITEM
     optional: bool = False
     default: Any = None
     description: str = ""
@@ -27,6 +33,7 @@ class Port:
             "name": self.name,
             "type": self.dtype.name,
             "mode": self.mode.value,
+            "join_mode": self.join_mode.value,
             "optional": self.optional,
             "default": self.default,
             "description": self.description,

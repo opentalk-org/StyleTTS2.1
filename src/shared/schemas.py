@@ -122,6 +122,7 @@ class NodeLogRequestCommand(BaseModel):
     request_id: str
     run_id: str
     node_id: str
+    work_dir: Path | None = None
 
 
 class NodeLogResponseMessage(BaseModel):

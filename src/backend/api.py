@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import AsyncIterator
 import uuid
 
+from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -22,7 +23,7 @@ from runflow.ui.schema_export import export_ui_schema
 from runner.nodes.registry import register_runner_nodes, register_runner_types_for_ui
 from shared.db import create_database_schema, database_session
 from shared.db.assets import crud as asset_crud
-from shared.db.assets.schemas import FileAssetRead
+from shared.db.assets.schemas import ConfigCreate, ConfigRead, FileAssetRead, ExtraFileCreate
 from shared.db.datasets import crud as dataset_crud
 from shared.db.datasets.models import Dataset
 from shared.db.datasets.schemas import DatasetCreate, DatasetRead
@@ -31,6 +32,8 @@ from shared.db.voices.models import Voice
 from shared.db.voices.schemas import VoiceCreate, VoicePage, VoiceRead
 from shared.logging_setup import configure_logging, get_logger
 from shared.schemas import InlineGraphRunRequest, NodeLogResponseMessage, RunEventResponse, RunnerStatus, RunSnapshot, RunStatus
+from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
+from runner.nodes.training.common.inputs.nodes import DEFAULT_ALPHABET
 
 
 configure_logging("backend")
@@ -39,6 +42,13 @@ manager = BackendManager()
 nats_bus = BackendNatsBus(manager)
 manager.set_command_bus(nats_bus)
 old_static_dir = Path(__file__).parent / "ui" / "static"
+
+
+class TextFileAssetCreate(BaseModel):
+    name: str
+    type_: str
+    content: str
+    metadata: dict = Field(default_factory=dict)
 
 
 @asynccontextmanager
@@ -103,7 +113,93 @@ async def list_datasets() -> list[DatasetRead]:
 @app.get("/assets/files", response_model=list[FileAssetRead])
 async def list_file_assets(type_: str | None = None) -> list[FileAssetRead]:
     with database_session() as session:
-        return [FileAssetRead.model_validate(item) for item in asset_crud.list_extra_files(session, type_)]
+        return [FileAssetRead.model_validate(item) for item in asset_crud.list_extra_files(session, _asset_type(type_))]
+
+
+@app.post("/assets/files/text", response_model=FileAssetRead, status_code=status.HTTP_201_CREATED)
+async def create_text_file_asset(request: TextFileAssetCreate) -> FileAssetRead:
+    metadata = dict(request.metadata)
+    if request.type_ == "OOD_TEXT_SET" and "line_count" not in metadata:
+        metadata["line_count"] = len([line for line in request.content.splitlines() if line.strip()])
+    with database_session() as session:
+        item = asset_crud.create_extra_file(
+            session,
+            ExtraFileCreate(
+                name=request.name,
+                data=request.content.encode("utf-8"),
+                type_=_asset_type(request.type_) or request.type_,
+                metadata=metadata,
+            ),
+        )
+        return FileAssetRead.model_validate(item)
+
+
+@app.get("/assets/configs", response_model=list[ConfigRead])
+async def list_asset_configs(type_: str | None = None) -> list[ConfigRead]:
+    with database_session() as session:
+        canonical = _config_type(type_)
+        if canonical == "phoneme_alphabet":
+            _ensure_default_phoneme_alphabets(session)
+        return [ConfigRead.model_validate(item) for item in asset_crud.list_configs(session, canonical)]
+
+
+@app.post("/assets/configs", response_model=ConfigRead, status_code=status.HTTP_201_CREATED)
+async def create_asset_config(request: ConfigCreate) -> ConfigRead:
+    with database_session() as session:
+        item = asset_crud.create_config(session, request)
+        return ConfigRead.model_validate(item)
+
+
+def _asset_type(type_: str | None) -> str | None:
+    if type_ is None:
+        return None
+    aliases = {
+        "ood_text": "OOD_TEXT_SET",
+        "ood_text_set": "OOD_TEXT_SET",
+        "f0": "F0_MODEL",
+        "asr": "ASR_BUNDLE",
+        "plbert": "PLBERT",
+        "styletts2": "STYLETTS2",
+    }
+    return aliases.get(type_.strip().lower(), type_)
+
+
+def _config_type(type_: str | None) -> str | None:
+    if type_ is None:
+        return None
+    aliases = {
+        "alphabet": "phoneme_alphabet",
+        "phoneme_alphabet": "phoneme_alphabet",
+    }
+    return aliases.get(type_.strip().lower(), type_)
+
+
+def _ensure_default_phoneme_alphabets(session) -> None:
+    existing = [item for item in asset_crud.list_configs(session, "phoneme_alphabet") if item.metadata_.get("builtin")]
+    if existing:
+        return
+    defaults = [
+        ("IPA default", "ipa", DEFAULT_ALPHABET.split()),
+        ("IPA multilingual", "ipa-multi", [str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS]),
+        ("ARPAbet", "arpabet", _arpabet_symbols()),
+    ]
+    for name, preset, symbols in defaults:
+        asset_crud.create_config(
+            session,
+            ConfigCreate(
+                name=name,
+                type_="phoneme_alphabet",
+                metadata={"builtin": True, "preset": preset, "symbols": symbols},
+            ),
+        )
+
+
+def _arpabet_symbols() -> list[str]:
+    return [
+        "AA", "AE", "AH", "AO", "AW", "AY", "B", "CH", "D", "DH", "EH", "ER", "EY", "F", "G", "HH",
+        "IH", "IY", "JH", "K", "L", "M", "N", "NG", "OW", "OY", "P", "R", "S", "SH", "T", "TH",
+        "UH", "UW", "V", "W", "Y", "Z", "ZH",
+    ]
 
 
 @app.post("/datasets", response_model=DatasetRead, status_code=status.HTTP_201_CREATED)
@@ -220,6 +316,15 @@ async def stop_run(run_id: str) -> RunStatus:
     try:
         logger.info("stop run requested run_id=%s", run_id)
         return await manager.stop(run_id)
+    except KeyError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
+@app.delete("/jobs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_job(run_id: str) -> None:
+    try:
+        logger.info("remove job requested run_id=%s", run_id)
+        await manager.remove(run_id)
     except KeyError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 

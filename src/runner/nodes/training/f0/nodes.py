@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
+from runflow.core.ports import JoinMode, Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import CHECKPOINT_REF, JSON, TRAINING_MANIFEST, TRAINING_RESULT
@@ -39,7 +39,7 @@ class F0ModelTrainingNode(Node):
     SETTINGS = F0TrainingSettings
     INPUTS = {
         "audio_file_ids": Port("audio_file_ids", JSON),
-        "pretrained_checkpoint": Port("pretrained_checkpoint", CHECKPOINT_REF),
+        "pretrained_checkpoint": Port("pretrained_checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
         "training_manifest": Port("training_manifest", TRAINING_MANIFEST),
     }
     OUTPUTS = {"training_result": Port("training_result", TRAINING_RESULT)}

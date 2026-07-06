@@ -1,7 +1,7 @@
 import type { SchemaValues } from "@/shared/schema-form/types";
 import { Field } from "@/shared/ui/form/Field";
 import { Toggle } from "@/shared/ui/form/Toggle";
-import { useFileAssetsQuery } from "../assets/query";
+import { useCreateTextFileAssetMutation, useFileAssetsQuery } from "../assets/query";
 import { useCheckpointsQuery } from "../checkpoints/query";
 import { useDatasetsQuery } from "../datasets/query";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
@@ -10,8 +10,9 @@ import { AlphabetEditor } from "./AlphabetEditor";
 import { AssetSlot } from "./AssetSlot";
 import { FormSection } from "./FormSection";
 import { FormSelect } from "./FormSelect";
-import { checkpointOptions, checkpointSymbolCount, datasetOptions, fileAssetOptions, oodSetValues, trainingNode, type TrainingWorkflowSpec, updateNodeParams } from "./logic";
+import { checkpointOptions, checkpointSymbolCount, datasetOptions, oodSetValues, pretrainedAssetOptions, styleTtsParamsForBaseCheckpoint, trainingNode, type TrainingWorkflowSpec, updateNodeParams } from "./logic";
 import { OodEditor } from "./OodEditor";
+import { useCreateTrainingConfigMutation, useTrainingConfigsQuery } from "./query";
 import { SettingField, SettingNumberInput, settingLabel } from "./SettingsField";
 
 const TOGGLE_ROWS = [
@@ -37,7 +38,10 @@ export function StyleTtsForm({
   const f0Assets = useFileAssetsQuery("f0");
   const asrAssets = useFileAssetsQuery("asr");
   const plbertAssets = useFileAssetsQuery("plbert");
-  const oodAssets = useFileAssetsQuery("ood_text");
+  const oodAssets = useFileAssetsQuery("OOD_TEXT_SET");
+  const alphabets = useTrainingConfigsQuery("phoneme_alphabet");
+  const createOod = useCreateTextFileAssetMutation("OOD_TEXT_SET");
+  const createAlphabet = useCreateTrainingConfigMutation("phoneme_alphabet");
   const training = trainingNode(graph, spec.ids.training);
   const dataset = trainingNode(graph, spec.ids.dataset);
   const checkpoint = trainingNode(graph, spec.ids.checkpoint);
@@ -52,6 +56,12 @@ export function StyleTtsForm({
   const frames = Math.round((seqSeconds * 24000) / 300);
   const updateParams = (nodeId: string, params: SchemaValues) => onChange(updateNodeParams(graph, nodeId, params));
   const selectedCheckpoint = (checkpoints.data ?? []).find((item) => item.id === String(checkpoint.params.checkpoint_id));
+  const selectBaseCheckpoint = (checkpoint_id: string) => {
+    const nextCheckpoint = (checkpoints.data ?? []).find((item) => item.id === checkpoint_id);
+    let next = updateNodeParams(graph, checkpoint.id, { ...checkpoint.params, checkpoint_id });
+    next = updateNodeParams(next, training.id, styleTtsParamsForBaseCheckpoint(nextCheckpoint, values));
+    onChange(next);
+  };
 
   return (
     <>
@@ -74,7 +84,7 @@ export function StyleTtsForm({
             <FormSelect
               defaultValue=""
               value={String(checkpoint.params.checkpoint_id)}
-              onChange={(checkpoint_id) => updateParams(checkpoint.id, { ...checkpoint.params, checkpoint_id })}
+              onChange={selectBaseCheckpoint}
               options={checkpointOptions(checkpoints.data ?? [], "styletts2", "— select base checkpoint —")}
             />
           </Field>
@@ -87,27 +97,35 @@ export function StyleTtsForm({
             label="F0 model"
             value={String(assets.params.f0_model)}
             onChange={(f0_model) => updateParams(assets.id, { ...assets.params, f0_model })}
-            options={fileAssetOptions(f0Assets.data ?? [], "— select F0 file —")}
+            options={pretrainedAssetOptions(f0Assets.data ?? [], checkpoints.data ?? [], "f0", "— select F0 asset —")}
           />
           <AssetSlot
             label="ASR model"
             value={String(assets.params.asr_model)}
             onChange={(asr_model) => updateParams(assets.id, { ...assets.params, asr_model })}
-            options={fileAssetOptions(asrAssets.data ?? [], "— select ASR file —")}
+            options={pretrainedAssetOptions(asrAssets.data ?? [], checkpoints.data ?? [], "asr", "— select ASR asset —")}
           />
           <AssetSlot
             label="PL-BERT"
             value={String(assets.params.plbert_model)}
             onChange={(plbert_model) => updateParams(assets.id, { ...assets.params, plbert_model })}
-            options={fileAssetOptions(plbertAssets.data ?? [], "— select PL-BERT file —")}
+            options={pretrainedAssetOptions(plbertAssets.data ?? [], checkpoints.data ?? [], "plbert", "— select PL-BERT asset —")}
           />
         </div>
       </FormSection>
 
       <AlphabetEditor
         values={alphabet.params}
+        presets={alphabets.data ?? []}
         baseSymbolCount={checkpointSymbolCount(selectedCheckpoint)}
         onChange={(params) => updateParams(alphabet.id, params)}
+        onSave={(name, symbols) =>
+          createAlphabet.mutate({
+            name,
+            type_: "phoneme_alphabet",
+            metadata: { preset: "custom", symbols: symbols.trim().split(/\s+/).filter(Boolean) },
+          })
+        }
       />
 
       <FormSection title="Optimization" tag="Optimizer">
@@ -166,6 +184,17 @@ export function StyleTtsForm({
         values={oodSets.params}
         availableSets={oodSetValues(oodAssets.data ?? [])}
         onChange={(params) => updateParams(oodSets.id, params)}
+        onCreate={async ({ name, content }) => {
+          const item = await createOod.mutateAsync({
+            name,
+            type_: "OOD_TEXT_SET",
+            content,
+            metadata: { source: "training_tab" },
+          });
+          const created = oodSetValues([item])[0];
+          if (!created) throw new Error("OOD text set was not created");
+          return created;
+        }}
       />
     </>
   );

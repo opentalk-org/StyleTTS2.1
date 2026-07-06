@@ -27,7 +27,8 @@ class ResolveTrainingAssetsSettings(StrictSettings):
 @dataclass(frozen=True)
 class AssetFileRef:
     role: str
-    file_id: UUID
+    file_id: UUID | None
+    checkpoint_id: UUID | None
     name: str
     type_: str
     path: Path
@@ -43,9 +44,10 @@ def resolve_training_asset_bundle(
     ood_text_set_file_ids: list[str],
 ) -> AssetBundleRef:
     requested = _requested_assets(asr_bundle_file_ids, f0_model_file_id, plbert_file_id, ood_text_set_file_ids)
-    refs = [_resolve_extra_file(role, file_id) for role, file_id in requested]
-    extra_file_ids = [ref.file_id for ref in refs]
-    digest_parts = [str(file_id) for file_id in extra_file_ids]
+    refs = [_resolve_asset(role, file_id) for role, file_id in requested]
+    extra_file_ids = [ref.file_id for ref in refs if ref.file_id is not None]
+    checkpoint_ids = [ref.checkpoint_id for ref in refs if ref.checkpoint_id is not None]
+    digest_parts = [str(ref.file_id or ref.checkpoint_id) for ref in refs]
     ref_id = stable_id("assets", *digest_parts) if digest_parts else stable_id("assets", "empty")
     return AssetBundleRef(
         bundle_key="training_assets",
@@ -62,6 +64,7 @@ def resolve_training_asset_bundle(
                 "plbert": plbert_file_id,
                 "ood_text_sets": [str(file_id) for file_id in ood_text_set_file_ids],
             },
+            "checkpoint_ids": [str(checkpoint_id) for checkpoint_id in checkpoint_ids],
         },
     )
 
@@ -87,26 +90,41 @@ def _requested_assets(
     return requested
 
 
-def _resolve_extra_file(role: str, file_id: UUID) -> AssetFileRef:
+def _resolve_asset(role: str, file_id: UUID) -> AssetFileRef:
     with database_session() as session:
-        extra_file = asset_crud.get_extra_file(session, file_id)
-        path = asset_crud.get_extra_file_path(session, file_id)
+        try:
+            extra_file = asset_crud.get_extra_file(session, file_id)
+            path = asset_crud.get_extra_file_path(session, file_id)
+            return AssetFileRef(
+                role=role,
+                file_id=file_id,
+                checkpoint_id=None,
+                name=extra_file.name,
+                type_=extra_file.type_,
+                path=path,
+                size=extra_file.size,
+                content_hash=extra_file.content_hash,
+                metadata=extra_file.metadata_,
+            )
+        except KeyError:
+            checkpoint = asset_crud.get_checkpoint(session, file_id)
+            path = _checkpoint_asset_path(asset_crud.get_checkpoint_path(session, file_id), role)
     return AssetFileRef(
         role=role,
-        file_id=file_id,
-        name=extra_file.name,
-        type_=extra_file.type_,
+        file_id=None,
+        checkpoint_id=file_id,
+        name=checkpoint.name,
+        type_=checkpoint.type_,
         path=path,
-        size=extra_file.size,
-        content_hash=extra_file.content_hash,
-        metadata=extra_file.metadata_,
+        size=checkpoint.size,
+        content_hash=checkpoint.content_hash,
+        metadata=checkpoint.metadata_,
     )
 
 
 def _asset_metadata(ref: AssetFileRef) -> dict[str, Any]:
-    return {
+    data = {
         "role": ref.role,
-        "id": str(ref.file_id),
         "name": ref.name,
         "type": ref.type_,
         "path": str(ref.path),
@@ -114,6 +132,29 @@ def _asset_metadata(ref: AssetFileRef) -> dict[str, Any]:
         "content_hash": ref.content_hash,
         "metadata": ref.metadata,
     }
+    if ref.file_id is not None:
+        data["id"] = str(ref.file_id)
+        data["storage"] = "extra_file"
+    if ref.checkpoint_id is not None:
+        data["id"] = str(ref.checkpoint_id)
+        data["checkpoint_id"] = str(ref.checkpoint_id)
+        data["storage"] = "checkpoint"
+    return data
+
+
+def _checkpoint_asset_path(folder: Path, role: str) -> Path:
+    if role == "f0_model":
+        return _single_file(folder, (".t7", ".pth", ".pt"))
+    if role in {"asr_bundle", "plbert"}:
+        return _single_file(folder, (".pth", ".t7", ".pt"))
+    return folder
+
+
+def _single_file(folder: Path, suffixes: tuple[str, ...]) -> Path:
+    matches = sorted(path for path in folder.rglob("*") if path.is_file() and path.suffix.lower() in suffixes)
+    if not matches:
+        raise ValueError(f"checkpoint asset file missing in {folder}")
+    return matches[0]
 
 
 class ResolveTrainingAssetsNode(Node):

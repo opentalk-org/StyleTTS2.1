@@ -165,9 +165,13 @@ echo "Starting Runflow runners"
 runflow-runner-launch &
 pid_runners=$!
 
+echo "Starting Aim UI on port ${AIM_PORT:-43800}"
+runflow-aim &
+pid_aim=$!
+
 shutdown() {
   echo "Stopping services"
-  kill "$pid_backend" "$pid_runners" 2>/dev/null || true
+  kill "$pid_backend" "$pid_runners" "$pid_aim" 2>/dev/null || true
   sleep 1
   kill "$pid_rustfs" "$pid_nats" "$pid_pgbouncer" 2>/dev/null || true
   pg_ctl -D "$PGDATA" stop -m fast || true

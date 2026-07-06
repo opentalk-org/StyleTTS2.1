@@ -7,7 +7,7 @@ export function WorkflowEdges() {
   const project = (x: number, y: number) => ({ x: x * viewport.zoom + viewport.x, y: y * viewport.zoom + viewport.y });
   const anchor = (nodeId: string, portName: string, kind: "input" | "output") => portAnchors[`${nodeId}:${portName}:${kind}` as PortAnchorKey];
   const path = (start: { x: number; y: number }, end: { x: number; y: number }) => {
-    const dx = Math.max(40, Math.abs(end.x - start.x) * 0.5);
+    const dx = Math.max(20, Math.abs(end.x - start.x) * 0.25);
     return `M ${start.x} ${start.y} C ${start.x + dx} ${start.y}, ${end.x - dx} ${end.y}, ${end.x} ${end.y}`;
   };
   const wireNode = wireDraft ? nodeById[wireDraft.node] : undefined;

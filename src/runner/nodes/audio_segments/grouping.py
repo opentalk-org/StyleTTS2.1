@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Literal
 
 from pydantic import Field
@@ -10,8 +11,8 @@ from runflow.core.node import Node
 from runflow.core.ports import Port, PortMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy
-from runner.nodes.datatypes import SEGMENT_GROUP
-from runner.nodes.models import AudioSegment, SegmentGroup, stable_id
+from runner.nodes.datatypes import AUDIO
+from runner.nodes.models import Audio, AudioSegment, stable_id
 
 Mode = Literal["create_new", "replace_all"]
 
@@ -31,14 +32,14 @@ class PlanSegmentGroupsNode(Node):
     NODE_TYPE = "PlanSegmentGroups"
     CATEGORY = "Audio / Segments"
     SETTINGS = PlanSegmentGroupsSettings
-    INPUTS = {"segment_group": Port("segment_group", SEGMENT_GROUP)}
-    OUTPUTS = {"segment_group": Port("segment_group", SEGMENT_GROUP, mode=PortMode.STREAM)}
+    INPUTS = {"audio": Port("audio", AUDIO)}
+    OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}
     BATCH_POLICY = BatchPolicy(BatchMode.DISABLED)
 
     async def execute(self, batch, context):
         outputs = []
         for inputs in batch:
-            source: SegmentGroup = inputs["segment_group"]
+            source: Audio = inputs["audio"]
             ordered = sorted(source.segments, key=lambda segment: segment.start)
             groups = iter_split_groups(
                 ordered,
@@ -50,7 +51,7 @@ class PlanSegmentGroupsNode(Node):
             )
             group_count = len(groups)
             for index, segments in enumerate(groups):
-                outputs.append({"segment_group": _planned_group(source, segments, index, group_count, self.settings.mode)})
+                outputs.append({"audio": _planned_audio(source, segments, index, group_count, self.settings.mode)})
         return outputs
 
 
@@ -131,17 +132,17 @@ def merge_segments_text_phon(segments: list[AudioSegment]) -> tuple[str, str]:
     return "".join(texts), "".join(phons)
 
 
-def _planned_group(
-    source: SegmentGroup,
+def _planned_audio(
+    source: Audio,
     segments: list[AudioSegment],
     index: int,
     group_count: int,
     mode: Mode,
-) -> SegmentGroup:
+) -> Audio:
     merged_text, merged_phon = merge_segments_text_phon(segments)
     span_start = min(segment.start for segment in segments)
     span_end = max(segment.end for segment in segments)
-    group_id = stable_id("segment_group", source.id, index, *(segment.id for segment in segments))
+    group_id = stable_id("audio_group", source.id, index, *(segment.id for segment in segments))
     metadata = {
         **source.metadata,
         "source_group_id": source.id,
@@ -158,7 +159,7 @@ def _planned_group(
         "merged_phon": merged_phon,
     }
     name = f"{source.name}_split_{index + 1:04d}"
-    return SegmentGroup(name, list(segments), group_id, stable_id("lineage", source.lineage_id, group_id), metadata)
+    return replace(source, name=name, id=group_id, lineage_id=stable_id("lineage", source.lineage_id, group_id), segments=list(segments), metadata=metadata)
 
 
 def _reachable_end(segments: list[AudioSegment], index: int, max_gap_seconds: float | None) -> int:

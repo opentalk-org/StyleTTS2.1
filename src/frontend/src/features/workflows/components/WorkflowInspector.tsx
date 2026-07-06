@@ -22,7 +22,7 @@ export function WorkflowInspector() {
   const loadNode = useLoadNodeMutation();
   const unloadNode = useUnloadNodeMutation();
   const [log, setLog] = useState<{ content: string; truncated: boolean; error: string | null } | null>(null);
-  const { schema, graph, selectedNodeIds, activeRunId, runs, snapshots, inspectorOpen, inspectorTab, setInspectorTab, closeInspector, setGraph, deleteSelection, renameSelectedNode } = useWorkflowStore();
+  const { schema, graph, selectedNodeIds, activeRunId, runs, snapshots, inspectorOpen, inspectorTab, setInspectorTab, closeInspector, patchNode, deleteSelection, renameSelectedNode } = useWorkflowStore();
   const node = graph.nodes.find((item) => item.id === selectedNodeIds[0]);
   const activeRun = activeRunId ? runs.find((run) => run.run_id === activeRunId) : undefined;
   const lifecycleActive = activeRun?.state === "running";
@@ -50,7 +50,7 @@ export function WorkflowInspector() {
   const info = schema.nodes[node.type];
   if (!info) throw new Error(`Unknown node type: ${node.type}`);
   const snapshot = nodeSnapshot(activeRunId ? snapshots[activeRunId] : undefined, node.id);
-  const update = (patch: Partial<typeof node>) => setGraph({ ...graph, nodes: graph.nodes.map((item) => (item.id === node.id ? { ...item, ...patch } : item)) });
+  const update = (patch: Partial<typeof node>) => patchNode(node.id, patch);
 
   return (
     <InspectorShell title={`${node.id} · ${node.type}`} onClose={closeInspector}>

@@ -1,46 +1,62 @@
 import { useState } from "react";
 
 import { Icon } from "@/shared/icons";
+import { Button } from "@/shared/ui/Button";
+import { Input } from "@/shared/ui/Input";
 import { Textarea } from "@/shared/ui/Textarea";
 import { Select } from "@/shared/ui/Select";
 
 import { FormSection } from "./FormSection";
 import type { SchemaValues } from "@/shared/schema-form/types";
-
-const PRESETS = [
-  { value: "ipa", label: "IPA · default" },
-  { value: "arpabet", label: "ARPAbet" },
-  { value: "ipa-multi", label: "IPA · multilingual" },
-  { value: "custom", label: "Custom" },
-];
+import type { TrainingConfig } from "./api";
 
 /** Phoneme alphabet editor: preset picker, live symbol count, and a base-count advisory. */
 export function AlphabetEditor({
   values,
+  presets,
   baseSymbolCount,
   onChange,
+  onSave,
 }: {
   values: SchemaValues;
+  presets: TrainingConfig[];
   baseSymbolCount: number | null;
   onChange: (values: SchemaValues) => void;
+  onSave: (name: string, symbols: string) => void;
 }) {
   const alphabet = String(values.symbols);
   const [preset, setPreset] = useState(String(values.preset));
+  const [saveName, setSaveName] = useState("");
 
   const count = alphabet.trim().split(/\s+/).filter(Boolean).length;
   const matches = baseSymbolCount !== null && count === baseSymbolCount;
+  const selectedPreset = presets.find((item) => item.id === preset || item.metadata.preset === preset);
+  const options = [
+    ...presets.map((item) => ({ value: item.id, label: item.name })),
+    { value: "custom", label: "Custom" },
+  ];
 
   return (
     <FormSection title="Phoneme alphabet" tag="Symbols">
-      <div className="mb-3 flex flex-wrap items-center gap-2.5">
+      <div className="mb-3 grid gap-2.5 lg:grid-cols-[minmax(180px,1fr)_auto_auto] lg:items-center">
         <div className="min-w-[200px] flex-1">
           <Select
-            value={preset}
+            value={selectedPreset?.id ?? "custom"}
             onChange={(value) => {
-              setPreset(value);
-              onChange({ ...values, preset: value });
+              const selected = presets.find((item) => item.id === value);
+              if (!selected) {
+                setPreset("custom");
+                onChange({ ...values, preset: "custom" });
+                return;
+              }
+              setPreset(String(selected.metadata.preset ?? "custom"));
+              onChange({
+                ...values,
+                preset: String(selected.metadata.preset ?? "custom"),
+                symbols: alphabetSymbols(selected),
+              });
             }}
-            options={PRESETS}
+            options={options}
           />
         </div>
         <div className="flex h-[38px] items-center gap-1.5 rounded-md bg-blue-50 px-3.5">
@@ -48,6 +64,20 @@ export function AlphabetEditor({
             {count}
           </span>
           <span className="text-[11px] font-semibold text-blue-600">symbols</span>
+        </div>
+        <div className="flex min-w-0 gap-2">
+          <Input filled value={saveName} onChange={(event) => setSaveName(event.target.value)} placeholder="New alphabet name" />
+          <Button
+            size="sm"
+            icon="download"
+            disabled={!saveName.trim() || !alphabet.trim()}
+            onClick={() => {
+              onSave(saveName.trim(), alphabet);
+              setSaveName("");
+            }}
+          >
+            Save
+          </Button>
         </div>
       </div>
 
@@ -78,4 +108,10 @@ export function AlphabetEditor({
       )}
     </FormSection>
   );
+}
+
+function alphabetSymbols(config: TrainingConfig): string {
+  const raw = config.metadata.symbols;
+  if (Array.isArray(raw)) return raw.map(String).join(" ");
+  return String(raw ?? "");
 }

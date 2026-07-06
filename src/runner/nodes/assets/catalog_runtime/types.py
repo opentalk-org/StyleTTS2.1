@@ -47,4 +47,4 @@ class ExtraFileSpec:
 @dataclass(frozen=True)
 class CatalogTask:
     key: str
-    run: Callable[[], dict]
+    run: Callable[..., dict]

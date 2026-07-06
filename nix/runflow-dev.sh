@@ -16,6 +16,9 @@ export VITE_BACKEND_URL="${VITE_BACKEND_URL:-http://$BACKEND_HOST:$BACKEND_PORT}
 export FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 export FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 export RUNNER_ID="${RUNNER_ID:-runner-1}"
+export AIM_REPO="${AIM_REPO:-.data/aim}"
+export AIM_HOST="${AIM_HOST:-127.0.0.1}"
+export AIM_PORT="${AIM_PORT:-43800}"
 export RUSTFS_DATA="${RUSTFS_DATA:-.data/rustfs}"
 export RUSTFS_VOLUMES="${RUSTFS_VOLUMES:-$RUSTFS_DATA}"
 export RUSTFS_ADDRESS="${RUSTFS_ADDRESS:-127.0.0.1:9000}"
@@ -92,6 +95,7 @@ pid_rustfs=""
 pid_backend=""
 pid_frontend=""
 pid_runners=""
+pid_aim=""
 
 if [ ! -s "$PGDATA/PG_VERSION" ]; then
   echo "Initializing PostgreSQL database at $PGDATA"
@@ -240,6 +244,14 @@ until python -c "from urllib.request import urlopen; urlopen('http://127.0.0.1:$
   sleep 1
 done
 
+mkdir -p "$AIM_REPO"
+if [ ! -d "$AIM_REPO/.aim" ]; then
+  aim init --repo "$AIM_REPO" || echo "aim init failed; continuing without Aim UI"
+fi
+echo "Starting Aim UI at http://$AIM_HOST:$AIM_PORT"
+aim up --repo "$AIM_REPO" --host "$AIM_HOST" --port "$AIM_PORT" > .data/aim.log 2>&1 &
+pid_aim=$!
+
 echo "Starting frontend at http://$FRONTEND_HOST:$FRONTEND_PORT"
 (
   cd src/frontend
@@ -256,6 +268,7 @@ pid_runners=$!
 
 shutdown() {
   echo "Stopping Runflow dev services"
+  [ -z "$pid_aim" ] || kill "$pid_aim" 2>/dev/null || true
   [ -z "$pid_runners" ] || kill "$pid_runners" 2>/dev/null || true
   [ -z "$pid_frontend" ] || kill "$pid_frontend" 2>/dev/null || true
   [ -z "$pid_backend" ] || kill "$pid_backend" 2>/dev/null || true

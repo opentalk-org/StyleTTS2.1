@@ -41,7 +41,7 @@ class CommandBus(Protocol):
     async def publish_node_lifecycle(self, run_id: str, node_id: str, command: str, runner_id: str | None) -> None:
         ...
 
-    async def request_node_log(self, run_id: str, node_id: str, runner_id: str | None) -> NodeLogResponseMessage:
+    async def request_node_log(self, run_id: str, node_id: str, runner_id: str | None, work_dir: Path | None = None) -> NodeLogResponseMessage:
         ...
 
 
@@ -79,6 +79,8 @@ class BackendManager:
         self._hub = WebSocketHub()
         self._command_bus: CommandBus | None = None
         self._snapshot_tasks: dict[str, asyncio.Task[None]] = {}
+        # Runs removed while active: late runner events must not resurrect them.
+        self._deleted: set[str] = set()
 
     def set_command_bus(self, command_bus: CommandBus) -> None:
         self._command_bus = command_bus
@@ -87,6 +89,7 @@ class BackendManager:
         run_id = self._inline_run_id(request)
         if run_id in self._runs:
             raise DuplicateRunError(f"Run already exists: {run_id}")
+        self._deleted.discard(run_id)
 
         command_request = request.model_copy(update={"run_id": run_id})
         record = BackendRunRecord(
@@ -116,6 +119,34 @@ class BackendManager:
             await self._broadcast_run_status(record)
         return record.to_status()
 
+    async def remove(self, run_id: str) -> None:
+        """Remove a job, stopping it first if it is still active.
+
+        Unlike a plain delete, this works on running jobs: it asks the runner to
+        cancel, tombstones the run so trailing events do not re-create it, then
+        force-deletes the persisted record.
+        """
+        record = self._runs.get(run_id)
+        existed = record is not None
+        if record is not None and record.state in {RunState.QUEUED, RunState.RUNNING, RunState.STOPPING} and record.runner_id is not None:
+            self.logger.info("stop before remove run_id=%s runner_id=%s", run_id, record.runner_id)
+            try:
+                await self._command_bus_checked().publish_stop(run_id, record.runner_id)
+            except Exception:
+                self.logger.exception("stop before remove failed run_id=%s", run_id)
+        self._deleted.add(run_id)
+        self._runs.pop(run_id, None)
+        task = self._snapshot_tasks.pop(run_id, None)
+        if task is not None:
+            task.cancel()
+        self.logger.info("remove run run_id=%s", run_id)
+        with database_session() as session:
+            try:
+                jobs_crud.delete_job(session, run_id, force=True)
+            except KeyError:
+                if not existed:
+                    raise
+
     async def load_node(self, run_id: str, node_id: str) -> RunStatus:
         return await self._publish_node_lifecycle(run_id, node_id, "load_node")
 
@@ -126,7 +157,8 @@ class BackendManager:
         record = self._runs.get(run_id)
         if record is not None and record.runner_id is not None and record.state in {RunState.QUEUED, RunState.RUNNING, RunState.STOPPING}:
             self.logger.info("read live node log run_id=%s node_id=%s runner_id=%s", run_id, node_id, record.runner_id)
-            response = await self._command_bus_checked().request_node_log(run_id, node_id, record.runner_id)
+            work_dir = record.graph_request.context.work_dir if record.graph_request is not None else None
+            response = await self._command_bus_checked().request_node_log(run_id, node_id, record.runner_id, work_dir)
             persist_node_log(response)
             return response
         try:
@@ -162,6 +194,8 @@ class BackendManager:
         return self._record(run_id).event_store.snapshot(run_id)
 
     async def record_event(self, event: RunEventResponse) -> None:
+        if event.run_id in self._deleted:
+            return
         record = self._ensure_record(event.run_id)
         record.event_store.record(event)
         self._apply_lifecycle_event(record, event)
@@ -288,12 +322,13 @@ class BackendManager:
     def _schedule_node_log_sync(self, record: BackendRunRecord) -> None:
         if record.runner_id is None or record.graph_request is None:
             return
-        asyncio.create_task(self._sync_node_logs(record.run_id, record.runner_id, [node.id for node in record.graph_request.nodes]))
+        work_dir = record.graph_request.context.work_dir
+        asyncio.create_task(self._sync_node_logs(record.run_id, record.runner_id, [node.id for node in record.graph_request.nodes], work_dir))
 
-    async def _sync_node_logs(self, run_id: str, runner_id: str, node_ids: list[str]) -> None:
+    async def _sync_node_logs(self, run_id: str, runner_id: str, node_ids: list[str], work_dir: Path | None = None) -> None:
         for node_id in node_ids:
             try:
-                response = await self._command_bus_checked().request_node_log(run_id, node_id, runner_id)
+                response = await self._command_bus_checked().request_node_log(run_id, node_id, runner_id, work_dir)
                 persist_node_log(response)
             except Exception:
                 self.logger.exception("sync node log failed run_id=%s node_id=%s", run_id, node_id)

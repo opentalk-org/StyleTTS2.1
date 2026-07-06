@@ -8,6 +8,7 @@ export type AudioSegment = {
   text: string;
   phon: string;
   speaker: string;
+  type_: string;
 };
 
 export type Segment = AudioSegment;
@@ -122,7 +123,10 @@ export async function uploadAudioFiles(
     for (const [index, file] of files.entries()) {
       onProgress?.(uploadProgress(file, index, files.length, 0, "decoding"));
       const decoded = await context.decodeAudioData(await file.arrayBuffer());
-      uploaded.push(await uploadAudioFile(file, options, decoded.duration, decoded.sampleRate, waveformPayload(decoded), (filePercent) => {
+      const waveform = await waveformPayload(decoded, (percent) => {
+        onProgress?.(uploadProgress(file, index, files.length, percent, "decoding"));
+      });
+      uploaded.push(await uploadAudioFile(file, options, decoded.duration, decoded.sampleRate, waveform, (filePercent) => {
         onProgress?.(uploadProgress(file, index, files.length, filePercent, "uploading"));
       }));
       onProgress?.(uploadProgress(file, index, files.length, 100, "uploading"));
@@ -189,33 +193,50 @@ function uploadProgress(
   };
 }
 
-function waveformPayload(buffer: AudioBuffer): string {
+async function waveformPayload(buffer: AudioBuffer, onPercent?: (percent: number) => void): Promise<string> {
   return JSON.stringify({
     sample_rate: buffer.sampleRate,
     points_per_second: 100,
-    peaks: waveformPeaks(buffer, 100),
+    peaks: await waveformPeaks(buffer, 100, onPercent),
   });
 }
 
-function waveformPeaks(buffer: AudioBuffer, pointsPerSecond: number): [number, number][] {
+async function waveformPeaks(
+  buffer: AudioBuffer,
+  pointsPerSecond: number,
+  onPercent?: (percent: number) => void,
+): Promise<[number, number][]> {
   const step = Math.max(1, Math.floor(buffer.sampleRate / pointsPerSecond));
   const points = Math.ceil(buffer.length / step);
+  const channels: Float32Array[] = [];
+  for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+    channels.push(buffer.getChannelData(channel));
+  }
   const peaks: [number, number][] = [];
+  let lastYield = performance.now();
   for (let point = 0; point < points; point += 1) {
     let minimum = 1;
     let maximum = -1;
     const start = point * step;
     const end = Math.min(buffer.length, start + step);
-    for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
-      const data = buffer.getChannelData(channel);
+    for (const data of channels) {
       for (let index = start; index < end; index += 1) {
         const value = data[index] ?? 0;
-        minimum = Math.min(minimum, value);
-        maximum = Math.max(maximum, value);
+        if (value < minimum) minimum = value;
+        if (value > maximum) maximum = value;
       }
     }
     peaks.push([roundPeak(minimum), roundPeak(maximum)]);
+    // Long files hold the main thread for seconds+ here; yield to the event loop
+    // (and report progress) once we've blocked for more than a frame so the page
+    // keeps painting and responding to input instead of freezing.
+    if (performance.now() - lastYield > 16) {
+      onPercent?.(Math.round(((point + 1) / points) * 100));
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      lastYield = performance.now();
+    }
   }
+  onPercent?.(100);
   return peaks;
 }
 

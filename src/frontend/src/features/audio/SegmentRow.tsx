@@ -5,7 +5,7 @@ import { cn } from "@/shared/ui/cn";
 import type { Segment } from "./api";
 import { useEditor } from "./editorStore";
 
-const ROW_COLS = "30px 92px 120px 1fr auto";
+const ROW_COLS = "30px 92px 126px 88px 1fr auto";
 
 function IconBtn({ icon, title, danger, onClick }: { icon: "play" | "merge" | "trash"; title: string; danger?: boolean; onClick: () => void }) {
   return (
@@ -49,6 +49,7 @@ export function SegmentRow({ seg, index, isLast }: { seg: Segment; index: number
             onChange={(e) => setSegVoice(seg.id, e.target.value)}
             className="h-7 w-full appearance-none rounded-md bg-panel-2 pl-2 pr-5 text-[11.5px] font-semibold text-txt-dim outline-none"
           >
+            <option value="">None</option>
             {SPEAKERS.map((n) => (
               <option key={n} value={n}>
                 {n}
@@ -59,6 +60,9 @@ export function SegmentRow({ seg, index, isLast }: { seg: Segment; index: number
             <Icon name="chevron-down" size={11} strokeWidth={2.4} />
           </span>
         </div>
+        <span className="truncate rounded-md bg-panel-2 px-2 py-1 text-center text-[11px] font-semibold text-txt-mute">
+          {segmentTypeLabel(seg.type_)}
+        </span>
         <div onClick={(e) => e.stopPropagation()} className="flex min-w-0 flex-col gap-1">
           <input
             value={seg.text}
@@ -81,4 +85,12 @@ export function SegmentRow({ seg, index, isLast }: { seg: Segment; index: number
       </div>
     </div>
   );
+}
+
+function segmentTypeLabel(type: string | undefined): string {
+  if (!type || type === "manual") return "Manual";
+  if (type === "whisper") return "Whisper";
+  if (type === "parakeet") return "Parakeet";
+  if (type === "canary") return "Canary";
+  return type;
 }

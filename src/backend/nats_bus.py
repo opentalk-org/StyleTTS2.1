@@ -1,5 +1,6 @@
 import asyncio
 import os
+from pathlib import Path
 from uuid import uuid4
 
 from nats.aio.client import Client as NatsClient
@@ -118,13 +119,13 @@ class BackendNatsBus:
             stream=COMMAND_STREAM,
         )
 
-    async def request_node_log(self, run_id: str, node_id: str, runner_id: str | None) -> NodeLogResponseMessage:
+    async def request_node_log(self, run_id: str, node_id: str, runner_id: str | None, work_dir: Path | None = None) -> NodeLogResponseMessage:
         if runner_id is None:
             raise RuntimeError(f"Run has no claimed runner: {run_id}")
         request_id = uuid4().hex
         response_subject = node_log_response_subject(request_id)
         subscription = await self._js().pull_subscribe(response_subject, stream=EVENT_STREAM)
-        payload = NodeLogRequestCommand(request_id=request_id, run_id=run_id, node_id=node_id)
+        payload = NodeLogRequestCommand(request_id=request_id, run_id=run_id, node_id=node_id, work_dir=work_dir)
         self.logger.info("publish node log request run_id=%s node_id=%s runner_id=%s", run_id, node_id, runner_id)
         await self._js().publish(node_log_command_subject(runner_id), encode_model(payload), stream=COMMAND_STREAM)
         try:

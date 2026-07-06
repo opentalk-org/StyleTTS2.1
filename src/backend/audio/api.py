@@ -196,6 +196,7 @@ def segment_response(segment: dict[str, Any]) -> AudioSegmentRead:
         text=str(segment["text"]) if "text" in segment else "",
         phon=str(segment["phon"]) if "phon" in segment else "",
         speaker=_segment_speaker(segment),
+        type_=_segment_type(segment),
     )
 
 
@@ -246,4 +247,18 @@ def _segment_speaker(segment: dict[str, Any]) -> str:
         return str(segment["voice"])
     if "voice_id" in segment and segment["voice_id"] is not None:
         return str(uuid.UUID(str(segment["voice_id"])))
-    return "-"
+    return ""
+
+
+def _segment_type(segment: dict[str, Any]) -> str:
+    if "type_" in segment and segment["type_"]:
+        return str(segment["type_"])
+    if "type" in segment and segment["type"]:
+        return str(segment["type"])
+    metadata = segment.get("metadata")
+    if isinstance(metadata, dict):
+        if metadata.get("type_"):
+            return str(metadata["type_"])
+        if metadata.get("model"):
+            return str(metadata["model"])
+    return "manual"

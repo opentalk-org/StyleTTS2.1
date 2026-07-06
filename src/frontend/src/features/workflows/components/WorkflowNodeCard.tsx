@@ -6,6 +6,8 @@ import { useLoadNodeMutation, useUnloadNodeMutation } from "../query";
 import { useWorkflowStore } from "../store";
 import type { PortAnchorKey, WorkflowNode } from "../types";
 
+type NodeStatusTone = "idle" | "running" | "stopped" | "failed";
+
 export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
   const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
   const loadNode = useLoadNodeMutation();
@@ -28,7 +30,7 @@ export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
   const queued = snapshot?.queue_size ?? 0;
   const left = snapshot?.remaining_items ?? "-";
   const loaded = snapshot?.loaded ? "loaded" : "unloaded";
-  const status = snapshot?.status === "running" ? "running" : snapshot?.status === "failed" ? "failed" : "idle";
+  const status = nodeStatusTone(snapshot?.status);
 
   return (
     <article
@@ -50,12 +52,13 @@ export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
         setDrag({ x: event.clientX, y: event.clientY });
       }}
       onPointerUp={() => setDrag(null)}
-      className={`group pointer-events-auto absolute w-max min-w-[220px] max-w-[420px] cursor-pointer select-none rounded-[9px] border bg-panel text-left shadow-[0_12px_34px_rgba(17,24,39,0.14)] ${active ? "border-amber-500 ring-1 ring-amber-500" : "border-line-2"} ${status === "running" ? "shadow-[0_0_0_2px_rgba(79,209,197,0.45),0_16px_40px_rgba(17,24,39,0.18)]" : ""} ${status === "failed" ? "shadow-[0_0_0_2px_rgba(231,111,81,0.9),0_16px_40px_rgba(17,24,39,0.22)]" : ""}`}
+      className={`group pointer-events-auto absolute w-max min-w-[220px] max-w-[420px] cursor-pointer select-none rounded-[9px] border bg-panel text-left shadow-[0_12px_34px_rgba(17,24,39,0.14)] ${active ? "border-amber-500 ring-1 ring-amber-500" : status === "failed" ? "border-red-500" : status === "stopped" ? "border-amber-400" : "border-line-2"} ${status === "running" ? "shadow-[0_0_0_2px_rgba(79,209,197,0.45),0_16px_40px_rgba(17,24,39,0.18)]" : ""} ${status === "failed" ? "shadow-[0_0_0_2px_rgba(231,111,81,0.9),0_16px_40px_rgba(17,24,39,0.22)]" : ""}`}
       style={{ left: node.x, top: node.y }}
     >
       <div data-node-title className="flex cursor-grab items-center gap-2 border-b border-line px-2.5 py-2 pr-7 active:cursor-grabbing">
         <div className="flex min-w-0 flex-1 items-baseline gap-2">
           <strong className="min-w-0 truncate font-mono text-[12px] text-txt">{node.id}</strong>
+          {status === "failed" ? <span className="flex-none rounded-full bg-red-100 px-1.5 py-0.5 font-mono text-[9px] font-extrabold uppercase text-red-700">failed</span> : null}
           {info.is_input ? <span className="flex-none rounded-full bg-blue-100 px-1.5 py-0.5 font-mono text-[9px] font-extrabold uppercase text-blue-700">input</span> : null}
           <span className="ml-auto min-w-0 truncate font-mono text-[10px] text-txt-mute">{node.type}</span>
         </div>
@@ -126,14 +129,24 @@ export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
           ))}
         </div>
       </div>
+      {status === "failed" && snapshot?.error ? (
+        <div className="border-t border-red-200 bg-red-50 px-2.5 py-1.5 font-mono text-[10px] leading-snug text-red-700">
+          <span className="line-clamp-2 break-words">{snapshot.error}</span>
+        </div>
+      ) : null}
     </article>
   );
 }
 
-function Metric({ label, value, tone, role }: { label: string; value: number | string; tone: string; role: string }) {
-  const color = role === "queue" ? "text-emerald-700" : role === "items" ? "text-blue-700" : tone === "running" ? "text-emerald-700" : tone === "failed" ? "text-red-600" : "text-txt";
+function nodeStatusTone(status: string | undefined): NodeStatusTone {
+  if (status === "running" || status === "failed" || status === "stopped") return status;
+  return "idle";
+}
+
+function Metric({ label, value, tone, role }: { label: string; value: number | string; tone: NodeStatusTone; role: string }) {
+  const color = role === "queue" ? "text-emerald-700" : role === "items" ? "text-blue-700" : tone === "running" ? "text-emerald-700" : tone === "failed" ? "text-red-600" : tone === "stopped" ? "text-amber-700" : "text-txt";
   return (
-    <div className={`grid min-w-0 place-content-center gap-0.5 rounded-md border bg-panel p-1.5 text-center font-mono ${tone === "running" ? "border-emerald-400" : tone === "failed" ? "border-red-400" : "border-line"}`}>
+    <div className={`grid min-w-0 place-content-center gap-0.5 rounded-md border bg-panel p-1.5 text-center font-mono ${tone === "running" ? "border-emerald-400" : tone === "failed" ? "border-red-400" : tone === "stopped" ? "border-amber-400" : "border-line"}`}>
       <strong className={`overflow-hidden text-ellipsis whitespace-nowrap text-[13px] leading-none ${color}`}>{value}</strong>
       <span className="text-[9px] uppercase text-txt-mute">{label}</span>
     </div>
@@ -148,7 +161,7 @@ function Lifecycle({
   onUnload,
 }: {
   loaded: string;
-  status: string;
+  status: NodeStatusTone;
   disabled: boolean;
   onLoad: () => void;
   onUnload: () => void;
@@ -156,7 +169,7 @@ function Lifecycle({
   return (
     <div className="grid grid-cols-2 content-start gap-1">
       <span className={`col-span-2 flex min-h-[22px] items-center justify-center rounded-full px-1.5 text-[10px] font-extrabold leading-tight ${loaded === "loaded" ? "bg-blue-100 text-blue-700" : "bg-panel text-txt-mute"}`}>{loaded}</span>
-      <span className={`col-span-2 flex min-h-[22px] items-center justify-center rounded-full px-1.5 text-[10px] font-extrabold leading-tight ${status === "running" ? "bg-emerald-100 text-emerald-700" : status === "failed" ? "bg-red-100 text-red-700" : "bg-panel text-txt-mute"}`}>{status}</span>
+      <span className={`col-span-2 flex min-h-[22px] items-center justify-center rounded-full px-1.5 text-[10px] font-extrabold leading-tight ${status === "running" ? "bg-emerald-100 text-emerald-700" : status === "failed" ? "bg-red-100 text-red-700" : status === "stopped" ? "bg-amber-100 text-amber-700" : "bg-panel text-txt-mute"}`}>{status}</span>
       <LifecycleButton disabled={disabled} onClick={onLoad}>load</LifecycleButton>
       <LifecycleButton disabled={disabled} onClick={onUnload}>unload</LifecycleButton>
     </div>
@@ -219,7 +232,7 @@ function Socket({
       data-node={nodeId}
       data-port={portName}
       data-kind={kind}
-      className={`h-[14px] w-[14px] flex-none cursor-crosshair rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(17,24,39,0.45),0_1px_3px_rgba(17,24,39,0.25)] transition-transform hover:scale-125 ${kind === "input" ? "ml-1" : "mr-1"}`}
+      className={`h-[14px] w-[14px] flex-none cursor-crosshair rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(17,24,39,0.45),0_1px_3px_rgba(17,24,39,0.25)] transition-transform hover:scale-125 ${kind === "input" ? "-ml-[12px]" : "-mr-[12px]"}`}
       onPointerDown={(event) => {
         event.preventDefault();
         event.stopPropagation();

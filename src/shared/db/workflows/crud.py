@@ -25,3 +25,11 @@ def create_workflow(session: Session, payload: WorkflowCreate) -> Workflow:
     session.commit()
     session.refresh(item)
     return item
+
+
+def delete_workflow(session: Session, workflow_id) -> None:
+    item = session.get(Workflow, workflow_id)
+    if item is None:
+        raise KeyError(f"Workflow not found: {workflow_id}")
+    session.delete(item)
+    session.commit()

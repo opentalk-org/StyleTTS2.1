@@ -44,9 +44,9 @@ def upsert_job(session: Session, payload: JobUpsert) -> Job:
     return item
 
 
-def delete_job(session: Session, run_id: str) -> None:
+def delete_job(session: Session, run_id: str, *, force: bool = False) -> None:
     item = get_job(session, run_id)
-    if item.state in ACTIVE_JOB_STATES:
+    if not force and item.state in ACTIVE_JOB_STATES:
         raise ActiveJobError(f"Stop job before removing it: {run_id}")
     session.execute(delete(NodeLog).where(NodeLog.run_id == run_id))
     session.delete(item)

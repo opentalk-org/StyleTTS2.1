@@ -140,7 +140,7 @@ export const useEditor = create<EditorStore>((set) => ({
   addSeg: () =>
     set((s) => {
       const start = s.playPos;
-      const seg: Segment = { id: `seg_${Date.now()}`, start, end: Math.min(s.dur, start + 2), text: "", phon: "", speaker: s.segs[0]?.speaker ?? "Maya Chen" };
+      const seg: Segment = { id: `seg_${Date.now()}`, start, end: Math.min(s.dur, start + 2), text: "", phon: "", speaker: "", type_: "manual" };
       return { segs: sortSegs([...s.segs, seg]), dirty: true, segSel: seg.id };
     }),
   save: () => set({ dirty: false }),

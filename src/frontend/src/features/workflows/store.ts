@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import type { SchemaValues } from "@/shared/schema-form/types";
 import { connect, deleteNodes, moveNodes, renameNode, runtimeConfigForGraph, zoomViewport } from "./logic";
-import type { PortAnchor, PortAnchorKey, RunSnapshot, RunStatus, Viewport, WireDraft, WorkflowEdge, WorkflowGraph, WorkflowSchema } from "./types";
+import type { PortAnchor, PortAnchorKey, RunSnapshot, RunStatus, Viewport, WireDraft, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowSchema } from "./types";
 
 type WorkflowStore = {
   schema: WorkflowSchema | null;
@@ -19,6 +19,7 @@ type WorkflowStore = {
   portAnchors: Record<PortAnchorKey, PortAnchor>;
   setSchema: (schema: WorkflowSchema) => void;
   setGraph: (graph: WorkflowGraph) => void;
+  patchNode: (nodeId: string, patch: Partial<WorkflowNode>) => void;
   selectNode: (nodeId: string | null, additive?: boolean) => void;
   selectNodes: (nodeIds: string[]) => void;
   deleteSelection: () => void;
@@ -65,6 +66,9 @@ export const useWorkflowStore = create<WorkflowStore>((set) => ({
     wireDraft: null,
     portAnchors: {},
     runtimeConfig: state.schema ? runtimeConfigForGraph(state.schema, graph, state.runtimeConfig) : state.runtimeConfig,
+  })),
+  patchNode: (nodeId, patch) => set((state) => ({
+    graph: { ...state.graph, nodes: state.graph.nodes.map((node) => (node.id === nodeId ? { ...node, ...patch } : node)) },
   })),
   selectNode: (nodeId, additive = false) => set((state) => {
     if (nodeId === null) return { selectedNodeIds: [] };

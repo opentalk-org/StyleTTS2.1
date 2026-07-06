@@ -11,6 +11,7 @@ from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import JSON
+from shared.log_streams import route_output_to_logger
 
 
 class CatalogKey(str, Enum):
@@ -18,6 +19,7 @@ class CatalogKey(str, Enum):
     OFFICIAL_CHECKPOINTS = "official_checkpoints"
     PAPERCUP_MULTILINGUAL_PL_BERT = "papercup_multilingual_pl_bert"
     VOKAN_CHECKPOINT = "vokan_checkpoint"
+    ASR_MODELS = "asr_models"
 
 
 class CatalogDownloadSettings(StrictSettings):
@@ -42,9 +44,15 @@ class CatalogDownloadNode(Node):
         return 0 if self._emitted else 1
 
     async def execute(self, batch, context):
-        assert not self._emitted, f"catalog node already emitted: {self.id}"
+        if self._emitted:
+            raise RuntimeError(f"catalog node already emitted: {self.id}")
         self._emitted = True
-        result = await asyncio.to_thread(run_catalog_task, self.settings.catalog_key.value)
+        self.logger.info(
+            "catalog download requested catalog=%s item=%s",
+            self.settings.catalog_key.value, self.settings.item or "<all>",
+        )
+        result = await asyncio.to_thread(self._run_task)
+        self.logger.info("catalog download resolved catalog=%s", self.settings.catalog_key.value)
         return [
             {
                 "catalog_item": {
@@ -55,3 +63,7 @@ class CatalogDownloadNode(Node):
                 }
             }
         ]
+
+    def _run_task(self):
+        with route_output_to_logger(self.logger):
+            return run_catalog_task(self.settings.catalog_key.value, self.settings.item, logger=self.logger)

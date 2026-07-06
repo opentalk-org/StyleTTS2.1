@@ -4,14 +4,20 @@ import { useNav } from "@/app/navStore";
 import { showToast } from "@/shared/feedback/Toast";
 import { Button } from "@/shared/ui/Button";
 import { Input } from "@/shared/ui/Input";
-import type { StorageSettings, StorageSettingsPayload } from "./api";
-import { useStorageSettingsActions, useStorageSettingsQuery } from "./query";
+import type { IntegrationSettings, IntegrationSettingsPayload, StorageSettings, StorageSettingsPayload } from "./api";
+import {
+  useIntegrationSettingsActions,
+  useIntegrationSettingsQuery,
+  useStorageSettingsActions,
+  useStorageSettingsQuery,
+} from "./query";
 import { SettingsRow } from "./SettingsRow";
 import { SettingsSection } from "./SettingsSection";
 
 type SettingsForm = {
   backendUrl: string;
   storage: StorageSettingsPayload;
+  integration: IntegrationSettingsPayload;
 };
 
 const DEFAULT_STORAGE_FORM: StorageSettingsPayload = {
@@ -22,8 +28,12 @@ const DEFAULT_STORAGE_FORM: StorageSettingsPayload = {
   secret_access_key: "runflow-secret",
 };
 
-function createSettingsForm(backendUrl: string, storage: StorageSettingsPayload): SettingsForm {
-  return { backendUrl, storage };
+const DEFAULT_INTEGRATION_FORM: IntegrationSettingsPayload = {
+  hf_token: "",
+};
+
+function createSettingsForm(backendUrl: string): SettingsForm {
+  return { backendUrl, storage: DEFAULT_STORAGE_FORM, integration: DEFAULT_INTEGRATION_FORM };
 }
 
 function storageFormFromSettings(settings: StorageSettings): StorageSettingsPayload {
@@ -36,6 +46,10 @@ function storageFormFromSettings(settings: StorageSettings): StorageSettingsPayl
   };
 }
 
+function integrationFormFromSettings(settings: IntegrationSettings): IntegrationSettingsPayload {
+  return { hf_token: settings.hf_token };
+}
+
 function storageFormsMatch(first: StorageSettingsPayload, second: StorageSettingsPayload): boolean {
   return first.bucket === second.bucket
     && first.endpoint_url === second.endpoint_url
@@ -44,38 +58,62 @@ function storageFormsMatch(first: StorageSettingsPayload, second: StorageSetting
     && first.secret_access_key === second.secret_access_key;
 }
 
+function integrationFormsMatch(first: IntegrationSettingsPayload, second: IntegrationSettingsPayload): boolean {
+  return first.hf_token === second.hf_token;
+}
+
 function settingsFormsMatch(first: SettingsForm, second: SettingsForm): boolean {
   return first.backendUrl === second.backendUrl
-    && storageFormsMatch(first.storage, second.storage);
+    && storageFormsMatch(first.storage, second.storage)
+    && integrationFormsMatch(first.integration, second.integration);
 }
 
 export function SettingsScreen() {
   const { backendUrl, setBackendUrl } = useNav();
   const storage = useStorageSettingsQuery();
   const updateStorage = useStorageSettingsActions();
-  const initialForm = createSettingsForm(backendUrl, DEFAULT_STORAGE_FORM);
+  const integration = useIntegrationSettingsQuery();
+  const updateIntegration = useIntegrationSettingsActions();
+  const initialForm = createSettingsForm(backendUrl);
   const [form, setForm] = useState<SettingsForm>(initialForm);
   const [savedForm, setSavedForm] = useState<SettingsForm>(initialForm);
 
   useEffect(() => {
     if (!storage.data) return;
     const nextStorageForm = storageFormFromSettings(storage.data);
-    const previousSavedStorage = savedForm.storage;
     setForm((current) => {
-      if (!storageFormsMatch(current.storage, previousSavedStorage)) return current;
+      if (!storageFormsMatch(current.storage, savedForm.storage)) return current;
       return { ...current, storage: nextStorageForm };
     });
     setSavedForm((current) => ({ ...current, storage: nextStorageForm }));
   }, [storage.data]);
 
+  useEffect(() => {
+    if (!integration.data) return;
+    const nextIntegrationForm = integrationFormFromSettings(integration.data);
+    setForm((current) => {
+      if (!integrationFormsMatch(current.integration, savedForm.integration)) return current;
+      return { ...current, integration: nextIntegrationForm };
+    });
+    setSavedForm((current) => ({ ...current, integration: nextIntegrationForm }));
+  }, [integration.data]);
+
   const storageDirty = !storageFormsMatch(form.storage, savedForm.storage);
+  const integrationDirty = !integrationFormsMatch(form.integration, savedForm.integration);
   const dirty = !settingsFormsMatch(form, savedForm);
-  const saving = updateStorage.isPending;
+  const saving = updateStorage.isPending || updateIntegration.isPending;
   const setStorage = (key: keyof StorageSettingsPayload, value: string) => {
     setForm((current) => ({ ...current, storage: { ...current.storage, [key]: value } }));
   };
-  const commitSettings = (submittedForm: SettingsForm, storageForm: StorageSettingsPayload) => {
-    const committedForm = { ...submittedForm, storage: storageForm };
+  const setIntegration = (key: keyof IntegrationSettingsPayload, value: string) => {
+    setForm((current) => ({ ...current, integration: { ...current.integration, [key]: value } }));
+  };
+  const commitSettings = (
+    submittedForm: SettingsForm,
+    storageForm: StorageSettingsPayload,
+    integrationForm: IntegrationSettingsPayload,
+  ) => {
+    const committedForm = { ...submittedForm, storage: storageForm, integration: integrationForm };
     setBackendUrl(committedForm.backendUrl);
     setForm((current) => {
       if (!settingsFormsMatch(current, submittedForm)) return current;
@@ -84,15 +122,18 @@ export function SettingsScreen() {
     setSavedForm(committedForm);
     showToast("Settings saved");
   };
-  const saveSettings = () => {
+  const saveSettings = async () => {
     const submittedForm = form;
-    if (storageDirty) {
-      updateStorage.mutate(submittedForm.storage, {
-        onSuccess: (updatedStorage) => commitSettings(submittedForm, storageFormFromSettings(updatedStorage)),
-      });
+    let storageForm = submittedForm.storage;
+    let integrationForm = submittedForm.integration;
+    try {
+      if (storageDirty) storageForm = storageFormFromSettings(await updateStorage.mutateAsync(submittedForm.storage));
+      if (integrationDirty) integrationForm = integrationFormFromSettings(await updateIntegration.mutateAsync(submittedForm.integration));
+    } catch {
+      showToast("Could not save settings", undefined, "error");
       return;
     }
-    commitSettings(submittedForm, submittedForm.storage);
+    commitSettings(submittedForm, storageForm, integrationForm);
   };
 
   return (
@@ -122,6 +163,19 @@ export function SettingsScreen() {
         </SettingsRow>
         <SettingsRow title="Secret key" desc="Stored for local development; use environment-specific secrets outside dev.">
           <Input filled className="h-9 w-[220px] font-mono" value={form.storage.secret_access_key} onChange={(e) => setStorage("secret_access_key", e.target.value)} />
+        </SettingsRow>
+      </SettingsSection>
+      <SettingsSection title="Hugging Face">
+        <SettingsRow title="Access token" desc="Used to download gated or private models from Hugging Face. Leave blank for public assets.">
+          <Input
+            filled
+            type="password"
+            autoComplete="off"
+            placeholder="hf_…"
+            className="h-9 w-[260px] font-mono"
+            value={form.integration.hf_token}
+            onChange={(e) => setIntegration("hf_token", e.target.value)}
+          />
         </SettingsRow>
       </SettingsSection>
       <div className="sticky bottom-0 -mx-7 mt-3 flex items-center justify-between border-t border-line bg-app/95 px-7 py-4 backdrop-blur">

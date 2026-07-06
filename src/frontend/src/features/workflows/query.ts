@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { showToast } from "@/shared/feedback/Toast";
-import { fetchRunGraph, fetchRuns, fetchRunSnapshot, fetchSavedWorkflows, fetchWorkflowSchema, loadRunNode, saveWorkflow, startGraph, stopRun, unloadRunNode } from "./api";
+import { deleteWorkflow, fetchRunGraph, fetchRuns, fetchRunSnapshot, fetchSavedWorkflows, fetchWorkflowSchema, loadRunNode, saveWorkflow, startGraph, stopRun, unloadRunNode } from "./api";
 
 const STATUS_STALE_MS = 10_000;
 
@@ -29,6 +29,20 @@ export function useSaveWorkflowMutation() {
     onSuccess: (workflow) => {
       showToast(`Saved "${workflow.name}"`);
       queryClient.invalidateQueries({ queryKey: ["workflows"] });
+    },
+  });
+}
+
+export function useDeleteWorkflowMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string; name: string }) => deleteWorkflow(id),
+    onSuccess: (_result, variables) => {
+      showToast(`Deleted "${variables.name}"`, undefined, "error");
+      queryClient.invalidateQueries({ queryKey: ["workflows"] });
+    },
+    onError: (error, variables) => {
+      showToast(`Couldn't delete "${variables.name}"`, error instanceof Error ? error.message : undefined, "error");
     },
   });
 }

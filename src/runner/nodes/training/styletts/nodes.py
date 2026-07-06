@@ -8,7 +8,7 @@ import yaml
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
+from runflow.core.ports import JoinMode, Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.datatypes import ASSET_BUNDLE, CHECKPOINT_REF, JSON, TRAINING_MANIFEST, TRAINING_RESULT
@@ -68,9 +68,9 @@ class BuildStyleTtsFinetuneConfigNode(Node):
     SETTINGS = BuildStyleTtsFinetuneConfigSettings
     INPUTS = {
         "training_manifest": Port("training_manifest", TRAINING_MANIFEST),
-        "base_checkpoint": Port("base_checkpoint", CHECKPOINT_REF),
-        "pretrained_assets": Port("pretrained_assets", ASSET_BUNDLE),
-        "ood_text_sets": Port("ood_text_sets", JSON),
+        "base_checkpoint": Port("base_checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
+        "pretrained_assets": Port("pretrained_assets", ASSET_BUNDLE, join_mode=JoinMode.BROADCAST),
+        "ood_text_sets": Port("ood_text_sets", JSON, join_mode=JoinMode.BROADCAST),
     }
     OUTPUTS = {"training_config": Port("training_config", JSON)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
@@ -96,10 +96,10 @@ class StyleTtsFinetuneNode(Node):
     SETTINGS = StyleTtsFinetuneSettings
     INPUTS = {
         "audio_file_ids": Port("audio_file_ids", JSON),
-        "base_checkpoint": Port("base_checkpoint", CHECKPOINT_REF),
-        "pretrained_assets": Port("pretrained_assets", ASSET_BUNDLE),
-        "phoneme_alphabet": Port("phoneme_alphabet", JSON),
-        "ood_text_sets": Port("ood_text_sets", JSON),
+        "base_checkpoint": Port("base_checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
+        "pretrained_assets": Port("pretrained_assets", ASSET_BUNDLE, join_mode=JoinMode.BROADCAST),
+        "phoneme_alphabet": Port("phoneme_alphabet", JSON, join_mode=JoinMode.BROADCAST),
+        "ood_text_sets": Port("ood_text_sets", JSON, join_mode=JoinMode.BROADCAST),
         "training_config": Port("training_config", JSON),
     }
     OUTPUTS = {"training_result": Port("training_result", TRAINING_RESULT)}

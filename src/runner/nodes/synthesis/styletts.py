@@ -10,7 +10,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
+from runflow.core.ports import JoinMode, Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import AUDIO, CHECKPOINT_REF, JSON, SYNTHESIS_RESULT
@@ -47,7 +47,7 @@ class StyleTtsSynthesisNode(Node):
     CATEGORY = "Synthesis"
     SETTINGS = StyleTtsSynthesisSettings
     INPUTS = {
-        "checkpoint": Port("checkpoint", CHECKPOINT_REF),
+        "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
         "prompt_text": Port("prompt_text", JSON),
         "phonemes": Port("phonemes", JSON),
         "style_reference": Port("style_reference", JSON),
@@ -75,7 +75,7 @@ class StyleTtsSweepSynthesisNode(Node):
     CATEGORY = "Synthesis"
     SETTINGS = StyleTtsSweepSynthesisSettings
     INPUTS = {
-        "checkpoint": Port("checkpoint", CHECKPOINT_REF),
+        "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
         "prompt_text": Port("prompt_text", JSON),
         "phonemes": Port("phonemes", JSON),
         "style_reference_batch": Port("style_reference_batch", JSON),

@@ -3,21 +3,20 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from runner.nodes.assets.model_downloads import single_checkpoint_file
 
-WHISPER_MODEL_NAME = "small"
 
-
-def load_whisper_model(cache_dir: Path) -> Any:
+def load_whisper_model(checkpoint_dir: Path) -> Any:
     try:
         import whisper
     except ImportError as exc:
         raise RuntimeError("openai_whisper_not_installed") from exc
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return whisper.load_model(WHISPER_MODEL_NAME, download_root=str(cache_dir))
+    weights = single_checkpoint_file(checkpoint_dir, (".pt",))
+    return whisper.load_model(str(weights))
 
 
-def transcribe_wav_to_segments(model: Any, wav_path: Path, duration_sec: float) -> list[tuple[float, float, str]]:
-    result = model.transcribe(str(wav_path))
+def transcribe_wav_to_segments(model: Any, wav_path: Path, duration_sec: float, language: str) -> list[tuple[float, float, str]]:
+    result = model.transcribe(str(wav_path), language=_whisper_language(language))
     if not isinstance(result, dict):
         return []
     raw_segments = result.get("segments")
@@ -30,8 +29,8 @@ def transcribe_wav_to_segments(model: Any, wav_path: Path, duration_sec: float) 
     return [(0.0, max(0.0, duration_sec), text)]
 
 
-def transcribe_wav_to_text(model: Any, wav_path: Path) -> str:
-    result = model.transcribe(str(wav_path))
+def transcribe_wav_to_text(model: Any, wav_path: Path, language: str) -> str:
+    result = model.transcribe(str(wav_path), language=_whisper_language(language))
     if not isinstance(result, dict):
         return ""
     return str(result.get("text", "")).strip()
@@ -44,3 +43,8 @@ def _span_from_whisper_segment(item: dict, duration_sec: float) -> tuple[float, 
         start = min(start, duration_sec)
         end = min(max(start, end), duration_sec)
     return start, end, str(item.get("text", "")).strip()
+
+
+def _whisper_language(language: str) -> str | None:
+    value = language.strip().lower()
+    return None if not value or value == "auto" else value

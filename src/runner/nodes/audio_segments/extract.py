@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import wave
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
@@ -12,7 +13,7 @@ from runflow.core.node import Node
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
-from runner.nodes.datatypes import AUDIO, AUDIO_REF, SAVE_RESULT, SEGMENT_GROUP
+from runner.nodes.datatypes import AUDIO, SAVE_RESULT
 from runner.nodes.models import Audio, AudioRecordRef, AudioSegment, SaveResult, SegmentGroup, stable_id
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
@@ -34,7 +35,7 @@ class PersistSplitAudioRecordsSettings(StrictSettings):
 class ExtractSegmentGroupAudioNode(Node):
     NODE_TYPE = "ExtractSegmentGroupAudio"
     CATEGORY = "Audio / Segments"
-    INPUTS = {"segment_group": Port("segment_group", SEGMENT_GROUP)}
+    INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO)}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=8, max_size=32)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
@@ -43,7 +44,8 @@ class ExtractSegmentGroupAudioNode(Node):
         outputs = []
         with database_session() as session:
             for inputs in batch:
-                group: SegmentGroup = inputs["segment_group"]
+                audio: Audio = inputs["audio"]
+                group = _group_from_audio(audio)
                 source_id = _group_source_audio_id(group)
                 item = audio_crud.get_audio_file(session, source_id)
                 data = audio_crud.read_audio_file(session, source_id)
@@ -58,8 +60,7 @@ class PersistSplitAudioRecordsNode(Node):
     SETTINGS = PersistSplitAudioRecordsSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {
-        "audio_ref": Port("audio_ref", AUDIO_REF),
-        "segment_group": Port("segment_group", SEGMENT_GROUP),
+        "audio": Port("audio", AUDIO),
         "save_result": Port("save_result", SAVE_RESULT),
     }
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=8, max_size=32)
@@ -70,6 +71,7 @@ class PersistSplitAudioRecordsNode(Node):
         with database_session() as session:
             for inputs in batch:
                 audio: Audio = inputs["audio"]
+                assert audio.data is not None, f"audio bytes are required: {audio.id}"
                 source_group_id = str(audio.metadata["source_group_id"])
                 payload = AudioCreate(
                     name=audio.name,
@@ -84,12 +86,26 @@ class PersistSplitAudioRecordsNode(Node):
                 _attach_datasets(session, item.id, self.settings)
                 _replace_source_records(session, audio, self.settings)
                 saved_group = _saved_segment_group(item, audio, segments)
+                saved_audio = replace(
+                    audio,
+                    audio_file_id=item.id,
+                    name=item.name,
+                    id=stable_id("audio", item.id, item.name),
+                    lineage_id=stable_id("audio_ref", item.id),
+                    segments=saved_group.segments,
+                    metadata=item.metadata_,
+                    byte_length=item.byte_length,
+                    virtual=item.virtual,
+                )
                 outputs.append({
-                    "audio_ref": _audio_ref(item),
-                    "segment_group": saved_group,
+                    "audio": saved_audio,
                     "save_result": _save_result(item, audio.lineage_id, source_group_id, len(segments)),
                 })
         return outputs
+
+
+def _group_from_audio(audio: Audio) -> SegmentGroup:
+    return SegmentGroup(audio.name, audio.segments, stable_id("segment_group", audio.id, *(segment.id for segment in audio.segments)), audio.lineage_id, audio.metadata)
 
 
 def extract_group_audio(audio: Audio, group: SegmentGroup) -> Audio:
@@ -141,8 +157,10 @@ def adjusted_segment_payloads(group: SegmentGroup) -> list[dict[str, Any]]:
             "phon": segment.phon,
             "speaker": segment.speaker or "",
             "voice_id": str(segment.voice_id) if segment.voice_id is not None else None,
+            "type_": str(segment.metadata.get("type_", segment.metadata.get("model", "manual"))),
             "metadata": {
                 **segment.metadata,
+                "type_": str(segment.metadata.get("type_", segment.metadata.get("model", "manual"))),
                 "source_audio_id": str(segment.source_audio_id),
                 "source_segment_id": segment.segment_id or segment.id,
                 "source_segment_lineage_id": segment.lineage_id,
