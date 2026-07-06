@@ -11,6 +11,9 @@ from runner.nodes.audio_processing import (
     SortformerDiarizationNode,
     VadDetectNode,
 )
+from runner.nodes.statistics.aggregate import AggregateDatasetStatisticsNode
+from runner.nodes.statistics.audio_features import AnalyzeAudioFeaturesNode
+from runner.nodes.statistics.writeback import SaveStatisticsEntryNode
 from runner.nodes.audio_enhancement.denoise import DeepFilterNetDenoiseNode
 from runner.nodes.audio_enhancement.normalize import NormalizeLoudnessNode
 from runner.nodes.audio_segments.extract import ExtractSegmentGroupAudioNode, PersistSplitAudioRecordsNode
@@ -81,7 +84,10 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         CutAudioBySpeakersNode,
         DeepFilterNetDenoiseNode,
         NormalizeLoudnessNode,
+        AnalyzeAudioFeaturesNode,
         CalculateAudioStatsNode,
+        AggregateDatasetStatisticsNode,
+        SaveStatisticsEntryNode,
         PlanSegmentGroupsNode,
         ExtractSegmentGroupAudioNode,
         PersistSplitAudioRecordsNode,

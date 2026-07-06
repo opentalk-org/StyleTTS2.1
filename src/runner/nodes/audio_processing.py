@@ -10,6 +10,7 @@ from runner.nodes.audio_enhancement.denoise import DeepFilterNetDenoiseNode, Dee
 from runner.nodes.audio_enhancement.normalize import NormalizeLoudnessNode, NormalizeSettings
 from runner.nodes.datatypes import AUDIO, JSON
 from runner.nodes.models import Audio, stable_id
+from runner.nodes.statistics.audio_features import AnalyzeAudioFeaturesNode, AudioFeatureSettings, analyze_audio_features
 
 
 class VadSettings(StrictSettings):
@@ -21,11 +22,6 @@ class VadSettings(StrictSettings):
 
 class CutAudioSettings(StrictSettings):
     fade_ms: int = Field(default=0, ge=0, le=100)
-
-
-class StatisticsSettings(StrictSettings):
-    histogram_bins: int = Field(default=50, ge=10, le=200)
-    silence_threshold_db: float = Field(default=-40.0, ge=-80.0, le=0.0)
 
 
 class VadDetectNode(Node):
@@ -87,15 +83,15 @@ class CutAudioBySpeakersNode(Node):
 class CalculateAudioStatsNode(Node):
     NODE_TYPE = "CalculateAudioStats"
     CATEGORY = "Audio / Statistics"
-    SETTINGS = StatisticsSettings
+    SETTINGS = AudioFeatureSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"stats": Port("stats", JSON)}
+    BATCH_POLICY = AnalyzeAudioFeaturesNode.BATCH_POLICY
 
     async def execute(self, batch, context):
         outputs = []
         for inputs in batch:
             audio = inputs["audio"]
             assert isinstance(audio, Audio), f"unsupported audio input: {type(audio).__name__}"
-            byte_length = len(audio.data)
-            outputs.append({"stats": {"duration": audio.duration, "bytes": byte_length}})
+            outputs.append({"stats": analyze_audio_features(audio, self.settings.silence_threshold_db, self.settings.hop_length)})
         return outputs
