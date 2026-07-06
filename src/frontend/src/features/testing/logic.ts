@@ -5,6 +5,7 @@ import type { Option } from "@/shared/ui/Select";
 import type { AudioFile } from "../audio/api";
 import type { Checkpoint } from "../checkpoints/api";
 import type { Voice } from "../voices/api";
+import { typeAccepts } from "../workflows/logic";
 import type { WorkflowGraph, WorkflowNode, WorkflowSchema } from "../workflows/types";
 import type { TestingWorkflowSpec } from "./workflows";
 
@@ -47,6 +48,7 @@ const ALPHABET_LABELS: Record<string, string> = {
 
 export function createTestingGraph(schema: WorkflowSchema, spec: TestingWorkflowSpec): WorkflowGraph {
   assertTestingNodes(schema, spec);
+  assertTestingEdges(schema, spec);
   return {
     nodes: spec.nodes.map((node) => {
       const info = schema.nodes[node.type];
@@ -179,6 +181,22 @@ export function assertTestingNodes(schema: WorkflowSchema, spec: TestingWorkflow
   const missing = spec.nodes.map((node) => node.type).filter((type) => !schema.nodes[type]);
   if (missing.length > 0) {
     throw new Error(`Testing workflow nodes are not registered: ${missing.join(", ")}`);
+  }
+}
+
+function assertTestingEdges(schema: WorkflowSchema, spec: TestingWorkflowSpec) {
+  const nodes = new Map(spec.nodes.map((node) => [node.id, node.type]));
+  for (const edge of spec.edges) {
+    const sourceType = nodes.get(edge.source_node);
+    const targetType = nodes.get(edge.target_node);
+    if (!sourceType || !targetType) throw new Error(`Testing workflow edge references unknown node: ${JSON.stringify(edge)}`);
+    const source = schema.nodes[sourceType];
+    const target = schema.nodes[targetType];
+    if (!source || !target) throw new Error(`Testing workflow edge references unregistered node type: ${JSON.stringify(edge)}`);
+    const sourcePort = source.outputs[edge.source_port];
+    const targetPort = target.inputs[edge.target_port];
+    if (!sourcePort || !targetPort) throw new Error(`Testing workflow edge references unknown port: ${JSON.stringify(edge)}`);
+    if (!typeAccepts(schema, targetPort.type, sourcePort.type)) throw new Error(`Testing workflow edge has incompatible types: ${JSON.stringify(edge)}`);
   }
 }
 

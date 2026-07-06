@@ -12,6 +12,7 @@ export type TestingNodeIds = {
   phonemizer: string;
   styleRef?: string;
   synthesis?: string;
+  saveAudio?: string;
   styleSweep?: string;
   sweepSynthesis?: string;
 };
@@ -33,6 +34,7 @@ const SINGLE_NODES = [
   { id: "prefetch_checkpoint", type: "PrefetchCheckpoint", x: 330, y: 580 },
   { id: "style_ref", type: "SelectStyleReference", x: 64, y: 780 },
   { id: "synthesis", type: "StyleTtsSynthesis", x: 640, y: 480 },
+  { id: "save_audio", type: "SaveAudioRecord", x: 910, y: 480 },
 ];
 
 const SINGLE_EDGES: WorkflowEdge[] = [
@@ -47,6 +49,7 @@ const SINGLE_EDGES: WorkflowEdge[] = [
   { source_node: "prompt", source_port: "prompt_text", target_node: "synthesis", target_port: "prompt_text" },
   { source_node: "phonemizer", source_port: "phonemes", target_node: "synthesis", target_port: "phonemes" },
   { source_node: "style_ref", source_port: "style_reference", target_node: "synthesis", target_port: "style_reference" },
+  { source_node: "synthesis", source_port: "audio", target_node: "save_audio", target_port: "audio" },
 ];
 
 const SWEEP_NODES = [
@@ -58,6 +61,7 @@ const SWEEP_NODES = [
   { id: "prefetch_checkpoint", type: "PrefetchCheckpoint", x: 330, y: 500 },
   { id: "style_sweep", type: "StyleReferenceSweep", x: 64, y: 680 },
   { id: "sweep_synthesis", type: "StyleTtsSweepSynthesis", x: 640, y: 420 },
+  { id: "save_audio", type: "SaveAudioRecord", x: 910, y: 420 },
 ];
 
 const SWEEP_EDGES: WorkflowEdge[] = [
@@ -72,6 +76,7 @@ const SWEEP_EDGES: WorkflowEdge[] = [
   { source_node: "prompt", source_port: "prompt_text", target_node: "sweep_synthesis", target_port: "prompt_text" },
   { source_node: "phonemizer", source_port: "phonemes", target_node: "sweep_synthesis", target_port: "phonemes" },
   { source_node: "style_sweep", source_port: "style_reference_batch", target_node: "sweep_synthesis", target_port: "style_reference_batch" },
+  { source_node: "sweep_synthesis", source_port: "audio", target_node: "save_audio", target_port: "audio" },
 ];
 
 export const TESTING_WORKFLOWS: Record<TestingMode, TestingWorkflowSpec> = {
@@ -88,6 +93,7 @@ export const TESTING_WORKFLOWS: Record<TestingMode, TestingWorkflowSpec> = {
       phonemizer: "phonemizer",
       styleRef: "style_ref",
       synthesis: "synthesis",
+      saveAudio: "save_audio",
     },
   },
   sweep: {
@@ -103,6 +109,7 @@ export const TESTING_WORKFLOWS: Record<TestingMode, TestingWorkflowSpec> = {
       phonemizer: "phonemizer",
       styleSweep: "style_sweep",
       sweepSynthesis: "sweep_synthesis",
+      saveAudio: "save_audio",
     },
   },
 };

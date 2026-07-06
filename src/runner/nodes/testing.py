@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any
+from uuid import UUID
 
 from pydantic import Field
 
@@ -10,7 +11,7 @@ from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import JSON
-from runner.nodes.synthesis.style_reference import compatibility_style_reference
+from runner.nodes.synthesis.style_reference import audio_file_style_reference, compatibility_style_reference
 from runner.nodes.text_processing import PhonemizeSettings
 
 
@@ -82,13 +83,11 @@ class SelectStyleReferenceNode(MockTestingInputNode):
     OUTPUTS = {"style_reference": Port("style_reference", JSON)}
 
     async def execute(self, batch, context):
+        if not self.settings.reference_id:
+            raise ValueError("SelectStyleReference requires reference_id")
         return [
             {
-                "style_reference": compatibility_style_reference(
-                    self.settings.reference_id,
-                    self.settings.style_mix,
-                    self.settings.prosody_mix,
-                )
+                "style_reference": _selected_style_reference(self.settings.reference_id, self.settings.style_mix, self.settings.prosody_mix)
             }
             for inputs in batch
         ]
@@ -101,6 +100,8 @@ class StyleReferenceSweepNode(MockTestingInputNode):
     OUTPUTS = {"style_reference_batch": Port("style_reference_batch", JSON)}
 
     async def execute(self, batch, context):
+        if self.settings.voices:
+            raise ValueError("StyleReferenceSweep requires resolved style reference audio ids; voice ids are not style references")
         return [
             {
                 "style_reference_batch": {
@@ -150,6 +151,14 @@ def testing_phoneme_payload(prompt_text: dict[str, Any], phoneme_alphabet: dict[
         "alphabet": phoneme_alphabet,
         "source": "testing_placeholder",
     }
+
+
+def _selected_style_reference(reference_id: str, style_mix: float, prosody_mix: float) -> dict[str, object]:
+    try:
+        payload = audio_file_style_reference(UUID(reference_id))
+    except ValueError:
+        return compatibility_style_reference(reference_id, style_mix, prosody_mix)
+    return {**payload, "style_mix": style_mix, "prosody_mix": prosody_mix}
 
 
 def _prompt_setting(prompt_text: dict[str, Any], name: str) -> str:

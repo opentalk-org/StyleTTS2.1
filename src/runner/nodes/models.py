@@ -56,6 +56,7 @@ class AudioSegment:
     lineage_id: str
     segment_id: str | None = None
     speaker: str | None = None
+    voice_id: UUID | None = None
     confidence: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 

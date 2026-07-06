@@ -140,6 +140,7 @@ def adjusted_segment_payloads(group: SegmentGroup) -> list[dict[str, Any]]:
             "text": segment.text,
             "phon": segment.phon,
             "speaker": segment.speaker or "",
+            "voice_id": str(segment.voice_id) if segment.voice_id is not None else None,
             "metadata": {
                 **segment.metadata,
                 "source_audio_id": str(segment.source_audio_id),
@@ -275,6 +276,7 @@ def _segment_from_payload(ref: AudioRecordRef, payload: dict[str, Any]) -> Audio
         lineage_id=stable_id("segment_lineage", ref.audio_file_id, segment_id),
         segment_id=segment_id,
         speaker=str(payload["speaker"]) if "speaker" in payload else None,
+        voice_id=UUID(str(payload["voice_id"])) if payload.get("voice_id") else None,
         metadata=metadata,
     )
 
@@ -287,6 +289,8 @@ def _metadata_segment_payloads(audio: Audio) -> list[dict[str, Any]]:
     payloads = audio.metadata["split_segment_payloads"]
     assert isinstance(payloads, list), f"split segment payloads are required: {audio.id}"
     return payloads
+
+
 
 
 def _save_result(item: AudioFile, lineage_id: str, source_group_id: str, segment_count: int) -> SaveResult:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from runflow.core.node import Node
 from runflow.core.ports import Port
@@ -197,6 +198,7 @@ def _audio_segment_from_dict(ref: AudioRecordRef, segment: dict[str, Any]) -> Au
         lineage_id=stable_id("segment_lineage", ref.audio_file_id, segment_id),
         segment_id=segment_id,
         speaker=speaker,
+        voice_id=_optional_uuid(segment["voice_id"]) if "voice_id" in segment else None,
         metadata=metadata,
     )
 
@@ -209,6 +211,7 @@ def _segment_dict(segment: AudioSegment) -> dict[str, Any]:
         "text": segment.text,
         "phon": segment.phon,
         "speaker": segment.speaker or "",
+        "voice_id": str(segment.voice_id) if segment.voice_id is not None else None,
         "metadata": segment.metadata,
     }
 
@@ -220,6 +223,12 @@ def _assert_group_target(ref: AudioRecordRef, group: SegmentGroup) -> None:
 
 def _segment_entry_id(segment: AudioSegment) -> str:
     return segment.segment_id or segment.id
+
+
+def _optional_uuid(value: object) -> UUID | None:
+    if value is None or value == "":
+        return None
+    return UUID(str(value))
 
 
 def _segment_writeback_output(segment: AudioSegment, kind: str) -> dict[str, AudioSegment | SaveResult]:

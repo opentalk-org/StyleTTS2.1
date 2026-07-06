@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from uuid import UUID
 
 from pydantic import Field
 
@@ -12,6 +13,9 @@ from runner.nodes.assets.checkpoints import checkpoint_ref_or_stub, prefetch_che
 from runner.nodes.assets.training_assets import prefetch_training_assets, training_assets_ref_or_stub
 from runner.nodes.datatypes import JSON
 from runner.nodes.training_config import ASSET_BUNDLE_OR_JSON, CHECKPOINT_REF_OR_JSON
+from shared.db import database_session
+from shared.db.common import one
+from shared.db.datasets.models import Dataset
 
 
 class AlphabetPreset(str, Enum):
@@ -94,6 +98,22 @@ class SelectTrainingDatasetNode(MockTrainingInputNode):
     OUTPUT_FIELD = "dataset_ref"
     OUTPUTS = {"dataset_ref": Port("dataset_ref", JSON)}
 
+    async def execute(self, batch, context):
+        if not self.settings.dataset_id:
+            raise ValueError("SelectTrainingDataset requires dataset_id")
+        dataset_id = UUID(self.settings.dataset_id)
+        return [
+            {
+                "dataset_ref": {
+                    "dataset_id": str(dataset_id),
+                    "node_type": self.NODE_TYPE,
+                    "run": inputs["run"],
+                    "source": "workflow_settings",
+                }
+            }
+            for inputs in batch
+        ]
+
 
 class SelectCheckpointNode(MockTrainingInputNode):
     NODE_TYPE = "SelectCheckpoint"
@@ -167,7 +187,24 @@ class ListDatasetAudioIdsNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [{"audio_file_ids": {"source": inputs["dataset_ref"], "include_virtual": self.settings.include_virtual, "ids": []}} for inputs in batch]
+        outputs = []
+        with database_session() as session:
+            for inputs in batch:
+                dataset_ref = inputs["dataset_ref"]
+                dataset_id = UUID(str(dataset_ref["dataset_id"]))
+                dataset = one(session, Dataset, dataset_id)
+                ids = [str(item.id) for item in dataset.audio_files if self.settings.include_virtual or not item.virtual]
+                if not ids:
+                    raise ValueError(f"training dataset has no audio files: {dataset_id}")
+                outputs.append({
+                    "audio_file_ids": {
+                        "source": dataset_ref,
+                        "dataset_id": str(dataset_id),
+                        "include_virtual": self.settings.include_virtual,
+                        "ids": ids,
+                    }
+                })
+        return outputs
 
 
 class PrefetchCheckpointNode(Node):
