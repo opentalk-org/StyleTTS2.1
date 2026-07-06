@@ -13,6 +13,8 @@ from runner.nodes.audio_processing import (
 )
 from runner.nodes.audio_enhancement.denoise import DeepFilterNetDenoiseNode
 from runner.nodes.audio_enhancement.normalize import NormalizeLoudnessNode
+from runner.nodes.audio_segments.extract import ExtractSegmentGroupAudioNode, PersistSplitAudioRecordsNode
+from runner.nodes.audio_segments.grouping import PlanSegmentGroupsNode
 from runner.nodes.audio_segments.writeback import (
     LoadAudioSegmentsNode,
     SaveAudioRecordNode,
@@ -80,6 +82,9 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         DeepFilterNetDenoiseNode,
         NormalizeLoudnessNode,
         CalculateAudioStatsNode,
+        PlanSegmentGroupsNode,
+        ExtractSegmentGroupAudioNode,
+        PersistSplitAudioRecordsNode,
         AddAudioToDatasetNode,
         RemoveAudioFromDatasetNode,
         AssignVoiceNode,
