@@ -21,10 +21,11 @@ from runner.nodes.audio_segments.writeback import (
     UpdateSegmentPhonemesNode,
     UpdateSegmentTextNode,
 )
+from runner.nodes.audio_segments.transcripts import ApplyTranscriptToSegmentsNode, TranscriptToSegmentsNode
 from runner.nodes.audio_sources import AllAudioSourceNode, DatasetAudioSourceNode, SelectedAudioSourceNode
 from runner.nodes.dataset_writeback import AddAudioToDatasetNode, AssignVoiceNode, DeleteAudioRecordsNode, RemoveAudioFromDatasetNode
 from runner.nodes.datatypes import register_runner_types
-from runner.nodes.text_processing import PhonemizeTranscriptNode
+from runner.nodes.text_processing import PhonemizeSegmentsNode, PhonemizeTranscriptNode
 from runner.nodes.testing import (
     SelectStyleReferenceNode,
     StyleReferenceSweepNode,
@@ -68,7 +69,10 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         WhisperTranscribeNode,
         CanaryTranscribeNode,
         ParakeetTranscribeNode,
+        TranscriptToSegmentsNode,
+        ApplyTranscriptToSegmentsNode,
         PhonemizeTranscriptNode,
+        PhonemizeSegmentsNode,
         VadDetectNode,
         CutAudioBySegmentsNode,
         SortformerDiarizationNode,

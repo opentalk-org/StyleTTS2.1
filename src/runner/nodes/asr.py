@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 
 from runflow.core.node import Node
@@ -13,6 +15,9 @@ from runner.nodes.models import Audio, Transcript, stable_id
 class TranscribeSettings(StrictSettings):
     language: str = "auto"
     batch_size: int = Field(default=16, ge=1, le=128)
+    scope: Literal["full", "segments"] = "full"
+    segment_mode: Literal["replace", "add"] = "replace"
+    segment_batch_size: int = Field(default=16, ge=1, le=128)
 
 
 class TranscribeNode(Node):
@@ -31,6 +36,7 @@ class TranscribeNode(Node):
             await context.report_progress(self.id, index, len(batch), f"{self.MODEL_NAME} transcribed {index}/{len(batch)}")
             assert isinstance(audio, Audio), f"unsupported audio input: {type(audio).__name__}"
             transcript_id = stable_id("transcript", self.MODEL_NAME, audio.audio_file_id, audio.id)
+            segment_id = stable_id("transcript_segment", transcript_id, audio.start, audio.end, 0)
             text = f"[{self.MODEL_NAME}] transcript for {audio.audio_file_id}"
             transcript = Transcript(
                 text=text,
@@ -41,8 +47,23 @@ class TranscribeNode(Node):
                 speaker=getattr(audio, "speaker", None),
                 id=transcript_id,
                 lineage_id=stable_id("lineage", self.MODEL_NAME, audio.audio_file_id),
-                segments=[{"start": audio.start, "end": audio.end, "text": text}],
-                metadata={**audio.metadata, "language": self.settings.language},
+                segments=[{
+                    "id": segment_id,
+                    "start": audio.start,
+                    "end": audio.end,
+                    "text": text,
+                    "phon": "",
+                    "speaker": getattr(audio, "speaker", None) or "",
+                }],
+                metadata={
+                    **audio.metadata,
+                    "language": self.settings.language,
+                    "sample_rate": audio.sample_rate,
+                    "channels": audio.channels,
+                    "scope": self.settings.scope,
+                    "segment_mode": self.settings.segment_mode,
+                    "segment_batch_size": self.settings.segment_batch_size,
+                },
             )
             outputs.append({"transcript": transcript})
         return outputs
