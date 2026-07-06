@@ -16,7 +16,7 @@ from shared.db.assets import crud as asset_crud
 F0_SUFFIXES = frozenset({".t7", ".pth", ".pt", ".ckpt"})
 ASR_CONFIG_SUFFIXES = frozenset({".yml", ".yaml"})
 ASR_WEIGHT_SUFFIXES = frozenset({".pth", ".pt", ".ckpt"})
-DATA_DIR = Path(__file__).resolve().parents[2] / "training" / "styletts" / "data"
+DATA_DIR = Path(__file__).resolve().parents[2] / "training" / "styletts" / "finetune" / "data"
 
 
 @dataclass(frozen=True)

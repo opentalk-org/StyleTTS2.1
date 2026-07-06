@@ -7,8 +7,6 @@ from runner.nodes.audio_io import LoadAudioNode, SaveAudioArtifactNode, SaveTran
 from runner.nodes.audio_processing import (
     CalculateAudioStatsNode,
     CutAudioBySegmentsNode,
-    CutAudioBySpeakersNode,
-    SortformerDiarizationNode,
     VadDetectNode,
 )
 from runner.nodes.statistics.aggregate import AggregateDatasetStatisticsNode
@@ -43,7 +41,7 @@ from runner.nodes.testing import (
     TestingRunInputNode,
     TestingTextPromptNode,
 )
-from runner.nodes.training_inputs import (
+from runner.nodes.training.common.inputs import (
     ListDatasetAudioIdsNode,
     PhonemeAlphabetNode,
     PrefetchCheckpointNode,
@@ -55,9 +53,10 @@ from runner.nodes.training_inputs import (
     SelectTrainingDatasetNode,
     TrainingRunInputNode,
 )
-from runner.nodes.training_config import BuildStyleTtsFinetuneConfigNode
-from runner.nodes.training_execution import AsrModelTrainingNode, F0ModelTrainingNode, StyleTtsFinetuneNode
-from runner.nodes.training_manifest import TRAINING_SEGMENT_INPUT, BuildTrainingManifestNode
+from runner.nodes.training.asr import AsrModelTrainingNode
+from runner.nodes.training.common.manifest import TRAINING_SEGMENT_INPUT, BuildTrainingManifestNode
+from runner.nodes.training.f0 import F0ModelTrainingNode
+from runner.nodes.training.styletts import BuildStyleTtsFinetuneConfigNode, StyleTtsFinetuneNode
 
 
 def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
@@ -82,8 +81,6 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         PhonemizeSegmentsNode,
         VadDetectNode,
         CutAudioBySegmentsNode,
-        SortformerDiarizationNode,
-        CutAudioBySpeakersNode,
         DeepFilterNetDenoiseNode,
         NormalizeLoudnessNode,
         AnalyzeAudioFeaturesNode,

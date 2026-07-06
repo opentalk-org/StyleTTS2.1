@@ -47,5 +47,4 @@ class ExtraFileSpec:
 @dataclass(frozen=True)
 class CatalogTask:
     key: str
-    fetch_failed_fallback: str
     run: Callable[[], dict]

@@ -10,7 +10,7 @@ from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runner.nodes.datatypes import SEGMENT_GROUP, TRANSCRIPT
 from runner.nodes.models import AudioSegment, SegmentGroup, Transcript, stable_id
-from runner.nodes.text_runtime.phonemize import DEFAULT_PUNCTUATION_MARKS, phonemize_texts
+from runner.nodes.text.runtime.phonemize import DEFAULT_PUNCTUATION_MARKS, phonemize_texts
 
 
 class PhonemizeSettings(StrictSettings):

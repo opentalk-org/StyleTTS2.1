@@ -7,12 +7,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from runner.nodes.text_runtime.symbols import TextCleaner
+from runner.nodes.text.runtime.symbols import TextCleaner
 
 
 MEL_MEAN = -4.0
 MEL_STD = 4.0
-TRAINING_ROOT = Path(__file__).resolve().parents[2] / "training" / "styletts" / "training"
+TRAINING_ROOT = Path(__file__).resolve().parents[2] / "training" / "styletts" / "finetune" / "training"
 MEL: Any | None = None
 
 

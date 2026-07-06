@@ -11,9 +11,9 @@ from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import JSON
-from runner.nodes.synthesis.style_reference import audio_file_style_reference, compatibility_style_reference
+from runner.nodes.synthesis.style_reference import audio_file_style_reference
 from runner.nodes.text_processing import PhonemizeSettings
-from runner.nodes.text_runtime.phonemize import phonemize_text
+from runner.nodes.text.runtime.phonemize import phonemize_text
 
 
 class TestingLanguage(str, Enum):
@@ -35,7 +35,7 @@ class SelectStyleReferenceSettings(StrictSettings):
 
 
 class StyleReferenceSweepSettings(StrictSettings):
-    voices: list[str] = Field(default_factory=list, title="Voices")
+    voices: list[UUID] = Field(default_factory=list, title="Style references")
     samples_per_voice: int = Field(default=2, title="Samples per voice", ge=1, le=5)
 
 
@@ -60,7 +60,7 @@ class TestingRunInputNode(Node):
         return [{"run": {"node_type": self.NODE_TYPE, "source": "workflow"}}]
 
 
-class MockTestingInputNode(Node):
+class TestingInputPayloadNode(Node):
     CATEGORY = "Testing / Inputs"
     INPUTS = {"run": Port("run", JSON)}
     OUTPUT_FIELD = "input"
@@ -70,14 +70,14 @@ class MockTestingInputNode(Node):
         return [{self.OUTPUT_FIELD: {"node_type": self.NODE_TYPE, "run": inputs["run"], "settings": self.params}} for inputs in batch]
 
 
-class TestingTextPromptNode(MockTestingInputNode):
+class TestingTextPromptNode(TestingInputPayloadNode):
     NODE_TYPE = "TestingTextPrompt"
     SETTINGS = TestingTextPromptSettings
     OUTPUT_FIELD = "prompt_text"
     OUTPUTS = {"prompt_text": Port("prompt_text", JSON)}
 
 
-class SelectStyleReferenceNode(MockTestingInputNode):
+class SelectStyleReferenceNode(TestingInputPayloadNode):
     NODE_TYPE = "SelectStyleReference"
     SETTINGS = SelectStyleReferenceSettings
     OUTPUT_FIELD = "style_reference"
@@ -94,21 +94,21 @@ class SelectStyleReferenceNode(MockTestingInputNode):
         ]
 
 
-class StyleReferenceSweepNode(MockTestingInputNode):
+class StyleReferenceSweepNode(TestingInputPayloadNode):
     NODE_TYPE = "StyleReferenceSweep"
     SETTINGS = StyleReferenceSweepSettings
     OUTPUT_FIELD = "style_reference_batch"
     OUTPUTS = {"style_reference_batch": Port("style_reference_batch", JSON)}
 
     async def execute(self, batch, context):
-        if self.settings.voices:
-            raise ValueError("StyleReferenceSweep requires resolved style reference audio ids; voice ids are not style references")
+        if not self.settings.voices:
+            raise ValueError("StyleReferenceSweep requires at least one style reference audio id")
         return [
             {
                 "style_reference_batch": {
                     "kind": "style_reference_batch",
                     "references": [
-                        compatibility_style_reference(reference_id, 0.7, 0.5)
+                        audio_file_style_reference(reference_id)
                         for reference_id in self.settings.voices
                     ],
                     "samples_per_voice": self.settings.samples_per_voice,
@@ -155,10 +155,7 @@ def testing_phoneme_payload(prompt_text: dict[str, Any], phoneme_alphabet: dict[
 
 
 def _selected_style_reference(reference_id: str, style_mix: float, prosody_mix: float) -> dict[str, object]:
-    try:
-        payload = audio_file_style_reference(UUID(reference_id))
-    except ValueError:
-        return compatibility_style_reference(reference_id, style_mix, prosody_mix)
+    payload = audio_file_style_reference(UUID(reference_id))
     return {**payload, "style_mix": style_mix, "prosody_mix": prosody_mix}
 
 

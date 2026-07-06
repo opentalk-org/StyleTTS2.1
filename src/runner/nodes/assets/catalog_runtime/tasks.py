@@ -9,25 +9,10 @@ from runner.nodes.assets.catalog_runtime.types import CatalogTask
 from runner.nodes.assets.catalog_runtime.validation import styletts_checkpoint_metadata
 
 
-KNOWN_ERROR_PREFIXES = ("styletts2_", "styletts_official_", "multilingual_pl_bert_", "vokan_")
-
-
-def normalize_catalog_value_error(message: str, fallback: str) -> str:
-    if any(message.startswith(prefix) for prefix in KNOWN_ERROR_PREFIXES):
-        return message
-    return fallback
-
-
 def run_catalog_task(key: str) -> dict[str, Any]:
     if key not in CATALOG_DOWNLOAD_TASKS:
         raise ValueError("styletts2_download_task_unknown")
-    task = CATALOG_DOWNLOAD_TASKS[key]
-    try:
-        return task.run()
-    except ValueError as exc:
-        raise ValueError(normalize_catalog_value_error(str(exc), task.fetch_failed_fallback)) from exc
-    except Exception as exc:
-        raise ValueError(task.fetch_failed_fallback) from exc
+    return CATALOG_DOWNLOAD_TASKS[key].run()
 
 
 def bootstrap_styletts2_utils_assets() -> dict[str, Any]:
@@ -66,23 +51,18 @@ def bootstrap_vokan_styletts2_checkpoint() -> dict[str, Any]:
 CATALOG_DOWNLOAD_TASKS: dict[str, CatalogTask] = {
     "styletts2_utils": CatalogTask(
         key="styletts2_utils",
-        fetch_failed_fallback="styletts2_utils_fetch_failed",
         run=bootstrap_styletts2_utils_assets,
     ),
     "official_checkpoints": CatalogTask(
         key="official_checkpoints",
-        fetch_failed_fallback="styletts_official_checkpoints_fetch_failed",
         run=bootstrap_official_styletts2_checkpoints,
     ),
     "papercup_multilingual_pl_bert": CatalogTask(
         key="papercup_multilingual_pl_bert",
-        fetch_failed_fallback="multilingual_pl_bert_fetch_failed",
         run=bootstrap_papercup_multilingual_pl_bert,
     ),
     "vokan_checkpoint": CatalogTask(
         key="vokan_checkpoint",
-        fetch_failed_fallback="vokan_checkpoint_fetch_failed",
         run=bootstrap_vokan_styletts2_checkpoint,
     ),
 }
-

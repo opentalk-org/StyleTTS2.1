@@ -11,7 +11,7 @@ export POSTGRES_DB="${POSTGRES_DB:-runflow}"
 export POSTGRES_USER="${POSTGRES_USER:-runflow}"
 export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-runflow}"
 export BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
-export BACKEND_PORT="${BACKEND_PORT:-8000}"
+export BACKEND_PORT="${BACKEND_PORT:-8001}"
 export VITE_BACKEND_URL="${VITE_BACKEND_URL:-http://$BACKEND_HOST:$BACKEND_PORT}"
 export FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 export FRONTEND_PORT="${FRONTEND_PORT:-5173}"
@@ -34,7 +34,7 @@ export RUNFLOW_S3_REGION="${RUNFLOW_S3_REGION:-$AWS_REGION}"
 export RUNFLOW_S3_ACCESS_KEY_ID="${RUNFLOW_S3_ACCESS_KEY_ID:-$RUSTFS_ACCESS_KEY}"
 export RUNFLOW_S3_SECRET_ACCESS_KEY="${RUNFLOW_S3_SECRET_ACCESS_KEY:-$RUSTFS_SECRET_KEY}"
 export RUNFLOW_PGBOUNCER_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGBOUNCER_PORT/$POSTGRES_DB"
-export PYTHONPATH="$PWD/src:${PYTHONPATH:-}"
+export PYTHONPATH="$PWD/src"
 
 case "$PGDATA" in
   /*) ;;
@@ -50,7 +50,40 @@ pgbouncer_dir="$PWD/.data/pgbouncer"
 pgbouncer_config="$pgbouncer_dir/pgbouncer.ini"
 pgbouncer_userlist="$pgbouncer_dir/userlist.txt"
 
+if [ "$(id -u)" = "0" ]; then
+  runflow_dev_user="${RUNFLOW_DEV_USER:-user}"
+  if ! id "$runflow_dev_user" >/dev/null 2>&1; then
+    echo "runflow-dev cannot run PostgreSQL as root, and RUNFLOW_DEV_USER '$runflow_dev_user' does not exist" >&2
+    exit 1
+  fi
+
+  mkdir -p "$NATS_DATA" "$RUSTFS_DATA" "$PGDATA" "$PGHOST" "$pgbouncer_dir"
+  chown -R "$runflow_dev_user" "$PWD/.data"
+  if [ -d "$PWD/src/frontend/node_modules" ]; then
+    chown -R "$runflow_dev_user" "$PWD/src/frontend/node_modules"
+  fi
+  if [ -d "$PWD/.venv" ]; then
+    chown -R "$runflow_dev_user" "$PWD/.venv"
+  fi
+
+  echo "runflow-dev cannot run PostgreSQL as root; re-executing as $runflow_dev_user"
+  exec runuser -u "$runflow_dev_user" -- "$0" "$@"
+fi
+
 mkdir -p "$NATS_DATA" "$RUSTFS_DATA" "$PGDATA" "$PGHOST" "$pgbouncer_dir"
+
+if [ ! -f uv.lock ]; then
+  echo "uv.lock is missing; run uv lock before starting runflow-dev" >&2
+  exit 1
+fi
+
+if [ ! -x .venv/bin/python ] || [ pyproject.toml -nt .venv ] || [ uv.lock -nt .venv ]; then
+  echo "Syncing Python environment from uv.lock"
+  uv sync --frozen
+fi
+
+# shellcheck disable=SC1091
+. .venv/bin/activate
 
 pid_postgres=""
 pid_pgbouncer=""

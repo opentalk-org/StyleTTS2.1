@@ -25,9 +25,6 @@ def download_url_to_file(url: str, dest: Path, *, error_prefix: str) -> None:
     except OSError as exc:
         partial.unlink(missing_ok=True)
         raise ValueError(f"{error_prefix}_io_failed") from exc
-    except Exception as exc:
-        partial.unlink(missing_ok=True)
-        raise ValueError(error_prefix) from exc
 
 
 def download_url_bytes(url: str, *, error_prefix: str) -> bytes:
@@ -39,6 +36,3 @@ def download_url_bytes(url: str, *, error_prefix: str) -> bytes:
         raise ValueError(f"{error_prefix}_http_{exc.code}") from exc
     except OSError as exc:
         raise ValueError(f"{error_prefix}_io_failed") from exc
-    except Exception as exc:
-        raise ValueError(error_prefix) from exc
-

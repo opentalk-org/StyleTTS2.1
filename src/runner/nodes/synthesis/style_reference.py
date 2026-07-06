@@ -88,17 +88,6 @@ def wav_base64_style_reference(wav_base64: str) -> dict[str, object]:
     }
 
 
-def compatibility_style_reference(reference_id: str, style_mix: float, prosody_mix: float) -> dict[str, object]:
-    return {
-        "kind": "unresolved",
-        "reference_id": reference_id,
-        "style_mix": style_mix,
-        "prosody_mix": prosody_mix,
-        "metadata": {},
-        "id": stable_id("style_reference", "unresolved", reference_id, style_mix, prosody_mix),
-    }
-
-
 def decode_wav_base64(wav_base64: str) -> bytes:
     try:
         wav_bytes = base64.b64decode(wav_base64, validate=True)

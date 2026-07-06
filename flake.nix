@@ -1,6 +1,17 @@
 {
   description = "Runflow Studio single-image runtime with backend, runner, NATS JetStream, PgBouncer, and PostgreSQL";
 
+  nixConfig = {
+    substituters = [
+      "https://cache.nixos.org"
+      "https://cache.nixos-cuda.org"
+    ];
+    trusted-public-keys = [
+      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+      "cache.nixos-cuda.org:74DUi4Ye579gUqzH4ziL9IyiJBlDpMRn9MBN8oNan9M="
+    ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
   };
@@ -17,45 +28,76 @@
 
       forAllDevSystems = nixpkgs.lib.genAttrs devSystems;
 
+      importPkgs = system: import nixpkgs {
+        inherit system;
+        config.allowUnfree = true;
+      };
+
       mkRustfs = pkgs: import ./nix/rustfs-package.nix { inherit pkgs; };
 
-      runflowDependencies = ps: [
-        ps.pydantic
-      ];
+      mkPythonRuntime = pkgs:
+        let
+          cudaNvcc = pkgs.cudaPackages.cuda_nvcc;
+          nvidiaDriverDirs = [
+            "/usr/local/nvidia/lib"
+            "/usr/local/nvidia/lib64"
+          ];
+          nvidiaDriverPath = pkgs.lib.concatStringsSep ":" nvidiaDriverDirs;
+          runtimeLibs = [
+            pkgs.stdenv.cc.cc.lib
+            pkgs.zlib
+            pkgs.glibc
+          ];
+        in
+        {
+          python = pkgs.python312;
+          inherit runtimeLibs;
+          runtimeExecutableDeps = [
+            pkgs.ffmpeg-headless
+            pkgs.gcc
+            pkgs.openssl
+            pkgs.patchelf
+            cudaNvcc
+          ];
+          env = {
+            CC = "${pkgs.gcc}/bin/gcc";
+            SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+            PYTHONUNBUFFERED = "1";
+            TRITON_PTXAS_PATH = "${cudaNvcc}/bin/ptxas";
+            TRITON_PTXAS_BLACKWELL_PATH = "${cudaNvcc}/bin/ptxas";
+            TRITON_LIBCUDA_PATH = "/usr/local/nvidia/lib";
+            LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib:${nvidiaDriverPath}";
+            LIBRARY_PATH = nvidiaDriverPath;
+          };
+        };
 
-      backendDependencies = ps:
-        runflowDependencies ps ++ [
-          ps.boto3
-          ps.fastapi
-          ps."nats-py"
-          ps.psycopg
-          ps."python-multipart"
-          ps.sqlalchemy
-          ps.uvicorn
-          ps.websockets
-        ];
-
-      runnerDependencies = ps:
-        runflowDependencies ps ++ [
-          ps."nats-py"
-        ];
+      pythonEnvExports = pythonRuntime: ''
+        export CC="${pythonRuntime.env.CC}"
+        export SSL_CERT_FILE="${pythonRuntime.env.SSL_CERT_FILE}"
+        export PYTHONUNBUFFERED="${pythonRuntime.env.PYTHONUNBUFFERED}"
+        export TRITON_PTXAS_PATH="${pythonRuntime.env.TRITON_PTXAS_PATH}"
+        export TRITON_PTXAS_BLACKWELL_PATH="${pythonRuntime.env.TRITON_PTXAS_BLACKWELL_PATH}"
+        export TRITON_LIBCUDA_PATH="${pythonRuntime.env.TRITON_LIBCUDA_PATH}"
+        unset NIX_CFLAGS_COMPILE CFLAGS CXXFLAGS
+        export LD_LIBRARY_PATH="${pythonRuntime.env.LD_LIBRARY_PATH}"
+        export LIBRARY_PATH="${pythonRuntime.env.LIBRARY_PATH}"
+        export UV_PYTHON="${pythonRuntime.python}/bin/python${pythonRuntime.python.pythonVersion}"
+        export UV_PYTHON_PREFERENCE="only-system"
+        export UV_PYTHON_DOWNLOADS="never"
+      '';
 
       mkFrontendStatic = pkgs: import ./nix/frontend-static.nix { inherit pkgs; };
 
       mkDevShell = system:
         let
-          pkgs = import nixpkgs { inherit system; };
-          python = pkgs.python312;
-          backendEnv = python.withPackages backendDependencies;
-          runnerEnv = python.withPackages runnerDependencies;
-          runflowEnv = python.withPackages runflowDependencies;
+          pkgs = importPkgs system;
+          pythonRuntime = mkPythonRuntime pkgs;
           rustfs = mkRustfs pkgs;
+          pythonTools = [ pkgs.uv pythonRuntime.python ] ++ pythonRuntime.runtimeExecutableDeps;
           runflowDev = pkgs.writeShellApplication {
             name = "runflow-dev";
             runtimeInputs = [
               pkgs.awscli2
-              backendEnv
-              runnerEnv
               pkgs.bash
               pkgs.coreutils
               pkgs.gnugrep
@@ -64,8 +106,8 @@
               pkgs.pgbouncer
               pkgs.postgresql_16
               rustfs
-            ];
-            text = builtins.readFile ./nix/runflow-dev.sh;
+            ] ++ pythonTools;
+            text = (pythonEnvExports pythonRuntime) + builtins.readFile ./nix/runflow-dev.sh;
           };
           frontendDev = pkgs.writeShellApplication {
             name = "runflow-frontend-dev";
@@ -76,16 +118,13 @@
           };
           runnerLaunch = pkgs.writeShellApplication {
             name = "runflow-runner-launch";
-            runtimeInputs = [ runnerEnv ];
-            text = builtins.readFile ./nix/runner-launch.sh;
+            runtimeInputs = pythonTools;
+            text = (pythonEnvExports pythonRuntime) + builtins.readFile ./nix/runner-launch.sh;
           };
         in
         pkgs.mkShell {
           packages = [
             pkgs.awscli2
-            backendEnv
-            runnerEnv
-            runflowEnv
             runflowDev
             frontendDev
             runnerLaunch
@@ -93,48 +132,54 @@
             pkgs.nodejs_22
             pkgs.pgbouncer
             pkgs.postgresql_16
+            pkgs.uv
+            pythonRuntime.python
             rustfs
-          ];
+          ] ++ pythonRuntime.runtimeExecutableDeps ++ pythonRuntime.runtimeLibs;
 
-          shellHook = ''
-            export PYTHONPATH="$PWD/src:''${PYTHONPATH:-}"
+          shellHook = (pythonEnvExports pythonRuntime) + ''
+            export PYTHONPATH="$PWD/src"
+
+            if [ -e .venv/bin/activate ]; then
+              . .venv/bin/activate
+            else
+              echo "no .venv yet - run: uv sync --frozen"
+            fi
           '';
         };
 
-      pkgs = import nixpkgs { system = imageSystem; };
-      python = pkgs.python312;
-      runflowEnv = python.withPackages runflowDependencies;
-      backendEnv = python.withPackages backendDependencies;
-      runnerEnv = python.withPackages runnerDependencies;
+      pkgs = importPkgs imageSystem;
+      pythonRuntime = mkPythonRuntime pkgs;
+      pythonTools = [ pkgs.uv pythonRuntime.python ] ++ pythonRuntime.runtimeExecutableDeps;
       frontendStatic = mkFrontendStatic pkgs;
       rustfs = mkRustfs pkgs;
 
       runflowBackend = pkgs.writeShellApplication {
         name = "runflow-backend";
-        runtimeInputs = [ backendEnv ];
-        text = ''
+        runtimeInputs = pythonTools;
+        text = (pythonEnvExports pythonRuntime) + ''
           cd ${./.}
-          export PYTHONPATH="${./src}:''${PYTHONPATH:-}"
+          export PYTHONPATH="${./src}"
           export RUNFLOW_UI_STATIC_DIR="${frontendStatic}"
-          exec uvicorn backend.api:app --host 0.0.0.0 --port "''${BACKEND_PORT:-8000}"
+          exec uv run --frozen uvicorn backend.api:app --host 0.0.0.0 --port "''${BACKEND_PORT:-8000}"
         '';
       };
 
       runflowRunner = pkgs.writeShellApplication {
         name = "runflow-runner";
-        runtimeInputs = [ runnerEnv ];
-        text = ''
+        runtimeInputs = pythonTools;
+        text = (pythonEnvExports pythonRuntime) + ''
           cd ${./.}
-          export PYTHONPATH="${./src}:''${PYTHONPATH:-}"
-          exec python -m runner.cli \
+          export PYTHONPATH="${./src}"
+          exec uv run --frozen python -m runner.cli \
             --runner-id "''${RUNNER_ID:-runner-1}" \
             --nats-url "''${NATS_URL:-nats://127.0.0.1:4222}"
         '';
       };
       runnerLaunch = pkgs.writeShellApplication {
         name = "runflow-runner-launch";
-        runtimeInputs = [ runnerEnv ];
-        text = builtins.readFile ./nix/runner-launch.sh;
+        runtimeInputs = pythonTools;
+        text = (pythonEnvExports pythonRuntime) + builtins.readFile ./nix/runner-launch.sh;
       };
 
       entrypoint = pkgs.writeShellApplication {
@@ -152,7 +197,7 @@
           runflowBackend
           runflowRunner
           runnerLaunch
-        ];
+        ] ++ pythonTools;
         text = builtins.readFile ./nix/entrypoint.sh;
       };
     in
@@ -163,7 +208,7 @@
 
       packages = forAllDevSystems (system:
         let
-          pkgsForSystem = import nixpkgs { inherit system; };
+          pkgsForSystem = importPkgs system;
           rustfsForSystem = mkRustfs pkgsForSystem;
         in
         {
@@ -177,65 +222,64 @@
           inherit rustfs;
 
           image = pkgs.dockerTools.buildLayeredImage {
-          name = "runflow-studio-single-image";
-          tag = "latest";
+            name = "runflow-studio-single-image";
+            tag = "latest";
 
-          contents = [
-            pkgs.bash
-            pkgs.cacert
-            pkgs.coreutils
-            pkgs.nats-server
-            pkgs.pgbouncer
-            pkgs.postgresql_16
-            rustfs
-            runflowEnv
-            frontendStatic
-            runflowBackend
-            runflowRunner
-            entrypoint
-          ];
+            contents = [
+              pkgs.bash
+              pkgs.cacert
+              pkgs.coreutils
+              pkgs.nats-server
+              pkgs.pgbouncer
+              pkgs.postgresql_16
+              rustfs
+              frontendStatic
+              runflowBackend
+              runflowRunner
+              entrypoint
+            ] ++ pythonRuntime.runtimeExecutableDeps ++ pythonRuntime.runtimeLibs;
 
-          config = {
-            Cmd = [ "${entrypoint}/bin/runflow-entrypoint" ];
+            config = {
+              Cmd = [ "${entrypoint}/bin/runflow-entrypoint" ];
 
-            ExposedPorts = {
-              "8000/tcp" = {};
-              "9000/tcp" = {};
-              "9001/tcp" = {};
-              "4222/tcp" = {};
-              "6432/tcp" = {};
+              ExposedPorts = {
+                "8000/tcp" = {};
+                "9000/tcp" = {};
+                "9001/tcp" = {};
+                "4222/tcp" = {};
+                "6432/tcp" = {};
+              };
+
+              Env = [
+                "PGDATA=/data/postgres"
+                "PGHOST=/tmp/postgres"
+                "PGPORT=5432"
+                "PGBOUNCER_PORT=6432"
+                "POSTGRES_DB=runflow"
+                "POSTGRES_USER=runflow"
+                "POSTGRES_PASSWORD=runflow"
+                "NATS_DATA=/data/nats"
+                "NATS_URL=nats://127.0.0.1:4222"
+                "RUSTFS_DATA=/data/rustfs"
+                "RUSTFS_VOLUMES=/data/rustfs"
+                "RUSTFS_ADDRESS=0.0.0.0:9000"
+                "RUSTFS_CONSOLE_ENABLE=true"
+                "RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001"
+                "RUSTFS_ACCESS_KEY=runflow"
+                "RUSTFS_SECRET_KEY=runflow-secret"
+                "RUSTFS_BUCKET=runflow"
+                "AWS_ACCESS_KEY_ID=runflow"
+                "AWS_SECRET_ACCESS_KEY=runflow-secret"
+                "AWS_REGION=us-east-1"
+                "AWS_ENDPOINT_URL=http://127.0.0.1:9000"
+                "BACKEND_PORT=8000"
+                "RUNNER_ID=runner-1"
+              ];
+
+              Volumes = {
+                "/data" = {};
+              };
             };
-
-            Env = [
-              "PGDATA=/data/postgres"
-              "PGHOST=/tmp/postgres"
-              "PGPORT=5432"
-              "PGBOUNCER_PORT=6432"
-              "POSTGRES_DB=runflow"
-              "POSTGRES_USER=runflow"
-              "POSTGRES_PASSWORD=runflow"
-              "NATS_DATA=/data/nats"
-              "NATS_URL=nats://127.0.0.1:4222"
-              "RUSTFS_DATA=/data/rustfs"
-              "RUSTFS_VOLUMES=/data/rustfs"
-              "RUSTFS_ADDRESS=0.0.0.0:9000"
-              "RUSTFS_CONSOLE_ENABLE=true"
-              "RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001"
-              "RUSTFS_ACCESS_KEY=runflow"
-              "RUSTFS_SECRET_KEY=runflow-secret"
-              "RUSTFS_BUCKET=runflow"
-              "AWS_ACCESS_KEY_ID=runflow"
-              "AWS_SECRET_ACCESS_KEY=runflow-secret"
-              "AWS_REGION=us-east-1"
-              "AWS_ENDPOINT_URL=http://127.0.0.1:9000"
-              "BACKEND_PORT=8000"
-              "RUNNER_ID=runner-1"
-            ];
-
-            Volumes = {
-              "/data" = {};
-            };
-          };
           };
 
           default = image;

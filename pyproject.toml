@@ -20,6 +20,7 @@ dependencies = [
     "munch>=4.0",
     "nemo-toolkit[asr]>=2.0",
     "nats-py>=2.10",
+    "numba>=0.60",
     "openai-whisper>=20240930",
     "pandas>=2.2",
     "phonemizer>=3.3",
@@ -30,11 +31,21 @@ dependencies = [
     "python-multipart>=0.0.20",
     "soundfile>=0.12",
     "sqlalchemy>=2.0",
+    "torch>=2.3",
     "torchaudio>=2.3",
     "tqdm>=4.66",
     "transformers>=4.45",
     "uvicorn[standard]>=0.30",
 ]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux'" }]
+torchaudio = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
 [tool.setuptools]
 package-dir = {"" = "src"}
