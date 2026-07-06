@@ -12,7 +12,9 @@ class SegmentCreate(BaseModel):
     start: float
     end: float
     text: str
-    voice_id: UUID | None
+    phon: str
+    speaker: str
+    voice_id: UUID | None = None
     metadata: dict[str, Any]
 
 
@@ -20,7 +22,9 @@ class SegmentUpdate(BaseModel):
     start: float
     end: float
     text: str
-    voice_id: UUID | None
+    phon: str
+    speaker: str
+    voice_id: UUID | None = None
     metadata: dict[str, Any]
 
 
@@ -52,7 +56,7 @@ class AudioCreate(BaseModel):
     segments: list[dict[str, Any]]
     metadata: dict[str, Any]
     virtual: bool
-    waveform: WaveformInput
+    waveform: WaveformInput | None = None
 
 
 class AudioUpdate(BaseModel):

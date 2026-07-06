@@ -4,6 +4,7 @@ import type { Option } from "@/shared/ui/Select";
 import type { FileAsset } from "../assets/api";
 import type { Checkpoint } from "../checkpoints/api";
 import type { Dataset } from "../datasets/api";
+import { typeAccepts } from "../workflows/logic";
 import type { WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowSchema } from "../workflows/types";
 import type { TrainTab } from "./store";
 
@@ -134,6 +135,7 @@ export const TRAINING_OPTIONS: Option[] = Object.values(TRAINING_WORKFLOWS).map(
 
 export function createTrainingGraph(schema: WorkflowSchema, spec: TrainingWorkflowSpec): WorkflowGraph {
   assertTrainingNodes(schema, spec);
+  assertTrainingEdges(schema, spec);
   return {
     nodes: spec.nodes.map((node) => {
       const info = schema.nodes[node.type];
@@ -168,6 +170,22 @@ export function assertTrainingNodes(schema: WorkflowSchema, spec: TrainingWorkfl
   const missing = spec.nodes.map((node) => node.type).filter((type) => !schema.nodes[type]);
   if (missing.length > 0) {
     throw new Error(`Training workflow nodes are not registered: ${missing.join(", ")}`);
+  }
+}
+
+function assertTrainingEdges(schema: WorkflowSchema, spec: TrainingWorkflowSpec) {
+  const nodes = new Map(spec.nodes.map((node) => [node.id, node.type]));
+  for (const edge of spec.edges) {
+    const sourceType = nodes.get(edge.source_node);
+    const targetType = nodes.get(edge.target_node);
+    if (!sourceType || !targetType) throw new Error(`Training workflow edge references unknown node: ${JSON.stringify(edge)}`);
+    const source = schema.nodes[sourceType];
+    const target = schema.nodes[targetType];
+    if (!source || !target) throw new Error(`Training workflow edge references unregistered node type: ${JSON.stringify(edge)}`);
+    const sourcePort = source.outputs[edge.source_port];
+    const targetPort = target.inputs[edge.target_port];
+    if (!sourcePort || !targetPort) throw new Error(`Training workflow edge references unknown port: ${JSON.stringify(edge)}`);
+    if (!typeAccepts(schema, targetPort.type, sourcePort.type)) throw new Error(`Training workflow edge has incompatible types: ${JSON.stringify(edge)}`);
   }
 }
 

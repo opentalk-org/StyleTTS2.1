@@ -17,6 +17,7 @@
 - Keep each file under 300 lines and each folder under 16 files.
 - Do not add audio-specific behavior to `src/runflow`.
 - Do not bypass shared CRUD facades for PostgreSQL or bucket-backed audio/assets.
+- Keep segment behavior compatible with the current v2 backend: `AudioFile.segments` is a JSON list, multiple entries may share the same `start`/`end`, and each segment entry carries one text/phoneme pair. Represent multiple text/phoneme pairs at one range as multiple segment entries, not as nested pairs on one segment.
 - Current dirty files were present before this plan; record `git status --short` before execution and do not overwrite unrelated changes.
 
 ## File Structure Plan
@@ -63,7 +64,8 @@
 - Create: `src/runner/nodes/assets/__init__.py`
 
 - [ ] Run `git status --short` and record unrelated dirty files in the task notes.
-- [ ] Add dataclasses for `AudioSegment`, `SegmentGroup`, `CheckpointRef`, `AssetBundleRef`, `TrainingManifest`, `TrainingResult`, `SynthesisRequest`, and `SynthesisResult`.
+- [ ] Add dataclasses for `AudioSegment`, `SegmentGroup`, `CheckpointRef`, `AssetBundleRef`, `TrainingManifest`, `TrainingResult`, and `SynthesisResult`; defer `SynthesisRequest` until a node needs a request port.
+- [ ] Model `AudioSegment` with an optional persisted backend `segment_id` distinct from runtime packet `id`, because segment identity must not be derived from `source_audio_id`, `start`, and `end`.
 - [ ] Register new datatypes: `AUDIO_SEGMENT`, `SEGMENT_GROUP`, `CHECKPOINT_REF`, `ASSET_BUNDLE`, `TRAINING_MANIFEST`, `TRAINING_RESULT`, `SYNTHESIS_RESULT`.
 - [ ] Keep the existing `AUDIO_REF`, `AUDIO`, `TRANSCRIPT`, and `SAVE_RESULT` names stable.
 - [ ] Run `python -m compileall src/runner src/runflow`.
@@ -95,6 +97,7 @@ Expected: command exits 0 and prints node/type counts.
 
 - [ ] Move or wrap segment CRUD operations from `audio/crud.py` into `segments_crud.py`: create segment, replace all segments, update segment text, update segment phonemes, delete segment.
 - [ ] Keep `audio/crud.py` public calls working by importing wrappers from `segments_crud.py` if current backend routes still use them.
+- [ ] Preserve stacked segment semantics: CRUD helpers must update by segment entry `id`, and replace/create operations must allow multiple entries with identical `start` and `end`.
 - [ ] Add `SaveAudioRecordNode` for creating a new packed audio file through `shared.db.audio.crud.create_audio_file`.
 - [ ] Add `UpdateAudioRecordBytesNode` for in-place audio byte replacement through `shared.db.audio.crud.update_audio_file`.
 - [ ] Add `LoadAudioSegmentsNode`, `SaveAudioSegmentsNode`, `UpdateSegmentTextNode`, and `UpdateSegmentPhonemesNode`.
@@ -115,6 +118,7 @@ Expected: command exits 0 and prints node/type counts.
 - [ ] Implement `ApplyTranscriptToSegmentsNode` for existing-segment replace/add behavior without directly writing to DB.
 - [ ] Implement real `PhonemizeTranscriptNode` output fields for phonemes instead of metadata-only annotation.
 - [ ] Add `PhonemizeSegmentsNode` for segment streams with `fill|replace`, language, tie, punctuation, worker, and thread settings.
+- [ ] Keep phoneme output one-to-one with segment entries; if a workflow needs alternative phonemizations for the same time range, emit multiple `AudioSegment` values with the same range.
 - [ ] Keep model internals stubbed only where dependencies are unavailable, but preserve output shape and lineage.
 - [ ] Run `python -m compileall src/runner src/runflow`.
 - [ ] Smoke a small inline graph with `SelectedAudioSource -> LoadAudio -> WhisperTranscribe -> TranscriptToSegments`; expected failure is only missing DB data if no audio IDs are supplied.

@@ -1,25 +1,21 @@
 from __future__ import annotations
 
 from enum import Enum
+from uuid import UUID
 
 from pydantic import Field
 
 from runflow.core.node import Node
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
-from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
+from runflow.policies import ResourcePolicy
+from runner.nodes.assets.checkpoints import checkpoint_ref_or_stub, prefetch_checkpoint_ref
+from runner.nodes.assets.training_assets import prefetch_training_assets, training_assets_ref_or_stub
 from runner.nodes.datatypes import JSON
-
-
-class NumericPrecision(str, Enum):
-    FP32 = "fp32"
-    FP16 = "fp16"
-    BF16 = "bf16"
-
-
-class DecoderBackend(str, Enum):
-    HIFIGAN = "hifigan"
-    ISTFTNET = "istftnet"
+from runner.nodes.training_config import ASSET_BUNDLE_OR_JSON, CHECKPOINT_REF_OR_JSON
+from shared.db import database_session
+from shared.db.common import one
+from shared.db.datasets.models import Dataset
 
 
 class AlphabetPreset(str, Enum):
@@ -65,43 +61,6 @@ class ListDatasetAudioIdsSettings(StrictSettings):
     include_virtual: bool = False
 
 
-class StyleTtsFinetuneSettings(StrictSettings):
-    display_name: str = Field(default="styletts_finetune", title="Display name")
-    validation_samples: int = Field(default=32, title="Validation samples", ge=0, le=512)
-    batch_size: int = Field(default=16, title="Batch size", ge=1, le=128)
-    learning_rate: float = Field(default=1e-4, title="Learning rate", gt=0)
-    numeric_precision: NumericPrecision = Field(default=NumericPrecision.BF16, title="Numeric precision")
-    clip_total: float = Field(default=5.0, title="Total", gt=0)
-    clip_diffusion: float = Field(default=1.0, title="Diffusion", gt=0)
-    clip_slm: float = Field(default=0.5, title="SLM", gt=0)
-    epochs_base: int = Field(default=30, title="Epochs · base", ge=0)
-    epochs_diffusion: int = Field(default=15, title="Epochs · diffusion", ge=0)
-    epochs_joint: int = Field(default=5, title="Epochs · joint", ge=0)
-    max_sequence_seconds: float = Field(default=8.0, title="Max sequence (sec)", ge=1, le=30)
-    save_interval_epochs: int = Field(default=5, title="Save interval (epochs)", ge=1)
-    decoder: DecoderBackend = Field(default=DecoderBackend.HIFIGAN, title="Decoder")
-    slm_weight: float = Field(default=0.2, title="SLM weight", ge=0)
-    diffusion_samples: int = Field(default=3, title="Diffusion samples", ge=1)
-    slm_scale: float = Field(default=0.01, title="Scale", ge=0)
-    multispeaker: bool = Field(default=True, title="Multi-speaker mode")
-    checkpoint_each_stage: bool = Field(default=True, title="Checkpoint each stage")
-    mixed_precision: bool = Field(default=False, title="Mixed precision")
-
-
-class F0TrainingSettings(StrictSettings):
-    display_name: str = Field(default="f0_v2", title="Display name")
-    validation_samples: int = Field(default=32, title="Validation samples", ge=0, le=512)
-    batch_size: int = Field(default=32, title="Batch size", ge=1, le=256)
-    learning_rate: float = Field(default=5e-4, title="Learning rate", gt=0)
-    epochs: int = Field(default=100, title="Epochs", ge=1)
-    save_interval_epochs: int = Field(default=10, title="Save interval (epochs)", ge=1)
-
-
-class AsrTrainingSettings(F0TrainingSettings):
-    display_name: str = Field(default="asr_v2", title="Display name")
-    dataloader_workers: int = Field(default=8, title="Dataloader workers", ge=0, le=64)
-
-
 class TrainingRunInputNode(Node):
     NODE_TYPE = "TrainingRunInput"
     CATEGORY = "Training / Inputs"
@@ -139,20 +98,56 @@ class SelectTrainingDatasetNode(MockTrainingInputNode):
     OUTPUT_FIELD = "dataset_ref"
     OUTPUTS = {"dataset_ref": Port("dataset_ref", JSON)}
 
+    async def execute(self, batch, context):
+        if not self.settings.dataset_id:
+            raise ValueError("SelectTrainingDataset requires dataset_id")
+        dataset_id = UUID(self.settings.dataset_id)
+        return [
+            {
+                "dataset_ref": {
+                    "dataset_id": str(dataset_id),
+                    "node_type": self.NODE_TYPE,
+                    "run": inputs["run"],
+                    "source": "workflow_settings",
+                }
+            }
+            for inputs in batch
+        ]
+
 
 class SelectCheckpointNode(MockTrainingInputNode):
     NODE_TYPE = "SelectCheckpoint"
     CATEGORY = "Assets / Inputs"
     SETTINGS = SelectCheckpointSettings
     OUTPUT_FIELD = "checkpoint_ref"
-    OUTPUTS = {"checkpoint_ref": Port("checkpoint_ref", JSON)}
+    OUTPUTS = {"checkpoint_ref": Port("checkpoint_ref", CHECKPOINT_REF_OR_JSON)}
+
+    async def execute(self, batch, context):
+        return [
+            {"checkpoint_ref": checkpoint_ref_or_stub(self.NODE_TYPE, inputs["run"], self.settings.checkpoint_id)}
+            for inputs in batch
+        ]
 
 
 class SelectTrainingAssetsNode(MockTrainingInputNode):
     NODE_TYPE = "SelectTrainingAssets"
     SETTINGS = SelectTrainingAssetsSettings
     OUTPUT_FIELD = "asset_refs"
-    OUTPUTS = {"asset_refs": Port("asset_refs", JSON)}
+    OUTPUTS = {"asset_refs": Port("asset_refs", ASSET_BUNDLE_OR_JSON)}
+
+    async def execute(self, batch, context):
+        return [
+            {
+                "asset_refs": training_assets_ref_or_stub(
+                    self.NODE_TYPE,
+                    inputs["run"],
+                    self.settings.f0_model,
+                    self.settings.asr_model,
+                    self.settings.plbert_model,
+                )
+            }
+            for inputs in batch
+        ]
 
 
 class PhonemeAlphabetNode(MockTrainingInputNode):
@@ -161,6 +156,19 @@ class PhonemeAlphabetNode(MockTrainingInputNode):
     SETTINGS = PhonemeAlphabetSettings
     OUTPUT_FIELD = "phoneme_alphabet"
     OUTPUTS = {"phoneme_alphabet": Port("phoneme_alphabet", JSON)}
+
+    async def execute(self, batch, context):
+        return [
+            {
+                "phoneme_alphabet": {
+                    "preset": self.settings.preset.value,
+                    "symbols": self.settings.symbols,
+                    "symbol_list": [symbol for symbol in self.settings.symbols.split(" ") if symbol],
+                    "source": {"node_type": self.NODE_TYPE, "run": inputs["run"]},
+                }
+            }
+            for inputs in batch
+        ]
 
 
 class SelectOodTextSetsNode(MockTrainingInputNode):
@@ -179,29 +187,46 @@ class ListDatasetAudioIdsNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [{"audio_file_ids": {"source": inputs["dataset_ref"], "include_virtual": self.settings.include_virtual, "ids": []}} for inputs in batch]
+        outputs = []
+        with database_session() as session:
+            for inputs in batch:
+                dataset_ref = inputs["dataset_ref"]
+                dataset_id = UUID(str(dataset_ref["dataset_id"]))
+                dataset = one(session, Dataset, dataset_id)
+                ids = [str(item.id) for item in dataset.audio_files if self.settings.include_virtual or not item.virtual]
+                if not ids:
+                    raise ValueError(f"training dataset has no audio files: {dataset_id}")
+                outputs.append({
+                    "audio_file_ids": {
+                        "source": dataset_ref,
+                        "dataset_id": str(dataset_id),
+                        "include_virtual": self.settings.include_virtual,
+                        "ids": ids,
+                    }
+                })
+        return outputs
 
 
 class PrefetchCheckpointNode(Node):
     NODE_TYPE = "PrefetchCheckpoint"
     CATEGORY = "Assets"
-    INPUTS = {"checkpoint_ref": Port("checkpoint_ref", JSON)}
-    OUTPUTS = {"checkpoint": Port("checkpoint", JSON)}
+    INPUTS = {"checkpoint_ref": Port("checkpoint_ref", CHECKPOINT_REF_OR_JSON)}
+    OUTPUTS = {"checkpoint": Port("checkpoint", CHECKPOINT_REF_OR_JSON)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [{"checkpoint": {"source": inputs["checkpoint_ref"], "cache": "asset"}} for inputs in batch]
+        return [{"checkpoint": prefetch_checkpoint_ref(inputs["checkpoint_ref"])} for inputs in batch]
 
 
 class PrefetchTrainingAssetsNode(Node):
     NODE_TYPE = "PrefetchTrainingAssets"
     CATEGORY = "Training / Assets"
-    INPUTS = {"asset_refs": Port("asset_refs", JSON)}
-    OUTPUTS = {"assets": Port("assets", JSON)}
+    INPUTS = {"asset_refs": Port("asset_refs", ASSET_BUNDLE_OR_JSON)}
+    OUTPUTS = {"assets": Port("assets", ASSET_BUNDLE_OR_JSON)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [{"assets": {"source": inputs["asset_refs"], "cache": "asset"}} for inputs in batch]
+        return [{"assets": prefetch_training_assets(inputs["asset_refs"])} for inputs in batch]
 
 
 class PrefetchOodTextSetsNode(Node):
@@ -213,53 +238,3 @@ class PrefetchOodTextSetsNode(Node):
 
     async def execute(self, batch, context):
         return [{"ood_text_sets": {"source": inputs["ood_text_set_refs"], "cache": "asset"}} for inputs in batch]
-
-
-class StyleTtsFinetuneNode(Node):
-    NODE_TYPE = "StyleTtsFinetune"
-    CATEGORY = "Training"
-    SETTINGS = StyleTtsFinetuneSettings
-    INPUTS = {
-        "audio_file_ids": Port("audio_file_ids", JSON),
-        "base_checkpoint": Port("base_checkpoint", JSON),
-        "pretrained_assets": Port("pretrained_assets", JSON, optional=True),
-        "phoneme_alphabet": Port("phoneme_alphabet", JSON),
-        "ood_text_sets": Port("ood_text_sets", JSON),
-    }
-    OUTPUTS = {"training_result": Port("training_result", JSON)}
-    BATCH_POLICY = BatchPolicy(BatchMode.DISABLED)
-    RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 12}, exclusive_group="accelerator")
-
-    async def execute(self, batch, context):
-        return [{"training_result": {"node_type": self.NODE_TYPE, "settings": self.params}} for _inputs in batch]
-
-
-class F0ModelTrainingNode(Node):
-    NODE_TYPE = "F0ModelTraining"
-    CATEGORY = "Training"
-    SETTINGS = F0TrainingSettings
-    INPUTS = {
-        "audio_file_ids": Port("audio_file_ids", JSON),
-        "pretrained_checkpoint": Port("pretrained_checkpoint", JSON, optional=True),
-    }
-    OUTPUTS = {"training_result": Port("training_result", JSON)}
-    RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 6}, exclusive_group="accelerator")
-
-    async def execute(self, batch, context):
-        return [{"training_result": {"node_type": self.NODE_TYPE, "settings": self.params}} for _inputs in batch]
-
-
-class AsrModelTrainingNode(Node):
-    NODE_TYPE = "AsrModelTraining"
-    CATEGORY = "Training"
-    SETTINGS = AsrTrainingSettings
-    INPUTS = {
-        "audio_file_ids": Port("audio_file_ids", JSON),
-        "pretrained_checkpoint": Port("pretrained_checkpoint", JSON, optional=True),
-        "phoneme_alphabet": Port("phoneme_alphabet", JSON),
-    }
-    OUTPUTS = {"training_result": Port("training_result", JSON)}
-    RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, exclusive_group="accelerator")
-
-    async def execute(self, batch, context):
-        return [{"training_result": {"node_type": self.NODE_TYPE, "settings": self.params}} for _inputs in batch]

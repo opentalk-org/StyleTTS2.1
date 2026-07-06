@@ -9,11 +9,15 @@ from shared.db.audio.crud import (
     delete_audio_file,
     delete_segment,
     get_audio_file,
+    list_audio_segments,
     list_audio_files,
     read_audio_file,
     read_audio_part,
+    replace_audio_segments,
     update_audio_file,
     update_segment,
+    update_segment_phonemes,
+    update_segment_text,
 )
 from shared.db.audio.pack_store import AudioPackConfig
 from shared.db.audio.schemas import AudioCreate, AudioPartRead, AudioUpdate
@@ -33,9 +37,13 @@ __all__ = [
     "delete_audio_file",
     "delete_segment",
     "get_audio_file",
+    "list_audio_segments",
     "list_audio_files",
     "read_audio_file",
     "read_audio_part",
+    "replace_audio_segments",
     "update_audio_file",
     "update_segment",
+    "update_segment_phonemes",
+    "update_segment_text",
 ]
