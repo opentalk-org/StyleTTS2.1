@@ -13,6 +13,14 @@ from runner.nodes.audio_processing import (
     SortformerDiarizationNode,
     VadDetectNode,
 )
+from runner.nodes.audio_segments.writeback import (
+    LoadAudioSegmentsNode,
+    SaveAudioRecordNode,
+    SaveAudioSegmentsNode,
+    UpdateAudioRecordBytesNode,
+    UpdateSegmentPhonemesNode,
+    UpdateSegmentTextNode,
+)
 from runner.nodes.audio_sources import AllAudioSourceNode, DatasetAudioSourceNode, SelectedAudioSourceNode
 from runner.nodes.dataset_writeback import AddAudioToDatasetNode, AssignVoiceNode, DeleteAudioRecordsNode, RemoveAudioFromDatasetNode
 from runner.nodes.datatypes import register_runner_types
@@ -49,8 +57,14 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         DatasetAudioSourceNode,
         AllAudioSourceNode,
         LoadAudioNode,
+        SaveAudioRecordNode,
+        UpdateAudioRecordBytesNode,
         SaveTranscriptNode,
         SaveAudioArtifactNode,
+        LoadAudioSegmentsNode,
+        SaveAudioSegmentsNode,
+        UpdateSegmentTextNode,
+        UpdateSegmentPhonemesNode,
         WhisperTranscribeNode,
         CanaryTranscribeNode,
         ParakeetTranscribeNode,
@@ -89,6 +103,10 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
     ]:
         registry.register(node_cls)
     return registry
+
+
+def create_node_registry() -> NodeRegistry:
+    return register_runner_nodes(NodeRegistry())
 
 
 def register_runner_types_for_ui(registry: TypeRegistry) -> TypeRegistry:

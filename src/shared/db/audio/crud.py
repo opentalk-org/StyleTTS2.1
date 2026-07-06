@@ -20,7 +20,16 @@ from shared.db.audio.pack_crud import (
 )
 from shared.db.audio.pack_prune import prune_fragmented_audio_packs
 from shared.db.audio.pack_store import AudioPackConfig, ObjectStore
-from shared.db.audio.schemas import AudioCreate, AudioPartRead, AudioUpdate, SegmentCreate, SegmentUpdate
+from shared.db.audio.schemas import AudioCreate, AudioPartRead, AudioUpdate
+from shared.db.audio.segments_crud import (
+    create_segment,
+    delete_segment,
+    list_audio_segments,
+    replace_audio_segments,
+    update_segment,
+    update_segment_phonemes,
+    update_segment_text,
+)
 from shared.db.common import many, one
 from shared.db.datasets.models import Dataset
 from shared.db.waveforms import crud as waveform_crud
@@ -224,42 +233,6 @@ def bulk_delete_audio_files(
         waveform_crud.delete_waveform(session, audio_file_id)
     bulk_delete_packed_audio_files(session, ids)
     prune_fragmented_audio_packs(session, resolved_store, config)
-
-
-def create_segment(session: Session, audio_file_id: uuid.UUID, payload: SegmentCreate) -> dict[str, Any]:
-    item = one(session, AudioFile, audio_file_id)
-    segment = {"id": str(uuid.uuid4()), **payload.model_dump(mode="json")}
-    item.segments = [*item.segments, segment]
-    item.updated_at = _now()
-    session.commit()
-    return segment
-
-
-def update_segment(
-    session: Session,
-    audio_file_id: uuid.UUID,
-    segment_id: str,
-    payload: SegmentUpdate,
-) -> dict[str, Any]:
-    item = one(session, AudioFile, audio_file_id)
-    replacement = {"id": segment_id, **payload.model_dump(mode="json")}
-    segments = [replacement if segment["id"] == segment_id else segment for segment in item.segments]
-    if segments == item.segments:
-        raise KeyError(f"Segment not found: {segment_id}")
-    item.segments = segments
-    item.updated_at = _now()
-    session.commit()
-    return replacement
-
-
-def delete_segment(session: Session, audio_file_id: uuid.UUID, segment_id: str) -> None:
-    item = one(session, AudioFile, audio_file_id)
-    segments = [segment for segment in item.segments if segment["id"] != segment_id]
-    if len(segments) == len(item.segments):
-        raise KeyError(f"Segment not found: {segment_id}")
-    item.segments = segments
-    item.updated_at = _now()
-    session.commit()
 
 
 def _object_store(store: ObjectStore | None) -> ObjectStore:
