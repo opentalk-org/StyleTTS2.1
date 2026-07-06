@@ -137,6 +137,19 @@ class PhonemeAlphabetNode(MockTrainingInputNode):
     OUTPUT_FIELD = "phoneme_alphabet"
     OUTPUTS = {"phoneme_alphabet": Port("phoneme_alphabet", JSON)}
 
+    async def execute(self, batch, context):
+        return [
+            {
+                "phoneme_alphabet": {
+                    "preset": self.settings.preset.value,
+                    "symbols": self.settings.symbols,
+                    "symbol_list": [symbol for symbol in self.settings.symbols.split(" ") if symbol],
+                    "source": {"node_type": self.NODE_TYPE, "run": inputs["run"]},
+                }
+            }
+            for inputs in batch
+        ]
+
 
 class SelectOodTextSetsNode(MockTrainingInputNode):
     NODE_TYPE = "SelectOodTextSets"

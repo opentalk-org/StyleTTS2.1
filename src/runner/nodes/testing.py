@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Any
 
 from pydantic import Field
 
 from runflow.core.node import Node
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
-from runflow.core.types import UnionDataType
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import CHECKPOINT_REF, JSON
-
-
-CHECKPOINT_REF_OR_JSON = UnionDataType("CHECKPOINT_REF_OR_JSON", (CHECKPOINT_REF, JSON), "Checkpoint reference or scaffold JSON")
+from runner.nodes.datatypes import JSON
+from runner.nodes.synthesis.style_reference import compatibility_style_reference
+from runner.nodes.text_processing import PhonemizeSettings
 
 
 class TestingLanguage(str, Enum):
@@ -31,12 +30,6 @@ class SelectStyleReferenceSettings(StrictSettings):
     reference_id: str = Field(default="", title="Reference")
     style_mix: float = Field(default=0.7, title="Style mix", ge=0, le=1)
     prosody_mix: float = Field(default=0.5, title="Prosody mix", ge=0, le=1)
-
-
-class StyleTtsSynthesisSettings(StrictSettings):
-    weights_file: str = Field(default="", title="Weights file")
-    diffusion_steps: int = Field(default=5, title="Diffusion steps", ge=1, le=20)
-    embedding_scale: float = Field(default=1.0, title="Embedding scale", ge=0.5, le=3)
 
 
 class StyleReferenceSweepSettings(StrictSettings):
@@ -88,12 +81,40 @@ class SelectStyleReferenceNode(MockTestingInputNode):
     OUTPUT_FIELD = "style_reference"
     OUTPUTS = {"style_reference": Port("style_reference", JSON)}
 
+    async def execute(self, batch, context):
+        return [
+            {
+                "style_reference": compatibility_style_reference(
+                    self.settings.reference_id,
+                    self.settings.style_mix,
+                    self.settings.prosody_mix,
+                )
+            }
+            for inputs in batch
+        ]
+
 
 class StyleReferenceSweepNode(MockTestingInputNode):
     NODE_TYPE = "StyleReferenceSweep"
     SETTINGS = StyleReferenceSweepSettings
     OUTPUT_FIELD = "style_reference_batch"
     OUTPUTS = {"style_reference_batch": Port("style_reference_batch", JSON)}
+
+    async def execute(self, batch, context):
+        return [
+            {
+                "style_reference_batch": {
+                    "kind": "style_reference_batch",
+                    "references": [
+                        compatibility_style_reference(reference_id, 0.7, 0.5)
+                        for reference_id in self.settings.voices
+                    ],
+                    "samples_per_voice": self.settings.samples_per_voice,
+                    "source": {"node_type": self.NODE_TYPE, "run": inputs["run"]},
+                }
+            }
+            for inputs in batch
+        ]
 
 
 class TestingPromptPhonemizerNode(Node):
@@ -107,37 +128,47 @@ class TestingPromptPhonemizerNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [{"phonemes": {"prompt": inputs["prompt_text"], "alphabet": inputs["phoneme_alphabet"], "source": "phonemizer"}} for inputs in batch]
+        return [
+            {"phonemes": testing_phoneme_payload(inputs["prompt_text"], inputs["phoneme_alphabet"])}
+            for inputs in batch
+        ]
 
 
-class StyleTtsSynthesisNode(Node):
-    NODE_TYPE = "StyleTtsSynthesis"
-    CATEGORY = "Testing / Synthesis"
-    SETTINGS = StyleTtsSynthesisSettings
-    INPUTS = {
-        "checkpoint": Port("checkpoint", CHECKPOINT_REF_OR_JSON),
-        "prompt_text": Port("prompt_text", JSON),
-        "phonemes": Port("phonemes", JSON),
-        "style_reference": Port("style_reference", JSON),
+def testing_phoneme_payload(prompt_text: dict[str, Any], phoneme_alphabet: dict[str, Any]) -> dict[str, Any]:
+    text = _prompt_setting(prompt_text, "text")
+    language = _prompt_setting(prompt_text, "language")
+    symbols = _alphabet_symbols(phoneme_alphabet)
+    settings = PhonemizeSettings(language=language)
+    phonemes = _placeholder_phonemes(text, settings, symbols)
+    return {
+        "kind": "phonemes",
+        "text": text,
+        "language": language,
+        "phonemes": " ".join(phonemes),
+        "phoneme_list": phonemes,
+        "symbols": symbols,
+        "alphabet": phoneme_alphabet,
+        "source": "testing_placeholder",
     }
-    OUTPUTS = {"audio_result": Port("audio_result", JSON)}
-    RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, exclusive_group="accelerator")
-
-    async def execute(self, batch, context):
-        return [{"audio_result": {"node_type": self.NODE_TYPE, "settings": self.params, "inputs": inputs}} for inputs in batch]
 
 
-class StyleTtsSweepSynthesisNode(Node):
-    NODE_TYPE = "StyleTtsSweepSynthesis"
-    CATEGORY = "Testing / Synthesis"
-    INPUTS = {
-        "checkpoint": Port("checkpoint", CHECKPOINT_REF_OR_JSON),
-        "prompt_text": Port("prompt_text", JSON),
-        "phonemes": Port("phonemes", JSON),
-        "style_reference_batch": Port("style_reference_batch", JSON),
-    }
-    OUTPUTS = {"sweep_results": Port("sweep_results", JSON)}
-    RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, exclusive_group="accelerator")
+def _prompt_setting(prompt_text: dict[str, Any], name: str) -> str:
+    if name in prompt_text:
+        return str(prompt_text[name])
+    return str(prompt_text["settings"][name])
 
-    async def execute(self, batch, context):
-        return [{"sweep_results": {"node_type": self.NODE_TYPE, "inputs": inputs}} for inputs in batch]
+
+def _alphabet_symbols(phoneme_alphabet: dict[str, Any]) -> list[str]:
+    if "symbols" in phoneme_alphabet:
+        symbols = phoneme_alphabet["symbols"]
+    else:
+        symbols = phoneme_alphabet["settings"]["symbols"]
+    if isinstance(symbols, str):
+        return symbols.split()
+    return [str(symbol) for symbol in symbols]
+
+
+def _placeholder_phonemes(text: str, settings: PhonemizeSettings, symbols: list[str]) -> list[str]:
+    allowed = set(symbols)
+    units = [character.lower() for character in text if settings.punctuation or character.isalnum() or character.isspace()]
+    return [unit for unit in units if unit and not unit.isspace() and (not allowed or unit in allowed)]

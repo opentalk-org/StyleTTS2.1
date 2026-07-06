@@ -14,6 +14,8 @@ from runner.nodes.audio_processing import (
 from runner.nodes.statistics.aggregate import AggregateDatasetStatisticsNode
 from runner.nodes.statistics.audio_features import AnalyzeAudioFeaturesNode
 from runner.nodes.statistics.writeback import SaveStatisticsEntryNode
+from runner.nodes.synthesis.style_reference import ResolveStyleReferenceNode
+from runner.nodes.synthesis.styletts import StyleTtsSweepSynthesisNode, StyleTtsSynthesisNode
 from runner.nodes.audio_enhancement.denoise import DeepFilterNetDenoiseNode
 from runner.nodes.audio_enhancement.normalize import NormalizeLoudnessNode
 from runner.nodes.audio_segments.extract import ExtractSegmentGroupAudioNode, PersistSplitAudioRecordsNode
@@ -37,8 +39,6 @@ from runner.nodes.text_processing import PhonemizeSegmentsNode, PhonemizeTranscr
 from runner.nodes.testing import (
     SelectStyleReferenceNode,
     StyleReferenceSweepNode,
-    StyleTtsSweepSynthesisNode,
-    StyleTtsSynthesisNode,
     TestingPromptPhonemizerNode,
     TestingRunInputNode,
     TestingTextPromptNode,
@@ -120,6 +120,7 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         TestingTextPromptNode,
         SelectStyleReferenceNode,
         StyleReferenceSweepNode,
+        ResolveStyleReferenceNode,
         TestingPromptPhonemizerNode,
         StyleTtsSynthesisNode,
         StyleTtsSweepSynthesisNode,
