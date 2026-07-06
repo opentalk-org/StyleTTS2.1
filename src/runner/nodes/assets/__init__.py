@@ -1,0 +1,1 @@
+"""Asset node package."""
