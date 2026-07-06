@@ -7,8 +7,15 @@ from pydantic import Field
 from runflow.core.node import Node
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
+from runflow.core.types import UnionDataType
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
-from runner.nodes.datatypes import JSON
+from runner.nodes.assets.checkpoints import checkpoint_ref_or_stub, prefetch_checkpoint_ref
+from runner.nodes.assets.training_assets import prefetch_training_assets, training_assets_ref_or_stub
+from runner.nodes.datatypes import ASSET_BUNDLE, CHECKPOINT_REF, JSON
+
+
+CHECKPOINT_REF_OR_JSON = UnionDataType("CHECKPOINT_REF_OR_JSON", (CHECKPOINT_REF, JSON), "Checkpoint reference or scaffold JSON")
+ASSET_BUNDLE_OR_JSON = UnionDataType("ASSET_BUNDLE_OR_JSON", (ASSET_BUNDLE, JSON), "Asset bundle reference or scaffold JSON")
 
 
 class NumericPrecision(str, Enum):
@@ -145,14 +152,34 @@ class SelectCheckpointNode(MockTrainingInputNode):
     CATEGORY = "Assets / Inputs"
     SETTINGS = SelectCheckpointSettings
     OUTPUT_FIELD = "checkpoint_ref"
-    OUTPUTS = {"checkpoint_ref": Port("checkpoint_ref", JSON)}
+    OUTPUTS = {"checkpoint_ref": Port("checkpoint_ref", CHECKPOINT_REF_OR_JSON)}
+
+    async def execute(self, batch, context):
+        return [
+            {"checkpoint_ref": checkpoint_ref_or_stub(self.NODE_TYPE, inputs["run"], self.settings.checkpoint_id)}
+            for inputs in batch
+        ]
 
 
 class SelectTrainingAssetsNode(MockTrainingInputNode):
     NODE_TYPE = "SelectTrainingAssets"
     SETTINGS = SelectTrainingAssetsSettings
     OUTPUT_FIELD = "asset_refs"
-    OUTPUTS = {"asset_refs": Port("asset_refs", JSON)}
+    OUTPUTS = {"asset_refs": Port("asset_refs", ASSET_BUNDLE_OR_JSON)}
+
+    async def execute(self, batch, context):
+        return [
+            {
+                "asset_refs": training_assets_ref_or_stub(
+                    self.NODE_TYPE,
+                    inputs["run"],
+                    self.settings.f0_model,
+                    self.settings.asr_model,
+                    self.settings.plbert_model,
+                )
+            }
+            for inputs in batch
+        ]
 
 
 class PhonemeAlphabetNode(MockTrainingInputNode):
@@ -185,23 +212,23 @@ class ListDatasetAudioIdsNode(Node):
 class PrefetchCheckpointNode(Node):
     NODE_TYPE = "PrefetchCheckpoint"
     CATEGORY = "Assets"
-    INPUTS = {"checkpoint_ref": Port("checkpoint_ref", JSON)}
-    OUTPUTS = {"checkpoint": Port("checkpoint", JSON)}
+    INPUTS = {"checkpoint_ref": Port("checkpoint_ref", CHECKPOINT_REF_OR_JSON)}
+    OUTPUTS = {"checkpoint": Port("checkpoint", CHECKPOINT_REF_OR_JSON)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [{"checkpoint": {"source": inputs["checkpoint_ref"], "cache": "asset"}} for inputs in batch]
+        return [{"checkpoint": prefetch_checkpoint_ref(inputs["checkpoint_ref"])} for inputs in batch]
 
 
 class PrefetchTrainingAssetsNode(Node):
     NODE_TYPE = "PrefetchTrainingAssets"
     CATEGORY = "Training / Assets"
-    INPUTS = {"asset_refs": Port("asset_refs", JSON)}
-    OUTPUTS = {"assets": Port("assets", JSON)}
+    INPUTS = {"asset_refs": Port("asset_refs", ASSET_BUNDLE_OR_JSON)}
+    OUTPUTS = {"assets": Port("assets", ASSET_BUNDLE_OR_JSON)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [{"assets": {"source": inputs["asset_refs"], "cache": "asset"}} for inputs in batch]
+        return [{"assets": prefetch_training_assets(inputs["asset_refs"])} for inputs in batch]
 
 
 class PrefetchOodTextSetsNode(Node):
@@ -221,8 +248,8 @@ class StyleTtsFinetuneNode(Node):
     SETTINGS = StyleTtsFinetuneSettings
     INPUTS = {
         "audio_file_ids": Port("audio_file_ids", JSON),
-        "base_checkpoint": Port("base_checkpoint", JSON),
-        "pretrained_assets": Port("pretrained_assets", JSON, optional=True),
+        "base_checkpoint": Port("base_checkpoint", CHECKPOINT_REF_OR_JSON),
+        "pretrained_assets": Port("pretrained_assets", ASSET_BUNDLE_OR_JSON, optional=True),
         "phoneme_alphabet": Port("phoneme_alphabet", JSON),
         "ood_text_sets": Port("ood_text_sets", JSON),
     }
@@ -240,7 +267,7 @@ class F0ModelTrainingNode(Node):
     SETTINGS = F0TrainingSettings
     INPUTS = {
         "audio_file_ids": Port("audio_file_ids", JSON),
-        "pretrained_checkpoint": Port("pretrained_checkpoint", JSON, optional=True),
+        "pretrained_checkpoint": Port("pretrained_checkpoint", CHECKPOINT_REF_OR_JSON, optional=True),
     }
     OUTPUTS = {"training_result": Port("training_result", JSON)}
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 6}, exclusive_group="accelerator")
@@ -255,7 +282,7 @@ class AsrModelTrainingNode(Node):
     SETTINGS = AsrTrainingSettings
     INPUTS = {
         "audio_file_ids": Port("audio_file_ids", JSON),
-        "pretrained_checkpoint": Port("pretrained_checkpoint", JSON, optional=True),
+        "pretrained_checkpoint": Port("pretrained_checkpoint", CHECKPOINT_REF_OR_JSON, optional=True),
         "phoneme_alphabet": Port("phoneme_alphabet", JSON),
     }
     OUTPUTS = {"training_result": Port("training_result", JSON)}

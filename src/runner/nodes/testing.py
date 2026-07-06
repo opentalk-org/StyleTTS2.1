@@ -7,8 +7,12 @@ from pydantic import Field
 from runflow.core.node import Node
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
+from runflow.core.types import UnionDataType
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import JSON
+from runner.nodes.datatypes import CHECKPOINT_REF, JSON
+
+
+CHECKPOINT_REF_OR_JSON = UnionDataType("CHECKPOINT_REF_OR_JSON", (CHECKPOINT_REF, JSON), "Checkpoint reference or scaffold JSON")
 
 
 class TestingLanguage(str, Enum):
@@ -111,7 +115,7 @@ class StyleTtsSynthesisNode(Node):
     CATEGORY = "Testing / Synthesis"
     SETTINGS = StyleTtsSynthesisSettings
     INPUTS = {
-        "checkpoint": Port("checkpoint", JSON),
+        "checkpoint": Port("checkpoint", CHECKPOINT_REF_OR_JSON),
         "prompt_text": Port("prompt_text", JSON),
         "phonemes": Port("phonemes", JSON),
         "style_reference": Port("style_reference", JSON),
@@ -127,7 +131,7 @@ class StyleTtsSweepSynthesisNode(Node):
     NODE_TYPE = "StyleTtsSweepSynthesis"
     CATEGORY = "Testing / Synthesis"
     INPUTS = {
-        "checkpoint": Port("checkpoint", JSON),
+        "checkpoint": Port("checkpoint", CHECKPOINT_REF_OR_JSON),
         "prompt_text": Port("prompt_text", JSON),
         "phonemes": Port("phonemes", JSON),
         "style_reference_batch": Port("style_reference_batch", JSON),

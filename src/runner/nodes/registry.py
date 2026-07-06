@@ -28,6 +28,9 @@ from runner.nodes.audio_segments.writeback import (
 )
 from runner.nodes.audio_segments.transcripts import ApplyTranscriptToSegmentsNode, TranscriptToSegmentsNode
 from runner.nodes.audio_sources import AllAudioSourceNode, DatasetAudioSourceNode, SelectedAudioSourceNode
+from runner.nodes.assets.catalog import CatalogDownloadNode
+from runner.nodes.assets.checkpoints import ResolveCheckpointNode
+from runner.nodes.assets.training_assets import ResolveTrainingAssetsNode
 from runner.nodes.dataset_writeback import AddAudioToDatasetNode, AssignVoiceNode, DeleteAudioRecordsNode, RemoveAudioFromDatasetNode
 from runner.nodes.datatypes import register_runner_types
 from runner.nodes.text_processing import PhonemizeSegmentsNode, PhonemizeTranscriptNode
@@ -41,7 +44,9 @@ from runner.nodes.testing import (
     TestingTextPromptNode,
 )
 from runner.nodes.training import (
+    ASSET_BUNDLE_OR_JSON,
     AsrModelTrainingNode,
+    CHECKPOINT_REF_OR_JSON,
     F0ModelTrainingNode,
     ListDatasetAudioIdsNode,
     PhonemeAlphabetNode,
@@ -95,6 +100,9 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         RemoveAudioFromDatasetNode,
         AssignVoiceNode,
         DeleteAudioRecordsNode,
+        CatalogDownloadNode,
+        ResolveCheckpointNode,
+        ResolveTrainingAssetsNode,
         TrainingRunInputNode,
         SelectTrainingDatasetNode,
         SelectCheckpointNode,
@@ -125,4 +133,7 @@ def create_node_registry() -> NodeRegistry:
 
 
 def register_runner_types_for_ui(registry: TypeRegistry) -> TypeRegistry:
-    return register_runner_types(registry)
+    register_runner_types(registry)
+    registry.register(CHECKPOINT_REF_OR_JSON)
+    registry.register(ASSET_BUNDLE_OR_JSON)
+    return registry
