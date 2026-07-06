@@ -13,6 +13,7 @@ from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import JSON
 from runner.nodes.synthesis.style_reference import audio_file_style_reference, compatibility_style_reference
 from runner.nodes.text_processing import PhonemizeSettings
+from runner.nodes.text_runtime.phonemize import phonemize_text
 
 
 class TestingLanguage(str, Enum):
@@ -140,7 +141,7 @@ def testing_phoneme_payload(prompt_text: dict[str, Any], phoneme_alphabet: dict[
     language = _prompt_setting(prompt_text, "language")
     symbols = _alphabet_symbols(phoneme_alphabet)
     settings = PhonemizeSettings(language=language)
-    phonemes = _placeholder_phonemes(text, settings, symbols)
+    phonemes = _filtered_phonemes(_testing_phonemes(text, settings), symbols)
     return {
         "kind": "phonemes",
         "text": text,
@@ -149,7 +150,7 @@ def testing_phoneme_payload(prompt_text: dict[str, Any], phoneme_alphabet: dict[
         "phoneme_list": phonemes,
         "symbols": symbols,
         "alphabet": phoneme_alphabet,
-        "source": "testing_placeholder",
+        "source": "espeak_align",
     }
 
 
@@ -177,7 +178,17 @@ def _alphabet_symbols(phoneme_alphabet: dict[str, Any]) -> list[str]:
     return [str(symbol) for symbol in symbols]
 
 
-def _placeholder_phonemes(text: str, settings: PhonemizeSettings, symbols: list[str]) -> list[str]:
+def _testing_phonemes(text: str, settings: PhonemizeSettings) -> str:
+    return phonemize_text(
+        text,
+        language=settings.language,
+        tie=settings.tie,
+        punctuation_marks=settings.punctuation_marks,
+        espeak_workers=settings.espeak_workers,
+        align_threads=settings.align_threads,
+    )
+
+
+def _filtered_phonemes(text: str, symbols: list[str]) -> list[str]:
     allowed = set(symbols)
-    units = [character.lower() for character in text if settings.punctuation or character.isalnum() or character.isspace()]
-    return [unit for unit in units if unit and not unit.isspace() and (not allowed or unit in allowed)]
+    return [unit for unit in text if unit and not unit.isspace() and (not allowed or unit in allowed)]

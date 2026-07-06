@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from enum import Enum
 
 from pydantic import Field
 
+from runner.nodes.assets.catalog_runtime.tasks import run_catalog_task
 from runflow.core.node import Node
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
@@ -42,13 +44,14 @@ class CatalogDownloadNode(Node):
     async def execute(self, batch, context):
         assert not self._emitted, f"catalog node already emitted: {self.id}"
         self._emitted = True
+        result = await asyncio.to_thread(run_catalog_task, self.settings.catalog_key.value)
         return [
             {
                 "catalog_item": {
                     "catalog_key": self.settings.catalog_key.value,
                     "requested_item": self.settings.item,
-                    "status": "resolved_catalog_metadata",
-                    "source": "runner_catalog_scaffold",
+                    "status": "resolved_catalog_assets",
+                    "result": result,
                 }
             }
         ]

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from runflow.registry.node_registry import NodeRegistry
 from runflow.registry.type_registry import TypeRegistry
-from runner.nodes.asr import CanaryTranscribeNode, ParakeetTranscribeNode, WhisperTranscribeNode
+from runner.nodes.asr import ASR_SOURCE, ParakeetTranscribeNode, WhisperTranscribeNode
 from runner.nodes.audio_io import LoadAudioNode, SaveAudioArtifactNode, SaveTranscriptNode
 from runner.nodes.audio_processing import (
     CalculateAudioStatsNode,
@@ -43,7 +43,7 @@ from runner.nodes.testing import (
     TestingRunInputNode,
     TestingTextPromptNode,
 )
-from runner.nodes.training import (
+from runner.nodes.training_inputs import (
     ListDatasetAudioIdsNode,
     PhonemeAlphabetNode,
     PrefetchCheckpointNode,
@@ -55,7 +55,7 @@ from runner.nodes.training import (
     SelectTrainingDatasetNode,
     TrainingRunInputNode,
 )
-from runner.nodes.training_config import ASSET_BUNDLE_OR_JSON, CHECKPOINT_REF_OR_JSON, BuildStyleTtsFinetuneConfigNode
+from runner.nodes.training_config import BuildStyleTtsFinetuneConfigNode
 from runner.nodes.training_execution import AsrModelTrainingNode, F0ModelTrainingNode, StyleTtsFinetuneNode
 from runner.nodes.training_manifest import TRAINING_SEGMENT_INPUT, BuildTrainingManifestNode
 
@@ -75,7 +75,6 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         UpdateSegmentTextNode,
         UpdateSegmentPhonemesNode,
         WhisperTranscribeNode,
-        CanaryTranscribeNode,
         ParakeetTranscribeNode,
         TranscriptToSegmentsNode,
         ApplyTranscriptToSegmentsNode,
@@ -135,7 +134,6 @@ def create_node_registry() -> NodeRegistry:
 
 def register_runner_types_for_ui(registry: TypeRegistry) -> TypeRegistry:
     register_runner_types(registry)
-    registry.register(CHECKPOINT_REF_OR_JSON)
-    registry.register(ASSET_BUNDLE_OR_JSON)
     registry.register(TRAINING_SEGMENT_INPUT)
+    registry.register(ASR_SOURCE)
     return registry

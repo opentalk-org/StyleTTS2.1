@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from pathlib import Path
 from uuid import UUID
 
 from pydantic import Field
@@ -9,11 +10,11 @@ from runflow.core.node import Node
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.assets.checkpoints import checkpoint_ref_or_stub, prefetch_checkpoint_ref
-from runner.nodes.assets.training_assets import prefetch_training_assets, training_assets_ref_or_stub
-from runner.nodes.datatypes import JSON
-from runner.nodes.training_config import ASSET_BUNDLE_OR_JSON, CHECKPOINT_REF_OR_JSON
+from runner.nodes.assets.checkpoints import prefetch_checkpoint_ref, resolve_checkpoint_ref
+from runner.nodes.assets.training_assets import prefetch_training_assets, resolve_training_asset_bundle
+from runner.nodes.datatypes import ASSET_BUNDLE, CHECKPOINT_REF, JSON
 from shared.db import database_session
+from shared.db.assets import crud as asset_crud
 from shared.db.common import one
 from shared.db.datasets.models import Dataset
 
@@ -82,21 +83,13 @@ class TrainingRunInputNode(Node):
         return [{"run": {"node_type": self.NODE_TYPE, "source": "workflow"}}]
 
 
-class MockTrainingInputNode(Node):
-    CATEGORY = "Training / Inputs"
-    INPUTS = {"run": Port("run", JSON)}
-    OUTPUT_FIELD = "input"
-    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
-
-    async def execute(self, batch, context):
-        return [{self.OUTPUT_FIELD: {"node_type": self.NODE_TYPE, "run": inputs["run"], "source": "workflow_settings"}} for inputs in batch]
-
-
-class SelectTrainingDatasetNode(MockTrainingInputNode):
+class SelectTrainingDatasetNode(Node):
     NODE_TYPE = "SelectTrainingDataset"
+    CATEGORY = "Training / Inputs"
     SETTINGS = SelectTrainingDatasetSettings
-    OUTPUT_FIELD = "dataset_ref"
+    INPUTS = {"run": Port("run", JSON)}
     OUTPUTS = {"dataset_ref": Port("dataset_ref", JSON)}
+    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
         if not self.settings.dataset_id:
@@ -115,47 +108,49 @@ class SelectTrainingDatasetNode(MockTrainingInputNode):
         ]
 
 
-class SelectCheckpointNode(MockTrainingInputNode):
+class SelectCheckpointNode(Node):
     NODE_TYPE = "SelectCheckpoint"
     CATEGORY = "Assets / Inputs"
     SETTINGS = SelectCheckpointSettings
-    OUTPUT_FIELD = "checkpoint_ref"
-    OUTPUTS = {"checkpoint_ref": Port("checkpoint_ref", CHECKPOINT_REF_OR_JSON)}
+    INPUTS = {"run": Port("run", JSON)}
+    OUTPUTS = {"checkpoint_ref": Port("checkpoint_ref", CHECKPOINT_REF)}
+    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [
-            {"checkpoint_ref": checkpoint_ref_or_stub(self.NODE_TYPE, inputs["run"], self.settings.checkpoint_id)}
-            for inputs in batch
-        ]
+        if not self.settings.checkpoint_id:
+            raise ValueError("SelectCheckpoint requires checkpoint_id")
+        return [{"checkpoint_ref": resolve_checkpoint_ref(self.settings.checkpoint_id)} for _inputs in batch]
 
 
-class SelectTrainingAssetsNode(MockTrainingInputNode):
+class SelectTrainingAssetsNode(Node):
     NODE_TYPE = "SelectTrainingAssets"
+    CATEGORY = "Training / Inputs"
     SETTINGS = SelectTrainingAssetsSettings
-    OUTPUT_FIELD = "asset_refs"
-    OUTPUTS = {"asset_refs": Port("asset_refs", ASSET_BUNDLE_OR_JSON)}
+    INPUTS = {"run": Port("run", JSON)}
+    OUTPUTS = {"asset_refs": Port("asset_refs", ASSET_BUNDLE)}
+    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
         return [
             {
-                "asset_refs": training_assets_ref_or_stub(
-                    self.NODE_TYPE,
-                    inputs["run"],
+                "asset_refs": resolve_training_asset_bundle(
+                    [self.settings.asr_model] if self.settings.asr_model else [],
                     self.settings.f0_model,
-                    self.settings.asr_model,
                     self.settings.plbert_model,
+                    [],
                 )
             }
             for inputs in batch
         ]
 
 
-class PhonemeAlphabetNode(MockTrainingInputNode):
+class PhonemeAlphabetNode(Node):
     NODE_TYPE = "PhonemeAlphabet"
     CATEGORY = "Text / Inputs"
     SETTINGS = PhonemeAlphabetSettings
-    OUTPUT_FIELD = "phoneme_alphabet"
+    INPUTS = {"run": Port("run", JSON)}
     OUTPUTS = {"phoneme_alphabet": Port("phoneme_alphabet", JSON)}
+    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
         return [
@@ -171,11 +166,17 @@ class PhonemeAlphabetNode(MockTrainingInputNode):
         ]
 
 
-class SelectOodTextSetsNode(MockTrainingInputNode):
+class SelectOodTextSetsNode(Node):
     NODE_TYPE = "SelectOodTextSets"
+    CATEGORY = "Training / Inputs"
     SETTINGS = SelectOodTextSetsSettings
-    OUTPUT_FIELD = "ood_text_set_refs"
+    INPUTS = {"run": Port("run", JSON)}
     OUTPUTS = {"ood_text_set_refs": Port("ood_text_set_refs", JSON)}
+    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
+
+    async def execute(self, batch, context):
+        selected = _resolve_ood_text_sets(self.settings.sets)
+        return [{"ood_text_set_refs": {**selected, "run": inputs["run"]}} for inputs in batch]
 
 
 class ListDatasetAudioIdsNode(Node):
@@ -210,8 +211,8 @@ class ListDatasetAudioIdsNode(Node):
 class PrefetchCheckpointNode(Node):
     NODE_TYPE = "PrefetchCheckpoint"
     CATEGORY = "Assets"
-    INPUTS = {"checkpoint_ref": Port("checkpoint_ref", CHECKPOINT_REF_OR_JSON)}
-    OUTPUTS = {"checkpoint": Port("checkpoint", CHECKPOINT_REF_OR_JSON)}
+    INPUTS = {"checkpoint_ref": Port("checkpoint_ref", CHECKPOINT_REF)}
+    OUTPUTS = {"checkpoint": Port("checkpoint", CHECKPOINT_REF)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
@@ -221,8 +222,8 @@ class PrefetchCheckpointNode(Node):
 class PrefetchTrainingAssetsNode(Node):
     NODE_TYPE = "PrefetchTrainingAssets"
     CATEGORY = "Training / Assets"
-    INPUTS = {"asset_refs": Port("asset_refs", ASSET_BUNDLE_OR_JSON)}
-    OUTPUTS = {"assets": Port("assets", ASSET_BUNDLE_OR_JSON)}
+    INPUTS = {"asset_refs": Port("asset_refs", ASSET_BUNDLE)}
+    OUTPUTS = {"assets": Port("assets", ASSET_BUNDLE)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
@@ -237,4 +238,34 @@ class PrefetchOodTextSetsNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [{"ood_text_sets": {"source": inputs["ood_text_set_refs"], "cache": "asset"}} for inputs in batch]
+        return [{"ood_text_sets": _prefetch_ood_text_sets(inputs["ood_text_set_refs"])} for inputs in batch]
+
+
+def _resolve_ood_text_sets(sets: list[OodTextSet]) -> dict:
+    if not sets:
+        raise ValueError("SelectOodTextSets requires at least one text set")
+    rows = []
+    with database_session() as session:
+        for item in sets:
+            file_id = UUID(item.id)
+            extra_file = asset_crud.get_extra_file(session, file_id)
+            path = asset_crud.get_extra_file_path(session, file_id)
+            if not path.is_file():
+                raise ValueError(f"OOD text set file is missing: {file_id}")
+            rows.append({
+                "id": str(file_id),
+                "name": item.name or extra_file.name,
+                "line_count": item.line_count,
+                "path": str(path),
+                "type": extra_file.type_,
+                "content_hash": extra_file.content_hash,
+            })
+    return {"sets": rows, "paths": [row["path"] for row in rows]}
+
+
+def _prefetch_ood_text_sets(value: dict) -> dict:
+    paths = [Path(str(path)) for path in value["paths"]]
+    missing = [str(path) for path in paths if not path.is_file()]
+    if missing:
+        raise ValueError(f"OOD text set files are missing: {missing}")
+    return value

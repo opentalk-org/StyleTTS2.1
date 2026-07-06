@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -10,17 +9,13 @@ from pydantic import Field
 from runflow.core.node import Node
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
-from runflow.core.types import UnionDataType
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import ASSET_BUNDLE, CHECKPOINT_REF, JSON, TRAINING_MANIFEST
 from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingManifest, TrainingResult, stable_id
+from runner.nodes.styletts_finetune.node_config import build_node_config
 from shared.db.assets import crud as asset_crud
 from shared.db.assets.schemas import CheckpointCreate
 from shared.db.connection import database_session
-
-
-CHECKPOINT_REF_OR_JSON = UnionDataType("CHECKPOINT_REF_OR_JSON", (CHECKPOINT_REF, JSON), "Checkpoint reference or scaffold JSON")
-ASSET_BUNDLE_OR_JSON = UnionDataType("ASSET_BUNDLE_OR_JSON", (ASSET_BUNDLE, JSON), "Asset bundle reference or scaffold JSON")
 
 
 class NumericPrecision(str, Enum):
@@ -36,7 +31,6 @@ class DecoderBackend(str, Enum):
 
 class StyleTtsFinetuneSettings(StrictSettings):
     display_name: str = Field(default="styletts_finetune", title="Display name")
-    external_command: list[str] = Field(default_factory=list, title="External training command")
     output_checkpoint_dir: str = Field(default="", title="External output checkpoint folder")
     validation_samples: int = Field(default=32, title="Validation samples", ge=0, le=512)
     batch_size: int = Field(default=16, title="Batch size", ge=1, le=128)
@@ -50,6 +44,10 @@ class StyleTtsFinetuneSettings(StrictSettings):
     epochs_joint: int = Field(default=5, title="Epochs · joint", ge=0)
     max_sequence_seconds: float = Field(default=8.0, title="Max sequence (sec)", ge=1, le=30)
     save_interval_epochs: int = Field(default=5, title="Save interval (epochs)", ge=1)
+    load_optimizer: bool = Field(default=False, title="Load optimizer state")
+    slmadv_min_len: int = Field(default=180, title="SLM min length", ge=1)
+    slmadv_max_len: int = Field(default=200, title="SLM max length", ge=1)
+    slmadv_batch_samples: int = Field(default=0, title="SLM batch samples", ge=0)
     decoder: DecoderBackend = Field(default=DecoderBackend.HIFIGAN, title="Decoder")
     slm_weight: float = Field(default=0.2, title="SLM weight", ge=0)
     diffusion_samples: int = Field(default=3, title="Diffusion samples", ge=1)
@@ -65,13 +63,16 @@ class BuildStyleTtsFinetuneConfigSettings(StyleTtsFinetuneSettings):
 
 class F0TrainingSettings(StrictSettings):
     display_name: str = Field(default="f0_v2", title="Display name")
-    external_command: list[str] = Field(default_factory=list, title="External training command")
     output_checkpoint_dir: str = Field(default="", title="External output checkpoint folder")
     validation_samples: int = Field(default=32, title="Validation samples", ge=0, le=512)
     batch_size: int = Field(default=32, title="Batch size", ge=1, le=256)
     learning_rate: float = Field(default=5e-4, title="Learning rate", gt=0)
     epochs: int = Field(default=100, title="Epochs", ge=1)
     save_interval_epochs: int = Field(default=10, title="Save interval (epochs)", ge=1)
+    lambda_f0: float = Field(default=0.1, title="F0 loss weight", gt=0)
+    weight_decay: float = Field(default=5e-4, title="Weight decay", ge=0)
+    pct_start: float = Field(default=0.0, title="Scheduler warmup pct", ge=0, le=1)
+    num_workers: int = Field(default=2, title="Dataloader workers", ge=0, le=64)
 
 
 class AsrTrainingSettings(F0TrainingSettings):
@@ -85,8 +86,8 @@ class BuildStyleTtsFinetuneConfigNode(Node):
     SETTINGS = BuildStyleTtsFinetuneConfigSettings
     INPUTS = {
         "training_manifest": Port("training_manifest", TRAINING_MANIFEST),
-        "base_checkpoint": Port("base_checkpoint", CHECKPOINT_REF_OR_JSON),
-        "pretrained_assets": Port("pretrained_assets", ASSET_BUNDLE_OR_JSON),
+        "base_checkpoint": Port("base_checkpoint", CHECKPOINT_REF),
+        "pretrained_assets": Port("pretrained_assets", ASSET_BUNDLE),
         "ood_text_sets": Port("ood_text_sets", JSON),
     }
     OUTPUTS = {"training_config": Port("training_config", JSON)}
@@ -116,8 +117,15 @@ def build_styletts_finetune_config(
 ) -> dict[str, Any]:
     output_dir = _config_output_dir(manifest, settings.config_output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    config_path = output_dir / "styletts_finetune_config.json"
-    config = {
+    config_path, styletts_yaml = build_node_config(
+        manifest=manifest,
+        base_checkpoint=base_checkpoint,
+        pretrained_assets=pretrained_assets,
+        ood_text_sets=ood_text_sets,
+        settings=settings,
+        output_dir=output_dir,
+    )
+    return {
         "version": 2,
         "node_type": BuildStyleTtsFinetuneConfigNode.NODE_TYPE,
         "config_path": str(config_path),
@@ -126,9 +134,8 @@ def build_styletts_finetune_config(
         "pretrained_assets": _assets_payload(pretrained_assets),
         "ood_text_sets": ood_text_sets,
         "training": settings.model_dump(mode="json"),
+        "styletts_yaml": styletts_yaml,
     }
-    config_path.write_text(json.dumps(config, indent=2, sort_keys=True), encoding="utf-8")
-    return config
 
 
 def publish_training_result(
@@ -140,7 +147,7 @@ def publish_training_result(
     run_id: str,
 ) -> TrainingResult:
     if not output_checkpoint_dir:
-        raise RuntimeError(f"{node_type} requires external training output folder: set output_checkpoint_dir")
+        raise RuntimeError(f"{node_type} requires training output folder")
     folder_path = Path(output_checkpoint_dir)
     if not folder_path.is_dir():
         raise RuntimeError(f"{node_type} output_checkpoint_dir must be an existing folder: {folder_path}")

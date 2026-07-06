@@ -1,10 +1,7 @@
 from __future__ import annotations
 
+import asyncio
 import io
-import json
-import os
-import subprocess
-import tempfile
 import wave
 from pathlib import Path
 from typing import Any
@@ -16,19 +13,28 @@ from runflow.core.node import Node
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import AUDIO, JSON, SYNTHESIS_RESULT
+from runner.nodes.datatypes import AUDIO, CHECKPOINT_REF, JSON, SYNTHESIS_RESULT
 from runner.nodes.models import Audio, CheckpointRef, SynthesisResult, stable_id
-from runner.nodes.synthesis.style_reference import decode_wav_base64
-from runner.nodes.training_config import CHECKPOINT_REF_OR_JSON
-from shared.db import database_session
-from shared.db.audio import crud as audio_crud
-
+from runner.nodes.synthesis.styletts_runtime.actions import (
+    StyleTtsRequestSettings,
+    build_styletts_payload,
+    load_synthesis_runtime,
+    synthesize_to_wav_bytes,
+    temporary_synthesis_dir,
+)
 
 class StyleTtsSynthesisSettings(StrictSettings):
-    external_command: list[str] = Field(default_factory=list, title="External synthesis command")
     weights_file: str = Field(default="", title="Weights file")
     diffusion_steps: int = Field(default=5, title="Diffusion steps", ge=1, le=100)
     embedding_scale: float = Field(default=1.0, title="Embedding scale", ge=0.1, le=10)
+    phoneme_language: str = Field(default="en-us", title="Phoneme language")
+    phoneme_tie: bool = Field(default=True, title="Phoneme tie")
+    style_mix_alpha: float = Field(default=1.0, title="Style mix alpha", ge=0, le=1)
+    style_mix_beta: float = Field(default=1.0, title="Style mix beta", ge=0, le=1)
+    asr_checkpoint_id: UUID | None = Field(default=None, title="ASR checkpoint")
+    f0_checkpoint_id: UUID | None = Field(default=None, title="F0 checkpoint")
+    f0_inner_filename: str = Field(default="", title="F0 inner file")
+    plbert_checkpoint_id: UUID | None = Field(default=None, title="PL-BERT checkpoint")
     output_name: str = Field(default="styletts_synthesis.wav", title="Output name")
 
 
@@ -41,7 +47,7 @@ class StyleTtsSynthesisNode(Node):
     CATEGORY = "Synthesis"
     SETTINGS = StyleTtsSynthesisSettings
     INPUTS = {
-        "checkpoint": Port("checkpoint", CHECKPOINT_REF_OR_JSON),
+        "checkpoint": Port("checkpoint", CHECKPOINT_REF),
         "prompt_text": Port("prompt_text", JSON),
         "phonemes": Port("phonemes", JSON),
         "style_reference": Port("style_reference", JSON),
@@ -50,7 +56,18 @@ class StyleTtsSynthesisNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, exclusive_group="accelerator")
 
     async def execute(self, batch, context):
-        return [synthesize_styletts(self.NODE_TYPE, self.settings, inputs, str(context.run_id), 0) for inputs in batch]
+        return [
+            await asyncio.to_thread(
+                synthesize_styletts,
+                self.NODE_TYPE,
+                self.settings,
+                inputs,
+                str(context.run_id),
+                0,
+                None,
+            )
+            for inputs in batch
+        ]
 
 
 class StyleTtsSweepSynthesisNode(Node):
@@ -58,7 +75,7 @@ class StyleTtsSweepSynthesisNode(Node):
     CATEGORY = "Synthesis"
     SETTINGS = StyleTtsSweepSynthesisSettings
     INPUTS = {
-        "checkpoint": Port("checkpoint", CHECKPOINT_REF_OR_JSON),
+        "checkpoint": Port("checkpoint", CHECKPOINT_REF),
         "prompt_text": Port("prompt_text", JSON),
         "phonemes": Port("phonemes", JSON),
         "style_reference_batch": Port("style_reference_batch", JSON),
@@ -69,13 +86,7 @@ class StyleTtsSweepSynthesisNode(Node):
     async def execute(self, batch, context):
         outputs = []
         for inputs in batch:
-            references = style_reference_batch_items(inputs["style_reference_batch"])
-            samples = _sweep_sample_count(inputs["style_reference_batch"], self.settings.samples_per_reference)
-            for reference_index, reference in enumerate(references):
-                for sample_index in range(samples):
-                    synthesis_inputs = {**inputs, "style_reference": reference}
-                    output_index = reference_index * samples + sample_index
-                    outputs.append(synthesize_styletts(self.NODE_TYPE, self.settings, synthesis_inputs, str(context.run_id), output_index))
+            outputs.extend(await asyncio.to_thread(_synthesize_sweep, self, inputs, str(context.run_id)))
         return outputs
 
 
@@ -85,20 +96,23 @@ def synthesize_styletts(
     inputs: dict[str, Any],
     run_id: str,
     output_index: int,
+    runtime: Any | None,
 ) -> dict[str, Audio | SynthesisResult]:
-    if not settings.external_command:
-        raise RuntimeError(f"{node_type} requires external synthesis command")
     request_id = stable_id("synthesis_request", node_type, run_id, output_index, _prompt_text(inputs["prompt_text"]), inputs["style_reference"])
-    with tempfile.TemporaryDirectory(prefix="runflow-synthesis-") as tmp:
-        tmp_path = Path(tmp)
-        output_wav_path = tmp_path / "output.wav"
-        style_reference = _materialize_style_reference(inputs["style_reference"], tmp_path)
-        payload = _synthesis_payload(node_type, settings, inputs, request_id, style_reference, output_wav_path)
-        _run_external_synthesis(node_type, settings.external_command, payload, tmp_path)
-        wav_bytes = _read_output_wav(node_type, output_wav_path)
-    audio = _audio_from_wav(settings.output_name, wav_bytes, request_id, payload)
+    checkpoint = _typed_checkpoint(inputs["checkpoint"])
+    with temporary_synthesis_dir() as tmp:
+        payload = build_styletts_payload(
+            checkpoint=checkpoint,
+            prompt_text=inputs["prompt_text"],
+            style_reference=inputs["style_reference"],
+            settings=_request_settings(settings),
+            work_dir=Path(tmp),
+            output_filename=_output_filename(settings.output_name, output_index),
+        )
+        wav_bytes = synthesize_to_wav_bytes(runtime=runtime, payload=payload)
+    audio = _audio_from_wav(settings.output_name, wav_bytes, request_id, node_type)
     result_id = stable_id("synthesis_result", request_id, audio.id)
-    result = SynthesisResult(request_id, audio, result_id, audio.lineage_id, _result_metadata(payload, audio))
+    result = SynthesisResult(request_id, audio, result_id, audio.lineage_id, _result_metadata(payload, audio, settings))
     return {"synthesis_result": result, "audio": audio}
 
 
@@ -109,67 +123,52 @@ def style_reference_batch_items(value: dict[str, Any]) -> list[dict[str, Any]]:
     return references
 
 
-def _synthesis_payload(
-    node_type: str,
+def _synthesize_sweep(node: StyleTtsSweepSynthesisNode, inputs: dict[str, Any], run_id: str) -> list[dict[str, Audio | SynthesisResult]]:
+    references = style_reference_batch_items(inputs["style_reference_batch"])
+    samples = _sweep_sample_count(inputs["style_reference_batch"], node.settings.samples_per_reference)
+    outputs = []
+    runtime: Any | None = None
+    for reference_index, reference in enumerate(references):
+        for sample_index in range(samples):
+            synthesis_inputs = {**inputs, "style_reference": reference}
+            output_index = reference_index * samples + sample_index
+            if runtime is None:
+                runtime = _load_runtime_for_inputs(node.settings, synthesis_inputs, output_index)
+            outputs.append(synthesize_styletts(node.NODE_TYPE, node.settings, synthesis_inputs, run_id, output_index, runtime))
+    return outputs
+
+
+def _load_runtime_for_inputs(
     settings: StyleTtsSynthesisSettings,
     inputs: dict[str, Any],
-    request_id: str,
-    style_reference: dict[str, Any],
-    output_wav_path: Path,
-) -> dict[str, Any]:
-    return {
-        "version": 1,
-        "node_type": node_type,
-        "request_id": request_id,
-        "checkpoint": _checkpoint_payload(inputs["checkpoint"]),
-        "prompt_text": inputs["prompt_text"],
-        "text": _prompt_text(inputs["prompt_text"]),
-        "phonemes": inputs["phonemes"],
-        "style_reference": style_reference,
-        "weights_file": settings.weights_file,
-        "diffusion_steps": settings.diffusion_steps,
-        "embedding_scale": settings.embedding_scale,
-        "settings": settings.model_dump(mode="json"),
-        "output_wav_path": str(output_wav_path),
-    }
+    output_index: int,
+) -> Any:
+    with temporary_synthesis_dir() as tmp:
+        payload = build_styletts_payload(
+            checkpoint=_typed_checkpoint(inputs["checkpoint"]),
+            prompt_text=inputs["prompt_text"],
+            style_reference=inputs["style_reference"],
+            settings=_request_settings(settings),
+            work_dir=Path(tmp),
+            output_filename=_output_filename(settings.output_name, output_index),
+        )
+        return load_synthesis_runtime(payload)
 
 
-def _run_external_synthesis(node_type: str, command: list[str], payload: dict[str, Any], tmp_path: Path) -> None:
-    payload_path = tmp_path / "payload.json"
-    payload_path.write_text(json.dumps(payload, default=str, indent=2, sort_keys=True), encoding="utf-8")
-    env = {**os.environ, "RUNFLOW_SYNTHESIS_PAYLOAD": str(payload_path), "RUNFLOW_SYNTHESIS_NODE_TYPE": node_type}
-    subprocess.run(command, check=True, env=env)
+def _request_settings(settings: StyleTtsSynthesisSettings) -> StyleTtsRequestSettings:
+    return StyleTtsRequestSettings.model_validate(settings.model_dump(mode="python"))
 
 
-def _materialize_style_reference(reference: dict[str, Any], tmp_path: Path) -> dict[str, Any]:
-    kind = reference["kind"]
-    if kind == "audio_file":
-        audio_file_id = UUID(str(reference["audio_file_id"]))
-        with database_session() as session:
-            wav_bytes = audio_crud.read_audio_file(session, audio_file_id)
-        reference_path = tmp_path / "style_reference.wav"
-        reference_path.write_bytes(wav_bytes)
-        return _without_large_fields({**reference, "local_wav_path": str(reference_path)})
-    if kind == "wav_base64":
-        reference_path = tmp_path / "style_reference.wav"
-        reference_path.write_bytes(decode_wav_base64(str(reference["wav_base64"])))
-        return _without_large_fields({**reference, "local_wav_path": str(reference_path)})
-    raise RuntimeError(f"StyleTTS synthesis requires resolved style reference, got kind={kind}")
+def _typed_checkpoint(value: CheckpointRef | dict[str, Any]) -> CheckpointRef:
+    if isinstance(value, CheckpointRef):
+        return value
+    raise TypeError("StyleTTS synthesis requires a resolved CheckpointRef")
 
 
-def _read_output_wav(node_type: str, output_wav_path: Path) -> bytes:
-    if not output_wav_path.is_file():
-        raise RuntimeError(f"{node_type} external command did not produce output WAV: {output_wav_path}")
-    wav_bytes = output_wav_path.read_bytes()
-    if not wav_bytes:
-        raise RuntimeError(f"{node_type} external command produced an empty output WAV: {output_wav_path}")
-    return wav_bytes
-
-
-def _audio_from_wav(output_name: str, wav_bytes: bytes, request_id: str, payload: dict[str, Any]) -> Audio:
+def _audio_from_wav(output_name: str, wav_bytes: bytes, request_id: str, node_type: str) -> Audio:
     info = _wav_info(wav_bytes)
     audio_id = stable_id("audio", request_id)
-    metadata = {"node_type": payload["node_type"], "request_id": request_id, "byte_length": len(wav_bytes)}
+    metadata = {"node_type": node_type, "request_id": request_id, "byte_length": len(wav_bytes)}
     return Audio(
         audio_file_id=uuid5(NAMESPACE_URL, request_id),
         name=output_name,
@@ -192,12 +191,6 @@ def _wav_info(wav_bytes: bytes) -> dict[str, int | float]:
         return {"sample_rate": sample_rate, "channels": wav_file.getnchannels(), "duration": frame_count / sample_rate}
 
 
-def _checkpoint_payload(value: CheckpointRef | dict[str, Any]) -> dict[str, Any]:
-    if isinstance(value, CheckpointRef):
-        return {"checkpoint_id": str(value.checkpoint_id), "name": value.name, "path": str(value.path), "metadata": value.metadata}
-    raise TypeError("StyleTTS synthesis requires a resolved CheckpointRef")
-
-
 def _prompt_text(value: dict[str, Any]) -> str:
     if "text" in value:
         return str(value["text"])
@@ -206,18 +199,21 @@ def _prompt_text(value: dict[str, Any]) -> str:
     return str(value)
 
 
-def _without_large_fields(value: dict[str, Any]) -> dict[str, Any]:
-    return {key: item for key, item in value.items() if key not in {"wav_base64"}}
-
-
-def _result_metadata(payload: dict[str, Any], audio: Audio) -> dict[str, Any]:
+def _result_metadata(payload: dict[str, Any], audio: Audio, settings: StyleTtsSynthesisSettings) -> dict[str, Any]:
     return {
-        "node_type": payload["node_type"],
-        "checkpoint": payload["checkpoint"],
+        "node_type": audio.metadata["node_type"],
+        "checkpoint": {
+            "bundle_root": payload["bundle_root"],
+            "weights_path": payload["weights_path"],
+        },
         "style_reference": _without_large_fields(payload["style_reference"]),
-        "settings": payload["settings"],
+        "settings": settings.model_dump(mode="json"),
         "audio_id": audio.id,
     }
+
+
+def _without_large_fields(value: dict[str, Any]) -> dict[str, Any]:
+    return {key: item for key, item in value.items() if key not in {"data", "wav_base64"}}
 
 
 def _sweep_sample_count(value: dict[str, Any], default_samples: int) -> int:
@@ -230,3 +226,11 @@ def _sweep_sample_count(value: dict[str, Any], default_samples: int) -> int:
         assert samples >= 1, "style_reference_batch samples_per_reference must be at least 1"
         return samples
     return default_samples
+
+
+def _output_filename(output_name: str, output_index: int) -> str:
+    if output_index == 0:
+        return output_name
+    path = Path(output_name)
+    suffix = path.suffix or ".wav"
+    return f"{path.stem}_{output_index}{suffix}"

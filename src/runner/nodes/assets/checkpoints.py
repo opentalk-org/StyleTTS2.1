@@ -45,26 +45,10 @@ def resolve_checkpoint_ref(checkpoint_id: str, expected_type: str = "") -> Check
     )
 
 
-def checkpoint_ref_or_stub(node_type: str, run: Any, checkpoint_id: str) -> CheckpointRef | dict[str, Any]:
-    if _is_uuid(checkpoint_id):
-        return resolve_checkpoint_ref(checkpoint_id)
-    return {"node_type": node_type, "run": run, "source": "workflow_settings"}
-
-
-def prefetch_checkpoint_ref(value: CheckpointRef | dict[str, Any]) -> CheckpointRef | dict[str, Any]:
+def prefetch_checkpoint_ref(value: CheckpointRef | dict[str, Any]) -> CheckpointRef:
     if isinstance(value, CheckpointRef):
         return value
-    return {"source": value, "cache": "asset"}
-
-
-def _is_uuid(value: str) -> bool:
-    if not value:
-        return False
-    try:
-        UUID(value)
-    except ValueError:
-        return False
-    return True
+    raise TypeError("PrefetchCheckpoint requires a resolved CheckpointRef")
 
 
 class ResolveCheckpointNode(Node):

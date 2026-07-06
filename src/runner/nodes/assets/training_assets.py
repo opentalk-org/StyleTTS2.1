@@ -66,27 +66,10 @@ def resolve_training_asset_bundle(
     )
 
 
-def training_assets_ref_or_stub(
-    node_type: str,
-    run: Any,
-    f0_model: str,
-    asr_model: str,
-    plbert_model: str,
-) -> AssetBundleRef | dict[str, Any]:
-    if _all_uuid([f0_model, asr_model, plbert_model]):
-        return resolve_training_asset_bundle([asr_model], f0_model, plbert_model, [])
-    return {
-        "node_type": node_type,
-        "run": run,
-        "source": "workflow_settings",
-        "settings": {"f0_model": f0_model, "asr_model": asr_model, "plbert_model": plbert_model},
-    }
-
-
-def prefetch_training_assets(value: AssetBundleRef | dict[str, Any]) -> AssetBundleRef | dict[str, Any]:
+def prefetch_training_assets(value: AssetBundleRef | dict[str, Any]) -> AssetBundleRef:
     if isinstance(value, AssetBundleRef):
         return value
-    return {"source": value, "cache": "asset"}
+    raise TypeError("PrefetchTrainingAssets requires a resolved AssetBundleRef")
 
 
 def _requested_assets(
@@ -102,17 +85,6 @@ def _requested_assets(
         requested.append(("plbert", UUID(plbert_file_id)))
     requested.extend(("ood_text_set", UUID(file_id)) for file_id in ood_text_set_file_ids)
     return requested
-
-
-def _all_uuid(values: list[str]) -> bool:
-    if not all(values):
-        return False
-    try:
-        for value in values:
-            UUID(value)
-    except ValueError:
-        return False
-    return True
 
 
 def _resolve_extra_file(role: str, file_id: UUID) -> AssetFileRef:

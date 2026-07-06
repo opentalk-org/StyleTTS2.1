@@ -1,0 +1,38 @@
+preprocess_params:
+  sr: 24000
+
+mel_params:
+  n_mels: 80
+  n_fft: 2048
+  win_length: 1200
+  hop_length: 300
+
+model_params:
+  input_dim: 80
+  hidden_dim: 256
+  n_layers: 6
+  token_embedding_dim: 512
+
+data_params:
+  phoneme_symbols: null
+  ctc_blank_character: " "
+
+optimizer_params:
+  weight_decay: 0.0001
+  betas: [0.9, 0.98]
+  eps: 1.0e-9
+
+scheduler_params:
+  pct_start: 0.0
+  final_div_factor: 5.0
+
+training:
+  grad_clip: 5.0
+
+ui_defaults:
+  epochs: 200
+  batch_size: 64
+  learning_rate: 0.0005
+  checkpoint_save_interval_epochs: 10
+  validation_samples: 8
+  num_workers: 2

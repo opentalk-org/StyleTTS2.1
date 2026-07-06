@@ -10,14 +10,15 @@ from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runner.nodes.datatypes import SEGMENT_GROUP, TRANSCRIPT
 from runner.nodes.models import AudioSegment, SegmentGroup, Transcript, stable_id
+from runner.nodes.text_runtime.phonemize import DEFAULT_PUNCTUATION_MARKS, phonemize_texts
 
 
 class PhonemizeSettings(StrictSettings):
-    language: str = "en-us"
+    language: str = "pl"
     tie: bool = True
-    punctuation: bool = True
-    workers: int = Field(default=4, ge=1, le=32)
-    threads: int = Field(default=2, ge=1, le=16)
+    punctuation_marks: str = Field(default=DEFAULT_PUNCTUATION_MARKS, min_length=1, max_length=512)
+    espeak_workers: int = Field(default=4, ge=1, le=64)
+    align_threads: int = Field(default=8, ge=1, le=64)
 
 
 class PhonemizeSegmentsSettings(PhonemizeSettings):
@@ -36,12 +37,13 @@ class PhonemizeTranscriptNode(Node):
         for inputs in batch:
             transcript: Transcript = inputs["transcript"]
             spans = transcript.segments or [_fallback_span(transcript)]
-            segments = [_phonemized_span(span, self.settings) for span in spans]
+            phonemes = _phonemize_texts([str(span["text"]) for span in spans], self.settings)
+            segments = [_phonemized_span(span, phon) for span, phon in zip(spans, phonemes, strict=True)]
             metadata = {
                 **transcript.metadata,
                 "phoneme_language": self.settings.language,
                 "tie": self.settings.tie,
-                "punctuation": self.settings.punctuation,
+                "punctuation_marks": self.settings.punctuation_marks,
             }
             outputs.append({
                 "transcript": Transcript(
@@ -71,12 +73,12 @@ class PhonemizeSegmentsNode(Node):
         outputs = []
         for inputs in batch:
             group: SegmentGroup = inputs["segment_group"]
-            segments = [_phonemized_segment(segment, self.settings) for segment in group.segments]
+            segments = _phonemized_segments(group.segments, self.settings)
             metadata = {
                 **group.metadata,
                 "phoneme_language": self.settings.language,
                 "tie": self.settings.tie,
-                "punctuation": self.settings.punctuation,
+                "punctuation_marks": self.settings.punctuation_marks,
                 "phoneme_mode": self.settings.mode,
             }
             group_id = stable_id("segment_group_phon", group.id, self.settings.language, self.settings.mode)
@@ -86,9 +88,8 @@ class PhonemizeSegmentsNode(Node):
         return outputs
 
 
-def _phonemized_span(span: dict[str, Any], settings: PhonemizeSettings) -> dict[str, Any]:
-    text = str(span["text"])
-    return {**span, "phon": _placeholder_phonemes(text, settings)}
+def _phonemized_span(span: dict[str, Any], phonemes: str) -> dict[str, Any]:
+    return {**span, "phon": phonemes}
 
 
 def _fallback_span(transcript: Transcript) -> dict[str, Any]:
@@ -102,13 +103,28 @@ def _fallback_span(transcript: Transcript) -> dict[str, Any]:
     }
 
 
-def _phonemized_segment(segment: AudioSegment, settings: PhonemizeSegmentsSettings) -> AudioSegment:
-    if settings.mode == "fill" and segment.phon:
-        return segment
-    return replace(segment, phon=_placeholder_phonemes(segment.text, settings))
+def _phonemized_segments(segments: list[AudioSegment], settings: PhonemizeSegmentsSettings) -> list[AudioSegment]:
+    work_segments = [segment for segment in segments if _should_phonemize_segment(segment, settings)]
+    phonemes = _phonemize_texts([segment.text for segment in work_segments], settings)
+    phoneme_iter = iter(phonemes)
+    return [
+        replace(segment, phon=next(phoneme_iter))
+        if _should_phonemize_segment(segment, settings)
+        else segment
+        for segment in segments
+    ]
 
 
-def _placeholder_phonemes(text: str, settings: PhonemizeSettings) -> str:
-    units = [character.lower() for character in text if settings.punctuation or character.isalnum() or character.isspace()]
-    separator = "\u0361" if settings.tie else " "
-    return separator.join(character for character in units if not character.isspace())
+def _should_phonemize_segment(segment: AudioSegment, settings: PhonemizeSegmentsSettings) -> bool:
+    return bool(segment.text.strip()) and (settings.mode == "replace" or not segment.phon.strip())
+
+
+def _phonemize_texts(texts: list[str], settings: PhonemizeSettings) -> list[str]:
+    return phonemize_texts(
+        texts,
+        language=settings.language,
+        tie=settings.tie,
+        punctuation_marks=settings.punctuation_marks,
+        espeak_workers=settings.espeak_workers,
+        align_threads=settings.align_threads,
+    )

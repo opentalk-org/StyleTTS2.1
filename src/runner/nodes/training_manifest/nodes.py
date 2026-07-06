@@ -10,11 +10,12 @@ from pydantic import Field
 from runflow.core.node import Node
 from runflow.core.ports import Port, PortMode
 from runflow.core.settings import StrictSettings
-from runflow.policies import ResourcePolicy
 from runflow.core.types import UnionDataType
-from runner.nodes.datatypes import AUDIO_SEGMENT, JSON, SEGMENT_GROUP, TRAINING_MANIFEST
+from runflow.policies import ResourcePolicy
+from runner.nodes.datatypes import ASSET_BUNDLE, AUDIO_SEGMENT, CHECKPOINT_REF, JSON, SEGMENT_GROUP, TRAINING_MANIFEST
 from runner.nodes.models import AssetBundleRef, AudioSegment, CheckpointRef, SegmentGroup, TrainingManifest, stable_id
-from runner.nodes.training_config import ASSET_BUNDLE_OR_JSON, CHECKPOINT_REF_OR_JSON
+from shared.db import database_session
+from shared.db.audio import crud as audio_crud
 
 
 TRAINING_SEGMENT_INPUT = UnionDataType("TRAINING_SEGMENT_INPUT", (AUDIO_SEGMENT, SEGMENT_GROUP), "Segment or segment group")
@@ -31,7 +32,6 @@ class BuildTrainingManifestSettings(StrictSettings):
 class ManifestLine:
     audio_id: UUID
     value: str
-    text: str
     phon: str
     speaker: str
 
@@ -42,8 +42,8 @@ class BuildTrainingManifestNode(Node):
     SETTINGS = BuildTrainingManifestSettings
     INPUTS = {
         "segments": Port("segments", TRAINING_SEGMENT_INPUT, mode=PortMode.LIST),
-        "base_checkpoint": Port("base_checkpoint", CHECKPOINT_REF_OR_JSON),
-        "assets": Port("assets", ASSET_BUNDLE_OR_JSON, optional=True, default=None),
+        "base_checkpoint": Port("base_checkpoint", CHECKPOINT_REF),
+        "assets": Port("assets", ASSET_BUNDLE, optional=True, default=None),
         "phoneme_alphabet": Port("phoneme_alphabet", JSON, optional=True, default={}),
     }
     OUTPUTS = {"training_manifest": Port("training_manifest", TRAINING_MANIFEST)}
@@ -71,7 +71,8 @@ def build_training_manifest(
     phoneme_alphabet: list[str],
     settings: BuildTrainingManifestSettings,
 ) -> TrainingManifest:
-    groups = _usable_groups(segments)
+    audio_dir = _manifest_audio_dir(settings)
+    groups = _usable_groups(segments, audio_dir)
     if len(groups) < 2:
         raise ValueError("training manifest requires at least 2 usable source audio groups")
 
@@ -80,13 +81,13 @@ def build_training_manifest(
     if validation_count < 1:
         raise ValueError("training manifest requires at least 1 validation item")
 
-    validation_ids = set(ordered_audio_ids[:validation_count])
-    train_lines = _manifest_lines(groups, ordered_audio_ids[validation_count:], settings.root_path)
-    validation_lines = _manifest_lines(groups, ordered_audio_ids[:validation_count], settings.root_path)
-    if not validation_lines:
-        raise ValueError("training manifest requires at least 1 validation segment")
+    validation_ids = set(ordered_audio_ids[-validation_count:])
+    train_lines = _manifest_lines(groups, ordered_audio_ids[:-validation_count], settings.root_path, audio_dir)
+    validation_lines = _manifest_lines(groups, ordered_audio_ids[-validation_count:], settings.root_path, audio_dir)
     if not train_lines:
-        raise ValueError("training manifest requires at least 1 training segment")
+        raise ValueError("training manifest requires at least 1 training item")
+    if not validation_lines:
+        raise ValueError("training manifest requires at least 1 validation item")
 
     lists_dir = Path(settings.output_dir) / "lists"
     lists_dir.mkdir(parents=True, exist_ok=True)
@@ -95,12 +96,11 @@ def build_training_manifest(
     _write_manifest(train_path, train_lines)
     _write_manifest(validation_path, validation_lines)
 
-    text_sidecar_path = lists_dir / "segments.jsonl"
+    sidecar_path = lists_dir / "segments.jsonl"
     all_lines = train_lines + validation_lines
-    _write_text_sidecar(text_sidecar_path, all_lines)
+    _write_text_sidecar(sidecar_path, groups, ordered_audio_ids)
 
-    segment_count = len(all_lines)
-    manifest_id = stable_id("training_manifest", settings.dataset_id, base_checkpoint.id, segment_count)
+    manifest_id = stable_id("training_manifest", settings.dataset_id, base_checkpoint.id, len(all_lines))
     return TrainingManifest(
         dataset_id=settings.dataset_id,
         audio_file_ids=ordered_audio_ids,
@@ -112,11 +112,13 @@ def build_training_manifest(
         metadata={
             "train_manifest_path": str(train_path),
             "validation_manifest_path": str(validation_path),
-            "segment_text_path": str(text_sidecar_path),
+            "segment_text_path": str(sidecar_path),
             "train_count": len(train_lines),
             "validation_count": len(validation_lines),
-            "segment_count": segment_count,
+            "segment_count": sum(len(items) for items in groups.values()),
+            "audio_count": len(all_lines),
             "root_path": settings.root_path,
+            "audio_dir": str(audio_dir),
             "ordered_audio_ids": [str(audio_id) for audio_id in ordered_audio_ids],
             "validation_audio_ids": [str(audio_id) for audio_id in ordered_audio_ids if audio_id in validation_ids],
         },
@@ -144,13 +146,15 @@ def flatten_segment_inputs(values: list[AudioSegment | SegmentGroup]) -> list[Au
     return segments
 
 
-def _usable_groups(segments: list[AudioSegment]) -> dict[UUID, list[AudioSegment]]:
+def _usable_groups(segments: list[AudioSegment], audio_dir: Path) -> dict[UUID, list[AudioSegment]]:
     groups: dict[UUID, list[AudioSegment]] = {}
     for segment in sorted(segments, key=_segment_sort_key):
         if not segment.phon.strip() or segment.start >= segment.end:
             continue
         groups.setdefault(segment.source_audio_id, []).append(segment)
-    return {audio_id: items for audio_id, items in groups.items() if items}
+    usable = {audio_id: items for audio_id, items in groups.items() if items}
+    _materialize_audio_files(usable, audio_dir)
+    return usable
 
 
 def _segment_sort_key(segment: AudioSegment) -> tuple[str, float, float, str]:
@@ -158,26 +162,53 @@ def _segment_sort_key(segment: AudioSegment) -> tuple[str, float, float, str]:
     return (str(segment.source_audio_id), segment.start, segment.end, segment_key)
 
 
-def _manifest_lines(groups: dict[UUID, list[AudioSegment]], audio_ids: list[UUID], root_path: str) -> list[ManifestLine]:
+def _manifest_lines(
+    groups: dict[UUID, list[AudioSegment]],
+    audio_ids: list[UUID],
+    root_path: str,
+    audio_dir: Path,
+) -> list[ManifestLine]:
     lines: list[ManifestLine] = []
     for audio_id in audio_ids:
-        for segment in groups[audio_id]:
-            lines.append(
-                ManifestLine(
-                    audio_id=audio_id,
-                    value=_manifest_audio_value(segment, root_path),
-                    text=segment.text,
-                    phon=segment.phon,
-                    speaker=segment.speaker or "speaker_0",
-                )
+        segments = groups[audio_id]
+        lines.append(
+            ManifestLine(
+                audio_id=audio_id,
+                value=_manifest_audio_value(audio_id, root_path, audio_dir),
+                phon=" ".join(segment.phon.strip() for segment in segments),
+                speaker=_speaker_key(segments[0]),
             )
+        )
     return lines
 
 
-def _manifest_audio_value(segment: AudioSegment, root_path: str) -> str:
+def _manifest_audio_value(audio_id: UUID, root_path: str, audio_dir: Path) -> str:
+    filename = f"{audio_id}.wav"
     if root_path:
-        return str(Path(root_path) / segment.name)
-    return str(segment.source_audio_id)
+        return str(Path(root_path) / filename)
+    return str((audio_dir / filename).resolve())
+
+
+def _manifest_audio_dir(settings: BuildTrainingManifestSettings) -> Path:
+    if settings.root_path:
+        return Path(settings.root_path)
+    return Path(settings.output_dir) / "audio"
+
+
+def _speaker_key(segment: AudioSegment) -> str:
+    if segment.voice_id is not None:
+        return str(segment.voice_id)
+    if segment.speaker is not None and segment.speaker.strip():
+        return segment.speaker.strip()
+    return "0"
+
+
+def _materialize_audio_files(groups: dict[UUID, list[AudioSegment]], audio_dir: Path) -> None:
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    with database_session() as session:
+        for audio_id in groups:
+            target = audio_dir / f"{audio_id}.wav"
+            target.write_bytes(audio_crud.read_audio_file(session, audio_id))
 
 
 def _write_manifest(path: Path, lines: list[ManifestLine]) -> None:
@@ -185,9 +216,26 @@ def _write_manifest(path: Path, lines: list[ManifestLine]) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _write_text_sidecar(path: Path, lines: list[ManifestLine]) -> None:
-    content = "".join(json.dumps(line.__dict__, default=str, ensure_ascii=False) + "\n" for line in lines)
+def _write_text_sidecar(path: Path, groups: dict[UUID, list[AudioSegment]], audio_ids: list[UUID]) -> None:
+    rows = [_segment_sidecar_row(segment) for audio_id in audio_ids for segment in groups[audio_id]]
+    content = "".join(json.dumps(row, default=str, ensure_ascii=False) + "\n" for row in rows)
     path.write_text(content, encoding="utf-8")
+
+
+def _segment_sidecar_row(segment: AudioSegment) -> dict[str, object]:
+    return {
+        "audio_id": str(segment.source_audio_id),
+        "segment_id": segment.segment_id,
+        "runtime_segment_id": segment.id,
+        "lineage_id": segment.lineage_id,
+        "start": segment.start,
+        "end": segment.end,
+        "text": segment.text,
+        "phon": segment.phon,
+        "speaker": segment.speaker,
+        "voice_id": str(segment.voice_id) if segment.voice_id is not None else None,
+        "metadata": segment.metadata,
+    }
 
 
 def _typed_checkpoint(value: CheckpointRef | dict) -> CheckpointRef:
