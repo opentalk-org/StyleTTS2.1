@@ -8,6 +8,10 @@ from runner.nodes.assets.catalog_runtime.persistence import checkpoint_payload, 
 from runner.nodes.assets.catalog_runtime.specs import official_styletts_specs, papercup_plbert_spec, styletts2_utils_specs, vokan_styletts_spec
 from runner.nodes.assets.catalog_runtime.types import CatalogTask
 from runner.nodes.assets.catalog_runtime.validation import styletts_checkpoint_metadata
+from runner.nodes.assets.model_downloads import download_nemo_snapshot, download_whisper_model_files, ensure_model_checkpoint
+
+
+_NEMO_ASR_KINDS = {"parakeet", "canary", "sortformer"}
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -70,6 +74,36 @@ def bootstrap_vokan_styletts2_checkpoint(item: str = "", *, logger: logging.Logg
     return {"checkpoints": [checkpoint_payload(checkpoint, skipped=skipped, filename=spec.files[0].name)]}
 
 
+def bootstrap_asr_model(item: str = "", *, logger: logging.Logger | None = None) -> dict[str, Any]:
+    log = logger or _LOGGER
+    kind, model_id = _parse_asr_item(item)
+    if kind == "whisper":
+        download = lambda folder: download_whisper_model_files(model_id, folder)
+    elif kind in _NEMO_ASR_KINDS:
+        download = lambda folder: download_nemo_snapshot(model_id, folder)
+    else:
+        raise ValueError(f"catalog_item_unknown:{item}")
+    log.info("asr model download starting kind=%s model=%s", kind, model_id)
+    ref = ensure_model_checkpoint(kind, model_id, download)
+    log.info("asr model download resolved kind=%s model=%s checkpoint=%s", kind, model_id, ref.checkpoint_id)
+    return {
+        "model_checkpoint": {
+            "kind": kind,
+            "model_id": model_id,
+            "checkpoint_id": str(ref.checkpoint_id),
+            "name": ref.name,
+        }
+    }
+
+
+def _parse_asr_item(item: str) -> tuple[str, str]:
+    requested = item.strip()
+    kind, separator, model_id = requested.partition(":")
+    if not separator or not kind or not model_id:
+        raise ValueError(f"catalog_item_unknown:{item}")
+    return kind.strip(), model_id.strip()
+
+
 def _assert_single_item(spec_key: str, item: str) -> None:
     requested = item.strip()
     if requested and requested != spec_key:
@@ -102,5 +136,9 @@ CATALOG_DOWNLOAD_TASKS: dict[str, CatalogTask] = {
     "vokan_checkpoint": CatalogTask(
         key="vokan_checkpoint",
         run=bootstrap_vokan_styletts2_checkpoint,
+    ),
+    "asr_models": CatalogTask(
+        key="asr_models",
+        run=bootstrap_asr_model,
     ),
 }

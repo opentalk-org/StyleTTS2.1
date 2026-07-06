@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import asyncio
 from enum import Enum
+from typing import Any
 
 from pydantic import Field
 
 from runner.nodes.assets.catalog_runtime.tasks import run_catalog_task
+from runner.nodes.assets.checkpoints import resolve_checkpoint_ref
 from runflow.core.node import Node
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import JSON
+from runner.nodes.datatypes import CHECKPOINT_REF, JSON
+from runner.nodes.models import CheckpointRef
 from shared.log_streams import route_output_to_logger
 
 
@@ -33,7 +36,10 @@ class CatalogDownloadNode(Node):
     SETTINGS = CatalogDownloadSettings
     IS_INPUT = True
     INPUTS = {}
-    OUTPUTS = {"catalog_item": Port("catalog_item", JSON)}
+    OUTPUTS = {
+        "checkpoint": Port("checkpoint", CHECKPOINT_REF, optional=True),
+        "catalog_item": Port("catalog_item", JSON),
+    }
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     def __init__(self, node_id: str | None = None, **params):
@@ -47,23 +53,50 @@ class CatalogDownloadNode(Node):
         if self._emitted:
             raise RuntimeError(f"catalog node already emitted: {self.id}")
         self._emitted = True
+        if not self.settings.item.strip():
+            raise ValueError("catalog_download_requires_item")
         self.logger.info(
             "catalog download requested catalog=%s item=%s",
-            self.settings.catalog_key.value, self.settings.item or "<all>",
+            self.settings.catalog_key.value, self.settings.item,
         )
-        result = await asyncio.to_thread(self._run_task)
+        result, checkpoint = await asyncio.to_thread(self._run_task)
         self.logger.info("catalog download resolved catalog=%s", self.settings.catalog_key.value)
-        return [
-            {
-                "catalog_item": {
-                    "catalog_key": self.settings.catalog_key.value,
-                    "requested_item": self.settings.item,
-                    "status": "resolved_catalog_assets",
-                    "result": result,
-                }
+        output: dict[str, Any] = {
+            "catalog_item": {
+                "catalog_key": self.settings.catalog_key.value,
+                "requested_item": self.settings.item,
+                "status": "resolved_catalog_assets",
+                "result": result,
             }
-        ]
+        }
+        if checkpoint is not None:
+            output["checkpoint"] = checkpoint
+        return [output]
 
-    def _run_task(self):
+    def _run_task(self) -> tuple[dict[str, Any], CheckpointRef | None]:
         with route_output_to_logger(self.logger):
-            return run_catalog_task(self.settings.catalog_key.value, self.settings.item, logger=self.logger)
+            result = run_catalog_task(self.settings.catalog_key.value, self.settings.item, logger=self.logger)
+        return result, _single_checkpoint_ref(result)
+
+
+def _single_checkpoint_ref(result: dict[str, Any]) -> CheckpointRef | None:
+    ids = _collect_checkpoint_ids(result)
+    if len(ids) > 1:
+        raise RuntimeError(f"catalog_download_multiple_checkpoints:{len(ids)}")
+    if not ids:
+        return None
+    return resolve_checkpoint_ref(ids[0])
+
+
+def _collect_checkpoint_ids(obj: Any) -> list[str]:
+    found: list[str] = []
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if key == "checkpoint_id" and isinstance(value, str):
+                found.append(value)
+            else:
+                found.extend(_collect_checkpoint_ids(value))
+    elif isinstance(obj, list):
+        for value in obj:
+            found.extend(_collect_checkpoint_ids(value))
+    return found

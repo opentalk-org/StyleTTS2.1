@@ -4,7 +4,6 @@ from runflow.registry.node_registry import NodeRegistry
 from runflow.registry.type_registry import TypeRegistry
 from runner.nodes.asr import (
     CanaryTranscribeNode,
-    ModelDownloadNode,
     ParakeetTranscribeNode,
     WhisperTranscribeNode,
 )
@@ -74,7 +73,6 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         WhisperTranscribeNode,
         ParakeetTranscribeNode,
         CanaryTranscribeNode,
-        ModelDownloadNode,
         PhonemizeSegmentsNode,
         VadDetectNode,
         CutAudioBySegmentsNode,
