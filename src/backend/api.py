@@ -33,7 +33,6 @@ from shared.db.voices.schemas import VoiceCreate, VoicePage, VoiceRead
 from shared.logging_setup import configure_logging, get_logger
 from shared.schemas import InlineGraphRunRequest, NodeLogResponseMessage, RunEventResponse, RunnerStatus, RunSnapshot, RunStatus
 from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
-from runner.nodes.training.common.inputs.nodes import DEFAULT_ALPHABET
 
 
 configure_logging("backend")
@@ -187,28 +186,14 @@ def _ensure_default_phoneme_alphabets(session) -> None:
     existing = [item for item in asset_crud.list_configs(session, "phoneme_alphabet") if item.metadata_.get("builtin")]
     if existing:
         return
-    defaults = [
-        ("IPA default", "ipa", DEFAULT_ALPHABET.split()),
-        ("IPA multilingual", "ipa-multi", [str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS]),
-        ("ARPAbet", "arpabet", _arpabet_symbols()),
-    ]
-    for name, preset, symbols in defaults:
-        asset_crud.create_config(
-            session,
-            ConfigCreate(
-                name=name,
-                type_="phoneme_alphabet",
-                metadata={"builtin": True, "preset": preset, "symbols": symbols},
-            ),
-        )
-
-
-def _arpabet_symbols() -> list[str]:
-    return [
-        "AA", "AE", "AH", "AO", "AW", "AY", "B", "CH", "D", "DH", "EH", "ER", "EY", "F", "G", "HH",
-        "IH", "IY", "JH", "K", "L", "M", "N", "NG", "OW", "OY", "P", "R", "S", "SH", "T", "TH",
-        "UH", "UW", "V", "W", "Y", "Z", "ZH",
-    ]
+    asset_crud.create_config(
+        session,
+        ConfigCreate(
+            name="StyleTTS2 IPA",
+            type_="phoneme_alphabet",
+            metadata={"builtin": True, "preset": "ipa", "symbols": [str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS]},
+        ),
+    )
 
 
 @app.post("/datasets", response_model=DatasetRead, status_code=status.HTTP_201_CREATED)
