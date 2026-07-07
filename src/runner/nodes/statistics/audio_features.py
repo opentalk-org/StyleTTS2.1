@@ -28,7 +28,7 @@ class AnalyzeAudioFeaturesNode(Node):
     SETTINGS = AudioFeatureSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"features": Port("features", JSON)}
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=8, max_size=32)
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
 
     async def execute(self, batch, context):
         outputs = []

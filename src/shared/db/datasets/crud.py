@@ -2,6 +2,7 @@ import uuid
 from collections.abc import Sequence
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from shared.db.audio.models import AudioFile
@@ -47,6 +48,20 @@ def add_audio_file_to_dataset(session: Session, dataset_id: uuid.UUID, audio_fil
     session.commit()
     session.refresh(dataset)
     return dataset
+
+
+def bulk_add_audio_files_to_dataset(session: Session, dataset_id: uuid.UUID, audio_file_ids: Sequence[uuid.UUID]) -> None:
+    one(session, Dataset, dataset_id)
+    ids = list(dict.fromkeys(audio_file_ids))
+    if not ids:
+        return
+    statement = (
+        insert(dataset_audio_files)
+        .values([{"dataset_id": dataset_id, "audio_file_id": audio_file_id} for audio_file_id in ids])
+        .on_conflict_do_nothing(index_elements=["dataset_id", "audio_file_id"])
+    )
+    session.execute(statement)
+    session.commit()
 
 
 def remove_audio_file_from_dataset(session: Session, dataset_id: uuid.UUID, audio_file_id: uuid.UUID) -> Dataset:

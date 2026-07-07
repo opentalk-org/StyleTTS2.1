@@ -34,6 +34,7 @@ class AudioFileCreate(BaseModel):
     byte_offset: int
     byte_length: int
     duration: float
+    score: float | None = None
     segments: list[dict[str, Any]]
     metadata: dict[str, Any]
     virtual: bool
@@ -44,6 +45,7 @@ class AudioFileUpdate(BaseModel):
     byte_offset: int
     byte_length: int
     duration: float
+    score: float | None = None
     segments: list[dict[str, Any]]
     metadata: dict[str, Any]
     virtual: bool
@@ -53,6 +55,7 @@ class AudioCreate(BaseModel):
     name: str
     wav_bytes: bytes
     duration: float
+    score: float | None = None
     segments: list[dict[str, Any]]
     metadata: dict[str, Any]
     virtual: bool
@@ -63,6 +66,7 @@ class AudioUpdate(BaseModel):
     name: str
     wav_bytes: bytes | None
     duration: float
+    score: float | None = None
     segments: list[dict[str, Any]]
     metadata: dict[str, Any]
     virtual: bool

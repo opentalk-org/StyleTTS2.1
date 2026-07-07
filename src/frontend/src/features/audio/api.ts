@@ -18,6 +18,7 @@ export type AudioFile = {
   name: string;
   speaker: string;
   duration: number;
+  score: number | null;
   sample_rate: number | null;
   byte_length: number;
   size_mb: string;
@@ -60,6 +61,10 @@ export type AudioDeleteRequest =
   | { mode: "ids"; ids: string[] }
   | { mode: "filter"; query: string; dataset: string };
 
+export type AddToDatasetRequest =
+  | { dataset_id: string; mode: "ids"; audio_file_ids: string[] }
+  | { dataset_id: string; mode: "filter"; query: string; dataset: string };
+
 export type WaveformRead = {
   duration: number;
   sample_rate: number;
@@ -100,6 +105,14 @@ export function renameAudioFile(id: string, name: string): Promise<AudioFile> {
   });
 }
 
+export function updateAudioScore(id: string, score: number | null): Promise<AudioFile> {
+  return backendRequest<AudioFile>(`/audio-files/${encodeURIComponent(id)}/score`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ score }),
+  });
+}
+
 export async function deleteAudioFile(id: string): Promise<void> {
   const response = await backendFetch(`/audio-files/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!response.ok) throw new Error(`Backend request failed: ${response.status}`);
@@ -112,6 +125,15 @@ export async function deleteAudioFiles(ids: string[]): Promise<void> {
 export async function deleteMatchingAudioFiles(query: string, dataset: string): Promise<void> {
   const search = new URLSearchParams({ query, dataset });
   const response = await backendFetch(`/audio-files?${search}`, { method: "DELETE" });
+  if (!response.ok) throw new Error(`Backend request failed: ${response.status}`);
+}
+
+export async function addAudioFilesToDataset(request: AddToDatasetRequest): Promise<void> {
+  const response = await backendFetch(`/audio-files/dataset-membership`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
   if (!response.ok) throw new Error(`Backend request failed: ${response.status}`);
 }
 

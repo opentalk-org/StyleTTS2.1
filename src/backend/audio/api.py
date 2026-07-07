@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Response, UploadFile, status
 
-from backend.audio.schemas import AudioFileListItem, AudioFilePage, AudioRenamePayload, AudioSegmentRead, AudioSegmentWrite, AudioSort
+from backend.audio.schemas import AddToDatasetRequest, AudioFileListItem, AudioFilePage, AudioRenamePayload, AudioScorePayload, AudioSegmentRead, AudioSegmentWrite, AudioSort
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 from shared.db.audio.models import AudioFile
@@ -57,6 +57,20 @@ async def upload_audio_file(
                 dataset_crud.add_audio_file_to_dataset(session, uuid.UUID(dataset_id), item.id)
                 session.refresh(item, attribute_names=["datasets"])
             return audio_response(item, None)
+    except (KeyError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
+@router.post("/dataset-membership", status_code=status.HTTP_204_NO_CONTENT)
+async def add_audio_files_to_dataset(payload: AddToDatasetRequest) -> None:
+    try:
+        dataset_id = uuid.UUID(payload.dataset_id)
+        with database_session() as session:
+            if payload.mode == "filter":
+                ids = audio_crud.search_audio_file_ids(session, payload.query, payload.dataset)
+            else:
+                ids = [uuid.UUID(file_id) for file_id in payload.audio_file_ids]
+            dataset_crud.bulk_add_audio_files_to_dataset(session, dataset_id, ids)
     except (KeyError, ValueError) as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
 
@@ -181,6 +195,29 @@ async def rename_audio_file(audio_file_id: uuid.UUID, payload: AudioRenamePayloa
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
 
+@router.patch("/{audio_file_id}/score", response_model=AudioFileListItem)
+async def update_audio_score(audio_file_id: uuid.UUID, payload: AudioScorePayload) -> AudioFileListItem:
+    try:
+        with database_session() as session:
+            item = audio_crud.get_audio_file(session, audio_file_id)
+            updated = audio_crud.update_audio_file(
+                session,
+                audio_file_id,
+                AudioUpdate(
+                    name=item.name,
+                    wav_bytes=None,
+                    duration=item.duration,
+                    score=payload.score,
+                    segments=item.segments,
+                    metadata=item.metadata_,
+                    virtual=item.virtual,
+                ),
+            )
+            return audio_response(updated, None)
+    except KeyError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
 def audio_response(item: AudioFile, segment_limit: int | None) -> AudioFileListItem:
     metadata = dict(item.metadata_)
     segments = item.segments if segment_limit is None else item.segments[:segment_limit]
@@ -189,6 +226,7 @@ def audio_response(item: AudioFile, segment_limit: int | None) -> AudioFileListI
         name=item.name,
         speaker=_speaker(metadata),
         duration=item.duration,
+        score=item.score,
         sample_rate=_sample_rate(metadata),
         byte_length=item.byte_length,
         size_mb=f"{item.byte_length / 1024 / 1024:.1f}",

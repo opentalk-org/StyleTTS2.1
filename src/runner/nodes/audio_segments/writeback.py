@@ -19,6 +19,8 @@ from shared.db.audio.schemas import AudioCreate, AudioUpdate
 
 class SaveAudioRecordSettings(StrictSettings):
     virtual: bool = False
+    create_waveforms: bool = True
+    bulk_import_packs: bool = False
 
 
 class SaveAudioSegmentsSettings(StrictSettings):
@@ -31,26 +33,37 @@ class SaveAudioRecordNode(Node):
     SETTINGS = SaveAudioRecordSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO), "save_result": Port("save_result", SAVE_RESULT)}
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=8, max_size=32)
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=256)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        outputs = []
-        with database_session() as session:
-            for inputs in batch:
-                audio: Audio = inputs["audio"]
-                assert audio.data is not None, f"audio bytes are required: {audio.id}"
-                payload = AudioCreate(
+        audios = []
+        payloads = []
+        for inputs in batch:
+            context.check_cancel()
+            audio: Audio = inputs["audio"]
+            assert audio.data is not None, f"audio bytes are required: {audio.id}"
+            audios.append(audio)
+            payloads.append(
+                AudioCreate(
                     name=audio.name,
                     wav_bytes=audio.data,
                     duration=audio.duration,
+                    score=_audio_score(audio),
                     segments=[],
                     metadata=_audio_metadata(audio),
                     virtual=self.settings.virtual,
                 )
-                item = audio_crud.create_audio_file(session, payload)
-                outputs.append(_audio_writeback_output(item, audio, "created"))
-        return outputs
+            )
+        with database_session() as session:
+            items = audio_crud.bulk_create_audio_files(
+                session,
+                payloads,
+                config=_audio_pack_config(self.settings),
+                create_waveforms=self.settings.create_waveforms,
+            )
+        context.check_cancel()
+        return [_audio_writeback_output(item, audio, "created") for item, audio in zip(items, audios, strict=True)]
 
 
 class UpdateAudioRecordBytesNode(Node):
@@ -58,13 +71,14 @@ class UpdateAudioRecordBytesNode(Node):
     CATEGORY = "Audio"
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO), "save_result": Port("save_result", SAVE_RESULT)}
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=8, max_size=32)
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=256)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
         outputs = []
         with database_session() as session:
             for inputs in batch:
+                context.check_cancel()
                 audio: Audio = inputs["audio"]
                 assert audio.data is not None, f"audio bytes are required: {audio.id}"
                 item = audio_crud.get_audio_file(session, audio.audio_file_id)
@@ -72,11 +86,13 @@ class UpdateAudioRecordBytesNode(Node):
                     name=item.name,
                     wav_bytes=audio.data,
                     duration=audio.duration,
+                    score=_audio_score(audio, fallback=item.score),
                     segments=item.segments,
                     metadata=_audio_metadata(audio),
                     virtual=item.virtual,
                 )
                 updated = audio_crud.update_audio_file(session, audio.audio_file_id, payload)
+                context.check_cancel()
                 outputs.append(_audio_writeback_output(updated, audio, "updated"))
         return outputs
 
@@ -86,13 +102,14 @@ class LoadAudioSegmentsNode(Node):
     CATEGORY = "Audio"
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO)}
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=16, max_size=64)
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=256)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
         outputs = []
         with database_session() as session:
             for inputs in batch:
+                context.check_cancel()
                 audio: Audio = inputs["audio"]
                 ref = _audio_ref_from_audio(audio)
                 segments = audio_crud.list_audio_segments(session, ref.audio_file_id)
@@ -107,27 +124,54 @@ class SaveAudioSegmentsNode(Node):
     SETTINGS = SaveAudioSegmentsSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO), "save_result": Port("save_result", SAVE_RESULT)}
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=8, max_size=32)
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=256)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        outputs = []
+        records: list[tuple[Audio, AudioRecordRef, SegmentGroup, list[dict[str, Any]]]] = []
         with database_session() as session:
             for inputs in batch:
+                context.check_cancel()
                 audio: Audio = inputs["audio"]
                 ref = _audio_ref_from_audio(audio)
                 group = _segment_group_from_audio(audio)
-                segments = _save_group_segments(session, ref, group, self.settings.mode)
-                saved = [_audio_segment_from_dict(ref, segment) for segment in segments]
-                outputs.append({
-                    "audio": replace(audio, segments=saved),
-                    "save_result": _save_result(f"db/audio/{ref.audio_file_id}/segments", "audio_segments", group.lineage_id, {"count": len(saved)}),
-                })
+                records.append((audio, ref, group, _new_group_segments(session, ref, group, self.settings.mode)))
+            saved_by_id = audio_crud.bulk_replace_audio_segments(
+                session,
+                {ref.audio_file_id: segments for _, ref, _, segments in records},
+            )
+        outputs = []
+        for audio, ref, group, _ in records:
+            segments = saved_by_id[ref.audio_file_id]
+            saved = [_audio_segment_from_dict(ref, segment) for segment in segments]
+            outputs.append({
+                "audio": replace(audio, segments=saved),
+                "save_result": _save_result(f"db/audio/{ref.audio_file_id}/segments", "audio_segments", group.lineage_id, {"count": len(saved)}),
+            })
         return outputs
 
 
 def _audio_metadata(audio: Audio) -> dict[str, Any]:
     return {**audio.metadata, "sample_rate": audio.sample_rate, "channels": audio.channels}
+
+
+def _audio_pack_config(settings: SaveAudioRecordSettings) -> audio_crud.AudioPackConfig:
+    if not settings.bulk_import_packs:
+        return audio_crud.AudioPackConfig()
+    return audio_crud.AudioPackConfig(
+        target_pack_bytes=512 * 1024 * 1024,
+        reuse_open_packs=False,
+        seal_on_flush=True,
+    )
+
+
+def _audio_score(audio: Audio, fallback: float | None = None) -> float | None:
+    for key in ("score", "mos_score"):
+        value = audio.metadata.get(key)
+        if value is None or value == "":
+            continue
+        return float(value)
+    return fallback
 
 
 def _audio_writeback_output(item: AudioFile, source: Audio, action: str) -> dict[str, Audio | SaveResult]:
@@ -197,10 +241,14 @@ def _segment_dict(segment: AudioSegment) -> dict[str, Any]:
 
 
 def _save_group_segments(session: Any, ref: AudioRecordRef, group: SegmentGroup, mode: Literal["replace", "append"]) -> list[dict[str, Any]]:
+    return audio_crud.replace_audio_segments(session, ref.audio_file_id, _new_group_segments(session, ref, group, mode))
+
+
+def _new_group_segments(session: Any, ref: AudioRecordRef, group: SegmentGroup, mode: Literal["replace", "append"]) -> list[dict[str, Any]]:
     new_segments = [_segment_dict(segment) for segment in group.segments]
     if mode == "append":
         new_segments = [*audio_crud.list_audio_segments(session, ref.audio_file_id), *new_segments]
-    return audio_crud.replace_audio_segments(session, ref.audio_file_id, sorted(new_segments, key=_segment_sort_key))
+    return sorted(new_segments, key=_segment_sort_key)
 
 
 def _segment_sort_key(segment: dict[str, Any]) -> tuple[float, float, str, str]:

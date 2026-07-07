@@ -37,7 +37,7 @@ class ExtractSegmentGroupAudioNode(Node):
     CATEGORY = "Audio"
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO)}
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=8, max_size=32)
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
@@ -63,7 +63,7 @@ class PersistSplitAudioRecordsNode(Node):
         "audio": Port("audio", AUDIO),
         "save_result": Port("save_result", SAVE_RESULT),
     }
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=8, max_size=32)
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
@@ -77,6 +77,7 @@ class PersistSplitAudioRecordsNode(Node):
                     name=audio.name,
                     wav_bytes=audio.data,
                     duration=audio.duration,
+                    score=_target_audio_score(audio),
                     segments=[],
                     metadata=_target_audio_metadata(audio),
                     virtual=self.settings.virtual,
@@ -240,6 +241,15 @@ def _target_audio_metadata(audio: Audio) -> dict[str, Any]:
         "sample_rate": audio.sample_rate,
         "channels": audio.channels,
     }
+
+
+def _target_audio_score(audio: Audio) -> float | None:
+    for key in ("score", "mos_score"):
+        value = audio.metadata.get(key)
+        if value is None or value == "":
+            continue
+        return float(value)
+    return None
 
 
 def _attach_datasets(session, audio_file_id: UUID, settings: PersistSplitAudioRecordsSettings) -> None:

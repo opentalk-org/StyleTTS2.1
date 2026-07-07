@@ -3,15 +3,19 @@ import { useEffect, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  type AddToDatasetRequest,
   type AudioDeleteRequest,
   type AudioQuery,
+  addAudioFilesToDataset,
   deleteAudioFiles,
   deleteMatchingAudioFiles,
   fetchAudioFile,
   fetchAudioFiles,
   fetchWaveform,
   renameAudioFile,
+  updateAudioScore,
 } from "./api";
+import { DATASETS_KEY } from "@/features/datasets/query";
 
 export const AUDIO_FILES_KEY = "audio-files";
 const WAVEFORM_DEBOUNCE_MS = 200;
@@ -51,10 +55,29 @@ export function useDeleteAudioFilesMutation() {
   });
 }
 
+export function useAddToDatasetMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: AddToDatasetRequest) => addAudioFilesToDataset(request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [AUDIO_FILES_KEY] });
+      queryClient.invalidateQueries({ queryKey: [DATASETS_KEY] });
+    },
+  });
+}
+
 export function useRenameAudioFileMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, name }: { id: string; name: string }) => renameAudioFile(id, name),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [AUDIO_FILES_KEY] }),
+  });
+}
+
+export function useUpdateAudioScoreMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, score }: { id: string; score: number | null }) => updateAudioScore(id, score),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [AUDIO_FILES_KEY] }),
   });
 }

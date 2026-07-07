@@ -33,6 +33,7 @@ def create_database_schema(database_url: str | None = None) -> None:
     try:
         Base.metadata.create_all(engine)
         _ensure_audio_updated_at(engine)
+        _ensure_audio_score(engine)
         _ensure_checkpoint_job_id(engine)
         _ensure_storage_folder(engine)
     finally:
@@ -41,6 +42,12 @@ def create_database_schema(database_url: str | None = None) -> None:
 
 def _ensure_audio_updated_at(engine: Engine) -> None:
     statement = text("ALTER TABLE audio_files ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()")
+    with engine.begin() as connection:
+        connection.execute(statement)
+
+
+def _ensure_audio_score(engine: Engine) -> None:
+    statement = text("ALTER TABLE audio_files ADD COLUMN IF NOT EXISTS score DOUBLE PRECISION NULL")
     with engine.begin() as connection:
         connection.execute(statement)
 

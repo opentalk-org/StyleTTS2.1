@@ -137,8 +137,7 @@ class RunnerWorker:
             scheduler = self._active_schedulers.get(command.run_id)
             if scheduler is not None:
                 scheduler.cancel()
-            else:
-                task.cancel()
+            task.cancel()
         else:
             self.logger.info("stop command pending run_id=%s", command.run_id)
             self._pending_stops.add(command.run_id)

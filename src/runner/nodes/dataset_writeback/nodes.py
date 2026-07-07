@@ -8,6 +8,7 @@ from pydantic import Field
 from runflow.core.node import Node
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
+from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.datatypes import AUDIO, JSON
 from runner.nodes.models import Audio
 from shared.db import database_session
@@ -31,12 +32,16 @@ class AddAudioToDatasetNode(Node):
     SETTINGS = DatasetWritebackSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"writeback_result": Port("writeback_result", JSON)}
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=128, max_size=512)
+    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
+        audios = [inputs["audio"] for inputs in batch]
+        for _ in context.cancellable(audios):
+            pass
         with database_session() as session:
-            for inputs in batch:
-                dataset_crud.add_audio_file_to_dataset(session, self.settings.dataset_id, inputs["audio"].audio_file_id)
-        return [{"writeback_result": {"updated": inputs["audio"].name}} for inputs in batch]
+            dataset_crud.bulk_add_audio_files_to_dataset(session, self.settings.dataset_id, [audio.audio_file_id for audio in audios])
+        return [{"writeback_result": {"updated": audio.name}} for audio in audios]
 
 
 class RemoveAudioFromDatasetNode(Node):
@@ -45,10 +50,13 @@ class RemoveAudioFromDatasetNode(Node):
     SETTINGS = DatasetWritebackSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"writeback_result": Port("writeback_result", JSON)}
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=128, max_size=512)
+    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
         with database_session() as session:
             for inputs in batch:
+                context.check_cancel()
                 dataset_crud.remove_audio_file_from_dataset(session, self.settings.dataset_id, inputs["audio"].audio_file_id)
         return [{"writeback_result": {"updated": inputs["audio"].name}} for inputs in batch]
 
@@ -59,12 +67,15 @@ class AssignVoiceNode(Node):
     SETTINGS = AssignVoiceSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO), "writeback_result": Port("writeback_result", JSON)}
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=256)
+    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
         outputs = []
         with database_session() as session:
             assignment = _voice_assignment(session, self.settings.voice)
             for inputs in batch:
+                context.check_cancel()
                 audio: Audio = inputs["audio"]
                 item = audio_crud.get_audio_file(session, audio.audio_file_id)
                 metadata = _assigned_metadata(item.metadata_, assignment)
@@ -81,6 +92,7 @@ class AssignVoiceNode(Node):
                         virtual=item.virtual,
                     ),
                 )
+                context.check_cancel()
                 outputs.append({
                     "audio": replace(
                         audio,
@@ -103,10 +115,13 @@ class DeleteAudioRecordsNode(Node):
     CATEGORY = "Dataset"
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"writeback_result": Port("writeback_result", JSON)}
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=256)
+    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
         with database_session() as session:
             for inputs in batch:
+                context.check_cancel()
                 audio_crud.delete_audio_file(session, inputs["audio"].audio_file_id)
         return [{"writeback_result": {"deleted": str(inputs["audio"].audio_file_id)}} for inputs in batch]
 

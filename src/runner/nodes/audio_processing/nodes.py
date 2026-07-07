@@ -58,7 +58,7 @@ class VadDetectNode(Node):
     SETTINGS = VadSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=16, max_size=64)
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
 
     async def execute(self, batch, context):
         outputs = []
@@ -75,7 +75,7 @@ class SortformerDiarizationNode(Node):
     SETTINGS = SortformerSettings
     INPUTS = {"audio": Port("audio", AUDIO), "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST)}
     OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=4, max_size=16)
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=16, max_size=16)
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, keep_loaded=True, exclusive_group="accelerator")
 
     def __init__(self, node_id: str | None = None, **params: Any):

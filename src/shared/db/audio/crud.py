@@ -26,6 +26,7 @@ from shared.db.audio.segments_crud import (
     delete_segment,
     list_audio_segments,
     replace_audio_segments,
+    bulk_replace_audio_segments,
     update_segment,
     update_segment_phonemes,
     update_segment_text,
@@ -110,10 +111,12 @@ def create_audio_file(
     payload: AudioCreate,
     store: ObjectStore | None = None,
     config: AudioPackConfig = AudioPackConfig(),
+    create_waveform: bool = True,
 ) -> AudioFile:
     resolved_store = _object_store(session, store)
     item = create_packed_audio_file(session, resolved_store, payload, config)
-    waveform_crud.replace_waveform_from_audio(session, item.id, payload.wav_bytes, item.duration, payload.waveform, resolved_store)
+    if create_waveform:
+        waveform_crud.replace_waveform_from_audio(session, item.id, payload.wav_bytes, item.duration, payload.waveform, resolved_store)
     return item
 
 
@@ -122,11 +125,16 @@ def bulk_create_audio_files(
     payloads: Sequence[AudioCreate],
     store: ObjectStore | None = None,
     config: AudioPackConfig = AudioPackConfig(),
+    create_waveforms: bool = True,
 ) -> list[AudioFile]:
     resolved_store = _object_store(session, store)
     items = bulk_create_packed_audio_files(session, resolved_store, payloads, config)
-    for item, payload in zip(items, payloads, strict=True):
-        waveform_crud.replace_waveform_from_audio(session, item.id, payload.wav_bytes, item.duration, payload.waveform, resolved_store)
+    if create_waveforms:
+        waveform_crud.bulk_replace_waveforms_from_audio(
+            session,
+            [(item.id, payload.wav_bytes, item.duration, payload.waveform) for item, payload in zip(items, payloads, strict=True)],
+            resolved_store,
+        )
     return items
 
 
@@ -254,6 +262,8 @@ def _object_store(session: Session, store: ObjectStore | None) -> ObjectStore:
 def _update_audio_metadata(item: AudioFile, payload: AudioUpdate) -> None:
     item.name = payload.name
     item.duration = payload.duration
+    if "score" in payload.model_fields_set:
+        item.score = payload.score
     item.segments = payload.segments
     item.metadata_ = payload.metadata
     item.virtual = payload.virtual

@@ -16,7 +16,7 @@ import { saveAudioSegments } from "./api";
 import { SegmentRow } from "./SegmentRow";
 import { SegmentTimeline } from "./SegmentTimeline";
 import { useEditor } from "./editorStore";
-import { AUDIO_FILES_KEY, useAudioFileQuery, useRenameAudioFileMutation, useWaveformQuery } from "./query";
+import { AUDIO_FILES_KEY, useAudioFileQuery, useRenameAudioFileMutation, useUpdateAudioScoreMutation, useWaveformQuery } from "./query";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -40,11 +40,16 @@ export function SegmentEditor() {
   const activeAudioFileId = useNav((s) => s.activeAudioFileId);
   const audio = useAudioFileQuery(activeAudioFileId);
   const renameAudio = useRenameAudioFileMutation();
+  const updateScore = useUpdateAudioScoreMutation();
   const queryClient = useQueryClient();
   const audioRef = useRef<HTMLAudioElement>(null);
   const skipNameBlur = useRef(false);
+  const skipScoreBlur = useRef(false);
   const [copied, setCopied] = useState(false);
+  const [metadataCopied, setMetadataCopied] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+  const [scoreDraft, setScoreDraft] = useState("");
+  const [showMetadata, setShowMetadata] = useState(false);
   const ed = useEditor();
   const {
     fileId, dur, segs, playPos, playing, speed, volume, loop, viewStart, viewEnd, dirty, segSel, segQuery,
@@ -61,6 +66,10 @@ export function SegmentEditor() {
   useEffect(() => {
     if (audio.data) setNameDraft(audio.data.name);
   }, [audio.data?.id, audio.data?.name]);
+
+  useEffect(() => {
+    if (audio.data) setScoreDraft(audio.data.score === null ? "" : String(audio.data.score));
+  }, [audio.data?.id, audio.data?.score]);
 
   useEffect(() => {
     const element = audioRef.current;
@@ -119,6 +128,7 @@ export function SegmentEditor() {
   const contentUrl = backendResourceUrl(`/audio-files/${encodeURIComponent(activeAudioFileId)}/content`);
   const seed = hashSeed(activeAudioFileId);
   const selectedSegment = segs.find((seg) => seg.id === segSel);
+  const metadataJson = JSON.stringify(file.metadata, null, 2);
 
   const saveSegments = async () => {
     const updated = await saveAudioSegments(activeAudioFileId, segs);
@@ -144,6 +154,24 @@ export function SegmentEditor() {
     }
   };
 
+  const commitScore = async () => {
+    const raw = scoreDraft.trim();
+    const score = raw === "" ? null : Number(raw);
+    if (raw !== "" && !Number.isFinite(score)) {
+      showToast("Score must be a number", undefined, "error");
+      setScoreDraft(file.score === null ? "" : String(file.score));
+      return;
+    }
+    if (score === file.score) return;
+    try {
+      await updateScore.mutateAsync({ id: activeAudioFileId, score });
+      showToast("Score saved");
+    } catch {
+      setScoreDraft(file.score === null ? "" : String(file.score));
+      showToast("Could not save score", undefined, "error");
+    }
+  };
+
   const downloadAudio = () => {
     const anchor = document.createElement("a");
     anchor.href = contentUrl;
@@ -162,12 +190,12 @@ export function SegmentEditor() {
         }}
       />
       {/* header */}
-      <div className="mb-4 flex items-center gap-3.5">
-        <Button variant="secondary" icon="arrow-left" onClick={() => useNav.getState().go("audio")}>
-          Audio Files
-        </Button>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2.5">
+      <div className="mb-4 grid gap-3 rounded-[10px] border border-line bg-panel px-4 py-3 lg:grid-cols-[1fr_auto]">
+        <div className="min-w-0">
+          <div className="mb-2 flex items-center gap-2">
+            <Button variant="secondary" size="sm" icon="arrow-left" onClick={() => useNav.getState().go("audio")}>
+              Audio Files
+            </Button>
             <input
               value={nameDraft}
               disabled={renameAudio.isPending}
@@ -193,11 +221,15 @@ export function SegmentEditor() {
               }}
               className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-[17px] font-bold text-txt outline-none hover:border-line focus:border-blue-400 focus:bg-bg"
             />
-            <span className="rounded-full bg-panel-2 px-2 py-0.5 text-[11px] font-semibold text-txt-dim">{file.speaker}</span>
           </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs tabular-nums text-txt-mute">
-            <span>{fmtDur(dur)} · {file.sample_rate ? `${file.sample_rate / 1000}kHz` : "unknown rate"} · {file.size_mb} MB · {segs.length} segments</span>
-            <span className="text-line">·</span>
+          <div className="flex flex-wrap items-center gap-2 text-xs tabular-nums text-txt-mute">
+            <span className="max-w-[260px] truncate rounded-full bg-panel-2 px-2 py-0.5 text-[11px] font-semibold text-txt-dim" title={file.speaker}>
+              {file.speaker}
+            </span>
+            <span>{fmtDur(dur)}</span>
+            <span>{file.sample_rate ? `${file.sample_rate / 1000}kHz` : "unknown rate"}</span>
+            <span>{file.size_mb} MB</span>
+            <span>{segs.length} segments</span>
             <button
               title="Copy audio ID"
               onClick={async () => {
@@ -207,31 +239,90 @@ export function SegmentEditor() {
                 window.setTimeout(() => setCopied(false), 1200);
               }}
               className={cn(
-                "inline-flex items-center gap-1 font-mono transition-all active:scale-95",
+                "inline-flex min-w-0 max-w-full items-center gap-1 font-mono transition-all active:scale-95",
                 copied ? "text-emerald-600" : "text-txt-dim hover:text-txt",
               )}
             >
               <Icon name={copied ? "check" : "copy"} size={11} strokeWidth={2.4} />
-              {copied ? "Copied" : activeAudioFileId}
+              <span className="truncate">{copied ? "Copied" : activeAudioFileId}</span>
             </button>
           </div>
         </div>
-        <span className={cn("flex items-center gap-1.5 text-xs font-semibold", dirty ? "text-amber-700" : "text-txt-mute")}>
-          {dirty ? (
-            <span className="h-[7px] w-[7px] rounded-full bg-amber-500" />
-          ) : (
-            <Icon name="check" size={14} strokeWidth={2.5} className="text-emerald-600" />
-          )}
-          {dirty ? "Unsaved changes" : "All changes saved"}
-        </span>
-        <Button
-          variant={dirty ? "primary" : "ghost"}
-          disabled={!dirty}
-          onClick={() => { void saveSegments(); }}
-        >
-          Save
-        </Button>
+        <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
+          <label className="flex h-12 min-w-[176px] items-center gap-2 rounded-md border border-line bg-bg px-3">
+            <span className="text-[11px] font-bold uppercase text-txt-mute">Score</span>
+            <input
+              value={scoreDraft}
+              disabled={updateScore.isPending}
+              type="number"
+              step="0.01"
+              placeholder="none"
+              title="Audio score"
+              onChange={(event) => setScoreDraft(event.target.value)}
+              onBlur={() => {
+                if (skipScoreBlur.current) {
+                  skipScoreBlur.current = false;
+                  return;
+                }
+                void commitScore();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  skipScoreBlur.current = true;
+                  setScoreDraft(file.score === null ? "" : String(file.score));
+                  event.currentTarget.blur();
+                }
+              }}
+              className="h-9 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 text-right font-mono text-[15px] font-bold tabular-nums text-txt outline-none focus:border-blue-400 disabled:opacity-60"
+            />
+          </label>
+          <Button variant={showMetadata ? "secondary" : "ghost"} icon="file-audio" onClick={() => setShowMetadata((value) => !value)}>
+            Metadata
+          </Button>
+          <span className={cn("flex h-9 items-center gap-1.5 rounded-md px-2 text-xs font-semibold", dirty ? "bg-amber-50 text-amber-700" : "bg-panel-2 text-txt-mute")}>
+            {dirty ? (
+              <span className="h-[7px] w-[7px] rounded-full bg-amber-500" />
+            ) : (
+              <Icon name="check" size={14} strokeWidth={2.5} className="text-emerald-600" />
+            )}
+            {dirty ? "Unsaved changes" : "Saved"}
+          </span>
+          <Button
+            variant={dirty ? "primary" : "ghost"}
+            disabled={!dirty}
+            onClick={() => { void saveSegments(); }}
+          >
+            Save
+          </Button>
+        </div>
       </div>
+      {showMetadata ? (
+        <div className="mb-4 overflow-hidden rounded-[10px] border border-line bg-panel">
+          <div className="flex items-center justify-between border-b border-line px-4 py-2">
+            <div className="text-[13px] font-bold text-txt">Audio metadata</div>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={metadataCopied ? "check" : "copy"}
+              onClick={async () => {
+                if (!(await copyText(metadataJson))) return;
+                setMetadataCopied(true);
+                showToast("Metadata copied");
+                window.setTimeout(() => setMetadataCopied(false), 1200);
+              }}
+            >
+              {metadataCopied ? "Copied" : "Copy"}
+            </Button>
+          </div>
+          <pre className="max-h-[260px] overflow-auto bg-bg p-4 font-mono text-[11px] leading-relaxed text-txt-dim">
+            {metadataJson}
+          </pre>
+        </div>
+      ) : null}
 
       {/* player */}
       <div className="mb-4 rounded-[10px] border border-line bg-panel p-4">

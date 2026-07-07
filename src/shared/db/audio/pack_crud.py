@@ -126,6 +126,7 @@ def _create_item_from_write(writer: AudioPackWriter, payload: AudioCreate) -> Au
         byte_offset=write.byte_offset,
         byte_length=write.byte_length,
         duration=payload.duration,
+        score=payload.score,
         segments=payload.segments,
         metadata_=payload.metadata,
         virtual=payload.virtual,
@@ -142,6 +143,8 @@ def _replace_item_from_write(item: AudioFile, writer: AudioPackWriter, payload: 
     item.byte_offset = write.byte_offset
     item.byte_length = write.byte_length
     item.duration = payload.duration
+    if "score" in payload.model_fields_set:
+        item.score = payload.score
     item.segments = payload.segments
     item.metadata_ = payload.metadata
     item.virtual = payload.virtual

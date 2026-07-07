@@ -3,6 +3,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from shared.db.audio.models import AudioFile
@@ -38,6 +39,24 @@ def replace_audio_segments(
     item.updated_at = _now()
     session.commit()
     return segments
+
+
+def bulk_replace_audio_segments(
+    session: Session,
+    payloads: dict[uuid.UUID, Sequence[SegmentPayload]],
+) -> dict[uuid.UUID, list[dict[str, Any]]]:
+    if not payloads:
+        return {}
+    out = {}
+    now = _now()
+    rows = []
+    for audio_file_id, segment_payloads in payloads.items():
+        segments = [_segment_from_payload(payload) for payload in segment_payloads]
+        rows.append({"id": audio_file_id, "segments": segments, "updated_at": now})
+        out[audio_file_id] = segments
+    session.execute(update(AudioFile), rows)
+    session.commit()
+    return out
 
 
 def update_segment_text(

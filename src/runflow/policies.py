@@ -11,9 +11,9 @@ class BatchMode(str, Enum):
 
 @dataclass(frozen=True)
 class BatchPolicy:
-    mode: BatchMode = BatchMode.DISABLED
-    preferred_size: int = 1
-    max_size: int = 1
+    mode: BatchMode = BatchMode.MICRO_BATCH
+    preferred_size: int = 64
+    max_size: int = 64
     timeout_ms: int = 0
     sort_by: str | None = None
 

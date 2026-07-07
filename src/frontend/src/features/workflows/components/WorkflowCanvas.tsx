@@ -4,14 +4,23 @@ import { ControlPanelCard } from "./ControlPanelCard";
 import { WorkflowBottomBar } from "./WorkflowBottomBar";
 import { WorkflowEdges } from "./WorkflowEdges";
 import { WorkflowNodeCard } from "./WorkflowNodeCard";
+import { NodePickerPopover } from "./NodePickerPopover";
 import { WorkflowRunPanel } from "./WorkflowRunPanel";
 import { useWorkflowStore } from "../store";
 import { graphPoint } from "../logic";
+
+type NodePickerState = {
+  left: number;
+  top: number;
+  graphX: number;
+  graphY: number;
+} | null;
 
 export function WorkflowCanvas() {
   const canvasRef = useRef<HTMLElement | null>(null);
   const [panning, setPanning] = useState<{ x: number; y: number } | null>(null);
   const [marquee, setMarquee] = useState<{ x: number; y: number; startX: number; startY: number } | null>(null);
+  const [nodePicker, setNodePicker] = useState<NodePickerState>(null);
   const { graph, viewport, wireDraft, selectNode, selectNodes, panViewport, zoomAt, setWireDraft, finishWire, deleteSelection } = useWorkflowStore();
   const isWiring = wireDraft !== null;
 
@@ -82,8 +91,18 @@ export function WorkflowCanvas() {
       data-workflow-canvas
       className="relative h-full min-w-0 overflow-hidden bg-app"
       onClick={() => selectNode(null)}
+      onDoubleClick={(event) => {
+        if (event.button !== 0) return;
+        if (event.target !== event.currentTarget && !(event.target as HTMLElement).closest("[data-workflow-canvas-bg]")) return;
+        const box = event.currentTarget.getBoundingClientRect();
+        const point = graphPoint(viewport, event.clientX, event.clientY, box.left, box.top);
+        setPanning(null);
+        setMarquee(null);
+        setNodePicker({ left: event.clientX, top: event.clientY, graphX: point.x, graphY: point.y });
+      }}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
+        if (nodePicker) setNodePicker(null);
         if (event.shiftKey) {
           const box = event.currentTarget.getBoundingClientRect();
           const point = graphPoint(viewport, event.clientX, event.clientY, box.left, box.top);
@@ -105,7 +124,10 @@ export function WorkflowCanvas() {
         setMarquee(null);
       }}
     >
-      <div className="absolute inset-0 bg-[linear-gradient(#e5e7eb_1px,transparent_1px),linear-gradient(90deg,#e5e7eb_1px,transparent_1px)] bg-[size:32px_32px]" />
+      <div
+        data-workflow-canvas-bg
+        className="absolute inset-0 bg-[linear-gradient(#e5e7eb_1px,transparent_1px),linear-gradient(90deg,#e5e7eb_1px,transparent_1px)] bg-[size:32px_32px]"
+      />
       <WorkflowEdges />
       <div
         onClick={(event) => event.stopPropagation()}
@@ -127,6 +149,7 @@ export function WorkflowCanvas() {
       ) : null}
       <WorkflowRunPanel />
       <WorkflowBottomBar />
+      {nodePicker ? <NodePickerPopover position={nodePicker} onClose={() => setNodePicker(null)} /> : null}
     </section>
   );
 }

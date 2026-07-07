@@ -41,7 +41,7 @@ class Node(ABC):
     SETTINGS: type[StrictSettings] = StrictSettings
     IS_INPUT: bool = False
 
-    BATCH_POLICY: BatchPolicy = BatchPolicy(BatchMode.DISABLED)
+    BATCH_POLICY: BatchPolicy = BatchPolicy()
     RESOURCE_POLICY: ResourcePolicy = ResourcePolicy()
     QUEUE_MAX_SIZE: int = 64
 

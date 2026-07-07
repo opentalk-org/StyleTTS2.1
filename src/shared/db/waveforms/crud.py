@@ -1,5 +1,6 @@
 import uuid
 import wave
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
@@ -10,6 +11,44 @@ from shared.db.waveforms.models import AudioWaveform
 from shared.db.waveforms.pack_store import ObjectStore, WaveformPackConfig, WaveformPackWriter
 from shared.db.waveforms.schemas import WaveformInput, WaveformRead
 from shared.storage import S3ObjectStore
+
+
+def bulk_replace_waveforms_from_audio(
+    session: Session,
+    items: Sequence[tuple[uuid.UUID, bytes, float, WaveformInput | None]],
+    store: ObjectStore | None = None,
+    config: WaveformPackConfig = WaveformPackConfig(),
+) -> list[AudioWaveform]:
+    if not items:
+        return []
+    resolved_store = _object_store(session, store)
+    writer = WaveformPackWriter(session, resolved_store, config)
+    waveforms = []
+    for audio_file_id, audio_bytes, duration, payload in items:
+        delete_waveform(session, audio_file_id, commit=False)
+        waveform = payload if payload is not None else _waveform_from_audio(audio_bytes)
+        data = encode_peaks(waveform.peaks)
+        write = writer.append(data)
+        waveforms.append(
+            AudioWaveform(
+                audio_file_id=audio_file_id,
+                pack_id=write.pack.id,
+                byte_offset=write.byte_offset,
+                byte_length=write.byte_length,
+                duration=duration,
+                sample_rate=waveform.sample_rate,
+                points_per_second=waveform.points_per_second,
+                point_count=len(waveform.peaks),
+                format_version=FORMAT_VERSION,
+                updated_at=_now(),
+            )
+        )
+    writer.flush()
+    session.add_all(waveforms)
+    session.commit()
+    for item in waveforms:
+        session.refresh(item)
+    return waveforms
 
 
 def replace_waveform(

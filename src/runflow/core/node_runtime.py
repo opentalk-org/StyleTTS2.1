@@ -10,9 +10,9 @@ from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 class BatchPolicyConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
-    mode: BatchMode = BatchMode.DISABLED
-    preferred_size: int = Field(default=1, ge=1)
-    max_size: int = Field(default=1, ge=1)
+    mode: BatchMode = BatchMode.MICRO_BATCH
+    preferred_size: int = Field(default=64, ge=1)
+    max_size: int = Field(default=64, ge=1)
     timeout_ms: int = Field(default=0, ge=0)
     sort_by: str | None = None
 

@@ -5,7 +5,7 @@ import { cn } from "@/shared/ui/cn";
 import type { Segment } from "./api";
 import { useEditor } from "./editorStore";
 
-const ROW_COLS = "30px 92px 126px 88px 1fr auto";
+const ROW_COLS = "30px 92px 126px 1fr auto";
 
 function IconBtn({ icon, title, danger, onClick }: { icon: "play" | "merge" | "trash"; title: string; danger?: boolean; onClick: () => void }) {
   return (
@@ -43,26 +43,28 @@ export function SegmentRow({ seg, index, isLast }: { seg: Segment; index: number
           {fmtClock(seg.start)}
           <div className="text-txt-mute">{fmtClock(seg.end)}</div>
         </div>
-        <div onClick={(e) => e.stopPropagation()} className="relative">
-          <select
-            value={seg.speaker}
-            onChange={(e) => setSegVoice(seg.id, e.target.value)}
-            className="h-7 w-full appearance-none rounded-md bg-panel-2 pl-2 pr-5 text-[11.5px] font-semibold text-txt-dim outline-none"
-          >
-            <option value="">None</option>
-            {SPEAKER_NAMES.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-          <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-txt-mute">
-            <Icon name="chevron-down" size={11} strokeWidth={2.4} />
+        <div onClick={(e) => e.stopPropagation()} className="flex min-w-0 flex-col gap-1">
+          <div className="relative">
+            <select
+              value={seg.speaker}
+              onChange={(e) => setSegVoice(seg.id, e.target.value)}
+              className="h-7 w-full appearance-none rounded-md bg-panel-2 pl-2 pr-5 text-[11.5px] font-semibold text-txt-dim outline-none"
+            >
+              <option value="">None</option>
+              {SPEAKER_NAMES.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-txt-mute">
+              <Icon name="chevron-down" size={11} strokeWidth={2.4} />
+            </span>
+          </div>
+          <span className="truncate px-1 text-[10.5px] font-semibold uppercase tracking-wide text-txt-mute">
+            {segmentTypeLabel(seg.type_)}
           </span>
         </div>
-        <span className="truncate rounded-md bg-panel-2 px-2 py-1 text-center text-[11px] font-semibold text-txt-mute">
-          {segmentTypeLabel(seg.type_)}
-        </span>
         <div onClick={(e) => e.stopPropagation()} className="flex min-w-0 flex-col gap-1">
           <input
             value={seg.text}

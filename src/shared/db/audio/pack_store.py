@@ -13,6 +13,8 @@ class AudioPackConfig:
     target_pack_bytes: int = 128 * 1024 * 1024
     path_prefix: str = "audio-packs"
     prune_used_ratio: float = 0.5
+    reuse_open_packs: bool = True
+    seal_on_flush: bool = False
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,8 @@ class AudioPackWriter:
         for pack_id in self._dirty_pack_ids:
             pack = self._packs[pack_id]
             self._store.upload(pack.path, bytes(self._pack_data[pack_id]))
+            if self._config.seal_on_flush:
+                pack.sealed = True
 
     def _write_oversized_pack(self, wav_bytes: bytes) -> PackedWrite:
         pack = self._create_pack(size=len(wav_bytes), used_bytes=len(wav_bytes), sealed=True)
@@ -79,6 +83,8 @@ class AudioPackWriter:
         return pack
 
     def _load_writable_pack(self, byte_length: int) -> BucketFile:
+        if not self._config.reuse_open_packs:
+            return self._create_pack(size=0, used_bytes=0, sealed=False)
         statement = (
             select(BucketFile)
             .where(BucketFile.sealed.is_(False))

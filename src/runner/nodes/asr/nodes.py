@@ -82,7 +82,7 @@ class TranscribeNode(Node):
     SETTINGS = TranscribeSettings
     INPUTS = {"checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST), "audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO)}
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=16, max_size=64, sort_by="duration")
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64, sort_by="duration")
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, keep_loaded=True, exclusive_group="accelerator")
 
     def __init__(self, node_id: str | None = None, **params: Any):
