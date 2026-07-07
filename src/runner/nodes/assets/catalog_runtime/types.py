@@ -8,14 +8,14 @@ from typing import Any
 
 
 class CheckpointType(StrEnum):
-    STYLETTS2 = "STYLETTS2"
-    F0_MODEL = "F0_MODEL"
-    ASR_BUNDLE = "ASR_BUNDLE"
-    PLBERT = "PLBERT"
+    STYLETTS2 = "styletts2"
+    F0_MODEL = "f0_model"
+    ASR_BUNDLE = "asr_bundle"
+    PLBERT = "plbert"
 
 
 class ExtraFileType(StrEnum):
-    OOD_TEXT_SET = "OOD_TEXT_SET"
+    OOD_TEXT_SET = "ood_text_set"
 
 
 @dataclass(frozen=True)

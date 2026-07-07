@@ -101,7 +101,7 @@ def resolve_asr_payload(checkpoint_id: UUID | None, target_symbols: str) -> tupl
 def resolve_f0_path(checkpoint_id: UUID | None, inner_filename: str) -> str | None:
     if checkpoint_id is None:
         return None
-    bundle = resolve_slot_checkpoint(checkpoint_id, "f0")
+    bundle = resolve_slot_checkpoint(checkpoint_id, "f0_model")
     inner = inner_filename.strip() or None
     return str(f0_weight_path_in_slot_dir(bundle.root, inner).resolve())
 

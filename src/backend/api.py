@@ -119,7 +119,7 @@ async def list_file_assets(type_: str | None = None) -> list[FileAssetRead]:
 @app.post("/assets/files/text", response_model=FileAssetRead, status_code=status.HTTP_201_CREATED)
 async def create_text_file_asset(request: TextFileAssetCreate) -> FileAssetRead:
     metadata = dict(request.metadata)
-    if request.type_ == "OOD_TEXT_SET" and "line_count" not in metadata:
+    if _asset_type(request.type_) == "ood_text_set" and "line_count" not in metadata:
         metadata["line_count"] = len([line for line in request.content.splitlines() if line.strip()])
     with database_session() as session:
         item = asset_crud.create_extra_file(
@@ -154,12 +154,14 @@ def _asset_type(type_: str | None) -> str | None:
     if type_ is None:
         return None
     aliases = {
-        "ood_text": "OOD_TEXT_SET",
-        "ood_text_set": "OOD_TEXT_SET",
-        "f0": "F0_MODEL",
-        "asr": "ASR_BUNDLE",
-        "plbert": "PLBERT",
-        "styletts2": "STYLETTS2",
+        "ood_text": "ood_text_set",
+        "ood_text_set": "ood_text_set",
+        "f0": "f0_model",
+        "f0_model": "f0_model",
+        "asr": "asr_bundle",
+        "asr_bundle": "asr_bundle",
+        "plbert": "plbert",
+        "styletts2": "styletts2",
     }
     return aliases.get(type_.strip().lower(), type_)
 

@@ -37,9 +37,9 @@ export function StyleTtsForm({
   const f0Assets = useFileAssetsQuery("f0");
   const asrAssets = useFileAssetsQuery("asr");
   const plbertAssets = useFileAssetsQuery("plbert");
-  const oodAssets = useFileAssetsQuery("OOD_TEXT_SET");
+  const oodAssets = useFileAssetsQuery("ood_text_set");
   const alphabets = useTrainingConfigsQuery("phoneme_alphabet");
-  const createOod = useCreateTextFileAssetMutation("OOD_TEXT_SET");
+  const createOod = useCreateTextFileAssetMutation("ood_text_set");
   const createAlphabet = useCreateTrainingConfigMutation("phoneme_alphabet");
   const training = trainingNode(graph, spec.ids.training);
   const dataset = trainingNode(graph, spec.ids.dataset);
@@ -179,7 +179,7 @@ export function StyleTtsForm({
         onCreate={async ({ name, content }) => {
           const item = await createOod.mutateAsync({
             name,
-            type_: "OOD_TEXT_SET",
+            type_: "ood_text_set",
             content,
             metadata: { source: "training_tab" },
           });
