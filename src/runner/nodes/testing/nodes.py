@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
 from uuid import UUID
 
 from pydantic import Field
@@ -12,8 +11,6 @@ from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import JSON
 from runner.nodes.synthesis.style_reference import audio_file_style_reference
-from runner.nodes.text_processing import PhonemizeSettings
-from runner.nodes.text.runtime.phonemize import phonemize_text
 
 
 class TestingLanguage(str, Enum):
@@ -41,7 +38,7 @@ class StyleReferenceSweepSettings(StrictSettings):
 
 class TestingRunInputNode(Node):
     NODE_TYPE = "TestingRunInput"
-    CATEGORY = "Testing / Inputs"
+    CATEGORY = "Testing"
     IS_INPUT = True
     INPUTS = {}
     OUTPUTS = {"run": Port("run", JSON)}
@@ -61,7 +58,7 @@ class TestingRunInputNode(Node):
 
 
 class TestingInputPayloadNode(Node):
-    CATEGORY = "Testing / Inputs"
+    CATEGORY = "Testing"
     INPUTS = {"run": Port("run", JSON)}
     OUTPUT_FIELD = "input"
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
@@ -120,73 +117,6 @@ class StyleReferenceSweepNode(TestingInputPayloadNode):
         ]
 
 
-class TestingPromptPhonemizerNode(Node):
-    NODE_TYPE = "TestingPromptPhonemizer"
-    CATEGORY = "Testing / Text"
-    INPUTS = {
-        "prompt_text": Port("prompt_text", JSON),
-        "phoneme_alphabet": Port("phoneme_alphabet", JSON),
-    }
-    OUTPUTS = {"phonemes": Port("phonemes", JSON)}
-    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
-
-    async def execute(self, batch, context):
-        return [
-            {"phonemes": testing_phoneme_payload(inputs["prompt_text"], inputs["phoneme_alphabet"])}
-            for inputs in batch
-        ]
-
-
-def testing_phoneme_payload(prompt_text: dict[str, Any], phoneme_alphabet: dict[str, Any]) -> dict[str, Any]:
-    text = _prompt_setting(prompt_text, "text")
-    language = _prompt_setting(prompt_text, "language")
-    symbols = _alphabet_symbols(phoneme_alphabet)
-    settings = PhonemizeSettings(language=language)
-    phonemes = _filtered_phonemes(_testing_phonemes(text, settings), symbols)
-    return {
-        "kind": "phonemes",
-        "text": text,
-        "language": language,
-        "phonemes": " ".join(phonemes),
-        "phoneme_list": phonemes,
-        "symbols": symbols,
-        "alphabet": phoneme_alphabet,
-        "source": "espeak_align",
-    }
-
-
 def _selected_style_reference(reference_id: str, style_mix: float, prosody_mix: float) -> dict[str, object]:
     payload = audio_file_style_reference(UUID(reference_id))
     return {**payload, "style_mix": style_mix, "prosody_mix": prosody_mix}
-
-
-def _prompt_setting(prompt_text: dict[str, Any], name: str) -> str:
-    if name in prompt_text:
-        return str(prompt_text[name])
-    return str(prompt_text["settings"][name])
-
-
-def _alphabet_symbols(phoneme_alphabet: dict[str, Any]) -> list[str]:
-    if "symbols" in phoneme_alphabet:
-        symbols = phoneme_alphabet["symbols"]
-    else:
-        symbols = phoneme_alphabet["settings"]["symbols"]
-    if isinstance(symbols, str):
-        return symbols.split()
-    return [str(symbol) for symbol in symbols]
-
-
-def _testing_phonemes(text: str, settings: PhonemizeSettings) -> str:
-    return phonemize_text(
-        text,
-        language=settings.language,
-        tie=settings.tie,
-        punctuation_marks=settings.punctuation_marks,
-        espeak_workers=settings.espeak_workers,
-        align_threads=settings.align_threads,
-    )
-
-
-def _filtered_phonemes(text: str, symbols: list[str]) -> list[str]:
-    allowed = set(symbols)
-    return [unit for unit in text if unit and not unit.isspace() and (not allowed or unit in allowed)]

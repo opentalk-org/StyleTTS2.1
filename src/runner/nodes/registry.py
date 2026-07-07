@@ -40,7 +40,6 @@ from runner.nodes.text_processing import PhonemizeSegmentsNode
 from runner.nodes.testing import (
     SelectStyleReferenceNode,
     StyleReferenceSweepNode,
-    TestingPromptPhonemizerNode,
     TestingRunInputNode,
     TestingTextPromptNode,
 )
@@ -115,7 +114,6 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         SelectStyleReferenceNode,
         StyleReferenceSweepNode,
         ResolveStyleReferenceNode,
-        TestingPromptPhonemizerNode,
         StyleTtsSynthesisNode,
     ]:
         registry.register(node_cls)
