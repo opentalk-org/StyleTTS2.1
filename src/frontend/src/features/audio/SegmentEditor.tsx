@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { backendResourceUrl } from "@/app/backend";
 import { useNav } from "@/app/navStore";
+import { copyText } from "@/shared/clipboard";
 import { showToast } from "@/shared/feedback/Toast";
 import { fmtClock, fmtDur } from "@/shared/format";
 import { Icon, type IconName } from "@/shared/icons";
@@ -146,8 +147,17 @@ export function SegmentEditor() {
             <span className="truncate font-mono text-[17px] font-bold tracking-tight">{file.name}</span>
             <span className="rounded-full bg-panel-2 px-2 py-0.5 text-[11px] font-semibold text-txt-dim">{file.speaker}</span>
           </div>
-          <div className="mt-0.5 text-xs tabular-nums text-txt-mute">
-            {fmtDur(dur)} · {file.sample_rate ? `${file.sample_rate / 1000}kHz` : "unknown rate"} · {file.size_mb} MB · {segs.length} segments
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs tabular-nums text-txt-mute">
+            <span>{fmtDur(dur)} · {file.sample_rate ? `${file.sample_rate / 1000}kHz` : "unknown rate"} · {file.size_mb} MB · {segs.length} segments</span>
+            <span className="text-line">·</span>
+            <button
+              title="Copy audio ID"
+              onClick={async () => { if (await copyText(activeAudioFileId)) showToast("Audio ID copied"); }}
+              className="inline-flex items-center gap-1 font-mono text-txt-dim hover:text-txt"
+            >
+              <Icon name="copy" size={11} strokeWidth={2} />
+              {activeAudioFileId}
+            </button>
           </div>
         </div>
         <span className={cn("flex items-center gap-1.5 text-xs font-semibold", dirty ? "text-amber-700" : "text-txt-mute")}>
