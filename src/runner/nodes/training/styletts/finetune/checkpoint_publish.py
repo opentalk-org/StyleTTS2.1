@@ -95,8 +95,11 @@ def publish_finetune_epoch_bundle_from_training_config(
 
 
 def _symbol_list(value: Any) -> list[str]:
+    # Record the editable phoneme alphabet (single characters, excluding the
+    # structural whitespace symbol) so a published checkpoint's symbol count
+    # matches the alphabet editor and the catalog symbol metadata.
     if isinstance(value, str):
-        return [part for part in value.split(" ") if part]
+        return [part for part in value.split(" ") if part.strip()]
     if isinstance(value, list):
-        return [str(part) for part in value if part is not None and str(part)]
+        return [str(part) for part in value if part is not None and str(part).strip()]
     return []
