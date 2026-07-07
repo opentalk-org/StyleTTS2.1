@@ -95,11 +95,13 @@ def publish_finetune_epoch_bundle_from_training_config(
 
 
 def _symbol_list(value: Any) -> list[str]:
-    # Record the editable phoneme alphabet (single characters, excluding the
-    # structural whitespace symbol) so a published checkpoint's symbol count
-    # matches the alphabet editor and the catalog symbol metadata.
+    # The published symbol table must match EXACTLY what training used to index
+    # the text embedding (config["symbols"], the canonical 178-entry StyleTTS2
+    # set which INCLUDES the literal space symbol). Dropping the space shifts
+    # every later index by one, so inference reads a 177-entry table against a
+    # 178-row embedding and the checkpoint speaks the wrong phonemes.
     if isinstance(value, str):
-        return [part for part in value.split(" ") if part.strip()]
+        return list(value)
     if isinstance(value, list):
-        return [str(part) for part in value if part is not None and str(part).strip()]
+        return [str(part) for part in value if part is not None]
     return []
