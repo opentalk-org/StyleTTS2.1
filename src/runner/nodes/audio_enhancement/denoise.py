@@ -114,6 +114,7 @@ def denoise_wav_with_model(audio_path: Path, stack: DeepFilterNetStack) -> None:
 
 
 def _load_deepfilternet_dependencies() -> dict[str, Any]:
+    _ensure_torchaudio_backend_shim()
     modules = {}
     missing = []
     for name in ["numpy", "soundfile", "torch", "libdf", "df"]:
@@ -127,11 +128,36 @@ def _load_deepfilternet_dependencies() -> dict[str, Any]:
     return modules
 
 
+def _ensure_torchaudio_backend_shim() -> None:
+    """DeepFilterNet's ``df.io`` does ``from torchaudio.backend.common import
+    AudioMetaData`` at import time, but ``torchaudio.backend`` was removed in
+    torchaudio>=2.1. We never call the torchaudio-backed IO (it is patched out by
+    ``_patch_df_io``), so a lightweight shim is enough to keep the import alive."""
+    import sys
+    import types
+
+    try:
+        __import__("torchaudio.backend.common")
+        if hasattr(sys.modules.get("torchaudio.backend.common"), "AudioMetaData"):
+            return
+    except Exception:
+        pass
+    backend = sys.modules.get("torchaudio.backend") or types.ModuleType("torchaudio.backend")
+    common = types.ModuleType("torchaudio.backend.common")
+    common.AudioMetaData = _AudioMetaData
+    backend.common = common
+    sys.modules["torchaudio.backend"] = backend
+    sys.modules["torchaudio.backend.common"] = common
+    import torchaudio
+    torchaudio.backend = backend
+
+
 def _patch_df_io(torch: Any, sf: Any, np: Any) -> None:
     global _PATCHED_TORCH, _PATCHED_SF, _PATCHED_NP
     _PATCHED_TORCH = torch
     _PATCHED_SF = sf
     _PATCHED_NP = np
+    _ensure_torchaudio_backend_shim()
     df_io = importlib.import_module("df.io")
     df_io.load_audio = _load_audio_sf
     df_io.save_audio = _save_audio_soundfile_wav

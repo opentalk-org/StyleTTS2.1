@@ -21,10 +21,10 @@ from runner.nodes.statistics.audio_features import AnalyzeAudioFeaturesNode, Aud
 
 
 class VadSettings(StrictSettings):
-    min_segment_sec: float = Field(default=1.0, ge=0.1, le=30.0)
-    max_segment_sec: float = Field(default=12.0, ge=1.0, le=60.0)
+    min_segment_sec: float = Field(default=1.0, ge=0.1, le=600.0)
+    max_segment_sec: float = Field(default=12.0, ge=1.0, le=600.0)
     padding_sec: float = Field(default=0.12, ge=0.0, le=1.0)
-    max_silence_gap_ms: int = Field(default=400, ge=50, le=3000)
+    max_silence_gap_ms: int = Field(default=400, ge=50, le=30000)
     silence_threshold_db: float = Field(default=-40.0, ge=-80.0, le=0.0)
     hop_length: int = Field(default=512, ge=64, le=4096)
 
