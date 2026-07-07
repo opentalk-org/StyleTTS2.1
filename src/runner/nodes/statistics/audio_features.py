@@ -11,6 +11,7 @@ from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy
 from runner.nodes.datatypes import AUDIO, JSON
 from runner.nodes.models import Audio, stable_id
+from runner.nodes.statistics.segments import speech_segment_records
 
 
 FRAME_LENGTH = 2048
@@ -37,6 +38,9 @@ class AnalyzeAudioFeaturesNode(Node):
             audio = inputs["audio"]
             assert isinstance(audio, Audio), f"unsupported audio input: {type(audio).__name__}"
             features = analyze_audio_features(audio, self.settings.silence_threshold_db, self.settings.hop_length)
+            speech = speech_segment_records(audio)
+            features["segments"] = speech["segments"]
+            features["duplicate_segments_collapsed"] = speech["duplicate_segments_collapsed"]
             outputs.append({"features": StatisticsFeatureRecord(lineage_id, features)})
         return outputs
 

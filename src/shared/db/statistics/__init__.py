@@ -1,12 +1,21 @@
-from shared.db.statistics.crud import create_statistics_entry, get_statistics_entry, list_statistics_entries
+from shared.db.statistics.crud import (
+    create_statistics_entry,
+    delete_statistics_entry,
+    get_statistics_entry,
+    list_statistics_entries,
+    list_statistics_summaries,
+)
 from shared.db.statistics.models import StatisticsEntry
-from shared.db.statistics.schemas import StatisticsEntryCreate, StatisticsEntryRead
+from shared.db.statistics.schemas import StatisticsEntryCreate, StatisticsEntryRead, StatisticsEntrySummary
 
 __all__ = [
     "StatisticsEntry",
     "StatisticsEntryCreate",
     "StatisticsEntryRead",
+    "StatisticsEntrySummary",
     "create_statistics_entry",
+    "delete_statistics_entry",
     "get_statistics_entry",
     "list_statistics_entries",
+    "list_statistics_summaries",
 ]

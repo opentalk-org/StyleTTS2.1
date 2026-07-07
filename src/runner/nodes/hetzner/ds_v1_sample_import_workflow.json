@@ -1,0 +1,56 @@
+{
+  "name": "Import Hetzner ds_v1 parquet sample",
+  "hidden": false,
+  "data": {
+    "nodes": [
+      {
+        "id": "hetzner_ds_v1_parquet",
+        "type": "HetznerDsV1ParquetAudioSource",
+        "x": -180,
+        "y": 140,
+        "params": {
+          "source": "sftp",
+          "host": "hetzner-storagebox",
+          "remote_parquet_path": "/home/ds_v1/000f72c2-caa7-4958-b8e8-0e7668bb9bb6_20260512T173847038808Z.parquet",
+          "local_parquet_path": "",
+          "row_offset": 0,
+          "row_limit": 1,
+          "name_prefix": "ds_v1",
+          "cache_download": true,
+          "download_retries": 3
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_audio_record",
+        "type": "SaveAudioRecord",
+        "x": 220,
+        "y": 140,
+        "params": {
+          "virtual": false,
+          "create_waveforms": false,
+          "bulk_import_packs": true
+        },
+        "runtime": {}
+      }
+    ],
+    "edges": [
+      {
+        "source_node": "hetzner_ds_v1_parquet",
+        "source_port": "audio",
+        "target_node": "save_audio_record",
+        "target_port": "audio"
+      }
+    ],
+    "context": {
+      "work_dir": "work",
+      "cache_dir": "cache",
+      "output_dir": "outputs",
+      "device": "cuda",
+      "config": {},
+      "input_items": []
+    },
+    "launch_source": null,
+    "panels": []
+  }
+}

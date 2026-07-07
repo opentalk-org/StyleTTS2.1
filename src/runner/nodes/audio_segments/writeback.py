@@ -19,7 +19,6 @@ from shared.db.audio.schemas import AudioCreate, AudioUpdate
 
 class SaveAudioRecordSettings(StrictSettings):
     virtual: bool = False
-    create_waveforms: bool = True
     bulk_import_packs: bool = False
 
 
@@ -60,7 +59,6 @@ class SaveAudioRecordNode(Node):
                 session,
                 payloads,
                 config=_audio_pack_config(self.settings),
-                create_waveforms=self.settings.create_waveforms,
             )
         context.check_cancel()
         return [_audio_writeback_output(item, audio, "created") for item, audio in zip(items, audios, strict=True)]

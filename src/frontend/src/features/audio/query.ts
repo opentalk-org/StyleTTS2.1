@@ -9,6 +9,7 @@ import {
   addAudioFilesToDataset,
   deleteAudioFiles,
   deleteMatchingAudioFiles,
+  ensureWaveform,
   fetchAudioFile,
   fetchAudioFiles,
   fetchWaveform,
@@ -82,7 +83,17 @@ export function useUpdateAudioScoreMutation() {
   });
 }
 
-export function useWaveformQuery(id: string | null, start: number, end: number, points: number) {
+export function useWaveformStatusQuery(id: string | null) {
+  return useQuery({
+    queryKey: [AUDIO_FILES_KEY, "waveform-status", id],
+    queryFn: () => ensureWaveform(id!),
+    enabled: id !== null,
+    refetchInterval: (query) => (query.state.data?.status === "pending" ? 1000 : false),
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useWaveformQuery(id: string | null, start: number, end: number, points: number, ready: boolean) {
   const [target, setTarget] = useState<WaveformWindow>(() => waveformWindow(id, start, end, points));
 
   useEffect(() => {
@@ -95,7 +106,7 @@ export function useWaveformQuery(id: string | null, start: number, end: number, 
   return useQuery({
     queryKey: [AUDIO_FILES_KEY, "waveform", target.id, target.start, target.end, target.points],
     queryFn: () => fetchWaveform(target.id!, target.start, target.end, target.points),
-    enabled: target.id === id && target.id !== null && target.end > target.start,
+    enabled: ready && target.id === id && target.id !== null && target.end > target.start,
     placeholderData: keepPreviousData,
     retry: false,
     staleTime: 60_000,

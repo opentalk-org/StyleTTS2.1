@@ -36,7 +36,7 @@ from runner.nodes.assets.checkpoints import ResolveCheckpointNode
 from runner.nodes.assets.training_assets import ResolveTrainingAssetsNode
 from runner.nodes.dataset_writeback import AddAudioToDatasetNode, AssignVoiceNode, DeleteAudioRecordsNode, RemoveAudioFromDatasetNode
 from runner.nodes.datatypes import register_runner_types
-from runner.nodes.hetzner import HetznerDsV2ParquetAudioSourceNode
+from runner.nodes.hetzner import HetznerDsV1ParquetAudioSourceNode, HetznerDsV2ParquetAudioSourceNode
 from runner.nodes.text_processing import PhonemizeSegmentsNode
 from runner.nodes.testing import (
     SelectStyleReferenceNode,
@@ -65,6 +65,7 @@ from runner.nodes.training.styletts import BuildStyleTtsFinetuneConfigNode, Styl
 def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
     for node_cls in [
         AudioSourceNode,
+        HetznerDsV1ParquetAudioSourceNode,
         HetznerDsV2ParquetAudioSourceNode,
         LoadAudioNode,
         SaveAudioRecordNode,

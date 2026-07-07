@@ -1,10 +1,10 @@
-import json
 import uuid
 from typing import Any
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Response, UploadFile, status
 
-from backend.audio.schemas import AddToDatasetRequest, AudioFileListItem, AudioFilePage, AudioRenamePayload, AudioScorePayload, AudioSegmentRead, AudioSegmentWrite, AudioSort
+from backend.audio.schemas import AddToDatasetRequest, AudioFileListItem, AudioFilePage, AudioRenamePayload, AudioScorePayload, AudioSegmentRead, AudioSegmentWrite, AudioSort, WaveformStatusRead
+from backend.audio.waveform_service import WaveformService
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 from shared.db.audio.models import AudioFile
@@ -12,11 +12,12 @@ from shared.db.audio.schemas import AudioCreate, AudioPartRead
 from shared.db.audio.schemas import AudioUpdate
 from shared.db.datasets import crud as dataset_crud
 from shared.db.waveforms import crud as waveform_crud
-from shared.db.waveforms.schemas import WaveformInput, WaveformRead
+from shared.db.waveforms.schemas import WaveformRead
 
 
 router = APIRouter(prefix="/audio-files", tags=["audio-files"])
 DEFAULT_STREAM_CHUNK = 1024 * 1024
+waveform_service = WaveformService()
 
 
 @router.get("", response_model=AudioFilePage)
@@ -39,7 +40,6 @@ async def upload_audio_file(
     sample_rate: int = Form(),
     dataset_id: str = Form(""),
     speaker: str = Form(""),
-    waveform: str = Form(),
 ) -> AudioFileListItem:
     data = await file.read()
     if not data:
@@ -52,7 +52,7 @@ async def upload_audio_file(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Audio filename is required")
     try:
         with database_session() as session:
-            item = audio_crud.create_audio_file(session, _audio_payload(file, data, duration, sample_rate, speaker, waveform))
+            item = audio_crud.create_audio_file(session, _audio_payload(file, data, duration, sample_rate, speaker))
             if dataset_id:
                 dataset_crud.add_audio_file_to_dataset(session, uuid.UUID(dataset_id), item.id)
                 session.refresh(item, attribute_names=["datasets"])
@@ -148,6 +148,16 @@ async def get_waveform(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
 
+@router.post("/{audio_file_id}/waveform", response_model=WaveformStatusRead)
+async def ensure_waveform(audio_file_id: uuid.UUID) -> WaveformStatusRead:
+    try:
+        with database_session() as session:
+            audio_crud.get_audio_file(session, audio_file_id)
+    except KeyError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    return WaveformStatusRead(status=await waveform_service.ensure(audio_file_id))
+
+
 @router.put("/{audio_file_id}/segments", response_model=AudioFileListItem)
 async def replace_audio_segments(audio_file_id: uuid.UUID, payload: list[AudioSegmentWrite]) -> AudioFileListItem:
     try:
@@ -239,7 +249,7 @@ def audio_response(item: AudioFile, segment_limit: int | None) -> AudioFileListI
     )
 
 
-def _audio_payload(file: UploadFile, data: bytes, duration: float, sample_rate: int, speaker: str, waveform: str) -> AudioCreate:
+def _audio_payload(file: UploadFile, data: bytes, duration: float, sample_rate: int, speaker: str) -> AudioCreate:
     metadata: dict[str, Any] = {"sample_rate": sample_rate}
     if file.content_type is not None:
         metadata["content_type"] = file.content_type
@@ -253,7 +263,6 @@ def _audio_payload(file: UploadFile, data: bytes, duration: float, sample_rate: 
         segments=[],
         metadata=metadata,
         virtual=False,
-        waveform=_waveform_payload(waveform),
     )
 
 
@@ -289,10 +298,6 @@ def _content_type(metadata: dict[str, Any]) -> str:
     if "content_type" in metadata:
         return str(metadata["content_type"])
     return "application/octet-stream"
-
-
-def _waveform_payload(raw: str) -> WaveformInput:
-    return WaveformInput.model_validate(json.loads(raw))
 
 
 def _content_range(range_header: str | None, byte_length: int) -> tuple[int, int]:

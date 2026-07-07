@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from math import isfinite
+from statistics import median
 from typing import Any
 
 from pydantic import Field
@@ -9,12 +10,16 @@ from pydantic import Field
 from runflow.core.node import Node
 from runflow.core.ports import Port, PortMode
 from runflow.core.settings import StrictSettings
+from runflow.policies import BatchMode, BatchPolicy
 from runner.nodes.datatypes import JSON
 
 
 class AggregateStatisticsSettings(StrictSettings):
     histogram_bins: int = Field(default=50, ge=10, le=200)
     silence_threshold_db: float = Field(default=-40.0, ge=-80.0, le=0.0)
+    text_min_chars: int = Field(default=5, ge=0, le=10_000)
+    text_max_chars: int = Field(default=500, ge=1, le=100_000)
+    text_warnings_limit: int = Field(default=50, ge=1, le=1000)
 
 
 class AggregateDatasetStatisticsNode(Node):
@@ -26,52 +31,48 @@ class AggregateDatasetStatisticsNode(Node):
         "segment_records": Port("segment_records", JSON, mode=PortMode.LIST, optional=True, default=[]),
     }
     OUTPUTS = {"statistics": Port("statistics", JSON)}
+    BATCH_POLICY = BatchPolicy(BatchMode.DISABLED)
 
     def __init__(self, node_id: str | None = None, **params: Any):
         super().__init__(node_id=node_id, **params)
         self._pending_features: dict[str, list[dict[str, Any]]] = {}
-        self._pending_segments: dict[str, list[dict[str, Any]]] = {}
+        self._pending_extra_segments: list[Any] = []
 
     async def execute(self, batch, context):
         outputs = []
         for inputs in batch:
             features = [_record(item) for item in _list_value(inputs["feature_records"])]
-            segments = [_record(item) for item in _flatten_segments(_list_value(inputs["segment_records"]))]
-            ready = self._ready_feature_records(features, segments)
+            self._pending_extra_segments.extend(_list_value(inputs["segment_records"]))
+            ready = self._ready_feature_records(features)
             if ready is None:
                 continue
-            ready_features, ready_segments = ready
-            outputs.append({"statistics": aggregate_dataset_statistics(ready_features, ready_segments, self.settings)})
+            extra = self._pending_extra_segments
+            self._pending_extra_segments = []
+            segments = _flatten_segments(ready) + _flatten_segments(extra)
+            outputs.append({"statistics": aggregate_dataset_statistics(ready, segments, self.settings)})
         return outputs
 
-    def _ready_feature_records(
-        self,
-        features: list[dict[str, Any]],
-        segments: list[dict[str, Any]],
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]] | None:
+    def _ready_feature_records(self, features: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
         if not features:
-            return features, segments
+            return None
         batch_id = _source_batch_id(features)
         if batch_id is None:
-            return features, segments
+            return features
         expected = _source_batch_count(features)
         pending = self._pending_features.setdefault(batch_id, [])
-        pending_segments = self._pending_segments.setdefault(batch_id, [])
         pending.extend(features)
-        pending_segments.extend(segments)
         if len(pending) < expected:
             return None
         ready = list(pending)
-        ready_segments = list(pending_segments)
         del self._pending_features[batch_id]
-        del self._pending_segments[batch_id]
-        return ready, ready_segments
+        return ready
 
 
 def aggregate_dataset_statistics(features: list[Any], segments: list[Any], settings: AggregateStatisticsSettings) -> dict[str, Any]:
     feature_records = [_record(item) for item in features]
-    segment_records = [_record(item) for item in _flatten_segments(segments)]
+    segment_records = [_record(item) for item in segments]
     file_ids = [_string_value(item, "audio_file_id") for item in feature_records]
+    name_by_file = {_string_value(item, "audio_file_id"): _string_value(item, "name") for item in feature_records}
     file_ids.extend(sorted({audio_id for audio_id in (_segment_audio_id(item) for item in segment_records) if audio_id not in file_ids}))
     text_by_file: dict[str, list[str]] = {audio_id: [] for audio_id in file_ids}
     phon_by_file: dict[str, list[str]] = {audio_id: [] for audio_id in file_ids}
@@ -96,11 +97,29 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
     durations = [_float_value(item, "duration") for item in feature_records]
     char_counts = [sum(len(part) for part in text_by_file[audio_id]) for audio_id in file_ids]
     phoneme_counts = [sum(len(part) for part in phon_by_file[audio_id]) for audio_id in file_ids]
+    total_duration = sum(durations)
+    duplicate_collapsed = sum(int(item.get("duplicate_segments_collapsed", 0)) for item in feature_records)
+    phonemes_available = any(part for parts in phon_by_file.values() for part in parts)
+    text_warnings = _text_length_warnings(file_ids, name_by_file, char_counts, settings)
     return {
-        "version": 8,
-        "params": {"histogram_bins": settings.histogram_bins, "silence_threshold_db": settings.silence_threshold_db},
+        "version": 9,
+        "params": {
+            "histogram_bins": settings.histogram_bins,
+            "silence_threshold_db": settings.silence_threshold_db,
+            "text_min_chars": settings.text_min_chars,
+            "text_max_chars": settings.text_max_chars,
+        },
         "audio_file_ids": file_ids,
         "file_count": len(feature_records),
+        "segment_count": len(segment_records),
+        "speaker_count": len(speaker_seconds),
+        "total_duration_seconds": total_duration,
+        "mean_duration_seconds": (total_duration / len(durations)) if durations else 0.0,
+        "median_duration_seconds": float(median(durations)) if durations else 0.0,
+        "total_char_count": sum(char_counts),
+        "duplicate_segments_collapsed": duplicate_collapsed,
+        "phonemes_available": phonemes_available,
+        "text_length_warnings": text_warnings,
         "duration_seconds_histogram": histogram_counts(durations, settings.histogram_bins),
         "char_count_per_file_histogram": histogram_counts([float(value) for value in char_counts], settings.histogram_bins),
         "phoneme_count_per_file_histogram": histogram_counts([float(value) for value in phoneme_counts], settings.histogram_bins),
@@ -115,7 +134,7 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
         "speaker_duration_seconds": _counter_pairs(speaker_seconds),
         "speaker_char_count": _counter_pairs(speaker_chars),
         "speaker_phoneme_count": _counter_pairs(speaker_phonemes),
-        "rms_db_histogram": pooled_histogram(feature_records, "rms_db", settings.histogram_bins, (-80.0, 0.0)),
+        "rms_db_histogram": pooled_histogram(feature_records, "rms_db", settings.histogram_bins, (-100.0, 0.0), clip=True),
         "frame_value_min_histogram": pooled_histogram(feature_records, "frame_value_min", settings.histogram_bins, (-1.0, 1.0)),
         "frame_value_max_histogram": pooled_histogram(feature_records, "frame_value_max", settings.histogram_bins, (-1.0, 1.0)),
         "frame_value_mean_histogram": pooled_histogram(feature_records, "frame_value_mean", settings.histogram_bins, (-1.0, 1.0)),
@@ -125,7 +144,7 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
         "clipped_sample_count_top": sum(int(item["clip_top"]) for item in feature_records),
         "clipped_sample_count_bottom": sum(int(item["clip_bottom"]) for item in feature_records),
         "silence_ratio_histogram": histogram_counts(_finite_field_values(feature_records, "silence_ratio"), settings.histogram_bins, (0.0, 1.0)),
-        "silence_rms_db_histogram": pooled_histogram(feature_records, "silence_rms_db", settings.histogram_bins, (-80.0, settings.silence_threshold_db)),
+        "silence_rms_db_histogram": pooled_histogram(feature_records, "silence_rms_db", settings.histogram_bins, (-100.0, settings.silence_threshold_db), clip=True),
         "per_file_text": [{"audio_file_id": audio_id, "text": " ".join(text_by_file[audio_id]), "phon": " ".join(phon_by_file[audio_id])} for audio_id in file_ids],
     }
 
@@ -143,11 +162,14 @@ def histogram_counts(values: list[float], bins: int, range_: tuple[float, float]
     return {"edges": edges, "counts": counts}
 
 
-def pooled_histogram(records: list[dict[str, Any]], field: str, bins: int, fallback: tuple[float, float]) -> dict[str, Any]:
+def pooled_histogram(records: list[dict[str, Any]], field: str, bins: int, fallback: tuple[float, float], clip: bool = False) -> dict[str, Any]:
     values: list[float] = []
     for record in records:
         values.extend(float(value) for value in record[field] if isfinite(float(value)))
-    value_range = _range_for(values) if values else fallback
+    if clip:
+        value_range = fallback
+    else:
+        value_range = _range_for(values) if values else fallback
     return histogram_counts(values, bins, value_range)
 
 
@@ -280,6 +302,34 @@ def _segment_duration(segment: dict[str, Any]) -> float:
 
 def _counter_pairs(counter: Counter[str]) -> list[list[Any]]:
     return [[key, value] for key, value in sorted(counter.items(), key=lambda item: (-item[1], item[0]))]
+
+
+def _text_length_warnings(
+    file_ids: list[str],
+    name_by_file: dict[str, str],
+    char_counts: list[int],
+    settings: AggregateStatisticsSettings,
+) -> list[dict[str, Any]]:
+    warnings: list[dict[str, Any]] = []
+    for audio_id, char_count in zip(file_ids, char_counts, strict=True):
+        if char_count == 0:
+            reason = "empty transcript"
+        elif char_count < settings.text_min_chars:
+            reason = "too short"
+        elif char_count > settings.text_max_chars:
+            reason = "too long"
+        else:
+            continue
+        warnings.append(
+            {
+                "audio_file_id": audio_id,
+                "name": name_by_file.get(audio_id, audio_id),
+                "char_count": int(char_count),
+                "reason": reason,
+            }
+        )
+    warnings.sort(key=lambda item: (-item["char_count"] if item["reason"] == "too long" else item["char_count"]))
+    return warnings[: settings.text_warnings_limit]
 
 
 def _source_batch_id(records: list[dict[str, Any]]) -> str | None:

@@ -64,3 +64,7 @@ class AudioFileListItem(BaseModel):
 class AudioFilePage(BaseModel):
     rows: list[AudioFileListItem]
     total: int
+
+
+class WaveformStatusRead(BaseModel):
+    status: Literal["ready", "pending", "error"]

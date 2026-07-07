@@ -111,13 +111,9 @@ def create_audio_file(
     payload: AudioCreate,
     store: ObjectStore | None = None,
     config: AudioPackConfig = AudioPackConfig(),
-    create_waveform: bool = True,
 ) -> AudioFile:
     resolved_store = _object_store(session, store)
-    item = create_packed_audio_file(session, resolved_store, payload, config)
-    if create_waveform:
-        waveform_crud.replace_waveform_from_audio(session, item.id, payload.wav_bytes, item.duration, payload.waveform, resolved_store)
-    return item
+    return create_packed_audio_file(session, resolved_store, payload, config)
 
 
 def bulk_create_audio_files(
@@ -125,17 +121,9 @@ def bulk_create_audio_files(
     payloads: Sequence[AudioCreate],
     store: ObjectStore | None = None,
     config: AudioPackConfig = AudioPackConfig(),
-    create_waveforms: bool = True,
 ) -> list[AudioFile]:
     resolved_store = _object_store(session, store)
-    items = bulk_create_packed_audio_files(session, resolved_store, payloads, config)
-    if create_waveforms:
-        waveform_crud.bulk_replace_waveforms_from_audio(
-            session,
-            [(item.id, payload.wav_bytes, item.duration, payload.waveform) for item, payload in zip(items, payloads, strict=True)],
-            resolved_store,
-        )
-    return items
+    return bulk_create_packed_audio_files(session, resolved_store, payloads, config)
 
 
 def read_audio_file(
@@ -186,7 +174,7 @@ def update_audio_file(
         return item
     resolved_store = _object_store(session, store)
     item = update_packed_audio_file(session, resolved_store, audio_file_id, payload, config)
-    waveform_crud.replace_waveform_from_audio(session, item.id, payload.wav_bytes, item.duration, payload.waveform, resolved_store)
+    waveform_crud.delete_waveform(session, item.id)
     prune_fragmented_audio_packs(session, resolved_store, config)
     session.refresh(item)
     return item
@@ -212,9 +200,9 @@ def bulk_update_audio_files(
     if binary_payloads:
         resolved_store = _object_store(session, store)
         items.update(bulk_update_packed_audio_files(session, resolved_store, binary_payloads, config))
-        for audio_file_id, payload in binary_payloads.items():
-            item = items[audio_file_id]
-            waveform_crud.replace_waveform_from_audio(session, item.id, payload.wav_bytes, item.duration, payload.waveform, resolved_store)
+        for audio_file_id in binary_payloads:
+            waveform_crud.delete_waveform(session, items[audio_file_id].id, commit=False)
+        session.commit()
         prune_fragmented_audio_packs(session, resolved_store, config)
     if metadata_payloads:
         for audio_file_id, payload in metadata_payloads.items():

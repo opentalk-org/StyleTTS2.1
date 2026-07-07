@@ -2,6 +2,8 @@ import io
 import struct
 import wave
 
+import numpy as np
+
 from shared.db.waveforms.schemas import WaveformInput
 
 
@@ -37,6 +39,39 @@ def waveform_from_wav(data: bytes, points_per_second: int = DEFAULT_POINTS_PER_S
                 break
             peaks.append(_chunk_peak(chunk, sample_width))
     return WaveformInput(sample_rate=sample_rate, points_per_second=points_per_second, peaks=peaks)
+
+
+def waveform_from_audio_bytes(data: bytes, points_per_second: int = DEFAULT_POINTS_PER_SECOND) -> WaveformInput:
+    samples, sample_rate = _decode_audio(data)
+    step = max(1, sample_rate // points_per_second)
+    frames = samples.shape[0]
+    frame_min = samples.min(axis=1)
+    frame_max = samples.max(axis=1)
+    full = frames // step
+    peaks: list[tuple[float, float]] = []
+    if full:
+        minima = frame_min[: full * step].reshape(full, step).min(axis=1)
+        maxima = frame_max[: full * step].reshape(full, step).max(axis=1)
+        peaks.extend(zip(minima.tolist(), maxima.tolist()))
+    if frames % step:
+        peaks.append((float(frame_min[full * step :].min()), float(frame_max[full * step :].max())))
+    return WaveformInput(sample_rate=int(sample_rate), points_per_second=points_per_second, peaks=peaks)
+
+
+def _decode_audio(data: bytes) -> tuple[np.ndarray, int]:
+    try:
+        import soundfile
+
+        samples, sample_rate = soundfile.read(io.BytesIO(data), dtype="float32", always_2d=True)
+        return np.asarray(samples, dtype=np.float32), int(sample_rate)
+    except Exception:
+        import librosa
+
+        samples, sample_rate = librosa.load(io.BytesIO(data), sr=None, mono=False)
+        array = np.asarray(samples, dtype=np.float32)
+        if array.ndim == 1:
+            return array.reshape(-1, 1), int(sample_rate)
+        return array.T, int(sample_rate)
 
 
 def downsample(peaks: list[tuple[float, float]], max_points: int) -> list[tuple[float, float]]:

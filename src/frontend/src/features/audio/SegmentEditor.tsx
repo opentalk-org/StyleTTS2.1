@@ -16,7 +16,7 @@ import { saveAudioSegments } from "./api";
 import { SegmentRow } from "./SegmentRow";
 import { SegmentTimeline } from "./SegmentTimeline";
 import { useEditor } from "./editorStore";
-import { AUDIO_FILES_KEY, useAudioFileQuery, useRenameAudioFileMutation, useUpdateAudioScoreMutation, useWaveformQuery } from "./query";
+import { AUDIO_FILES_KEY, useAudioFileQuery, useRenameAudioFileMutation, useUpdateAudioScoreMutation, useWaveformQuery, useWaveformStatusQuery } from "./query";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -55,8 +55,11 @@ export function SegmentEditor() {
     fileId, dur, segs, playPos, playing, speed, volume, loop, viewStart, viewEnd, dirty, segSel, segQuery,
     load, seek, togglePlay, setSpeed, setVolume, toggleLoop, setView, zoomIn, zoomOut, select, setSegTime, setQuery, addSeg,
   } = ed;
-  const minimapWaveform = useWaveformQuery(activeAudioFileId, 0, dur, 800);
-  const viewWaveform = useWaveformQuery(activeAudioFileId, viewStart, viewEnd, 1400);
+  const waveformStatus = useWaveformStatusQuery(activeAudioFileId);
+  const waveformReady = waveformStatus.data?.status === "ready";
+  const waveformPending = waveformStatus.isLoading || waveformStatus.data?.status === "pending";
+  const minimapWaveform = useWaveformQuery(activeAudioFileId, 0, dur, 800, waveformReady);
+  const viewWaveform = useWaveformQuery(activeAudioFileId, viewStart, viewEnd, 1400, waveformReady);
 
   useEffect(() => {
     if (!audio.data || audio.data.id === fileId) return;
@@ -326,6 +329,12 @@ export function SegmentEditor() {
 
       {/* player */}
       <div className="mb-4 rounded-[10px] border border-line bg-panel p-4">
+        {waveformPending ? (
+          <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-txt-mute">
+            <Icon name="loader" size={12} className="animate-spin text-blue-500" />
+            Generating waveform…
+          </div>
+        ) : null}
         {/* ponytail: click-to-seek + zoom timeline with lane-stacked segments; drag-to-resize of blocks is deferred. */}
         <SegmentTimeline
           segs={segs}

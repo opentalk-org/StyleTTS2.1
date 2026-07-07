@@ -10,10 +10,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.audio import router as audio_router
+from backend.audio.api import waveform_service
 from backend.checkpoints import router as checkpoints_router
 from backend.jobs import router as jobs_router
 from backend.runners import router as runners_router
 from backend.settings import router as settings_router
+from backend.statistics import router as statistics_router
 from backend.nats_bus import BackendNatsBus
 from backend.service import BackendManager, DuplicateRunError
 from backend.workflows import workflow_router
@@ -60,6 +62,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         logger.info("backend shutdown")
         await nats_bus.stop()
+        waveform_service.shutdown()
 
 
 app = FastAPI(title="Runflow Backend", lifespan=lifespan)
@@ -75,6 +78,7 @@ app.include_router(checkpoints_router)
 app.include_router(jobs_router)
 app.include_router(runners_router)
 app.include_router(settings_router)
+app.include_router(statistics_router)
 app.include_router(workflow_router(manager))
 
 if "RUNFLOW_UI_STATIC_DIR" in os.environ:

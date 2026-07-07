@@ -17,3 +17,12 @@ class StatisticsEntryRead(StatisticsEntryCreate):
     created_at: datetime
     metadata: dict[str, Any] = Field(alias="metadata_")
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+
+class StatisticsEntrySummary(BaseModel):
+    id: UUID
+    name: str
+    dataset_id: UUID | None
+    file_count: int
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
