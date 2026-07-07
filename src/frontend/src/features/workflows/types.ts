@@ -52,9 +52,29 @@ export type WorkflowEdge = {
   target_port: string;
 };
 
+export type ControlTarget = {
+  node_id: string;
+  key: string;
+};
+
+export type WorkflowControl = {
+  id: string;
+  label: string;
+  targets: ControlTarget[];
+};
+
+export type ControlPanel = {
+  id: string;
+  x: number;
+  y: number;
+  title: string;
+  controls: WorkflowControl[];
+};
+
 export type WorkflowGraph = {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+  panels?: ControlPanel[];
 };
 
 export type WorkflowRunContext = {

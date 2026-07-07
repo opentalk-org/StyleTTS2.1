@@ -50,19 +50,35 @@ export function deleteNode(graph: WorkflowGraph, nodeId: string): WorkflowGraph 
 export function deleteNodes(graph: WorkflowGraph, nodeIds: string[]): WorkflowGraph {
   const removed = new Set(nodeIds);
   return {
+    ...graph,
     nodes: graph.nodes.filter((node) => !removed.has(node.id)),
     edges: graph.edges.filter((edge) => !removed.has(edge.source_node) && !removed.has(edge.target_node)),
+    panels: (graph.panels ?? [])
+      .map((panel) => ({
+        ...panel,
+        controls: panel.controls
+          .map((control) => ({ ...control, targets: control.targets.filter((target) => !removed.has(target.node_id)) }))
+          .filter((control) => control.targets.length > 0),
+      })),
   };
 }
 
 export function renameNode(graph: WorkflowGraph, previous: string, nextId: string): WorkflowGraph {
   return {
+    ...graph,
     nodes: graph.nodes.map((node) => (node.id === previous ? { ...node, id: nextId } : node)),
     edges: graph.edges.map((edge) => ({
       source_node: edge.source_node === previous ? nextId : edge.source_node,
       source_port: edge.source_port,
       target_node: edge.target_node === previous ? nextId : edge.target_node,
       target_port: edge.target_port,
+    })),
+    panels: (graph.panels ?? []).map((panel) => ({
+      ...panel,
+      controls: panel.controls.map((control) => ({
+        ...control,
+        targets: control.targets.map((target) => (target.node_id === previous ? { ...target, node_id: nextId } : target)),
+      })),
     })),
   };
 }
@@ -130,7 +146,7 @@ export function defaultWorkflowContext(config: SchemaValues): WorkflowRunContext
 
 export function workflowDefinition(graph: WorkflowGraph, config: SchemaValues): WorkflowDefinition {
   const payload = graphPayload(graph, null, defaultWorkflowContext(config));
-  return { nodes: payload.nodes, edges: payload.edges, context: payload.context, launch_source: null };
+  return { nodes: payload.nodes, edges: payload.edges, panels: graph.panels ?? [], context: payload.context, launch_source: null };
 }
 
 export function runtimeConfigForGraph(schema: WorkflowSchema, graph: WorkflowGraph, config: SchemaValues): SchemaValues {

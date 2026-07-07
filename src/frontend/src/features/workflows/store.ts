@@ -2,7 +2,11 @@ import { create } from "zustand";
 
 import type { SchemaValues } from "@/shared/schema-form/types";
 import { connect, deleteNodes, moveNodes, renameNode, runtimeConfigForGraph, zoomViewport } from "./logic";
-import type { PortAnchor, PortAnchorKey, RunSnapshot, RunStatus, Viewport, WireDraft, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowSchema } from "./types";
+import type { ControlTarget, PortAnchor, PortAnchorKey, RunSnapshot, RunStatus, Viewport, WireDraft, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowSchema } from "./types";
+
+function shortId(prefix: string): string {
+  return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
+}
 
 type WorkflowStore = {
   schema: WorkflowSchema | null;
@@ -41,7 +45,18 @@ type WorkflowStore = {
   applyRunStatus: (run: RunStatus) => void;
   applyRunSnapshot: (runId: string, snapshot: RunSnapshot) => void;
   setPortAnchor: (key: PortAnchorKey, anchor: PortAnchor) => void;
+  addPanel: (x: number, y: number) => void;
+  movePanel: (panelId: string, dx: number, dy: number) => void;
+  deletePanel: (panelId: string) => void;
+  renamePanel: (panelId: string, title: string) => void;
+  addControl: (panelId: string, target: ControlTarget, label: string) => void;
+  removeControl: (panelId: string, controlId: string) => void;
+  exposeSetting: (panelId: string | null, target: ControlTarget, label: string, position: { x: number; y: number }) => void;
 };
+
+function mapPanels(graph: WorkflowGraph, fn: (panels: NonNullable<WorkflowGraph["panels"]>) => NonNullable<WorkflowGraph["panels"]>): WorkflowGraph {
+  return { ...graph, panels: fn(graph.panels ?? []) };
+}
 
 export const useWorkflowStore = create<WorkflowStore>((set) => ({
   schema: null,
@@ -144,5 +159,42 @@ export const useWorkflowStore = create<WorkflowStore>((set) => ({
     const current = state.portAnchors[key];
     if (current && Math.abs(current.x - anchor.x) < 0.5 && Math.abs(current.y - anchor.y) < 0.5) return {};
     return { portAnchors: { ...state.portAnchors, [key]: anchor } };
+  }),
+  addPanel: (x, y) => set((state) => ({
+    graph: mapPanels(state.graph, (panels) => [...panels, { id: shortId("panel"), x, y, title: "Controls", controls: [] }]),
+  })),
+  movePanel: (panelId, dx, dy) => set((state) => ({
+    graph: mapPanels(state.graph, (panels) => panels.map((panel) => (panel.id === panelId ? { ...panel, x: panel.x + dx, y: panel.y + dy } : panel))),
+  })),
+  deletePanel: (panelId) => set((state) => ({
+    graph: mapPanels(state.graph, (panels) => panels.filter((panel) => panel.id !== panelId)),
+  })),
+  renamePanel: (panelId, title) => set((state) => ({
+    graph: mapPanels(state.graph, (panels) => panels.map((panel) => (panel.id === panelId ? { ...panel, title } : panel))),
+  })),
+  addControl: (panelId, target, label) => set((state) => ({
+    graph: mapPanels(state.graph, (panels) =>
+      panels.map((panel) => {
+        if (panel.id !== panelId) return panel;
+        if (panel.controls.some((control) => control.targets.some((item) => item.node_id === target.node_id && item.key === target.key))) return panel;
+        return { ...panel, controls: [...panel.controls, { id: shortId("control"), label, targets: [target] }] };
+      }),
+    ),
+  })),
+  removeControl: (panelId, controlId) => set((state) => ({
+    graph: mapPanels(state.graph, (panels) =>
+      panels.map((panel) => (panel.id === panelId ? { ...panel, controls: panel.controls.filter((control) => control.id !== controlId) } : panel)),
+    ),
+  })),
+  exposeSetting: (panelId, target, label, position) => set((state) => {
+    const control = { id: shortId("control"), label, targets: [target] };
+    const bound = (panel: { controls: { targets: ControlTarget[] }[] }) =>
+      panel.controls.some((item) => item.targets.some((entry) => entry.node_id === target.node_id && entry.key === target.key));
+    if (panelId) {
+      return {
+        graph: mapPanels(state.graph, (panels) => panels.map((panel) => (panel.id === panelId && !bound(panel) ? { ...panel, controls: [...panel.controls, control] } : panel))),
+      };
+    }
+    return { graph: mapPanels(state.graph, (panels) => [...panels, { id: shortId("panel"), x: position.x, y: position.y, title: "Controls", controls: [control] }]) };
   }),
 }));

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
+import { ControlPanelCard } from "./ControlPanelCard";
 import { WorkflowBottomBar } from "./WorkflowBottomBar";
 import { WorkflowEdges } from "./WorkflowEdges";
 import { WorkflowNodeCard } from "./WorkflowNodeCard";
@@ -111,6 +112,7 @@ export function WorkflowCanvas() {
         style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`, transformOrigin: "0 0" }}
       >
         {graph.nodes.map((node) => <WorkflowNodeCard key={node.id} node={node} />)}
+        {(graph.panels ?? []).map((panel) => <ControlPanelCard key={panel.id} panel={panel} />)}
       </div>
       {marquee ? (
         <div

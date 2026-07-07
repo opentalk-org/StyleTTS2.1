@@ -1,11 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import { SchemaForm } from "@/shared/schema-form/SchemaForm";
+import type { JsonSchema } from "@/shared/schema-form/types";
 import { Button } from "@/shared/ui/Button";
 import { Field } from "@/shared/ui/form/Field";
 import { FormSection } from "@/shared/ui/FormSection";
 import { Input } from "@/shared/ui/Input";
+import { Select } from "@/shared/ui/Select";
 import { Tabs } from "@/shared/ui/Tabs";
+import type { WorkflowNode } from "../types";
 import { fetchNodeLog, nodeSnapshot } from "../api";
 import { useLoadNodeMutation, useUnloadNodeMutation } from "../query";
 import { useWorkflowStore } from "../store";
@@ -69,6 +72,7 @@ export function WorkflowInspector() {
           <FormSection title="Settings" tag={node.type}>
             <SchemaForm schema={info.settings} values={node.params} onChange={(params) => update({ params })} overrides={buildWorkflowFieldOverrides(info.settings)} />
           </FormSection>
+          <ExposeToPanel node={node} settings={info.settings} />
         </div>
       ) : null}
       {inspectorTab === "runtime" ? (
@@ -91,6 +95,37 @@ export function WorkflowInspector() {
         </div>
       ) : null}
     </InspectorShell>
+  );
+}
+
+function ExposeToPanel({ node, settings }: { node: WorkflowNode; settings: JsonSchema }) {
+  const { graph, viewport, exposeSetting } = useWorkflowStore();
+  const keys = Object.keys(settings.properties ?? {});
+  const panels = graph.panels ?? [];
+  const [key, setKey] = useState(keys[0] ?? "");
+  const [panelId, setPanelId] = useState("");
+  useEffect(() => {
+    if (!keys.includes(key)) setKey(keys[0] ?? "");
+  }, [node.id]);
+  if (!keys.length) return null;
+  const send = () => {
+    if (!key) return;
+    const label = String(settings.properties?.[key]?.title ?? key);
+    const position = { x: (360 - viewport.x) / viewport.zoom, y: (160 - viewport.y) / viewport.zoom };
+    exposeSetting(panelId || null, { node_id: node.id, key }, label, position);
+  };
+  return (
+    <FormSection title="Expose to control panel" tag="Wire">
+      <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2.5">
+        <Field label="Setting">
+          <Select value={key} onChange={setKey} options={keys.map((item) => ({ value: item, label: String(settings.properties?.[item]?.title ?? item) }))} />
+        </Field>
+        <Field label="Panel">
+          <Select value={panelId} onChange={setPanelId} options={[{ value: "", label: "＋ New panel" }, ...panels.map((panel) => ({ value: panel.id, label: panel.title }))]} />
+        </Field>
+        <Button variant="secondary" icon="sliders" onClick={send}>Send</Button>
+      </div>
+    </FormSection>
   );
 }
 

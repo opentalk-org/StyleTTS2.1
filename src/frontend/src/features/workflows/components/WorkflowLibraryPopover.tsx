@@ -53,7 +53,7 @@ export function WorkflowLibraryPopover({ onClose }: { onClose: () => void }) {
   }, [onClose]);
   if (!schema) return null;
   const loadGraph = (nextGraph: WorkflowGraph, nextConfig = runtimeConfig) => {
-    setGraph({ nodes: nextGraph.nodes, edges: nextGraph.edges });
+    setGraph({ nodes: nextGraph.nodes, edges: nextGraph.edges, panels: nextGraph.panels ?? [] });
     setRuntimeConfig(runtimeConfigForGraph(schema, nextGraph, nextConfig));
     setActiveRunId(null);
     onClose();
