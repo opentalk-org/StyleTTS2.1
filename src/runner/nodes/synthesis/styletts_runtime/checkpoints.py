@@ -75,16 +75,9 @@ def latest_weight(root: Path) -> Path:
 
 
 def resolve_symbols(metadata: dict[str, Any]) -> str:
-    raw = metadata["symbols"]
-    if isinstance(raw, str):
-        symbols = raw.strip()
-    elif isinstance(raw, list):
-        symbols = "".join(str(item) for item in raw if item is not None and str(item) != "")
-    else:
-        symbols = ""
-    if not symbols:
-        raise ValueError("finetune_test_symbols_missing")
-    return symbols
+    from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
+
+    return "".join(str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS)
 
 
 def resolve_asr_payload(checkpoint_id: UUID | None, target_symbols: str) -> tuple[dict[str, Any], str | None]:
