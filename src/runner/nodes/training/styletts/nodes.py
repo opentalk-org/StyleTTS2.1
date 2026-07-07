@@ -37,9 +37,6 @@ class StyleTtsFinetuneSettings(StrictSettings):
     batch_size: int = Field(default=16, title="Batch size", ge=1, le=128)
     learning_rate: float = Field(default=1e-4, title="Learning rate", gt=0)
     numeric_precision: NumericPrecision = Field(default=NumericPrecision.BF16, title="Numeric precision")
-    clip_total: float = Field(default=5.0, title="Total", gt=0)
-    clip_diffusion: float = Field(default=1.0, title="Diffusion", gt=0)
-    clip_slm: float = Field(default=0.5, title="SLM", gt=0)
     epochs_base: int = Field(default=30, title="Epochs · base", ge=0)
     epochs_diffusion: int = Field(default=15, title="Epochs · diffusion", ge=0)
     epochs_joint: int = Field(default=5, title="Epochs · joint", ge=0)
@@ -50,12 +47,9 @@ class StyleTtsFinetuneSettings(StrictSettings):
     slmadv_max_len: int = Field(default=200, title="SLM max length", ge=1)
     slmadv_batch_samples: int = Field(default=0, title="SLM batch samples", ge=0)
     decoder: DecoderBackend = Field(default=DecoderBackend.HIFIGAN, title="Decoder")
-    slm_weight: float = Field(default=0.2, title="SLM weight", ge=0)
-    diffusion_samples: int = Field(default=3, title="Diffusion samples", ge=1)
     slm_scale: float = Field(default=0.01, title="Scale", ge=0)
     multispeaker: bool = Field(default=True, title="Multi-speaker mode")
     checkpoint_each_stage: bool = Field(default=True, title="Checkpoint each stage")
-    mixed_precision: bool = Field(default=False, title="Mixed precision")
 
 
 class BuildStyleTtsFinetuneConfigSettings(StyleTtsFinetuneSettings):

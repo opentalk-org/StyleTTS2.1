@@ -18,7 +18,6 @@ import { SettingField, SettingNumberInput, settingLabel } from "./SettingsField"
 const TOGGLE_ROWS = [
   { key: "multispeaker", sub: "Per-speaker style encoder" },
   { key: "checkpoint_each_stage", sub: "Save base / diffusion / joint separately" },
-  { key: "mixed_precision", sub: "Faster, slightly less stable" },
 ];
 
 /** The full StyleTTS finetune configuration form. */
@@ -135,14 +134,6 @@ export function StyleTtsForm({
           <SettingField schema={settingsSchema} values={values} name="learning_rate" onChange={updateTraining} />
           <SettingField schema={settingsSchema} values={values} name="numeric_precision" onChange={updateTraining} />
         </div>
-        <div className="mt-4 mb-2.5 text-xs font-semibold text-txt-dim">
-          Gradient clipping (max norm)
-        </div>
-        <div className="grid grid-cols-3 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="clip_total" onChange={updateTraining} />
-          <SettingField schema={settingsSchema} values={values} name="clip_diffusion" onChange={updateTraining} />
-          <SettingField schema={settingsSchema} values={values} name="clip_slm" onChange={updateTraining} />
-        </div>
       </FormSection>
 
       <FormSection title="Schedule" tag="Epochs & sequence">
@@ -161,8 +152,8 @@ export function StyleTtsForm({
 
       <FormSection title="SLM adversarial" tag="Discriminator">
         <div className="grid grid-cols-3 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="slm_weight" onChange={updateTraining} />
-          <SettingField schema={settingsSchema} values={values} name="diffusion_samples" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="slmadv_min_len" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="slmadv_max_len" onChange={updateTraining} />
           <SettingField schema={settingsSchema} values={values} name="slm_scale" onChange={updateTraining} />
         </div>
         <div className="mt-4 flex flex-col gap-3">

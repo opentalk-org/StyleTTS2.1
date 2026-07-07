@@ -5,21 +5,22 @@ from typing import Any
 
 import yaml
 
+from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
+
 
 F0_SUFFIXES = frozenset({".t7", ".pth", ".pt", ".ckpt"})
 ASR_CONFIG_SUFFIXES = frozenset({".yml", ".yaml"})
 ASR_WEIGHT_SUFFIXES = frozenset({".pth", ".pt", ".ckpt"})
 STYLE_WEIGHT_SUFFIXES = frozenset({".pth", ".pt", ".ckpt"})
 MIN_OFFICIAL_CHECKPOINT_BYTES = 50_000_000
-DEFAULT_SYMBOLS = (
-    "a b c d e f g h i j k l m n o p q r s t u v w x y z "
-    "ɑ æ ə ɛ ɪ ʊ ʌ ɔ θ ð ʃ ʒ ŋ tʃ dʒ aɪ aʊ eɪ oʊ ɔɪ ɝ ɚ "
-    "ˈ ˌ ː . , ? ! ' \" ( ) -"
-)
+# The canonical StyleTTS2 phoneme alphabet (single characters). The structural
+# space symbol is omitted so the list round-trips through the space-separated
+# editor representation; the model itself keeps its full n_token embedding.
+DEFAULT_SYMBOLS_LIST = [str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS if symbol != " "]
 
 
 def default_symbols_metadata() -> dict[str, Any]:
-    return {"symbols": [part for part in DEFAULT_SYMBOLS.split(" ") if part]}
+    return {"symbols": list(DEFAULT_SYMBOLS_LIST)}
 
 
 def styletts_checkpoint_metadata(config_path: Path) -> dict[str, Any]:
