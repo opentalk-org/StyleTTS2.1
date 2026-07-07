@@ -40,6 +40,15 @@ def list_audio_files(session: Session) -> Sequence[AudioFile]:
     return many(session, AudioFile)
 
 
+def list_audio_files_by_run(session: Session, run_id: str) -> Sequence[AudioFile]:
+    statement = (
+        select(AudioFile)
+        .where(AudioFile.metadata_["run_id"].astext == run_id)
+        .order_by(AudioFile.updated_at.asc())
+    )
+    return session.execute(statement).unique().scalars().all()
+
+
 def search_audio_files(
     session: Session,
     query: str,

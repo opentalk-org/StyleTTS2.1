@@ -8,11 +8,14 @@ import { Slider } from "@/shared/ui/form/Slider";
 import { Select } from "@/shared/ui/Select";
 import { Textarea } from "@/shared/ui/Textarea";
 import { cn } from "@/shared/ui/cn";
+import { backendResourceUrl } from "@/app/backend";
+import { showToast } from "@/shared/feedback/Toast";
 import { useCheckpointsQuery } from "../checkpoints/query";
 import { useVoicesQuery } from "../voices/query";
+import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../workflows/logic";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
 import { checkpointOptions, enumOptions, numericSetting, sweepConfigFromGraph, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
-import { useTesting } from "./store";
+import { useTesting, type SweepDisplay } from "./store";
 
 const VOICE_QUERY = { query: "", limit: 200, offset: 0 };
 
@@ -48,7 +51,8 @@ export function SweepPanel({
   const checkpoints = useCheckpointsQuery();
   const voicesQuery = useVoicesQuery(VOICE_QUERY);
   const results = useTesting((s) => s.sweepResults);
-  const genSweep = useTesting((s) => s.genSweep);
+  const runSweep = useTesting((s) => s.runSweep);
+  const pending = results.some((r) => r.state === "running");
   if (!spec.ids.styleSweep) throw new Error("Sweep testing workflow ids are incomplete");
   const prompt = testingNode(graph, spec.ids.prompt);
   const checkpoint = testingNode(graph, spec.ids.checkpoint);
@@ -119,8 +123,30 @@ export function SweepPanel({
           <span className="text-xs text-txt-mute">
             {sweep.voices.length} voices × {sweep.n} = {sweep.voices.length * sweep.n} samples
           </span>
-          <Button variant="primary" size="lg" icon="sparkles" onClick={() => genSweep(sweepConfigFromGraph(graph, spec, voices))}>
-            Generate sweep
+          <Button
+            variant="primary"
+            size="lg"
+            icon="sparkles"
+            disabled={pending}
+            onClick={() => {
+              const config = sweepConfigFromGraph(graph, spec, voices);
+              if (!config.ckpt) {
+                showToast("Select a checkpoint first", undefined, "error");
+                return;
+              }
+              if (!config.voices.length) {
+                showToast("Select at least one voice", undefined, "error");
+                return;
+              }
+              const display: SweepDisplay[] = config.voices.flatMap((voice) =>
+                Array.from({ length: config.n }, (_unused, sample) => ({ voice: voice.name, sample: sample + 1 })),
+              );
+              const runtimeConfig = runtimeConfigForGraph(schema, graph, schema.runtime_config_defaults);
+              const payload = graphPayload(graph, null, defaultWorkflowContext(runtimeConfig));
+              void runSweep(payload, display);
+            }}
+          >
+            {pending ? "Synthesizing…" : "Generate sweep"}
           </Button>
         </div>
       </Card>
@@ -141,7 +167,20 @@ export function SweepPanel({
                   <div className="text-[11px] text-txt-mute">sample {r.sample}</div>
                 </div>
               </div>
-              <WaveformPlayer seed={r.id.length} duration={r.dur} fileName={r.file} />
+              {r.state === "succeeded" && r.audioFileId ? (
+                <WaveformPlayer
+                  seed={r.id.length}
+                  duration={r.duration ?? 0}
+                  fileName={r.name ?? "synthesis.wav"}
+                  src={backendResourceUrl(`/audio-files/${encodeURIComponent(r.audioFileId)}/content`)}
+                />
+              ) : r.state === "failed" ? (
+                <div className="text-xs font-semibold text-red-600">{r.error ?? "Failed"}</div>
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-txt-mute">
+                  <Icon name="loader" size={13} className="animate-spin text-blue-500" /> Running…
+                </div>
+              )}
             </Card>
           ))}
         </div>

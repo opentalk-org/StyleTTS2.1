@@ -83,6 +83,12 @@ async def delete_audio_file(audio_file_id: uuid.UUID) -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
 
+@router.get("/by-run/{run_id}", response_model=list[AudioFileListItem])
+async def list_audio_files_by_run(run_id: str) -> list[AudioFileListItem]:
+    with database_session() as session:
+        return [audio_response(item, 0) for item in audio_crud.list_audio_files_by_run(session, run_id)]
+
+
 @router.get("/{audio_file_id}", response_model=AudioFileListItem)
 async def get_audio_file(audio_file_id: uuid.UUID) -> AudioFileListItem:
     try:

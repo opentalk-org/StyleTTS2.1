@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 
+import { showToast } from "@/shared/feedback/Toast";
 import { Icon } from "@/shared/icons";
 import { Button } from "@/shared/ui/Button";
 import { Card } from "@/shared/ui/Card";
 import { Tabs } from "@/shared/ui/Tabs";
+import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../workflows/logic";
 import { useWorkflowSchemaQuery } from "../workflows/query";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
 import { ConfigCard } from "./ConfigCard";
@@ -24,7 +26,23 @@ function SingleMode({
   onChange: (graph: WorkflowGraph) => void;
 }) {
   const results = useTesting((s) => s.testResults);
-  const genSingle = useTesting((s) => s.genSingle);
+  const runSingle = useTesting((s) => s.runSingle);
+  const pending = results.some((r) => r.state === "running");
+
+  const generate = () => {
+    const config = singleConfigFromGraph(graph, spec);
+    if (!config.ckpt) {
+      showToast("Select a checkpoint first", undefined, "error");
+      return;
+    }
+    if (!config.styleRef) {
+      showToast("Select a reference audio first", undefined, "error");
+      return;
+    }
+    const runtimeConfig = runtimeConfigForGraph(schema, graph, schema.runtime_config_defaults);
+    const payload = graphPayload(graph, null, defaultWorkflowContext(runtimeConfig));
+    void runSingle(payload, { text: config.text, steps: config.steps, emb: config.emb });
+  };
 
   return (
     <>
@@ -33,10 +51,11 @@ function SingleMode({
         variant="primary"
         size="lg"
         icon="sparkles"
-        onClick={() => genSingle(singleConfigFromGraph(graph, spec))}
+        disabled={pending}
+        onClick={generate}
         className="mt-4 h-12 w-full"
       >
-        Generate speech
+        {pending ? "Synthesizing…" : "Generate speech"}
       </Button>
 
       <div className="mt-[26px]">

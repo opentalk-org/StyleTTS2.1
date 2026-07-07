@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import io
 import wave
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -103,6 +104,7 @@ def synthesize_styletts(
         )
         wav_bytes = synthesize_to_wav_bytes(runtime=runtime, payload=payload)
     audio = _audio_from_wav(settings.output_name, wav_bytes, request_id, node_type)
+    audio = replace(audio, metadata={**audio.metadata, "run_id": run_id})
     result_id = stable_id("synthesis_result", request_id, audio.id)
     result = SynthesisResult(request_id, audio, result_id, audio.lineage_id, _result_metadata(payload, audio, settings))
     return {"synthesis_result": result, "audio": audio}
