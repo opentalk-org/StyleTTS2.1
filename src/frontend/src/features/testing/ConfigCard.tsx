@@ -7,7 +7,7 @@ import { Textarea } from "@/shared/ui/Textarea";
 import { useAudioFilesQuery } from "../audio/query";
 import { useCheckpointsQuery } from "../checkpoints/query";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
-import { checkpointOptions, checkpointWeightOptions, enumOptions, numericSetting, styleReferenceOptions, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
+import { checkpointOptions, enumOptions, numericSetting, styleReferenceOptions, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
 
 function GroupTitle({ children }: { children: string }) {
   return (
@@ -44,7 +44,6 @@ export function ConfigCard({
     throw new Error("Single testing workflow ids are incomplete");
   }
   const prompt = testingNode(graph, spec.ids.prompt);
-  const alphabet = testingNode(graph, spec.ids.alphabet);
   const checkpoint = testingNode(graph, spec.ids.checkpoint);
   const styleRef = testingNode(graph, spec.ids.styleRef);
   const synthesis = testingNode(graph, spec.ids.synthesis);
@@ -53,7 +52,6 @@ export function ConfigCard({
   const styleMix = numericSetting(schema, styleRef, "style_mix");
   const prosodyMix = numericSetting(schema, styleRef, "prosody_mix");
   const updateParams = (nodeId: string, params: SchemaValues) => onChange(updateNodeParams(graph, nodeId, params));
-  const selectedCheckpoint = (checkpoints.data ?? []).find((item) => item.id === String(checkpoint.params.checkpoint_id));
 
   return (
     <Card className="flex flex-col gap-5 rounded-xl px-6 py-[22px]">
@@ -71,13 +69,6 @@ export function ConfigCard({
               value={String(prompt.params.language)}
               onChange={(language) => updateParams(prompt.id, { ...prompt.params, language })}
               options={enumOptions(schema, prompt, "language")}
-            />
-          </Field>
-          <Field label="Phoneme alphabet">
-            <Select
-              value={String(alphabet.params.preset)}
-              onChange={(preset) => updateParams(alphabet.id, { ...alphabet.params, preset })}
-              options={enumOptions(schema, alphabet, "preset")}
             />
           </Field>
           <Field label="Diffusion steps">
@@ -100,14 +91,6 @@ export function ConfigCard({
             />
           </Field>
         </FieldGrid>
-        <Field label="Alphabet symbols">
-          <Textarea
-            value={String(alphabet.params.symbols)}
-            onChange={(e) => updateParams(alphabet.id, { ...alphabet.params, symbols: e.target.value })}
-            spellCheck={false}
-            className="min-h-[58px] text-xs font-mono leading-relaxed"
-          />
-        </Field>
       </div>
 
       <div className="h-px bg-line" />
@@ -120,13 +103,6 @@ export function ConfigCard({
               value={String(checkpoint.params.checkpoint_id)}
               onChange={(checkpoint_id) => updateParams(checkpoint.id, { ...checkpoint.params, checkpoint_id })}
               options={checkpointOptions(checkpoints.data ?? [])}
-            />
-          </Field>
-          <Field label="Weights file">
-            <Select
-              value={String(synthesis.params.weights_file)}
-              onChange={(weights_file) => updateParams(synthesis.id, { ...synthesis.params, weights_file })}
-              options={checkpointWeightOptions(selectedCheckpoint)}
             />
           </Field>
         </FieldGrid>

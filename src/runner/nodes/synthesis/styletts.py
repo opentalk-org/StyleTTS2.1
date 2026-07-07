@@ -25,7 +25,6 @@ from runner.nodes.synthesis.styletts_runtime.actions import (
 )
 
 class StyleTtsSynthesisSettings(StrictSettings):
-    weights_file: str = Field(default="", title="Weights file")
     diffusion_steps: int = Field(default=5, title="Diffusion steps", ge=1, le=100)
     embedding_scale: float = Field(default=1.0, title="Embedding scale", ge=0.1, le=10)
     phoneme_language: str = Field(default="en-us", title="Phoneme language")
@@ -47,7 +46,6 @@ class StyleTtsSynthesisNode(Node):
     INPUTS = {
         "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
         "prompt_text": Port("prompt_text", JSON),
-        "phonemes": Port("phonemes", JSON),
         "style_reference": Port("style_reference", JSON),
     }
     OUTPUTS = {"synthesis_result": Port("synthesis_result", SYNTHESIS_RESULT), "audio": Port("audio", AUDIO)}

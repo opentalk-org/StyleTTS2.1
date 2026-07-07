@@ -13,7 +13,6 @@ export { TESTING_OPTIONS, TESTING_WORKFLOWS, type TestingMode, type TestingWorkf
 
 export type SingleConfig = {
   ckpt: string;
-  weights: string;
   text: string;
   lang: string;
   steps: number;
@@ -21,7 +20,6 @@ export type SingleConfig = {
   styleRef: string;
   styleMix: number;
   prosodyMix: number;
-  alphabetSymbols: string;
 };
 
 export type SweepConfig = {
@@ -29,7 +27,6 @@ export type SweepConfig = {
   text: string;
   voices: { id: string; name: string }[];
   n: number;
-  alphabetSymbols: string;
 };
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -69,12 +66,10 @@ export function createTestingGraph(schema: WorkflowSchema, spec: TestingWorkflow
 export function singleConfigFromGraph(graph: WorkflowGraph, spec: TestingWorkflowSpec): SingleConfig {
   const prompt = testingNode(graph, spec.ids.prompt);
   const checkpoint = testingNode(graph, spec.ids.checkpoint);
-  const alphabet = testingNode(graph, spec.ids.alphabet);
   const styleRef = testingNode(graph, requiredNodeId(spec.ids.styleRef, "single style reference"));
   const synthesis = testingNode(graph, requiredNodeId(spec.ids.synthesis, "single synthesis"));
   return {
     ckpt: String(checkpoint.params.checkpoint_id),
-    weights: String(synthesis.params.weights_file),
     text: String(prompt.params.text),
     lang: String(prompt.params.language),
     steps: Number(synthesis.params.diffusion_steps),
@@ -82,14 +77,12 @@ export function singleConfigFromGraph(graph: WorkflowGraph, spec: TestingWorkflo
     styleRef: String(styleRef.params.reference_id),
     styleMix: Number(styleRef.params.style_mix),
     prosodyMix: Number(styleRef.params.prosody_mix),
-    alphabetSymbols: String(alphabet.params.symbols),
   };
 }
 
 export function sweepConfigFromGraph(graph: WorkflowGraph, spec: TestingWorkflowSpec, availableVoices: Voice[] = []): SweepConfig {
   const prompt = testingNode(graph, spec.ids.prompt);
   const checkpoint = testingNode(graph, spec.ids.checkpoint);
-  const alphabet = testingNode(graph, spec.ids.alphabet);
   const styleSweep = testingNode(graph, requiredNodeId(spec.ids.styleSweep, "sweep style references"));
   const voiceIds = stringArrayParam(styleSweep.params.voices);
   return {
@@ -97,7 +90,6 @@ export function sweepConfigFromGraph(graph: WorkflowGraph, spec: TestingWorkflow
     text: String(prompt.params.text),
     voices: voiceIds.map((id) => ({ id, name: voiceName(id, availableVoices) })),
     n: Number(styleSweep.params.samples_per_voice),
-    alphabetSymbols: String(alphabet.params.symbols),
   };
 }
 

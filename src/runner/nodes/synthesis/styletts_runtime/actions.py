@@ -21,7 +21,7 @@ from shared.db.audio import crud as audio_crud
 
 
 class StyleTtsRequestSettings(BaseModel):
-    weights_file: str
+    weights_file: str = ""
     diffusion_steps: int
     embedding_scale: float
     phoneme_language: str

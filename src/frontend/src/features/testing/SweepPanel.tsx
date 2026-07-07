@@ -14,7 +14,7 @@ import { useCheckpointsQuery } from "../checkpoints/query";
 import { useVoicesQuery } from "../voices/query";
 import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../workflows/logic";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
-import { checkpointOptions, enumOptions, numericSetting, sweepConfigFromGraph, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
+import { checkpointOptions, numericSetting, sweepConfigFromGraph, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
 import { useTesting, type SweepDisplay } from "./store";
 
 const VOICE_QUERY = { query: "", limit: 200, offset: 0 };
@@ -56,7 +56,6 @@ export function SweepPanel({
   if (!spec.ids.styleSweep) throw new Error("Sweep testing workflow ids are incomplete");
   const prompt = testingNode(graph, spec.ids.prompt);
   const checkpoint = testingNode(graph, spec.ids.checkpoint);
-  const alphabet = testingNode(graph, spec.ids.alphabet);
   const styleSweep = testingNode(graph, spec.ids.styleSweep);
   const samples = numericSetting(schema, styleSweep, "samples_per_voice");
   const voices = voicesQuery.data?.rows ?? [];
@@ -86,13 +85,6 @@ export function SweepPanel({
               value={String(checkpoint.params.checkpoint_id)}
               onChange={(checkpoint_id) => updateParams(checkpoint.id, { ...checkpoint.params, checkpoint_id })}
               options={checkpointOptions(checkpoints.data ?? [])}
-            />
-          </Field>
-          <Field label="Phoneme alphabet">
-            <Select
-              value={String(alphabet.params.preset)}
-              onChange={(preset) => updateParams(alphabet.id, { ...alphabet.params, preset })}
-              options={enumOptions(schema, alphabet, "preset")}
             />
           </Field>
         </div>

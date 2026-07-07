@@ -13,10 +13,7 @@ ASR_CONFIG_SUFFIXES = frozenset({".yml", ".yaml"})
 ASR_WEIGHT_SUFFIXES = frozenset({".pth", ".pt", ".ckpt"})
 STYLE_WEIGHT_SUFFIXES = frozenset({".pth", ".pt", ".ckpt"})
 MIN_OFFICIAL_CHECKPOINT_BYTES = 50_000_000
-# The canonical StyleTTS2 phoneme alphabet (single characters). The structural
-# space symbol is omitted so the list round-trips through the space-separated
-# editor representation; the model itself keeps its full n_token embedding.
-DEFAULT_SYMBOLS_LIST = [str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS if symbol != " "]
+DEFAULT_SYMBOLS_LIST = [str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS]
 
 
 def default_symbols_metadata() -> dict[str, Any]:

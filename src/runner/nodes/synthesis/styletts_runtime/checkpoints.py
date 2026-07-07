@@ -77,6 +77,13 @@ def latest_weight(root: Path) -> Path:
 def resolve_symbols(metadata: dict[str, Any]) -> str:
     from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
 
+    raw = metadata.get("symbols")
+    if isinstance(raw, list) and raw:
+        symbols = "".join(str(item) for item in raw)
+        if symbols:
+            return symbols
+    if isinstance(raw, str) and raw:
+        return raw
     return "".join(str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS)
 
 
