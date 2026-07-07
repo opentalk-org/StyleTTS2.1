@@ -9,6 +9,7 @@ import { Tabs } from "@/shared/ui/Tabs";
 import { fetchNodeLog, nodeSnapshot } from "../api";
 import { useLoadNodeMutation, useUnloadNodeMutation } from "../query";
 import { useWorkflowStore } from "../store";
+import { buildWorkflowFieldOverrides } from "./WorkflowFieldPickers";
 
 type InspectorTab = "settings" | "runtime" | "logs";
 
@@ -66,7 +67,7 @@ export function WorkflowInspector() {
             </div>
           </FormSection>
           <FormSection title="Settings" tag={node.type}>
-            <SchemaForm schema={info.settings} values={node.params} onChange={(params) => update({ params })} />
+            <SchemaForm schema={info.settings} values={node.params} onChange={(params) => update({ params })} overrides={buildWorkflowFieldOverrides(info.settings)} />
           </FormSection>
         </div>
       ) : null}
