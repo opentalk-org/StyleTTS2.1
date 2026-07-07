@@ -1,8 +1,8 @@
 import { create } from "zustand";
 
 import type { SchemaValues } from "@/shared/schema-form/types";
-import { connect, deleteNodes, moveNodes, renameNode, runtimeConfigForGraph, zoomViewport } from "./logic";
-import type { ControlTarget, PortAnchor, PortAnchorKey, RunSnapshot, RunStatus, Viewport, WireDraft, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowSchema } from "./types";
+import { autoLayoutGraph, connect, deleteNodes, moveNodes, renameNode, runtimeConfigForGraph, zoomViewport } from "./logic";
+import type { ControlTarget, PortAnchor, PortAnchorKey, RunSnapshot, RunStatus, Viewport, WireDraft, WorkflowControl, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowSchema } from "./types";
 
 function shortId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
@@ -27,6 +27,7 @@ type WorkflowStore = {
   selectNode: (nodeId: string | null, additive?: boolean) => void;
   selectNodes: (nodeIds: string[]) => void;
   deleteSelection: () => void;
+  autoLayout: () => void;
   moveSelection: (dx: number, dy: number) => void;
   renameSelectedNode: (nextId: string) => void;
   addEdge: (edge: WorkflowEdge) => void;
@@ -50,6 +51,7 @@ type WorkflowStore = {
   deletePanel: (panelId: string) => void;
   renamePanel: (panelId: string, title: string) => void;
   addControl: (panelId: string, target: ControlTarget, label: string) => void;
+  updateControl: (panelId: string, controlId: string, patch: Partial<Pick<WorkflowControl, "label" | "description">>) => void;
   removeControl: (panelId: string, controlId: string) => void;
   exposeSetting: (panelId: string | null, target: ControlTarget, label: string, position: { x: number; y: number }) => void;
 };
@@ -100,6 +102,15 @@ export const useWorkflowStore = create<WorkflowStore>((set) => ({
       graph,
       selectedNodeIds: [],
       runtimeConfig: state.schema ? runtimeConfigForGraph(state.schema, graph, state.runtimeConfig) : state.runtimeConfig,
+    };
+  }),
+  autoLayout: () => set((state) => {
+    if (!state.schema) return {};
+    return {
+      graph: autoLayoutGraph(state.schema, state.graph),
+      portAnchors: {},
+      viewport: { x: 0, y: 0, zoom: 1 },
+      wireDraft: null,
     };
   }),
   moveSelection: (dx, dy) => set((state) => ({ graph: moveNodes(state.graph, state.selectedNodeIds, dx, dy) })),
@@ -177,8 +188,17 @@ export const useWorkflowStore = create<WorkflowStore>((set) => ({
       panels.map((panel) => {
         if (panel.id !== panelId) return panel;
         if (panel.controls.some((control) => control.targets.some((item) => item.node_id === target.node_id && item.key === target.key))) return panel;
-        return { ...panel, controls: [...panel.controls, { id: shortId("control"), label, targets: [target] }] };
+        return { ...panel, controls: [...panel.controls, { id: shortId("control"), label, description: "", targets: [target] }] };
       }),
+    ),
+  })),
+  updateControl: (panelId, controlId, patch) => set((state) => ({
+    graph: mapPanels(state.graph, (panels) =>
+      panels.map((panel) => (
+        panel.id === panelId
+          ? { ...panel, controls: panel.controls.map((control) => (control.id === controlId ? { ...control, ...patch } : control)) }
+          : panel
+      )),
     ),
   })),
   removeControl: (panelId, controlId) => set((state) => ({
@@ -187,7 +207,7 @@ export const useWorkflowStore = create<WorkflowStore>((set) => ({
     ),
   })),
   exposeSetting: (panelId, target, label, position) => set((state) => {
-    const control = { id: shortId("control"), label, targets: [target] };
+    const control = { id: shortId("control"), label, description: "", targets: [target] };
     const bound = (panel: { controls: { targets: ControlTarget[] }[] }) =>
       panel.controls.some((item) => item.targets.some((entry) => entry.node_id === target.node_id && entry.key === target.key));
     if (panelId) {

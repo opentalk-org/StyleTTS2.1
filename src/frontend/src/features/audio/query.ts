@@ -2,7 +2,16 @@ import { useEffect, useState } from "react";
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { type AudioDeleteRequest, type AudioQuery, deleteAudioFiles, deleteMatchingAudioFiles, fetchAudioFile, fetchAudioFiles, fetchWaveform } from "./api";
+import {
+  type AudioDeleteRequest,
+  type AudioQuery,
+  deleteAudioFiles,
+  deleteMatchingAudioFiles,
+  fetchAudioFile,
+  fetchAudioFiles,
+  fetchWaveform,
+  renameAudioFile,
+} from "./api";
 
 export const AUDIO_FILES_KEY = "audio-files";
 const WAVEFORM_DEBOUNCE_MS = 200;
@@ -38,6 +47,14 @@ export function useDeleteAudioFilesMutation() {
       if (request.mode === "filter") return deleteMatchingAudioFiles(request.query, request.dataset);
       return deleteAudioFiles(request.ids);
     },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [AUDIO_FILES_KEY] }),
+  });
+}
+
+export function useRenameAudioFileMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => renameAudioFile(id, name),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [AUDIO_FILES_KEY] }),
   });
 }

@@ -29,8 +29,6 @@ type EditorStore = {
   speed: number;
   volume: number;
   loop: boolean;
-  abA: number | null;
-  abB: number | null;
   /** Visible slice of the audio [viewStart, viewEnd] — the timeline renders only this. */
   viewStart: number;
   viewEnd: number;
@@ -43,9 +41,6 @@ type EditorStore = {
   setSpeed: (speed: number) => void;
   setVolume: (volume: number) => void;
   toggleLoop: () => void;
-  setA: () => void;
-  setB: () => void;
-  clearAB: () => void;
   setView: (start: number, end: number) => void;
   zoomIn: () => void;
   zoomOut: () => void;
@@ -80,8 +75,6 @@ export const useEditor = create<EditorStore>((set) => ({
   speed: 1,
   volume: 1,
   loop: false,
-  abA: null,
-  abB: null,
   viewStart: 0,
   viewEnd: 0,
   dirty: false,
@@ -90,7 +83,7 @@ export const useEditor = create<EditorStore>((set) => ({
   load: (fileId, dur, segs) =>
     set({
       fileId, dur, segs: sortSegs(segs), playPos: 0, playing: false, dirty: false,
-      segSel: null, segQuery: "", abA: null, abB: null, loop: false,
+      segSel: null, segQuery: "", loop: false,
       viewStart: 0, viewEnd: Math.min(dur, DEFAULT_SPAN),
     }),
   seek: (playPos) => set((s) => ({ playPos: Math.max(0, Math.min(s.dur, playPos)) })),
@@ -98,9 +91,6 @@ export const useEditor = create<EditorStore>((set) => ({
   setSpeed: (speed) => set({ speed }),
   setVolume: (volume) => set({ volume }),
   toggleLoop: () => set((s) => ({ loop: !s.loop })),
-  setA: () => set((s) => ({ abA: s.playPos })),
-  setB: () => set((s) => ({ abB: s.playPos })),
-  clearAB: () => set({ abA: null, abB: null, loop: false }),
   setView: (start, end) => set((s) => clampView(start, end, s.dur)),
   zoomIn: () => set((s) => zoom(s, 1 / 2)),
   zoomOut: () => set((s) => zoom(s, 2)),

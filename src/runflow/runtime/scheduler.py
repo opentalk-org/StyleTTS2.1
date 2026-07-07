@@ -10,6 +10,7 @@ from runflow.core.task import Packet, Task, lineage_from_value, metadata_from_va
 from runflow.planning.batch_planner import BatchPlanner
 from runflow.planning.graph_validator import GraphValidator
 from runflow.runtime.artifact_store import ArtifactStore
+from runflow.runtime.cancellation import cancellation_scope
 from runflow.runtime.input_progress import remaining_counts
 from runflow.runtime.node_manager import NodeManager
 from runflow.runtime.output_values import output_values
@@ -39,10 +40,15 @@ class WindowedScheduler:
         self._workers: list[asyncio.Task] = []
         self._worker_errors: list[BaseException] = []
         self._batch_sequence = 0
+
     def run(self) -> None:
         asyncio.run(self.arun())
 
+    def cancel(self) -> None:
+        self.context.cancel()
+
     async def load_node(self, node_id: str) -> None:
+        self.context.check_cancel()
         node = self.graph.nodes[node_id]
         was_loaded = node.id in self.node_manager.loaded
         await self.node_manager.ensure_loaded(node)
@@ -69,6 +75,7 @@ class WindowedScheduler:
 
         try:
             await self._run_until_idle(input_nodes, counts)
+            self.context.check_cancel()
             self.artifact_store.write_index()
             await self.context.emit_event("run_completed", message="run completed")
             self.logger.info("run completed")
@@ -116,6 +123,7 @@ class WindowedScheduler:
             raise ExceptionGroup("Scheduler worker failures", errors)
 
     async def _enqueue(self, node_id: str, task: Task) -> None:
+        self.context.check_cancel()
         if self._active_condition is None:
             raise RuntimeError("Scheduler is not running")
         async with self._active_condition:
@@ -136,6 +144,7 @@ class WindowedScheduler:
             raise RuntimeError("Scheduler is not running")
         async with self._active_condition:
             await self._active_condition.wait_for(lambda: self._active_tasks == 0 or bool(self._worker_errors))
+        self.context.check_cancel()
         self._raise_worker_errors()
 
     async def _record_worker_error(self, error: BaseException) -> None:
@@ -162,16 +171,20 @@ class WindowedScheduler:
                     batch = batches.pop(0)
                     batch_index = self._next_batch_index()
                     async with self.resource_pool.lease(resource_policy, resource_priority):
+                        self.context.check_cancel()
                         await self.load_node(node.id)
+                        self.context.check_cancel()
                         node.logger.info("batch starting worker=%s batch=%s size=%s", worker_index, batch_index, len(batch))
                         await self.events.batch_started(node, worker_index, batch_index, batch)
-                        outputs = await node.execute([task.inputs for task in batch], self.context)
+                        outputs = await self._execute_node(node, [task.inputs for task in batch])
+                        self.context.check_cancel()
                         if node.IS_INPUT:
                             await self.events.input_items_remaining(node, node.remaining_items(self.context))
                         if resource_policy.unload_after_stage and not resource_policy.keep_loaded:
                             await self.unload_node(node.id)
                     await self.events.batch_completed(node, worker_index, batch_index, batch, outputs)
                     node.logger.info("batch completed worker=%s batch=%s input_items=%s output_items=%s", worker_index, batch_index, len(batch), len(outputs))
+                    self.context.check_cancel()
                     await self._route_outputs(node, batch, outputs, batch_index)
                     if node.IS_INPUT and node.remaining_items(self.context) > 0:
                         await self._enqueue_input(node)
@@ -184,6 +197,13 @@ class WindowedScheduler:
                 for _ in consumed_tasks:
                     queue.task_done()
                     await self._mark_task_done()
+
+    async def _execute_node(self, node: Node, inputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        def run_execute() -> list[dict[str, Any]]:
+            with cancellation_scope(self.context.cancel_token):
+                return asyncio.run(node.execute(inputs, self.context))
+
+        return await asyncio.to_thread(run_execute)
 
     async def _collect_batches(self, node: Node, first: Task, queue: asyncio.Queue[Task]) -> tuple[list[list[Task]], list[Task]]:
         tasks = [first]
@@ -224,6 +244,7 @@ class WindowedScheduler:
         outputs: list[dict[str, Any]],
         batch_index: int,
     ) -> None:
+        self.context.check_cancel()
         if len(outputs) == len(batch):
             task_for_output = batch
         elif len(batch) == 1:
@@ -236,6 +257,7 @@ class WindowedScheduler:
         for task, output_dict in zip(task_for_output, outputs):
             for port_name, value in output_dict.items():
                 if port_name == "__progress__":
+                    self.context.check_cancel()
                     await self.events.node_progress(node, value, batch_index)
                     continue
                 if port_name not in node.OUTPUTS:
@@ -243,6 +265,7 @@ class WindowedScheduler:
 
                 port = node.OUTPUTS[port_name]
                 for item in output_values(node, port_name, port, value):
+                    self.context.check_cancel()
                     packet = Packet(
                         node_id=node.id,
                         port=port_name,
@@ -256,6 +279,7 @@ class WindowedScheduler:
                     await self._deliver_packet(packet)
 
     async def _deliver_packet(self, packet: Packet) -> None:
+        self.context.check_cancel()
         for edge in self.graph.outgoing_edges(packet.node_id):
             if edge.source.port != packet.port:
                 continue

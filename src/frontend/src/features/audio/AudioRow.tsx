@@ -1,4 +1,7 @@
+import { useEffect, useRef, useState } from "react";
+
 import { useNav } from "@/app/navStore";
+import { showToast } from "@/shared/feedback/Toast";
 import { fmtAgo, fmtDur } from "@/shared/format";
 import { Icon } from "@/shared/icons";
 import { WaveformBars } from "@/shared/media/WaveformBars";
@@ -6,6 +9,7 @@ import { cn } from "@/shared/ui/cn";
 import { IconButton } from "@/shared/ui/IconButton";
 import { InlineSegments } from "./InlineSegments";
 import type { AudioFile } from "./api";
+import { useRenameAudioFileMutation } from "./query";
 import { useAudio } from "./store";
 
 export const AUDIO_COLS = "30px 22px 66px minmax(130px,1.2fr) 118px 54px 46px 74px 30px";
@@ -30,6 +34,39 @@ export function AudioRow({ file, index }: { file: AudioFile; index: number }) {
   const noSeg = file.segments === 0;
   const updatedAt = Date.parse(file.updated_at);
   const openEditor = useNav((s) => s.openEditor);
+  const renameAudio = useRenameAudioFileMutation();
+  const skipNameBlur = useRef(false);
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState(file.name);
+
+  useEffect(() => {
+    if (!renaming) setNameDraft(file.name);
+  }, [file.name, renaming]);
+
+  const cancelRename = () => {
+    skipNameBlur.current = true;
+    setNameDraft(file.name);
+    setRenaming(false);
+  };
+
+  const commitRename = async () => {
+    const name = nameDraft.trim();
+    if (!name) {
+      showToast("Audio name is required", undefined, "error");
+      return;
+    }
+    if (name === file.name) {
+      setRenaming(false);
+      return;
+    }
+    try {
+      await renameAudio.mutateAsync({ id: file.id, name });
+      setRenaming(false);
+      showToast("Audio renamed");
+    } catch {
+      showToast("Could not rename audio", undefined, "error");
+    }
+  };
 
   return (
     <div>
@@ -53,8 +90,43 @@ export function AudioRow({ file, index }: { file: AudioFile; index: number }) {
           <Icon name="chevron-down" size={15} strokeWidth={2.4} className="-rotate-90" />
         </button>
         <WaveformBars seed={index + 1} bars={20} height={22} />
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate font-mono text-[13px] font-semibold text-txt">{file.name}</span>
+        <div className="flex min-w-0 items-center gap-1.5" onClick={(event) => event.stopPropagation()}>
+          {renaming ? (
+            <input
+              autoFocus
+              value={nameDraft}
+              disabled={renameAudio.isPending}
+              onChange={(event) => setNameDraft(event.target.value)}
+              onBlur={() => {
+                if (skipNameBlur.current) {
+                  skipNameBlur.current = false;
+                  return;
+                }
+                void commitRename();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  cancelRename();
+                }
+              }}
+              className="min-w-0 flex-1 rounded border border-line bg-bg px-1.5 py-1 font-mono text-[13px] font-semibold text-txt outline-none focus:border-blue-400"
+            />
+          ) : (
+            <>
+              <span className="truncate font-mono text-[13px] font-semibold text-txt">{file.name}</span>
+              <button
+                title="Rename audio"
+                className="flex h-5 w-5 flex-none items-center justify-center rounded text-txt-mute hover:bg-panel-3 hover:text-txt"
+                onClick={() => setRenaming(true)}
+              >
+                <Icon name="edit" size={12} strokeWidth={2.2} />
+              </button>
+            </>
+          )}
           {noSeg ? (
             <span className="flex flex-none text-amber-500" title="No segments — Split or Transcribe to create them">
               <Icon name="alert" size={15} strokeWidth={2.2} />

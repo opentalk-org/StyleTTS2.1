@@ -17,6 +17,7 @@ warnings.simplefilter('ignore')
 import os
 
 from aim import Run
+from runflow.runtime.cancellation import check_cancel
 from runner.nodes.training.styletts.finetune.training.meldataset import build_dataloader
 
 from runner.nodes.training.styletts.finetune.training.modules.slmadv import SLMAdversarialLoss
@@ -249,6 +250,7 @@ def train(config_path: str, *, aim_run: Run) -> None:
     
     
     for epoch in range(start_epoch, epochs):
+        check_cancel()
         running_loss = 0
         start_time = time.time()
 
@@ -264,6 +266,7 @@ def train(config_path: str, *, aim_run: Run) -> None:
         model.mpd.train()
 
         for i, batch in enumerate(train_dataloader):
+            check_cancel()
             waves = batch[0]
             batch = [b.to(device) for b in batch[1:]]
             texts, input_lengths, ref_texts, ref_lengths, mels, mel_input_length, ref_mels = batch
@@ -644,6 +647,7 @@ def train(config_path: str, *, aim_run: Run) -> None:
         with torch.no_grad():
             iters_test = 0
             for batch_idx, batch in enumerate(val_dataloader):
+                check_cancel()
                 optimizer.zero_grad()
 
                 try:

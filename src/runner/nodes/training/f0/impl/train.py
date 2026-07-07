@@ -10,6 +10,7 @@ import torch.nn as nn
 from aim import Run
 from tqdm import tqdm
 
+from runflow.runtime.cancellation import check_cancel
 from runner.nodes.training.f0.impl.dataset import build_f0_dataloaders
 from runner.nodes.training.f0.impl.optimizer import build_f0_optimizer
 from runner.nodes.training.styletts.finetune.training.modules.jdc import JDCNet
@@ -145,6 +146,7 @@ def train_f0_model(
     try:
         epoch_pbar = tqdm(range(epochs), desc="F0 train", unit="epoch")
         for epoch in epoch_pbar:
+            check_cancel()
             model.train()
             train_losses: dict[str, list[float]] = {"loss": [], "f0_loss": [], "sil_loss": []}
             batch_pbar = tqdm(
@@ -154,6 +156,7 @@ def train_f0_model(
                 total=steps_per_epoch,
             )
             for batch_idx, batch in enumerate(batch_pbar, start=1):
+                check_cancel()
                 x, f0, sil = [b.to(device, non_blocking=True) for b in batch]
                 x_t = x.transpose(-1, -2)
                 optimizer.zero_grad(set_to_none=True)
@@ -193,6 +196,7 @@ def train_f0_model(
             eval_losses: dict[str, list[float]] = {"loss": [], "f0_loss": [], "sil_loss": []}
             with torch.no_grad():
                 for batch in tqdm(val_loader, desc=f"val {epoch + 1}/{epochs}", leave=False, total=len(val_loader)):
+                    check_cancel()
                     x, f0, sil = [b.to(device, non_blocking=True) for b in batch]
                     x_t = x.transpose(-1, -2)
                     f0_pred, sil_pred = model.forward_pitch_train(x_t)

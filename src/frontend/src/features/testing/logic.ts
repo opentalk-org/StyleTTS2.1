@@ -19,8 +19,8 @@ export type SingleConfig = {
   steps: number;
   emb: number;
   styleRef: string;
-  styleMix: number;
-  prosodyMix: number;
+  alpha: number;
+  beta: number;
 };
 
 export type SweepConfig = {
@@ -29,6 +29,8 @@ export type SweepConfig = {
   text: string;
   voices: { id: string; name: string }[];
   n: number;
+  alpha: number;
+  beta: number;
 };
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -36,6 +38,7 @@ const LANGUAGE_LABELS: Record<string, string> = {
   "en-gb": "English (UK)",
   es: "Spanish",
   de: "German",
+  pl: "Polish",
 };
 
 const ALPHABET_LABELS: Record<string, string> = {
@@ -79,8 +82,8 @@ export function singleConfigFromGraph(graph: WorkflowGraph, spec: TestingWorkflo
     steps: Number(synthesis.params.diffusion_steps),
     emb: Number(synthesis.params.embedding_scale),
     styleRef: String(styleRef.params.reference_id),
-    styleMix: Number(styleRef.params.style_mix),
-    prosodyMix: Number(styleRef.params.prosody_mix),
+    alpha: Number(styleRef.params.alpha),
+    beta: Number(styleRef.params.beta),
   };
 }
 
@@ -96,6 +99,8 @@ export function sweepConfigFromGraph(graph: WorkflowGraph, spec: TestingWorkflow
     text: String(prompt.params.text),
     voices: voiceIds.map((id) => ({ id, name: voiceName(id, availableVoices) })),
     n: Number(styleSweep.params.samples_per_voice),
+    alpha: Number(styleSweep.params.alpha),
+    beta: Number(styleSweep.params.beta),
   };
 }
 

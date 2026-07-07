@@ -16,7 +16,7 @@ import { saveAudioSegments } from "./api";
 import { SegmentRow } from "./SegmentRow";
 import { SegmentTimeline } from "./SegmentTimeline";
 import { useEditor } from "./editorStore";
-import { AUDIO_FILES_KEY, useAudioFileQuery, useWaveformQuery } from "./query";
+import { AUDIO_FILES_KEY, useAudioFileQuery, useRenameAudioFileMutation, useWaveformQuery } from "./query";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -39,13 +39,16 @@ function TBtn({ icon, title, big, flip, onClick }: { icon: IconName; title: stri
 export function SegmentEditor() {
   const activeAudioFileId = useNav((s) => s.activeAudioFileId);
   const audio = useAudioFileQuery(activeAudioFileId);
+  const renameAudio = useRenameAudioFileMutation();
   const queryClient = useQueryClient();
   const audioRef = useRef<HTMLAudioElement>(null);
+  const skipNameBlur = useRef(false);
   const [copied, setCopied] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
   const ed = useEditor();
   const {
-    fileId, dur, segs, playPos, playing, speed, volume, loop, abA, abB, viewStart, viewEnd, dirty, segSel, segQuery,
-    load, seek, togglePlay, setSpeed, setVolume, toggleLoop, setA, setB, clearAB, setView, zoomIn, zoomOut, select, setSegTime, setQuery, addSeg,
+    fileId, dur, segs, playPos, playing, speed, volume, loop, viewStart, viewEnd, dirty, segSel, segQuery,
+    load, seek, togglePlay, setSpeed, setVolume, toggleLoop, setView, zoomIn, zoomOut, select, setSegTime, setQuery, addSeg,
   } = ed;
   const minimapWaveform = useWaveformQuery(activeAudioFileId, 0, dur, 800);
   const viewWaveform = useWaveformQuery(activeAudioFileId, viewStart, viewEnd, 1400);
@@ -54,6 +57,10 @@ export function SegmentEditor() {
     if (!audio.data || audio.data.id === fileId) return;
     load(audio.data.id, audio.data.duration, audio.data.segment_preview);
   }, [audio.data, fileId, load]);
+
+  useEffect(() => {
+    if (audio.data) setNameDraft(audio.data.name);
+  }, [audio.data?.id, audio.data?.name]);
 
   useEffect(() => {
     const element = audioRef.current;
@@ -85,9 +92,10 @@ export function SegmentEditor() {
     const tick = () => {
       const state = useEditor.getState();
       let next = element.currentTime;
-      if (state.loop && state.abA != null && state.abB != null) {
-        const lo = Math.min(state.abA, state.abB);
-        const hi = Math.max(state.abA, state.abB);
+      if (state.loop) {
+        const selected = state.segs.find((seg) => seg.id === state.segSel);
+        const lo = selected ? selected.start : 0;
+        const hi = selected ? selected.end : state.dur;
         if (next >= hi) {
           element.currentTime = lo;
           next = lo;
@@ -110,6 +118,7 @@ export function SegmentEditor() {
   const vis = q ? segs.filter((g) => g.text.toLowerCase().includes(q) || g.phon.toLowerCase().includes(q)) : segs;
   const contentUrl = backendResourceUrl(`/audio-files/${encodeURIComponent(activeAudioFileId)}/content`);
   const seed = hashSeed(activeAudioFileId);
+  const selectedSegment = segs.find((seg) => seg.id === segSel);
 
   const saveSegments = async () => {
     const updated = await saveAudioSegments(activeAudioFileId, segs);
@@ -118,15 +127,29 @@ export function SegmentEditor() {
     showToast("Segments saved");
   };
 
-  const abBtn = (label: string, on: boolean, onClick: () => void) => (
-    <button
-      onClick={onClick}
-      title={`Set loop point ${label}`}
-      className={cn("h-7 rounded px-2.5 text-xs font-bold", on ? "bg-emerald-50 text-emerald-700" : "text-txt-dim")}
-    >
-      {label}
-    </button>
-  );
+  const commitName = async () => {
+    const name = nameDraft.trim();
+    if (!name) {
+      showToast("Audio name is required", undefined, "error");
+      setNameDraft(file.name);
+      return;
+    }
+    if (name === file.name) return;
+    try {
+      await renameAudio.mutateAsync({ id: activeAudioFileId, name });
+      showToast("Audio renamed");
+    } catch {
+      setNameDraft(file.name);
+      showToast("Could not rename audio", undefined, "error");
+    }
+  };
+
+  const downloadAudio = () => {
+    const anchor = document.createElement("a");
+    anchor.href = contentUrl;
+    anchor.download = file.name || "audio";
+    anchor.click();
+  };
 
   return (
     <div className="mx-auto flex h-full max-w-[1140px] flex-col px-7 pb-6 pt-[18px]">
@@ -145,7 +168,31 @@ export function SegmentEditor() {
         </Button>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2.5">
-            <span className="truncate font-mono text-[17px] font-bold tracking-tight">{file.name}</span>
+            <input
+              value={nameDraft}
+              disabled={renameAudio.isPending}
+              title="Rename audio"
+              onChange={(event) => setNameDraft(event.target.value)}
+              onBlur={() => {
+                if (skipNameBlur.current) {
+                  skipNameBlur.current = false;
+                  return;
+                }
+                void commitName();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  skipNameBlur.current = true;
+                  setNameDraft(file.name);
+                  event.currentTarget.blur();
+                }
+              }}
+              className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-[17px] font-bold text-txt outline-none hover:border-line focus:border-blue-400 focus:bg-bg"
+            />
             <span className="rounded-full bg-panel-2 px-2 py-0.5 text-[11px] font-semibold text-txt-dim">{file.speaker}</span>
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs tabular-nums text-txt-mute">
@@ -247,20 +294,16 @@ export function SegmentEditor() {
           </div>
           <div className="flex-1" />
           <div className="flex items-center gap-1 rounded-md bg-panel-2 p-0.5">
-            {abBtn("A", abA != null, setA)}
-            {abBtn("B", abB != null, setB)}
             <button
               onClick={toggleLoop}
-              title="Loop"
+              title={selectedSegment ? "Loop selected segment" : "Loop full audio"}
               className={cn("flex h-7 w-[30px] items-center justify-center rounded", loop ? "bg-blue-500 text-white" : "text-txt-dim")}
             >
               <Icon name="repeat" size={14} strokeWidth={2.2} />
             </button>
-            {abA != null || abB != null ? (
-              <button onClick={clearAB} title="Clear A-B" className="flex h-7 w-7 items-center justify-center rounded text-txt-mute">
-                <Icon name="x" size={13} strokeWidth={2.4} />
-              </button>
-            ) : null}
+            <button onClick={downloadAudio} title="Download full audio" className="flex h-7 w-7 items-center justify-center rounded text-txt-dim hover:bg-panel-3 hover:text-txt">
+              <Icon name="download" size={14} strokeWidth={2.2} />
+            </button>
           </div>
           <div className="flex items-center gap-1">
             <TBtn icon="zoom-out" title="Zoom out" onClick={zoomOut} />

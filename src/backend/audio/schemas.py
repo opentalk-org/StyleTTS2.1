@@ -28,6 +28,10 @@ class AudioSegmentWrite(BaseModel):
     type_: str = "manual"
 
 
+class AudioRenamePayload(BaseModel):
+    name: str
+
+
 class AudioFileListItem(BaseModel):
     id: UUID
     name: str

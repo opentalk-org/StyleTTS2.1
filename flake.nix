@@ -53,6 +53,7 @@
           python = pkgs.python312;
           inherit runtimeLibs;
           runtimeExecutableDeps = [
+            pkgs.espeak-ng
             pkgs.ffmpeg-headless
             pkgs.gcc
             pkgs.cargo
@@ -64,11 +65,12 @@
           env = {
             CC = "${pkgs.gcc}/bin/gcc";
             SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+            PHONEMIZER_ESPEAK_LIBRARY = "${pkgs.espeak-ng}/lib/libespeak-ng.so";
             PYTHONUNBUFFERED = "1";
             TRITON_PTXAS_PATH = "${cudaNvcc}/bin/ptxas";
             TRITON_PTXAS_BLACKWELL_PATH = "${cudaNvcc}/bin/ptxas";
             TRITON_LIBCUDA_PATH = "/usr/local/nvidia/lib";
-            LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib:${nvidiaDriverPath}";
+            LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib:${nvidiaDriverPath}";
             LIBRARY_PATH = nvidiaDriverPath;
           };
         };
@@ -76,6 +78,7 @@
       pythonEnvExports = pythonRuntime: ''
         export CC="${pythonRuntime.env.CC}"
         export SSL_CERT_FILE="${pythonRuntime.env.SSL_CERT_FILE}"
+        export PHONEMIZER_ESPEAK_LIBRARY="${pythonRuntime.env.PHONEMIZER_ESPEAK_LIBRARY}"
         export PYTHONUNBUFFERED="${pythonRuntime.env.PYTHONUNBUFFERED}"
         export TRITON_PTXAS_PATH="${pythonRuntime.env.TRITON_PTXAS_PATH}"
         export TRITON_PTXAS_BLACKWELL_PATH="${pythonRuntime.env.TRITON_PTXAS_BLACKWELL_PATH}"

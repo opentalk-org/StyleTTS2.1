@@ -17,7 +17,8 @@ import { SettingField, SettingNumberInput, settingLabel } from "./SettingsField"
 
 const TOGGLE_ROWS = [
   { key: "multispeaker", sub: "Per-speaker style encoder" },
-  { key: "checkpoint_each_stage", sub: "Save base / diffusion / joint separately" },
+  { key: "checkpoint_decoder_gradients", sub: "Uses less VRAM; reduces training speed." },
+  { key: "checkpoint_discriminator_gradients", sub: "Uses less VRAM; reduces training speed." },
 ];
 
 /** The full StyleTTS finetune configuration form. */

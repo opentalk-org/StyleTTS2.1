@@ -26,8 +26,8 @@ class StyleTtsRequestSettings(BaseModel):
     embedding_scale: float
     phoneme_language: str
     phoneme_tie: bool
-    style_mix_alpha: float
-    style_mix_beta: float
+    alpha: float
+    beta: float
     output_name: str
     asr_checkpoint_id: UUID | None
     f0_checkpoint_id: UUID | None
@@ -59,8 +59,8 @@ def build_styletts_payload(
         "embedding_scale": settings.embedding_scale,
         "phoneme_language": settings.phoneme_language,
         "phoneme_tie": settings.phoneme_tie,
-        "style_mix_alpha": _style_mix(style_reference, "style_mix", settings.style_mix_alpha),
-        "style_mix_beta": _style_mix(style_reference, "prosody_mix", settings.style_mix_beta),
+        "alpha": _mix_value(style_reference, "alpha", settings.alpha),
+        "beta": _mix_value(style_reference, "beta", settings.beta),
         "asr_config": asr_config,
         "asr_path": asr_path,
         "f0_path": f0_path,
@@ -124,7 +124,7 @@ def _prompt_text(value: dict[str, Any]) -> str:
     return str(value)
 
 
-def _style_mix(reference: dict[str, Any], name: str, default: float) -> float:
+def _mix_value(reference: dict[str, Any], name: str, default: float) -> float:
     if name in reference:
         return float(reference[name])
     return default

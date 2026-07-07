@@ -1,6 +1,14 @@
 import type { SchemaValues } from "@/shared/schema-form/types";
 import type { Viewport, WorkflowDefinition, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowPayload, WorkflowRunContext, WorkflowSchema } from "./types";
 
+const LAYOUT_X = 64;
+const LAYOUT_Y = 80;
+const LAYOUT_COLUMN_GAP = 330;
+const LAYOUT_ROW_GAP = 52;
+const LAYOUT_PANEL_GAP = 120;
+const LAYOUT_PANEL_WIDTH = 280;
+const LAYOUT_PANEL_GAP_X = 32;
+
 export function typeAccepts(schema: WorkflowSchema, targetType: string, sourceType: string): boolean {
   const target = schema.types[targetType];
   const source = schema.types[sourceType];
@@ -109,6 +117,57 @@ export function moveNodes(graph: WorkflowGraph, nodeIds: string[], dx: number, d
   };
 }
 
+export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph): WorkflowGraph {
+  const order = topologicalNodeOrder(graph);
+  const orderIndex = new Map(order.map((nodeId, index) => [nodeId, index]));
+  const ranks = new Map(graph.nodes.map((node) => [node.id, 0]));
+  for (const nodeId of order) {
+    const rank = ranks.get(nodeId) ?? 0;
+    for (const edge of graph.edges) {
+      if (edge.source_node !== nodeId) continue;
+      if (!ranks.has(edge.target_node)) continue;
+      if ((orderIndex.get(edge.source_node) ?? 0) >= (orderIndex.get(edge.target_node) ?? 0)) continue;
+      ranks.set(edge.target_node, Math.max(ranks.get(edge.target_node) ?? 0, rank + 1));
+    }
+  }
+
+  const layers = new Map<number, WorkflowNode[]>();
+  const originalIndex = new Map(graph.nodes.map((node, index) => [node.id, index]));
+  for (const node of graph.nodes) {
+    const rank = ranks.get(node.id) ?? 0;
+    layers.set(rank, [...(layers.get(rank) ?? []), node]);
+  }
+  for (const layer of layers.values()) {
+    layer.sort((left, right) => left.y - right.y || left.x - right.x || (originalIndex.get(left.id) ?? 0) - (originalIndex.get(right.id) ?? 0));
+  }
+
+  const positioned = new Map<string, WorkflowNode>();
+  let maxBottom = LAYOUT_Y;
+  for (const rank of [...layers.keys()].sort((left, right) => left - right)) {
+    const layer = layers.get(rank) ?? [];
+    let y = LAYOUT_Y;
+    for (const node of layer) {
+      const height = estimatedNodeHeight(schema, node);
+      const next = { ...node, x: LAYOUT_X + rank * LAYOUT_COLUMN_GAP, y };
+      positioned.set(node.id, next);
+      maxBottom = Math.max(maxBottom, y + height);
+      y += height + LAYOUT_ROW_GAP;
+    }
+  }
+
+  const panels = (graph.panels ?? []).map((panel, index) => ({
+    ...panel,
+    x: LAYOUT_X + index * (LAYOUT_PANEL_WIDTH + LAYOUT_PANEL_GAP_X),
+    y: maxBottom + LAYOUT_PANEL_GAP,
+  }));
+
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => positioned.get(node.id) ?? node),
+    panels,
+  };
+}
+
 export function graphPoint(viewport: Viewport, clientX: number, clientY: number, left: number, top: number) {
   return {
     x: (clientX - left - viewport.x) / viewport.zoom,
@@ -208,4 +267,47 @@ function recordValue(value: unknown, label: string): Record<string, unknown> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function topologicalNodeOrder(graph: WorkflowGraph): string[] {
+  const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
+  const original = [...graph.nodes].sort((left, right) => left.x - right.x || left.y - right.y || left.id.localeCompare(right.id));
+  const indegree = new Map(graph.nodes.map((node) => [node.id, 0]));
+  const outgoing = new Map(graph.nodes.map((node) => [node.id, [] as string[]]));
+  for (const edge of graph.edges) {
+    if (!nodes.has(edge.source_node) || !nodes.has(edge.target_node)) continue;
+    indegree.set(edge.target_node, (indegree.get(edge.target_node) ?? 0) + 1);
+    outgoing.get(edge.source_node)?.push(edge.target_node);
+  }
+
+  const ready = original.filter((node) => (indegree.get(node.id) ?? 0) === 0).map((node) => node.id);
+  const out: string[] = [];
+  while (ready.length > 0) {
+    ready.sort((left, right) => {
+      const leftNode = nodes.get(left);
+      const rightNode = nodes.get(right);
+      if (!leftNode || !rightNode) return left.localeCompare(right);
+      return leftNode.x - rightNode.x || leftNode.y - rightNode.y || left.localeCompare(right);
+    });
+    const nodeId = ready.shift()!;
+    out.push(nodeId);
+    for (const target of outgoing.get(nodeId) ?? []) {
+      const next = (indegree.get(target) ?? 0) - 1;
+      indegree.set(target, next);
+      if (next === 0) ready.push(target);
+    }
+  }
+
+  const seen = new Set(out);
+  for (const node of original) {
+    if (!seen.has(node.id)) out.push(node.id);
+  }
+  return out;
+}
+
+function estimatedNodeHeight(schema: WorkflowSchema, node: WorkflowNode): number {
+  const info = schema.nodes[node.type];
+  if (!info) return 170;
+  const portRows = Math.max(Object.keys(info.inputs).length, Object.keys(info.outputs).length, 1);
+  return 122 + portRows * 28;
 }

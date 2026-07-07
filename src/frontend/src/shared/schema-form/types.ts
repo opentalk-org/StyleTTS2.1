@@ -1,6 +1,7 @@
 export type JsonSchema = {
   type?: string;
   title?: string;
+  description?: string;
   default?: unknown;
   enum?: string[];
   minimum?: number;

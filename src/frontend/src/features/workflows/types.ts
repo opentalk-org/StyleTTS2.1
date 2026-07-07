@@ -60,6 +60,7 @@ export type ControlTarget = {
 export type WorkflowControl = {
   id: string;
   label: string;
+  description?: string;
   targets: ControlTarget[];
 };
 

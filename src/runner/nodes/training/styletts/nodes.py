@@ -55,7 +55,8 @@ class StyleTtsFinetuneSettings(StrictSettings):
     decoder: DecoderBackend = Field(default=DecoderBackend.HIFIGAN, title="Decoder")
     slm_scale: float = Field(default=0.01, title="Scale", ge=0)
     multispeaker: bool = Field(default=True, title="Multi-speaker mode")
-    checkpoint_each_stage: bool = Field(default=True, title="Checkpoint each stage")
+    checkpoint_decoder_gradients: bool = Field(default=True, title="Checkpoint decoder gradients")
+    checkpoint_discriminator_gradients: bool = Field(default=True, title="Checkpoint discriminator gradients")
 
 
 class BuildStyleTtsFinetuneConfigSettings(StyleTtsFinetuneSettings):

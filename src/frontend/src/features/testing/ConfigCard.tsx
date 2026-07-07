@@ -1,6 +1,7 @@
 import type { SchemaValues } from "@/shared/schema-form/types";
 import { Card } from "@/shared/ui/Card";
 import { Field } from "@/shared/ui/form/Field";
+import { NumberInput } from "@/shared/ui/form/NumberInput";
 import { Slider } from "@/shared/ui/form/Slider";
 import { Select } from "@/shared/ui/Select";
 import { Textarea } from "@/shared/ui/Textarea";
@@ -50,8 +51,8 @@ export function ConfigCard({
   const synthesis = testingNode(graph, spec.ids.synthesis);
   const steps = numericSetting(schema, synthesis, "diffusion_steps");
   const emb = numericSetting(schema, synthesis, "embedding_scale");
-  const styleMix = numericSetting(schema, styleRef, "style_mix");
-  const prosodyMix = numericSetting(schema, styleRef, "prosody_mix");
+  const alpha = numericSetting(schema, styleRef, "alpha");
+  const beta = numericSetting(schema, styleRef, "beta");
   const updateParams = (nodeId: string, params: SchemaValues) => onChange(updateNodeParams(graph, nodeId, params));
 
   return (
@@ -122,24 +123,22 @@ export function ConfigCard({
               options={styleReferenceOptions(audioFiles.data?.rows ?? [])}
             />
           </Field>
-          <Field label="Style mix" hint="Timbre adherence to reference.">
-            <Slider
-              value={Number(styleRef.params.style_mix)}
-              onChange={(value) => updateParams(styleRef.id, { ...styleRef.params, style_mix: value })}
-              min={styleMix.min}
-              max={styleMix.max}
+          <Field label="Alpha" hint="Timbre adherence to reference.">
+            <NumberInput
+              value={Number(styleRef.params.alpha)}
+              onChange={(value) => updateParams(styleRef.id, { ...styleRef.params, alpha: value })}
+              min={alpha.min}
+              max={alpha.max}
               step={0.05}
-              format={(v) => v.toFixed(2)}
             />
           </Field>
-          <Field label="Prosody mix" hint="Rhythm & intonation from reference.">
-            <Slider
-              value={Number(styleRef.params.prosody_mix)}
-              onChange={(value) => updateParams(styleRef.id, { ...styleRef.params, prosody_mix: value })}
-              min={prosodyMix.min}
-              max={prosodyMix.max}
+          <Field label="Beta" hint="Rhythm & intonation from reference.">
+            <NumberInput
+              value={Number(styleRef.params.beta)}
+              onChange={(value) => updateParams(styleRef.id, { ...styleRef.params, beta: value })}
+              min={beta.min}
+              max={beta.max}
               step={0.05}
-              format={(v) => v.toFixed(2)}
             />
           </Field>
         </FieldGrid>

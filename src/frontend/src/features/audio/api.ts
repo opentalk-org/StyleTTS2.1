@@ -92,6 +92,14 @@ export function saveAudioSegments(id: string, segments: Segment[]): Promise<Audi
   });
 }
 
+export function renameAudioFile(id: string, name: string): Promise<AudioFile> {
+  return backendRequest<AudioFile>(`/audio-files/${encodeURIComponent(id)}/name`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
 export async function deleteAudioFile(id: string): Promise<void> {
   const response = await backendFetch(`/audio-files/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!response.ok) throw new Error(`Backend request failed: ${response.status}`);

@@ -3,6 +3,8 @@ import { useState } from "react";
 import { SchemaForm } from "@/shared/schema-form/SchemaForm";
 import type { JsonSchema, SchemaValues } from "@/shared/schema-form/types";
 import { Icon } from "@/shared/icons";
+import { Input } from "@/shared/ui/Input";
+import { Textarea } from "@/shared/ui/Textarea";
 import { useWorkflowStore } from "../store";
 import type { ControlPanel, WorkflowControl } from "../types";
 import { buildWorkflowFieldOverrides } from "./WorkflowFieldPickers";
@@ -60,7 +62,7 @@ export function ControlPanelCard({ panel }: { panel: ControlPanel }) {
 }
 
 function ControlRow({ panelId, control }: { panelId: string; control: WorkflowControl }) {
-  const { schema, graph, patchNode, removeControl } = useWorkflowStore();
+  const { schema, graph, patchNode, removeControl, updateControl } = useWorkflowStore();
   const target = control.targets[0];
   const node = graph.nodes.find((item) => item.id === target?.node_id);
   if (!schema || !node || !target) return null;
@@ -68,7 +70,18 @@ function ControlRow({ panelId, control }: { panelId: string; control: WorkflowCo
   const prop = info?.settings.properties?.[target.key] as JsonSchema | undefined;
   if (!info || !prop) return null;
 
-  const fieldSchema: JsonSchema = { ...info.settings, properties: { [target.key]: prop } };
+  const label = control.label.trim() || String(prop.title ?? target.key);
+  const description = control.description?.trim() ?? "";
+  const fieldSchema: JsonSchema = {
+    ...info.settings,
+    properties: {
+      [target.key]: {
+        ...prop,
+        title: label,
+        description: description || prop.description,
+      },
+    },
+  };
   const write = (value: unknown) => {
     for (const item of control.targets) {
       const bound = useWorkflowStore.getState().graph.nodes.find((entry) => entry.id === item.node_id);
@@ -87,6 +100,23 @@ function ControlRow({ panelId, control }: { panelId: string; control: WorkflowCo
         <button onClick={() => removeControl(panelId, control.id)} title="Unwire" className="flex-none text-txt-mute hover:text-red-500">
           <Icon name="x" size={12} strokeWidth={2.4} />
         </button>
+      </div>
+      <div className="mb-2 grid gap-1.5">
+        <Input
+          filled
+          value={control.label}
+          placeholder={String(prop.title ?? target.key)}
+          onChange={(event) => updateControl(panelId, control.id, { label: event.target.value })}
+          onPointerDown={(event) => event.stopPropagation()}
+          className="h-8 px-2 font-semibold"
+        />
+        <Textarea
+          value={control.description ?? ""}
+          placeholder="Description"
+          onChange={(event) => updateControl(panelId, control.id, { description: event.target.value })}
+          onPointerDown={(event) => event.stopPropagation()}
+          className="min-h-[46px] resize-none px-2 py-1.5 text-[12px] leading-snug"
+        />
       </div>
       <SchemaForm
         schema={fieldSchema}

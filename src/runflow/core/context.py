@@ -3,11 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from inspect import isawaitable
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Iterable, Iterator
 from uuid import uuid4
 
 from runflow.core.config import RuntimeConfig
 from runflow.core.events import RunEvent
+from runflow.runtime.cancellation import CancelToken, cancellable
 
 
 @dataclass
@@ -20,6 +21,7 @@ class ExecutionContext:
     config: RuntimeConfig = field(default_factory=RuntimeConfig)
     input_items: list[Any] = field(default_factory=list)
     window_index: int = 0
+    cancel_token: CancelToken = field(default_factory=CancelToken)
     event_sink: Callable[[RunEvent], Awaitable[None] | None] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -42,6 +44,15 @@ class ExecutionContext:
         path = self.window_dir / node_id
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    def cancel(self) -> None:
+        self.cancel_token.cancel()
+
+    def check_cancel(self) -> None:
+        self.cancel_token.check()
+
+    def cancellable[T](self, items: Iterable[T]) -> Iterator[T]:
+        return cancellable(items)
 
     async def emit_event(
         self,

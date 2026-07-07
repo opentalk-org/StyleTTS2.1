@@ -11,6 +11,9 @@ from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import JSON
 from runner.nodes.synthesis.style_reference import audio_file_style_reference
+from shared.db import database_session
+from shared.db.audio import crud as audio_crud
+from shared.db.voices import crud as voice_crud
 
 
 class TestingLanguage(str, Enum):
@@ -18,6 +21,7 @@ class TestingLanguage(str, Enum):
     EN_GB = "en-gb"
     ES = "es"
     DE = "de"
+    PL = "pl"
 
 
 class TestingTextPromptSettings(StrictSettings):
@@ -27,13 +31,15 @@ class TestingTextPromptSettings(StrictSettings):
 
 class SelectStyleReferenceSettings(StrictSettings):
     reference_id: str = Field(default="", title="Reference")
-    style_mix: float = Field(default=0.7, title="Style mix", ge=0, le=1)
-    prosody_mix: float = Field(default=0.5, title="Prosody mix", ge=0, le=1)
+    alpha: float = Field(default=0.7, title="Alpha", ge=0, le=1)
+    beta: float = Field(default=0.3, title="Beta", ge=0, le=1)
 
 
 class StyleReferenceSweepSettings(StrictSettings):
     voices: list[UUID] = Field(default_factory=list, title="Style references")
     samples_per_voice: int = Field(default=2, title="Samples per voice", ge=1, le=5)
+    alpha: float = Field(default=0.7, title="Alpha", ge=0, le=1)
+    beta: float = Field(default=0.3, title="Beta", ge=0, le=1)
 
 
 class TestingRunInputNode(Node):
@@ -86,7 +92,7 @@ class SelectStyleReferenceNode(TestingInputPayloadNode):
             raise ValueError("SelectStyleReference requires reference_id")
         return [
             {
-                "style_reference": _selected_style_reference(self.settings.reference_id, self.settings.style_mix, self.settings.prosody_mix)
+                "style_reference": _selected_style_reference(self.settings.reference_id, self.settings.alpha, self.settings.beta)
             }
             for inputs in batch
         ]
@@ -100,15 +106,13 @@ class StyleReferenceSweepNode(TestingInputPayloadNode):
 
     async def execute(self, batch, context):
         if not self.settings.voices:
-            raise ValueError("StyleReferenceSweep requires at least one style reference audio id")
+            raise ValueError("StyleReferenceSweep requires at least one voice")
+        references = _voice_style_references(self.settings.voices, self.settings.alpha, self.settings.beta)
         return [
             {
                 "style_reference": {
                     "kind": "style_reference_batch",
-                    "references": [
-                        audio_file_style_reference(reference_id)
-                        for reference_id in self.settings.voices
-                    ],
+                    "references": references,
                     "samples_per_voice": self.settings.samples_per_voice,
                     "source": {"node_type": self.NODE_TYPE, "run": inputs["run"]},
                 }
@@ -117,6 +121,31 @@ class StyleReferenceSweepNode(TestingInputPayloadNode):
         ]
 
 
-def _selected_style_reference(reference_id: str, style_mix: float, prosody_mix: float) -> dict[str, object]:
+def _selected_style_reference(reference_id: str, alpha: float, beta: float) -> dict[str, object]:
     payload = audio_file_style_reference(UUID(reference_id))
-    return {**payload, "style_mix": style_mix, "prosody_mix": prosody_mix}
+    return {**payload, "alpha": alpha, "beta": beta}
+
+
+def _voice_style_references(voice_ids: list[UUID], alpha: float, beta: float) -> list[dict[str, object]]:
+    with database_session() as session:
+        audio_files = list(audio_crud.list_audio_files(session))
+        voices = {voice.id: voice.name for voice in voice_crud.list_voices(session)}
+        reference_ids = [_voice_reference_audio_id(audio_files, voice_id, voices.get(voice_id, "")) for voice_id in voice_ids]
+    return [{**audio_file_style_reference(reference_id), "alpha": alpha, "beta": beta} for reference_id in reference_ids]
+
+
+def _voice_reference_audio_id(audio_files, voice_id: UUID, voice_name: str = "") -> UUID:
+    voice = str(voice_id)
+    name = voice_name.strip()
+    matches = [
+        item
+        for item in audio_files
+        if str(item.metadata_.get("voice_id") or "") == voice
+        or (name and str(item.metadata_.get("speaker") or "").strip() == name)
+        or any(str(segment.get("voice_id") or "") == voice for segment in item.segments)
+        or (name and any(str(segment.get("speaker") or "").strip() == name for segment in item.segments))
+    ]
+    if not matches:
+        label = f"{voice_name} ({voice_id})" if voice_name else str(voice_id)
+        raise KeyError(f"Voice has no audio reference: {label}")
+    return max(matches, key=lambda item: item.duration).id

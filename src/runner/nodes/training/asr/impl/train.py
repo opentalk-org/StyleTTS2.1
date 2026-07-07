@@ -10,6 +10,7 @@ import torch.nn as nn
 from aim import Run
 from tqdm import tqdm
 
+from runflow.runtime.cancellation import check_cancel
 from runner.nodes.training.asr.impl.config_load import blank_index_from_config
 from runner.nodes.training.asr.impl.dataset import build_asr_dataloaders
 from runner.nodes.training.asr.impl.optimizer import build_asr_optimizer
@@ -132,6 +133,7 @@ def train_asr_model(
     try:
         epoch_pbar = tqdm(range(epochs), desc="ASR train", unit="epoch")
         for epoch in epoch_pbar:
+            check_cancel()
             model.train()
             train_losses: dict[str, list[float]] = {"loss": [], "ctc": [], "s2s": []}
             batch_pbar = tqdm(
@@ -141,6 +143,7 @@ def train_asr_model(
                 total=steps_per_epoch,
             )
             for batch_idx, batch in enumerate(batch_pbar, start=1):
+                check_cancel()
                 batch_d = [b.to(device, non_blocking=True) for b in batch]
                 text_input, text_input_length, mel_input, mel_input_length = batch_d
                 mel_enc_len = mel_input_length // (2**n_down)
@@ -196,6 +199,7 @@ def train_asr_model(
             eval_losses: dict[str, list[float]] = {"loss": [], "ctc": [], "s2s": []}
             with torch.no_grad():
                 for vb in tqdm(val_loader, desc=f"val {epoch + 1}/{epochs}", leave=False, total=len(val_loader)):
+                    check_cancel()
                     vb = [b.to(device, non_blocking=True) for b in vb]
                     text_input, text_input_length, mel_input, mel_input_length = vb
                     mel_enc_len = mel_input_length // (2**n_down)

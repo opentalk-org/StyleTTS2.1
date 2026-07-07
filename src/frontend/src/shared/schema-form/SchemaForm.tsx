@@ -6,6 +6,7 @@ import type { JsonSchema, SchemaValues } from "./types";
 export type FieldOverride = (context: {
   name: string;
   label: string;
+  description?: string;
   value: unknown;
   onChange: (value: unknown) => void;
 }) => ReactNode;
@@ -31,7 +32,7 @@ export function SchemaForm({
         if (override) {
           return (
             <Fragment key={name}>
-              {override({ name, label: prop.title ?? name, value: values[name], onChange: (value) => set(name, value) })}
+              {override({ name, label: prop.title ?? name, description: prop.description, value: values[name], onChange: (value) => set(name, value) })}
             </Fragment>
           );
         }

@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Response, UploadFile, status
 
-from backend.audio.schemas import AudioFileListItem, AudioFilePage, AudioSegmentRead, AudioSegmentWrite, AudioSort
+from backend.audio.schemas import AudioFileListItem, AudioFilePage, AudioRenamePayload, AudioSegmentRead, AudioSegmentWrite, AudioSort
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 from shared.db.audio.models import AudioFile
@@ -147,6 +147,31 @@ async def replace_audio_segments(audio_file_id: uuid.UUID, payload: list[AudioSe
                     wav_bytes=None,
                     duration=item.duration,
                     segments=[segment.model_dump(mode="json") for segment in payload],
+                    metadata=item.metadata_,
+                    virtual=item.virtual,
+                ),
+            )
+            return audio_response(updated, None)
+    except KeyError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
+@router.patch("/{audio_file_id}/name", response_model=AudioFileListItem)
+async def rename_audio_file(audio_file_id: uuid.UUID, payload: AudioRenamePayload) -> AudioFileListItem:
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Audio name is required")
+    try:
+        with database_session() as session:
+            item = audio_crud.get_audio_file(session, audio_file_id)
+            updated = audio_crud.update_audio_file(
+                session,
+                audio_file_id,
+                AudioUpdate(
+                    name=name,
+                    wav_bytes=None,
+                    duration=item.duration,
+                    segments=item.segments,
                     metadata=item.metadata_,
                     virtual=item.virtual,
                 ),

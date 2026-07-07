@@ -19,11 +19,11 @@ export function buildWorkflowFieldOverrides(settings: JsonSchema): Record<string
   const overrides: Record<string, FieldOverride> = {};
   for (const name of Object.keys(settings.properties ?? {})) {
     if (DATASET_FIELDS.has(name)) {
-      overrides[name] = ({ label, value, onChange }) => <DatasetPickerField label={label} value={value} onChange={onChange} />;
+      overrides[name] = ({ label, description, value, onChange }) => <DatasetPickerField label={label} description={description} value={value} onChange={onChange} />;
     } else if (AUDIO_MULTI_FIELDS.has(name)) {
-      overrides[name] = ({ label, value, onChange }) => <AudioMultiPickerField label={label} value={value} onChange={onChange} />;
+      overrides[name] = ({ label, description, value, onChange }) => <AudioMultiPickerField label={label} description={description} value={value} onChange={onChange} />;
     } else if (AUDIO_SINGLE_FIELDS.has(name)) {
-      overrides[name] = ({ label, value, onChange }) => <AudioSinglePickerField label={label} value={value} onChange={onChange} />;
+      overrides[name] = ({ label, description, value, onChange }) => <AudioSinglePickerField label={label} description={description} value={value} onChange={onChange} />;
     }
   }
   return overrides;
@@ -38,11 +38,11 @@ function useDebounced<T>(value: T, ms: number): T {
   return debounced;
 }
 
-function DatasetPickerField({ label, value, onChange }: { label: string; value: unknown; onChange: (value: unknown) => void }) {
+function DatasetPickerField({ label, description, value, onChange }: { label: string; description?: string; value: unknown; onChange: (value: unknown) => void }) {
   const datasets = useDatasetsQuery();
   const list = datasets.data ?? [];
   return (
-    <Field label={label}>
+    <Field label={label} hint={description}>
       <Select
         value={String(value ?? "")}
         onChange={(dataset_id) => onChange(dataset_id)}
@@ -135,12 +135,12 @@ function TriggerButton({ open, onClick, children }: { open: boolean; onClick: ()
   );
 }
 
-function AudioSinglePickerField({ label, value, onChange }: { label: string; value: unknown; onChange: (value: unknown) => void }) {
+function AudioSinglePickerField({ label, description, value, onChange }: { label: string; description?: string; value: unknown; onChange: (value: unknown) => void }) {
   const [open, setOpen] = useState(false);
   const current = String(value ?? "");
   const audio = useAudioFileQuery(current || null);
   return (
-    <Field label={label}>
+    <Field label={label} hint={description}>
       <div className="relative">
         <TriggerButton open={open} onClick={() => setOpen((v) => !v)}>
           {current ? (audio.data?.name ?? current) : "Choose audio…"}
@@ -160,7 +160,7 @@ function AudioSinglePickerField({ label, value, onChange }: { label: string; val
   );
 }
 
-function AudioMultiPickerField({ label, value, onChange }: { label: string; value: unknown; onChange: (value: unknown) => void }) {
+function AudioMultiPickerField({ label, description, value, onChange }: { label: string; description?: string; value: unknown; onChange: (value: unknown) => void }) {
   const [open, setOpen] = useState(false);
   const ids = Array.isArray(value) ? value.map(String) : [];
   const add = (item: AudioFile) => {
@@ -169,7 +169,7 @@ function AudioMultiPickerField({ label, value, onChange }: { label: string; valu
   const remove = (id: string) => onChange(ids.filter((item) => item !== id));
 
   return (
-    <Field label={`${label} (${ids.length})`}>
+    <Field label={`${label} (${ids.length})`} hint={description}>
       {ids.length ? (
         <div className="mb-1.5 flex flex-wrap gap-1.5">
           {ids.map((id) => (

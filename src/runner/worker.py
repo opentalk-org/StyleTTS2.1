@@ -134,7 +134,11 @@ class RunnerWorker:
         task = self._active_runs.get(command.run_id)
         if task is not None:
             self.logger.info("stop command run_id=%s", command.run_id)
-            task.cancel()
+            scheduler = self._active_schedulers.get(command.run_id)
+            if scheduler is not None:
+                scheduler.cancel()
+            else:
+                task.cancel()
         else:
             self.logger.info("stop command pending run_id=%s", command.run_id)
             self._pending_stops.add(command.run_id)
@@ -176,7 +180,7 @@ class RunnerWorker:
             graph = build_inline_graph(request)
             context = self._context(request, run_id)
             self._run_work_dirs[run_id] = context.work_dir
-            context.event_sink = self._publish_run_event
+            context.event_sink = self._threadsafe_event_sink()
             log_manager = NodeLogManager(context.work_dir, run_id)
             log_manager.attach(list(graph.nodes.values()))
             scheduler = WindowedScheduler(graph, context)
@@ -199,6 +203,20 @@ class RunnerWorker:
             if log_manager is not None:
                 log_manager.detach()
             self._active_schedulers.pop(run_id, None)
+
+    def _threadsafe_event_sink(self):
+        loop = asyncio.get_running_loop()
+
+        def sink(event: RunEvent):
+            try:
+                current_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                current_loop = None
+            if current_loop is loop:
+                return self._publish_run_event(event)
+            return asyncio.wrap_future(asyncio.run_coroutine_threadsafe(self._publish_run_event(event), loop))
+
+        return sink
 
     async def _heartbeat(self, message: Msg, task: asyncio.Task[None]) -> None:
         while not task.done():

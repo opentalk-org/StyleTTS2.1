@@ -22,6 +22,7 @@ class ControlTarget(BaseModel):
 class WorkflowControl(BaseModel):
     id: str
     label: str = ""
+    description: str = ""
     targets: list[ControlTarget] = Field(default_factory=list)
 
 

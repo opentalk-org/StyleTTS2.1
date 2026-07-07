@@ -19,6 +19,7 @@ export function SchemaField({ name, schema, root, value, onChange }: Props) {
   const resolved = resolveSchemaRef(schema, root);
   const type = schemaType(resolved);
   const label = schema.title ?? resolved.title ?? name;
+  const hint = schema.description ?? resolved.description;
   if (type === "object") {
     if (resolved.properties) {
       return <SchemaObjectField name={label} schema={resolved} root={root} value={(value ?? {}) as SchemaValues} onChange={onChange} />;
@@ -27,21 +28,24 @@ export function SchemaField({ name, schema, root, value, onChange }: Props) {
   }
   if (type === "boolean") {
     return (
-      <label className="flex cursor-pointer items-center gap-3 py-1">
-        <span className="flex-1 text-[13px] font-semibold text-txt">{label}</span>
-        <Toggle checked={Boolean(value)} onChange={onChange} />
+      <label className="flex cursor-pointer flex-col gap-1 py-1">
+        <span className="flex items-center gap-3">
+          <span className="flex-1 text-[13px] font-semibold text-txt">{label}</span>
+          <Toggle checked={Boolean(value)} onChange={onChange} />
+        </span>
+        {hint ? <span className="text-[11px] text-txt-mute">{hint}</span> : null}
       </label>
     );
   }
   if (resolved.enum) {
     return (
-      <Field label={label}>
+      <Field label={label} hint={hint}>
         <Select value={String(value ?? resolved.enum[0])} options={resolved.enum.map((item) => ({ value: item, label: item }))} onChange={onChange} />
       </Field>
     );
   }
   return (
-    <Field label={label}>
+    <Field label={label} hint={hint}>
       <Input
         filled
         className="h-9"

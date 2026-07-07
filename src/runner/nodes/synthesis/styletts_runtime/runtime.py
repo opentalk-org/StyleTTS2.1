@@ -79,8 +79,8 @@ def run_synthesis_with_runtime(runtime: StyleTtsSynthesisRuntime, payload: dict[
         ref_s=ref_s,
         diffusion_steps=int(payload["diffusion_steps"]),
         embedding_scale=float(payload["embedding_scale"]),
-        style_alpha=float(payload["style_mix_alpha"]),
-        style_beta=float(payload["style_mix_beta"]),
+        alpha=float(payload["alpha"]),
+        beta=float(payload["beta"]),
     )
     soundfile = importlib.import_module("soundfile")
     soundfile.write(str(out_wav), wav, 24000)
@@ -111,8 +111,8 @@ def _synthesize_wave(
     ref_s: Any,
     diffusion_steps: int,
     embedding_scale: float,
-    style_alpha: float,
-    style_beta: float,
+    alpha: float,
+    beta: float,
 ) -> Any:
     torch = importlib.import_module("torch")
     with torch.no_grad():
@@ -128,7 +128,7 @@ def _synthesize_wave(
             features=ref_s,
             num_steps=diffusion_steps,
         ).squeeze(1)
-        ref_blended, s_blended = _blend_style(s_pred, ref_s, style_alpha, style_beta)
+        ref_blended, s_blended = _blend_style(s_pred, ref_s, alpha, beta)
         pred_aln_trg, d = _predict_alignment(runtime, d_en, s_blended, input_lengths, text_mask, tok.shape[-1])
         en = _shift_hifigan(runtime, d.transpose(-1, -2) @ pred_aln_trg.unsqueeze(0).to(runtime.device))
         f0_pred, n_pred = runtime.model.predictor.F0Ntrain(en, s_blended)
@@ -153,11 +153,11 @@ def _predict_alignment(runtime, d_en, s_blended, input_lengths, text_mask, token
     return pred_aln_trg, d
 
 
-def _blend_style(s_pred: Any, ref_s: Any, style_alpha: float, style_beta: float):
+def _blend_style(s_pred: Any, ref_s: Any, alpha: float, beta: float):
     s_part = s_pred[:, 128:]
     ref_part = s_pred[:, :128]
-    ref_blended = style_alpha * ref_part + (1.0 - style_alpha) * ref_s[:, :128]
-    s_blended = style_beta * s_part + (1.0 - style_beta) * ref_s[:, 128:]
+    ref_blended = alpha * ref_part + (1.0 - alpha) * ref_s[:, :128]
+    s_blended = beta * s_part + (1.0 - beta) * ref_s[:, 128:]
     return ref_blended, s_blended
 
 

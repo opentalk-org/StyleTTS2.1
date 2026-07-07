@@ -4,6 +4,7 @@ import type { SchemaValues } from "@/shared/schema-form/types";
 import { Button } from "@/shared/ui/Button";
 import { Card } from "@/shared/ui/Card";
 import { Field } from "@/shared/ui/form/Field";
+import { NumberInput } from "@/shared/ui/form/NumberInput";
 import { Slider } from "@/shared/ui/form/Slider";
 import { Select } from "@/shared/ui/Select";
 import { Textarea } from "@/shared/ui/Textarea";
@@ -15,7 +16,7 @@ import { useVoicesQuery } from "../voices/query";
 import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../workflows/logic";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
 import { DatasetField } from "./DatasetField";
-import { checkpointOptions, numericSetting, sweepConfigFromGraph, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
+import { checkpointOptions, enumOptions, numericSetting, sweepConfigFromGraph, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
 import { useTesting, type SweepDisplay } from "./store";
 
 const VOICE_QUERY = { query: "", limit: 200, offset: 0 };
@@ -59,6 +60,8 @@ export function SweepPanel({
   const checkpoint = testingNode(graph, spec.ids.checkpoint);
   const styleSweep = testingNode(graph, spec.ids.styleSweep);
   const samples = numericSetting(schema, styleSweep, "samples_per_voice");
+  const alpha = numericSetting(schema, styleSweep, "alpha");
+  const beta = numericSetting(schema, styleSweep, "beta");
   const voices = voicesQuery.data?.rows ?? [];
   const sweep = sweepConfigFromGraph(graph, spec, voices);
   const selectedIds = selectedVoiceIds(styleSweep.params.voices);
@@ -88,6 +91,13 @@ export function SweepPanel({
               options={checkpointOptions(checkpoints.data ?? [])}
             />
           </Field>
+          <Field label="Language">
+            <Select
+              value={String(prompt.params.language)}
+              onChange={(language) => updateParams(prompt.id, { ...prompt.params, language })}
+              options={enumOptions(schema, prompt, "language")}
+            />
+          </Field>
           <DatasetField graph={graph} datasetNodeId={spec.ids.dataset} onChange={onChange} />
         </div>
         <Field label="Voices">
@@ -101,7 +111,7 @@ export function SweepPanel({
             )}
           </div>
         </Field>
-        <div className="flex items-end gap-4">
+        <div className="flex flex-wrap items-end gap-4">
           <div className="w-[200px]">
             <Field label="Samples per voice">
               <Slider
@@ -110,6 +120,28 @@ export function SweepPanel({
                 min={samples.min}
                 max={samples.max}
                 step={1}
+              />
+            </Field>
+          </div>
+          <div className="w-[120px]">
+            <Field label="Alpha">
+              <NumberInput
+                value={sweep.alpha}
+                onChange={(value) => updateParams(styleSweep.id, { ...styleSweep.params, alpha: value })}
+                min={alpha.min}
+                max={alpha.max}
+                step={0.05}
+              />
+            </Field>
+          </div>
+          <div className="w-[120px]">
+            <Field label="Beta">
+              <NumberInput
+                value={sweep.beta}
+                onChange={(value) => updateParams(styleSweep.id, { ...styleSweep.params, beta: value })}
+                min={beta.min}
+                max={beta.max}
+                step={0.05}
               />
             </Field>
           </div>
