@@ -90,8 +90,9 @@ def build_training_manifest(
         raise ValueError("training manifest requires at least 1 validation item")
 
     validation_ids = set(ordered_audio_ids[-validation_count:])
-    train_lines = _manifest_lines(groups, ordered_audio_ids[:-validation_count], settings.root_path, audio_dir)
-    validation_lines = _manifest_lines(groups, ordered_audio_ids[-validation_count:], settings.root_path, audio_dir)
+    speaker_ids = _speaker_id_map(groups)
+    train_lines = _manifest_lines(groups, ordered_audio_ids[:-validation_count], settings.root_path, audio_dir, speaker_ids)
+    validation_lines = _manifest_lines(groups, ordered_audio_ids[-validation_count:], settings.root_path, audio_dir, speaker_ids)
     if not train_lines:
         raise ValueError("training manifest requires at least 1 training item")
     if not validation_lines:
@@ -134,6 +135,11 @@ def build_training_manifest(
 
 
 def phoneme_alphabet_symbols(value: dict) -> list[str]:
+    # Prefer an explicit symbol_list: the canonical StyleTTS2 alphabet contains a
+    # literal space symbol, so a space-joined string cannot round-trip it.
+    symbol_list = value.get("symbol_list") if isinstance(value, dict) else None
+    if isinstance(symbol_list, list) and symbol_list:
+        return [str(part) for part in symbol_list]
     symbols = value["symbols"] if "symbols" in value else ""
     if isinstance(symbols, str):
         return [part for part in symbols.split(" ") if part]
@@ -224,6 +230,7 @@ def _manifest_lines(
     audio_ids: list[UUID],
     root_path: str,
     audio_dir: Path,
+    speaker_ids: dict[str, int],
 ) -> list[ManifestLine]:
     lines: list[ManifestLine] = []
     for audio_id in audio_ids:
@@ -233,10 +240,21 @@ def _manifest_lines(
                 audio_id=audio_id,
                 value=_manifest_audio_value(audio_id, root_path, audio_dir),
                 phon=" ".join(segment.phon.strip() for segment in segments),
-                speaker=_speaker_key(segments[0]),
+                speaker=str(speaker_ids[_speaker_key(segments[0])]),
             )
         )
     return lines
+
+
+def _speaker_id_map(groups: dict[UUID, list[AudioSegment]]) -> dict[str, int]:
+    """Map each distinct speaker key to a stable integer id.
+
+    The StyleTTS2 dataset loader casts the manifest speaker column with
+    ``int(...)`` and uses it as a multispeaker embedding index, so the column
+    must be numeric. Voice UUIDs / free-text speaker names are enumerated to
+    contiguous integers here."""
+    keys = sorted({_speaker_key(segments[0]) for segments in groups.values() if segments})
+    return {key: index for index, key in enumerate(keys)}
 
 
 def _manifest_audio_value(audio_id: UUID, root_path: str, audio_dir: Path) -> str:

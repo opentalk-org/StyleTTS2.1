@@ -13,6 +13,7 @@ from runflow.policies import ResourcePolicy
 from runner.nodes.assets.checkpoints import prefetch_checkpoint_ref, resolve_checkpoint_ref
 from runner.nodes.assets.training_assets import prefetch_training_assets, resolve_training_asset_bundle
 from runner.nodes.datatypes import ASSET_BUNDLE, CHECKPOINT_REF, JSON
+from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
 from shared.db import database_session
 from shared.db.assets import crud as asset_crud
 from shared.db.common import one
@@ -26,7 +27,20 @@ class AlphabetPreset(str, Enum):
     CUSTOM = "custom"
 
 
-DEFAULT_ALPHABET = "a b c d e f g h i j k l m n o p q r s t u v w x y z ɑ æ ə ɛ ɪ ʊ ʌ ɔ θ ð ʃ ʒ ŋ tʃ dʒ aɪ aʊ eɪ oʊ ɔɪ ɝ ɚ ˈ ˌ ː . , ? ! ' \" ( ) -"
+# Canonical StyleTTS2 symbol table: pad + punctuation + latin letters + IPA, all
+# single characters. This matches the pretrained LJSpeech / LibriTTS / Vokan text
+# embeddings (n_token = 178) and the espeak/phonemizer output. The legacy
+# multi-character token alphabet is intentionally gone; a space-separated string
+# cannot represent the literal space symbol, so `symbol_list` is authoritative.
+DEFAULT_STYLETTS_ALPHABET = [str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS]
+DEFAULT_ALPHABET = " ".join(symbol for symbol in DEFAULT_STYLETTS_ALPHABET if symbol != " ")
+
+
+def _alphabet_symbol_list(preset: "AlphabetPreset", symbols: str) -> list[str]:
+    if preset in (AlphabetPreset.IPA, AlphabetPreset.IPA_MULTI):
+        return list(DEFAULT_STYLETTS_ALPHABET)
+    parsed = [symbol for symbol in symbols.split(" ") if symbol]
+    return parsed or list(DEFAULT_STYLETTS_ALPHABET)
 
 
 class SelectTrainingDatasetSettings(StrictSettings):
@@ -153,12 +167,14 @@ class PhonemeAlphabetNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
+        symbol_list = _alphabet_symbol_list(self.settings.preset, self.settings.symbols)
         return [
             {
                 "phoneme_alphabet": {
                     "preset": self.settings.preset.value,
                     "symbols": self.settings.symbols,
-                    "symbol_list": [symbol for symbol in self.settings.symbols.split(" ") if symbol],
+                    "symbol_list": symbol_list,
+                    "symbol_count": len(symbol_list),
                     "source": {"node_type": self.NODE_TYPE, "run": inputs["run"]},
                 }
             }

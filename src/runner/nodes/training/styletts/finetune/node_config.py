@@ -4,8 +4,28 @@ from pathlib import Path
 from typing import Any
 
 from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingManifest
+from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
 from runner.nodes.training.styletts.finetune import config as styletts_config
 from runner.nodes.training.styletts.finetune import layout as styletts_layout
+
+
+def resolve_symbol_list(alphabet: list[str] | None) -> list[str]:
+    """Return the symbol table used to index the text embedding.
+
+    StyleTTS2 (LJSpeech / LibriTTS / Vokan) is trained with the canonical
+    178-entry single-character IPA symbol set, and the pretrained text-encoder /
+    text-aligner embeddings have exactly that many rows. A finetune must reuse
+    that table so the pretrained embeddings stay aligned. We only honour a
+    provided alphabet if it is a genuine single-character table of the same size;
+    anything else (e.g. the legacy multi-character token list) falls back to the
+    canonical set instead of silently resizing embeddings."""
+    canonical = [str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS]
+    if not alphabet:
+        return canonical
+    symbols = [str(symbol) for symbol in alphabet]
+    if len(symbols) == len(canonical) and all(len(symbol) == 1 for symbol in symbols):
+        return symbols
+    return canonical
 
 
 def build_node_config(
@@ -18,8 +38,9 @@ def build_node_config(
     output_dir: Path,
 ) -> tuple[Path, dict[str, Any]]:
     config_path = output_dir / "config.yaml"
-    symbol_count = len(manifest.phoneme_alphabet)
-    symbols = " ".join(manifest.phoneme_alphabet)
+    symbol_list = resolve_symbol_list(manifest.phoneme_alphabet)
+    symbol_count = len(symbol_list)
+    symbols = symbol_list
     base_root = base_checkpoint.path
     pretrained_model = styletts_layout.latest_weight(base_root)
     asset_paths = _training_asset_paths(pretrained_assets)

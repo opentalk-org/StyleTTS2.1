@@ -14,6 +14,7 @@ from runflow.core.context import ExecutionContext
 from runflow.core.events import RunEvent
 from runflow.runtime.scheduler import WindowedScheduler
 from runner.graphs import build_inline_graph
+from runner.hardware import apply_detected_resources
 from runner.heartbeat import RunnerHeartbeatPublisher
 from runner.node_logs import NodeLogManager, publish_node_log_response
 from shared.jetstream import (
@@ -270,13 +271,16 @@ class RunnerWorker:
             return self._sequences[run_id]
 
     def _context(self, request: InlineGraphRunRequest, run_id: str) -> ExecutionContext:
+        config = request.context.config.model_copy(
+            update={"resources": apply_detected_resources(request.context.config.resources)}
+        )
         return ExecutionContext(
             run_id=run_id,
             work_dir=request.context.work_dir,
             cache_dir=request.context.cache_dir,
             output_dir=request.context.output_dir,
             device=request.context.device,
-            config=request.context.config,
+            config=config,
             input_items=request.context.input_items,
         )
 

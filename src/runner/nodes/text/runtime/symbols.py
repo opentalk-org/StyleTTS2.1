@@ -7,7 +7,7 @@ PUNCTUATION_SYMBOLS = ';:,.!?¡¿—…"«»“” '
 LETTER_SYMBOLS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 IPA_SYMBOLS = (
     "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœ"
-    "ɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩ᵻ"
+    "ɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
 )
 
 DEFAULT_STYLETTS_SYMBOLS = [PAD_SYMBOL] + list(PUNCTUATION_SYMBOLS) + list(LETTER_SYMBOLS) + list(IPA_SYMBOLS)

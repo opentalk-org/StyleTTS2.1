@@ -57,7 +57,7 @@ def build_config(
     multispeaker: bool | None,
     decoder_type: str | None,
     studio_publish: dict[str, Any],
-    symbols: str,
+    symbols: list[str],
     symbol_count: int,
 ) -> dict[str, Any]:
     config = deepcopy(load_yaml(BASE_YAML))
