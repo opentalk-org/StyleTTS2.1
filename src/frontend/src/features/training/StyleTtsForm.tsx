@@ -123,7 +123,7 @@ export function StyleTtsForm({
           createAlphabet.mutate({
             name,
             type_: "phoneme_alphabet",
-            metadata: { preset: "custom", symbols: symbols.trim().split(/\s+/).filter(Boolean) },
+            metadata: { preset: "custom", symbols: Array.from(symbols.replace(/[\n\t]/g, "")) },
           })
         }
       />

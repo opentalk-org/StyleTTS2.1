@@ -33,13 +33,13 @@ class AlphabetPreset(str, Enum):
 # multi-character token alphabet is intentionally gone; a space-separated string
 # cannot represent the literal space symbol, so `symbol_list` is authoritative.
 DEFAULT_STYLETTS_ALPHABET = [str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS]
-DEFAULT_ALPHABET = " ".join(symbol for symbol in DEFAULT_STYLETTS_ALPHABET if symbol != " ")
+DEFAULT_ALPHABET = "".join(DEFAULT_STYLETTS_ALPHABET)
 
 
 def _alphabet_symbol_list(preset: "AlphabetPreset", symbols: str) -> list[str]:
     if preset in (AlphabetPreset.IPA, AlphabetPreset.IPA_MULTI):
         return list(DEFAULT_STYLETTS_ALPHABET)
-    parsed = [symbol for symbol in symbols.split(" ") if symbol]
+    parsed = list(symbols)
     return parsed or list(DEFAULT_STYLETTS_ALPHABET)
 
 

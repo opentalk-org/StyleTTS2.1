@@ -28,7 +28,7 @@ export function AlphabetEditor({
   const [preset, setPreset] = useState(String(values.preset));
   const [saveName, setSaveName] = useState("");
 
-  const count = alphabet.trim().split(/\s+/).filter(Boolean).length;
+  const count = Array.from(alphabet.replace(/[\n\t]/g, "")).length;
   const matches = baseSymbolCount !== null && count === baseSymbolCount;
   const selectedPreset = presets.find((item) => item.id === preset || item.metadata.preset === preset);
   const options = [
@@ -85,7 +85,8 @@ export function AlphabetEditor({
         value={alphabet}
         onChange={(event) => onChange({ ...values, symbols: event.target.value })}
         spellCheck={false}
-        className="min-h-[76px] text-[15px] font-mono leading-[1.7]"
+        rows={4}
+        className="resize-y break-all text-[15px] font-mono leading-[1.7]"
       />
 
       {baseSymbolCount === null ? (
@@ -112,6 +113,6 @@ export function AlphabetEditor({
 
 function alphabetSymbols(config: TrainingConfig): string {
   const raw = config.metadata.symbols;
-  if (Array.isArray(raw)) return raw.map(String).join(" ");
+  if (Array.isArray(raw)) return raw.map(String).join("");
   return String(raw ?? "");
 }
