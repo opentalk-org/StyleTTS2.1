@@ -8,6 +8,7 @@ export type TestingNodeIds = {
   run: string;
   prompt: string;
   checkpoint: string;
+  dataset: string;
   styleRef?: string;
   synthesis?: string;
   saveAudio?: string;
@@ -31,6 +32,7 @@ const SINGLE_NODES = [
   { id: "style_ref", type: "SelectStyleReference", x: 64, y: 620 },
   { id: "synthesis", type: "StyleTtsSynthesis", x: 640, y: 400 },
   { id: "save_audio", type: "SaveAudioRecord", x: 910, y: 400 },
+  { id: "to_dataset", type: "AddAudioToDataset", x: 1160, y: 400 },
 ];
 
 const SINGLE_EDGES: WorkflowEdge[] = [
@@ -42,6 +44,7 @@ const SINGLE_EDGES: WorkflowEdge[] = [
   { source_node: "prompt", source_port: "prompt_text", target_node: "synthesis", target_port: "prompt_text" },
   { source_node: "style_ref", source_port: "style_reference", target_node: "synthesis", target_port: "style_reference" },
   { source_node: "synthesis", source_port: "audio", target_node: "save_audio", target_port: "audio" },
+  { source_node: "save_audio", source_port: "audio", target_node: "to_dataset", target_port: "audio" },
 ];
 
 const SWEEP_NODES = [
@@ -52,6 +55,7 @@ const SWEEP_NODES = [
   { id: "style_sweep", type: "StyleReferenceSweep", x: 64, y: 560 },
   { id: "sweep_synthesis", type: "StyleTtsSynthesis", x: 640, y: 360 },
   { id: "save_audio", type: "SaveAudioRecord", x: 910, y: 360 },
+  { id: "to_dataset", type: "AddAudioToDataset", x: 1160, y: 360 },
 ];
 
 const SWEEP_EDGES: WorkflowEdge[] = [
@@ -63,6 +67,7 @@ const SWEEP_EDGES: WorkflowEdge[] = [
   { source_node: "prompt", source_port: "prompt_text", target_node: "sweep_synthesis", target_port: "prompt_text" },
   { source_node: "style_sweep", source_port: "style_reference", target_node: "sweep_synthesis", target_port: "style_reference" },
   { source_node: "sweep_synthesis", source_port: "audio", target_node: "save_audio", target_port: "audio" },
+  { source_node: "save_audio", source_port: "audio", target_node: "to_dataset", target_port: "audio" },
 ];
 
 export const TESTING_WORKFLOWS: Record<TestingMode, TestingWorkflowSpec> = {
@@ -75,6 +80,7 @@ export const TESTING_WORKFLOWS: Record<TestingMode, TestingWorkflowSpec> = {
       run: "run",
       prompt: "prompt",
       checkpoint: "checkpoint",
+      dataset: "to_dataset",
       styleRef: "style_ref",
       synthesis: "synthesis",
       saveAudio: "save_audio",
@@ -89,6 +95,7 @@ export const TESTING_WORKFLOWS: Record<TestingMode, TestingWorkflowSpec> = {
       run: "run",
       prompt: "prompt",
       checkpoint: "checkpoint",
+      dataset: "to_dataset",
       styleSweep: "style_sweep",
       sweepSynthesis: "sweep_synthesis",
       saveAudio: "save_audio",

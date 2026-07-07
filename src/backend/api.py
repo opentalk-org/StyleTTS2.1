@@ -106,8 +106,15 @@ def voice_response(item: Voice) -> VoiceRead:
 @app.get("/datasets", response_model=list[DatasetRead])
 async def list_datasets() -> list[DatasetRead]:
     with database_session() as session:
+        _ensure_synthesis_dataset(session)
         rows = dataset_crud.list_dataset_file_counts(session)
         return [dataset_response(item, files) for item, files in rows]
+
+
+def _ensure_synthesis_dataset(session) -> None:
+    if any(item.name == "synthesis" for item in dataset_crud.list_datasets(session)):
+        return
+    dataset_crud.create_dataset(session, DatasetCreate(name="synthesis"))
 
 
 @app.get("/assets/files", response_model=list[FileAssetRead])

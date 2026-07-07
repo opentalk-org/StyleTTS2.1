@@ -13,6 +13,7 @@ export { TESTING_OPTIONS, TESTING_WORKFLOWS, type TestingMode, type TestingWorkf
 
 export type SingleConfig = {
   ckpt: string;
+  dataset: string;
   text: string;
   lang: string;
   steps: number;
@@ -24,6 +25,7 @@ export type SingleConfig = {
 
 export type SweepConfig = {
   ckpt: string;
+  dataset: string;
   text: string;
   voices: { id: string; name: string }[];
   n: number;
@@ -68,8 +70,10 @@ export function singleConfigFromGraph(graph: WorkflowGraph, spec: TestingWorkflo
   const checkpoint = testingNode(graph, spec.ids.checkpoint);
   const styleRef = testingNode(graph, requiredNodeId(spec.ids.styleRef, "single style reference"));
   const synthesis = testingNode(graph, requiredNodeId(spec.ids.synthesis, "single synthesis"));
+  const dataset = testingNode(graph, spec.ids.dataset);
   return {
     ckpt: String(checkpoint.params.checkpoint_id),
+    dataset: String(dataset.params.dataset_id ?? ""),
     text: String(prompt.params.text),
     lang: String(prompt.params.language),
     steps: Number(synthesis.params.diffusion_steps),
@@ -85,8 +89,10 @@ export function sweepConfigFromGraph(graph: WorkflowGraph, spec: TestingWorkflow
   const checkpoint = testingNode(graph, spec.ids.checkpoint);
   const styleSweep = testingNode(graph, requiredNodeId(spec.ids.styleSweep, "sweep style references"));
   const voiceIds = stringArrayParam(styleSweep.params.voices);
+  const dataset = testingNode(graph, spec.ids.dataset);
   return {
     ckpt: String(checkpoint.params.checkpoint_id),
+    dataset: String(dataset.params.dataset_id ?? ""),
     text: String(prompt.params.text),
     voices: voiceIds.map((id) => ({ id, name: voiceName(id, availableVoices) })),
     n: Number(styleSweep.params.samples_per_voice),

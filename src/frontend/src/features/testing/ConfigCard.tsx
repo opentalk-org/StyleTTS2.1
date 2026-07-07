@@ -7,6 +7,7 @@ import { Textarea } from "@/shared/ui/Textarea";
 import { useAudioFilesQuery } from "../audio/query";
 import { useCheckpointsQuery } from "../checkpoints/query";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
+import { DatasetField } from "./DatasetField";
 import { checkpointOptions, enumOptions, numericSetting, styleReferenceOptions, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
 
 function GroupTitle({ children }: { children: string }) {
@@ -105,6 +106,7 @@ export function ConfigCard({
               options={checkpointOptions(checkpoints.data ?? [])}
             />
           </Field>
+          <DatasetField graph={graph} datasetNodeId={spec.ids.dataset} onChange={onChange} />
         </FieldGrid>
       </div>
 

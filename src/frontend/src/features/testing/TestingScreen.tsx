@@ -39,6 +39,10 @@ function SingleMode({
       showToast("Select a reference audio first", undefined, "error");
       return;
     }
+    if (!config.dataset) {
+      showToast("Select a dataset to save to", undefined, "error");
+      return;
+    }
     const runtimeConfig = runtimeConfigForGraph(schema, graph, schema.runtime_config_defaults);
     const payload = graphPayload(graph, null, defaultWorkflowContext(runtimeConfig));
     void runSingle(payload, { text: config.text, steps: config.steps, emb: config.emb });

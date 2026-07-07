@@ -14,6 +14,7 @@ import { useCheckpointsQuery } from "../checkpoints/query";
 import { useVoicesQuery } from "../voices/query";
 import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../workflows/logic";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
+import { DatasetField } from "./DatasetField";
 import { checkpointOptions, numericSetting, sweepConfigFromGraph, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
 import { useTesting, type SweepDisplay } from "./store";
 
@@ -87,6 +88,7 @@ export function SweepPanel({
               options={checkpointOptions(checkpoints.data ?? [])}
             />
           </Field>
+          <DatasetField graph={graph} datasetNodeId={spec.ids.dataset} onChange={onChange} />
         </div>
         <Field label="Voices">
           <div className="flex flex-wrap gap-2">
@@ -128,6 +130,10 @@ export function SweepPanel({
               }
               if (!config.voices.length) {
                 showToast("Select at least one voice", undefined, "error");
+                return;
+              }
+              if (!config.dataset) {
+                showToast("Select a dataset to save to", undefined, "error");
                 return;
               }
               const display: SweepDisplay[] = config.voices.flatMap((voice) =>
