@@ -1,0 +1,330 @@
+{
+  "name": "Audio dataset prep — VAD → DeepFilterNet → parakeet → diarize/split → whisper/canary",
+  "data": {
+    "nodes": [
+      {
+        "id": "src",
+        "type": "AudioSource",
+        "x": 0.0,
+        "y": 120.0,
+        "params": {
+          "source": "selected",
+          "audio_file_ids": [
+            "51d732dd-079a-47f4-8edf-e17217e0fd16"
+          ]
+        },
+        "runtime": {}
+      },
+      {
+        "id": "load",
+        "type": "LoadAudio",
+        "x": 260.0,
+        "y": 120.0,
+        "params": {
+          "channels": 1,
+          "sample_rate": 24000
+        },
+        "runtime": {}
+      },
+      {
+        "id": "vad",
+        "type": "VadDetect",
+        "x": 520.0,
+        "y": 120.0,
+        "params": {
+          "padding_sec": 0.2,
+          "max_segment_sec": 130.0,
+          "min_segment_sec": 20.0,
+          "max_silence_gap_ms": 20000,
+          "silence_threshold_db": -40.0
+        },
+        "runtime": {}
+      },
+      {
+        "id": "denoise",
+        "type": "DeepFilterNetDenoise",
+        "x": 780.0,
+        "y": 120.0,
+        "params": {
+          "model": "deepfilternet3",
+          "strength": 0.8
+        },
+        "runtime": {}
+      },
+      {
+        "id": "ck_parakeet",
+        "type": "ResolveCheckpoint",
+        "x": 780.0,
+        "y": -80.0,
+        "params": {
+          "checkpoint_id": "0bdb32b0-04fd-47b7-b7d7-3ccb7a5532bb"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "parakeet",
+        "type": "ParakeetTranscribe",
+        "x": 1040.0,
+        "y": 120.0,
+        "params": {
+          "batch_size": 4
+        },
+        "runtime": {}
+      },
+      {
+        "id": "ck_sortformer",
+        "type": "ResolveCheckpoint",
+        "x": 1040.0,
+        "y": -80.0,
+        "params": {
+          "checkpoint_id": "d392dffb-e1b7-429d-aa16-4ebb37b7c019"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "split",
+        "type": "DiarizeSplitSpeakers",
+        "x": 1300.0,
+        "y": 120.0,
+        "params": {
+          "create_voices": true,
+          "max_segment_sec": 14.0,
+          "min_segment_sec": 1.0
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_rec",
+        "type": "SaveAudioRecord",
+        "x": 1560.0,
+        "y": 120.0,
+        "params": {
+          "virtual": false
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_parakeet_seg",
+        "type": "SaveAudioSegments",
+        "x": 1820.0,
+        "y": 120.0,
+        "params": {
+          "mode": "replace"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "ck_whisper",
+        "type": "ResolveCheckpoint",
+        "x": 1820.0,
+        "y": -80.0,
+        "params": {
+          "checkpoint_id": "69efb33e-51f6-40c5-b868-d78e553fa2bd"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "whisper",
+        "type": "WhisperTranscribe",
+        "x": 2080.0,
+        "y": 120.0,
+        "params": {
+          "language": "en"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "phonemize_whisper",
+        "type": "PhonemizeSegments",
+        "x": 2340.0,
+        "y": 120.0,
+        "params": {
+          "tie": false,
+          "mode": "fill",
+          "language": "en"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_whisper_seg",
+        "type": "SaveAudioSegments",
+        "x": 2600.0,
+        "y": 120.0,
+        "params": {
+          "mode": "append"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "ck_canary",
+        "type": "ResolveCheckpoint",
+        "x": 2600.0,
+        "y": -80.0,
+        "params": {
+          "checkpoint_id": "36313aa4-7ccc-44f6-8582-bb8fa0498b22"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "canary",
+        "type": "CanaryTranscribe",
+        "x": 2860.0,
+        "y": 120.0,
+        "params": {
+          "language": "en",
+          "batch_size": 4,
+          "target_language": "en",
+          "punctuation_and_capitalization": true
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_canary_seg",
+        "type": "SaveAudioSegments",
+        "x": 3120.0,
+        "y": 120.0,
+        "params": {
+          "mode": "append"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "to_dataset",
+        "type": "AddAudioToDataset",
+        "x": 3380.0,
+        "y": 120.0,
+        "params": {
+          "dataset_id": "a914c6d1-c740-4b28-98c1-d8937df3ef65"
+        },
+        "runtime": {}
+      }
+    ],
+    "edges": [
+      {
+        "source_node": "src",
+        "source_port": "audio",
+        "target_node": "load",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "load",
+        "source_port": "audio",
+        "target_node": "vad",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "vad",
+        "source_port": "audio",
+        "target_node": "denoise",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "ck_parakeet",
+        "source_port": "checkpoint_ref",
+        "target_node": "parakeet",
+        "target_port": "checkpoint"
+      },
+      {
+        "source_node": "denoise",
+        "source_port": "audio",
+        "target_node": "parakeet",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "ck_sortformer",
+        "source_port": "checkpoint_ref",
+        "target_node": "split",
+        "target_port": "checkpoint"
+      },
+      {
+        "source_node": "parakeet",
+        "source_port": "audio",
+        "target_node": "split",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "split",
+        "source_port": "audio",
+        "target_node": "save_rec",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "save_rec",
+        "source_port": "audio",
+        "target_node": "save_parakeet_seg",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "ck_whisper",
+        "source_port": "checkpoint_ref",
+        "target_node": "whisper",
+        "target_port": "checkpoint"
+      },
+      {
+        "source_node": "save_parakeet_seg",
+        "source_port": "audio",
+        "target_node": "whisper",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "whisper",
+        "source_port": "audio",
+        "target_node": "phonemize_whisper",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "phonemize_whisper",
+        "source_port": "audio",
+        "target_node": "save_whisper_seg",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "ck_canary",
+        "source_port": "checkpoint_ref",
+        "target_node": "canary",
+        "target_port": "checkpoint"
+      },
+      {
+        "source_node": "save_whisper_seg",
+        "source_port": "audio",
+        "target_node": "canary",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "canary",
+        "source_port": "audio",
+        "target_node": "save_canary_seg",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "save_canary_seg",
+        "source_port": "audio",
+        "target_node": "to_dataset",
+        "target_port": "audio"
+      }
+    ],
+    "context": {
+      "work_dir": "work",
+      "cache_dir": "cache",
+      "output_dir": "outputs",
+      "device": "cuda",
+      "config": {
+        "resources": {
+          "io": 2.0,
+          "vram_gb": 8.0,
+          "accelerator": 1.0,
+          "cpu_workers": 2.0
+        }
+      },
+      "input_items": []
+    },
+    "launch_source": {
+      "kind": "selected_audio",
+      "audio_file_ids": [
+        "51d732dd-079a-47f4-8edf-e17217e0fd16"
+      ],
+      "dataset_id": null,
+      "include_virtual": false
+    }
+  }
+}
