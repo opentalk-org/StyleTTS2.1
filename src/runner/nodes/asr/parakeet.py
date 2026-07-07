@@ -14,8 +14,35 @@ def load_parakeet_model(checkpoint_dir: Path) -> Any:
     weights = single_checkpoint_file(checkpoint_dir, (".nemo",))
     model = nemo_asr.models.ASRModel.restore_from(restore_path=str(weights))
     model.change_attention_model(self_attention_model="rel_pos_local_attn", att_context_size=[256, 256])
+    _set_cuda_graph_decoder(model, enabled=False)
     model.eval()
     return _maybe_cuda_half(model)
+
+
+def _set_cuda_graph_decoder(model: Any, *, enabled: bool) -> None:
+    """Enable/disable NeMo's CUDA-graph RNNT/TDT decoder.
+
+    The CUDA-graph decoder intermittently aborts the process with a CUDA illegal
+    memory access on this GPU when batching, so we turn it off. Guarded because
+    not every decoding config exposes both greedy and beam sections."""
+    try:
+        from omegaconf import open_dict
+    except ImportError:
+        return
+    decoding = getattr(getattr(model, "cfg", None), "decoding", None)
+    if decoding is None:
+        return
+    changed = False
+    if "greedy" in decoding:
+        with open_dict(decoding.greedy):
+            decoding.greedy.use_cuda_graph_decoder = enabled
+        changed = True
+    if "beam" in decoding:
+        with open_dict(decoding.beam):
+            decoding.beam.allow_cuda_graphs = enabled
+        changed = True
+    if changed:
+        model.change_decoding_strategy(decoding, verbose=False)
 
 
 def transcribe_wavs_to_segments(
