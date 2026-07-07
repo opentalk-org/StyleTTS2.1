@@ -67,7 +67,8 @@ class TestingInputPayloadNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        return [{self.OUTPUT_FIELD: {"node_type": self.NODE_TYPE, "run": inputs["run"], "settings": self.params}} for inputs in batch]
+        settings = self.settings.model_dump(mode="json")
+        return [{self.OUTPUT_FIELD: {"node_type": self.NODE_TYPE, "run": inputs["run"], "settings": settings}} for inputs in batch]
 
 
 class TestingTextPromptNode(TestingInputPayloadNode):
