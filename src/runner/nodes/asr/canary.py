@@ -33,6 +33,7 @@ def transcribe_wavs_to_segments(
         outputs = model.transcribe(
             [str(path) for path in wav_paths],
             batch_size=batch_size,
+            num_workers=0,
             source_lang=source_language,
             target_lang=target_language,
             taskname="asr",

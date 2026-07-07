@@ -20,11 +20,6 @@ def load_parakeet_model(checkpoint_dir: Path) -> Any:
 
 
 def _set_cuda_graph_decoder(model: Any, *, enabled: bool) -> None:
-    """Enable/disable NeMo's CUDA-graph RNNT/TDT decoder.
-
-    The CUDA-graph decoder intermittently aborts the process with a CUDA illegal
-    memory access on this GPU when batching, so we turn it off. Guarded because
-    not every decoding config exposes both greedy and beam sections."""
     try:
         from omegaconf import open_dict
     except ImportError:
@@ -55,7 +50,7 @@ def transcribe_wavs_to_segments(
     import torch
 
     with torch.no_grad():
-        outputs = model.transcribe([str(path) for path in wav_paths], batch_size=batch_size, timestamps=True)
+        outputs = model.transcribe([str(path) for path in wav_paths], batch_size=batch_size, timestamps=True, num_workers=0)
     return [_segments_from_hypothesis(output, durations_sec[index]) for index, output in enumerate(outputs)]
 
 
