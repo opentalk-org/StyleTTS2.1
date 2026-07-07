@@ -29,7 +29,7 @@ class AudioSourceSettings(StrictSettings):
 
 class AudioSourceNode(Node):
     NODE_TYPE = "AudioSource"
-    CATEGORY = "Audio / Sources"
+    CATEGORY = "Inputs"
     SETTINGS = AudioSourceSettings
     IS_INPUT = True
     INPUTS = {}

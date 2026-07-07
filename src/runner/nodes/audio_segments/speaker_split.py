@@ -10,6 +10,7 @@ from runflow.core.node import Node
 from runflow.core.ports import JoinMode, Port, PortMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
+from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.asr.audio import extract_wav_range, wav_info
 from runner.nodes.audio_processing.nodes import (
     SortformerSettings,
@@ -46,7 +47,7 @@ class DiarizeSplitSpeakersSettings(StrictSettings):
 
 class DiarizeSplitSpeakersNode(Node):
     NODE_TYPE = "DiarizeSplitSpeakers"
-    CATEGORY = "Audio / Segmentation"
+    CATEGORY = "Audio"
     SETTINGS = DiarizeSplitSpeakersSettings
     INPUTS = {
         "audio": Port("audio", AUDIO),
@@ -66,6 +67,7 @@ class DiarizeSplitSpeakersNode(Node):
     async def teardown(self, context: Any) -> None:
         self._model = None
         self._loaded_checkpoint_id = None
+        release_accelerator_memory()
 
     def _sortformer_settings(self) -> SortformerSettings:
         return SortformerSettings(

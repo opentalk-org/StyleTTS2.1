@@ -62,6 +62,7 @@ if [ "$(id -u)" = "0" ]; then
 
   mkdir -p "$NATS_DATA" "$RUSTFS_DATA" "$PGDATA" "$PGHOST" "$pgbouncer_dir"
   chown -R "$runflow_dev_user" "$PWD/.data"
+  chmod 700 "$PGDATA" "$PGHOST" "$pgbouncer_dir"
   if [ -d "$PWD/src/frontend/node_modules" ]; then
     chown -R "$runflow_dev_user" "$PWD/src/frontend/node_modules"
   fi
@@ -70,19 +71,38 @@ if [ "$(id -u)" = "0" ]; then
   fi
 
   echo "runflow-dev cannot run PostgreSQL as root; re-executing as $runflow_dev_user"
-  exec runuser -u "$runflow_dev_user" -- "$0" "$@"
+  user_home="$(getent passwd "$runflow_dev_user" | cut -d: -f6)"
+  user_tmp="${TMPDIR:-/tmp}"
+  case "$user_tmp" in
+    /tmp/nix-shell.*) user_tmp="/tmp" ;;
+  esac
+  if [ ! -d "$user_tmp" ] || [ ! -w "$user_tmp" ]; then
+    user_tmp="/tmp"
+  fi
+  mkdir -p "$user_tmp" "$user_home/.cache" "$user_home/.local/share" "$user_home/.local/state"
+  chown "$runflow_dev_user" "$user_home/.cache" "$user_home/.local" "$user_home/.local/share" "$user_home/.local/state" 2>/dev/null || true
+  exec runuser -u "$runflow_dev_user" -- env \
+    HOME="$user_home" \
+    TMPDIR="$user_tmp" \
+    XDG_CACHE_HOME="$user_home/.cache" \
+    XDG_DATA_HOME="$user_home/.local/share" \
+    XDG_STATE_HOME="$user_home/.local/state" \
+    "$0" "$@"
 fi
 
 mkdir -p "$NATS_DATA" "$RUSTFS_DATA" "$PGDATA" "$PGHOST" "$pgbouncer_dir"
+chmod 700 "$PGDATA" "$PGHOST" "$pgbouncer_dir"
 
 if [ ! -f uv.lock ]; then
   echo "uv.lock is missing; run uv lock before starting runflow-dev" >&2
   exit 1
 fi
 
-if [ ! -x .venv/bin/python ] || [ pyproject.toml -nt .venv ] || [ uv.lock -nt .venv ]; then
+venv_sync_stamp=".venv/.runflow-uv-sync-stamp"
+if [ ! -x .venv/bin/python ] || [ ! -x .venv/bin/uvicorn ] || [ pyproject.toml -nt "$venv_sync_stamp" ] || [ uv.lock -nt "$venv_sync_stamp" ]; then
   echo "Syncing Python environment from uv.lock"
   uv sync --frozen
+  touch "$venv_sync_stamp"
 fi
 
 # shellcheck disable=SC1091

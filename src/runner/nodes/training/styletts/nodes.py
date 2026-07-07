@@ -16,6 +16,7 @@ from runflow.core.node import Node
 from runflow.core.ports import JoinMode, Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
+from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import ASSET_BUNDLE, CHECKPOINT_REF, JSON, TRAINING_MANIFEST, TRAINING_RESULT
 from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingManifest, TrainingResult, stable_id
 from runner.nodes.training.common.results import NoopAimRun
@@ -63,7 +64,7 @@ class BuildStyleTtsFinetuneConfigSettings(StyleTtsFinetuneSettings):
 
 class BuildStyleTtsFinetuneConfigNode(Node):
     NODE_TYPE = "BuildStyleTtsFinetuneConfig"
-    CATEGORY = "Training / Preparation"
+    CATEGORY = "Training"
     SETTINGS = BuildStyleTtsFinetuneConfigSettings
     INPUTS = {
         "training_manifest": Port("training_manifest", TRAINING_MANIFEST),
@@ -102,6 +103,9 @@ class StyleTtsFinetuneNode(Node):
     OUTPUTS = {"training_result": Port("training_result", TRAINING_RESULT)}
     BATCH_POLICY = BatchPolicy(BatchMode.DISABLED)
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 12}, exclusive_group="accelerator")
+
+    async def teardown(self, context) -> None:
+        release_accelerator_memory()
 
     async def execute(self, batch, context):
         outputs = []
@@ -179,6 +183,7 @@ def _run_styletts_train(config_path: Path) -> None:
                 close()
             except Exception:
                 logger.warning("failed to close aim run", exc_info=True)
+        release_accelerator_memory()
 
 
 def _make_aim_run(config_path: Path) -> Any:

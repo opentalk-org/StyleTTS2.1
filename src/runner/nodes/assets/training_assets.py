@@ -159,7 +159,7 @@ def _single_file(folder: Path, suffixes: tuple[str, ...]) -> Path:
 
 class ResolveTrainingAssetsNode(Node):
     NODE_TYPE = "ResolveTrainingAssets"
-    CATEGORY = "Training / Assets"
+    CATEGORY = "Training"
     SETTINGS = ResolveTrainingAssetsSettings
     IS_INPUT = True
     INPUTS = {}

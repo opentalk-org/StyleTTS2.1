@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { showToast } from "@/shared/feedback/Toast";
-import { type JobQuery, deleteJob, fetchJobs, stopJob } from "./api";
+import { type JobQuery, deleteJob, fetchJobs, renameJob, stopJob } from "./api";
 
 const JOBS_KEY = "jobs";
 
@@ -32,11 +32,20 @@ export function useJobActions() {
       invalidateJobs();
     },
   });
+  const rename = useMutation({
+    mutationFn: ({ runId, name }: { runId: string; name: string }) => renameJob(runId, name),
+    onSuccess: () => {
+      showToast("Job renamed");
+      invalidateJobs();
+    },
+  });
 
   return {
     remove: (runId: string) => remove.mutate(runId),
     stop: (runId: string) => stop.mutate(runId),
+    rename: (runId: string, name: string) => rename.mutate({ runId, name }),
     removing: remove.isPending,
     stopping: stop.isPending,
+    renaming: rename.isPending,
   };
 }

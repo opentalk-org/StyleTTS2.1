@@ -27,7 +27,7 @@ class SaveAudioSegmentsSettings(StrictSettings):
 
 class SaveAudioRecordNode(Node):
     NODE_TYPE = "SaveAudioRecord"
-    CATEGORY = "Audio / Writeback"
+    CATEGORY = "Audio"
     SETTINGS = SaveAudioRecordSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO), "save_result": Port("save_result", SAVE_RESULT)}
@@ -55,7 +55,7 @@ class SaveAudioRecordNode(Node):
 
 class UpdateAudioRecordBytesNode(Node):
     NODE_TYPE = "UpdateAudioRecordBytes"
-    CATEGORY = "Audio / Writeback"
+    CATEGORY = "Audio"
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO), "save_result": Port("save_result", SAVE_RESULT)}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=8, max_size=32)
@@ -83,7 +83,7 @@ class UpdateAudioRecordBytesNode(Node):
 
 class LoadAudioSegmentsNode(Node):
     NODE_TYPE = "LoadAudioSegments"
-    CATEGORY = "Audio / Segments"
+    CATEGORY = "Audio"
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO)}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=16, max_size=64)
@@ -103,7 +103,7 @@ class LoadAudioSegmentsNode(Node):
 
 class SaveAudioSegmentsNode(Node):
     NODE_TYPE = "SaveAudioSegments"
-    CATEGORY = "Audio / Segments"
+    CATEGORY = "Audio"
     SETTINGS = SaveAudioSegmentsSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO), "save_result": Port("save_result", SAVE_RESULT)}

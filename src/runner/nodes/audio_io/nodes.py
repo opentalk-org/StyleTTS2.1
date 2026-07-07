@@ -27,7 +27,7 @@ class SaveAudioArtifactSettings(StrictSettings):
 
 class LoadAudioNode(Node):
     NODE_TYPE = "LoadAudio"
-    CATEGORY = "Audio / IO"
+    CATEGORY = "Audio"
     SETTINGS = LoadAudioSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO)}
@@ -54,7 +54,7 @@ class LoadAudioNode(Node):
 
 class SaveAudioArtifactNode(Node):
     NODE_TYPE = "SaveAudioArtifact"
-    CATEGORY = "Audio / IO"
+    CATEGORY = "Audio"
     SETTINGS = SaveAudioArtifactSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"save_result": Port("save_result", SAVE_RESULT)}

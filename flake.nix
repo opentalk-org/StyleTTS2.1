@@ -55,8 +55,10 @@
           runtimeExecutableDeps = [
             pkgs.ffmpeg-headless
             pkgs.gcc
+            pkgs.cargo
             pkgs.openssl
             pkgs.patchelf
+            pkgs.rustc
             cudaNvcc
           ];
           env = {

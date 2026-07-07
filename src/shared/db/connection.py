@@ -34,6 +34,7 @@ def create_database_schema(database_url: str | None = None) -> None:
         Base.metadata.create_all(engine)
         _ensure_audio_updated_at(engine)
         _ensure_checkpoint_job_id(engine)
+        _ensure_storage_folder(engine)
     finally:
         engine.dispose()
 
@@ -46,6 +47,12 @@ def _ensure_audio_updated_at(engine: Engine) -> None:
 
 def _ensure_checkpoint_job_id(engine: Engine) -> None:
     statement = text("ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS job_id TEXT NULL")
+    with engine.begin() as connection:
+        connection.execute(statement)
+
+
+def _ensure_storage_folder(engine: Engine) -> None:
+    statement = text("ALTER TABLE storage_settings ADD COLUMN IF NOT EXISTS folder TEXT NOT NULL DEFAULT '/'")
     with engine.begin() as connection:
         connection.execute(statement)
 

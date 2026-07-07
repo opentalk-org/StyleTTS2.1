@@ -8,6 +8,7 @@ from pydantic import Field
 from runflow.core.node import Node
 from runflow.core.ports import JoinMode, Port
 from runflow.policies import ResourcePolicy
+from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import CHECKPOINT_REF, JSON, TRAINING_MANIFEST, TRAINING_RESULT
 from runner.nodes.models import TrainingManifest
 from runner.nodes.training.common.results import (
@@ -37,6 +38,9 @@ class AsrModelTrainingNode(Node):
     OUTPUTS = {"training_result": Port("training_result", TRAINING_RESULT)}
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, exclusive_group="accelerator")
 
+    async def teardown(self, context) -> None:
+        release_accelerator_memory()
+
     async def execute(self, batch, context):
         return [{"training_result": _run_asr_training(self.settings, inputs, str(context.run_id))} for inputs in batch]
 
@@ -53,21 +57,24 @@ def _run_asr_training(settings: AsrTrainingSettings, inputs: dict[str, Any], run
     config_path = output_dir / "effective_asr_config.yml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(yaml.safe_dump(effective, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    train_asr_model(
-        aim_run=NoopAimRun(),
-        train_list_path=str(manifest.metadata["train_manifest_path"]),
-        val_list_path=str(manifest.metadata["validation_manifest_path"]),
-        run_dir=output_dir / "run",
-        weights_dir=output_dir,
-        effective_config=effective,
-        effective_config_path=config_path,
-        epochs=settings.epochs,
-        batch_size=settings.batch_size,
-        learning_rate=settings.learning_rate,
-        checkpoint_save_interval_epochs=settings.save_interval_epochs,
-        pretrained_weights_path=checkpoint_weight(inputs["pretrained_checkpoint"]),
-        num_workers=settings.dataloader_workers,
-    )
+    try:
+        train_asr_model(
+            aim_run=NoopAimRun(),
+            train_list_path=str(manifest.metadata["train_manifest_path"]),
+            val_list_path=str(manifest.metadata["validation_manifest_path"]),
+            run_dir=output_dir / "run",
+            weights_dir=output_dir,
+            effective_config=effective,
+            effective_config_path=config_path,
+            epochs=settings.epochs,
+            batch_size=settings.batch_size,
+            learning_rate=settings.learning_rate,
+            checkpoint_save_interval_epochs=settings.save_interval_epochs,
+            pretrained_weights_path=checkpoint_weight(inputs["pretrained_checkpoint"]),
+            num_workers=settings.dataloader_workers,
+        )
+    finally:
+        release_accelerator_memory()
     write_asr_bundle_artifacts(bundle_dir=output_dir, effective_config=effective)
     return publish_training_result(
         "AsrModelTraining",

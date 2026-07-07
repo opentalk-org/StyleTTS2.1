@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 import { Pager } from "@/shared/data/Pager";
 import { Icon } from "@/shared/icons";
 import { Button } from "@/shared/ui/Button";
@@ -37,7 +39,7 @@ function Header({ allSel, onToggleAll }: { allSel: boolean; onToggleAll: () => v
 }
 
 export function AudioScreen() {
-  const { query, dataset, sort, limit, offset, selection, selectAllMatching, selectAllFiltered, clearSelection, setFilters } = useAudio();
+  const { query, dataset, sort, limit, offset, selection, selectAllMatching, selectVisible, clearSelection, setVisibleIds, setFilters } = useAudio();
   const { data, isLoading, isError, refetch } = useAudioFilesQuery({ query, dataset, sort, limit, offset });
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
@@ -45,6 +47,12 @@ export function AudioScreen() {
   const pages = Math.max(1, Math.ceil(total / limit));
   const visibleEnd = Math.min(offset + rows.length, total);
   const hasSelection = selectAllMatching || Object.keys(selection).length > 0;
+  const visibleKey = rows.map((r) => r.id).join(",");
+  const allSel = selectAllMatching || (rows.length > 0 && rows.every((r) => selection[r.id]));
+
+  useEffect(() => {
+    setVisibleIds(rows.map((r) => r.id));
+  }, [visibleKey, setVisibleIds]);
 
   return (
     <div className="mx-auto flex h-full max-w-[1240px] flex-col px-7 pb-6 pt-5">
@@ -75,7 +83,7 @@ export function AudioScreen() {
           </div>
           {rows.length ? (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-line bg-panel">
-              <Header allSel={selectAllMatching} onToggleAll={selectAllMatching ? clearSelection : selectAllFiltered} />
+              <Header allSel={allSel} onToggleAll={allSel ? clearSelection : selectVisible} />
               <div className="min-h-0 flex-1 overflow-y-auto">
                 {rows.map((file, index) => <AudioRow key={file.id} file={file} index={offset + index} />)}
               </div>

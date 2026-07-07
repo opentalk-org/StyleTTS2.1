@@ -1,6 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { fetchIntegrationSettings, fetchStorageSettings, updateIntegrationSettings, updateStorageSettings } from "./api";
+import {
+  fetchIntegrationSettings,
+  fetchStorageSettings,
+  testStorageSettings,
+  updateIntegrationSettings,
+  updateStorageSettings,
+} from "./api";
 
 export function useStorageSettingsQuery() {
   return useQuery({ queryKey: ["storage-settings"], queryFn: fetchStorageSettings });
@@ -15,6 +21,10 @@ export function useStorageSettingsActions() {
     },
   });
   return update;
+}
+
+export function useStorageConnectionTest() {
+  return useMutation({ mutationFn: testStorageSettings });
 }
 
 export function useIntegrationSettingsQuery() {

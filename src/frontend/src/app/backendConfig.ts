@@ -9,7 +9,7 @@ export function defaultBackendUrl(): string {
 export function defaultAimUrl(): string {
   const configuredUrl = import.meta.env.VITE_AIM_URL;
   if (configuredUrl) return configuredUrl;
-  if (import.meta.env.DEV) return "http://127.0.0.1:43800";
+  if (import.meta.env.DEV) return "http://localhost:43800";
   const url = new URL(window.location.origin);
   url.port = "43800";
   return url.toString();

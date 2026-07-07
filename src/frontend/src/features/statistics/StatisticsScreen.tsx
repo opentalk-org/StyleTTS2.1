@@ -9,8 +9,6 @@ import { IconButton } from "@/shared/ui/IconButton";
 import { SectionTitle } from "@/shared/ui/SectionTitle";
 import { Select } from "@/shared/ui/Select";
 import { Tabs } from "@/shared/ui/Tabs";
-import { seedStatEntries } from "@/mock/data";
-import type { StatEntry } from "@/mock/types";
 
 import { ChartCard } from "./charts/ChartCard";
 import { HBars } from "./charts/HBars";
@@ -18,6 +16,21 @@ import { Histogram } from "./charts/Histogram";
 import { RankList } from "./charts/RankList";
 import { StatTile } from "./charts/StatTile";
 import { AUDIO_HISTOGRAMS, SPEAKER_DURATION, TEXT_WARNINGS, corpusData, type CorpusTab } from "./logic";
+
+type StatEntry = {
+  id: string;
+  files: number;
+  created: number;
+};
+
+function seedStatEntries(): StatEntry[] {
+  const now = Date.now();
+  return [
+    { id: "st_2041", files: 512, created: now - 3600000 * 5 },
+    { id: "st_1990", files: 340, created: now - 86400000 * 2 },
+    { id: "st_1873", files: 128, created: now - 86400000 * 9 },
+  ];
+}
 
 export function StatisticsScreen() {
   const [entries, setEntries] = useState<StatEntry[]>(seedStatEntries);

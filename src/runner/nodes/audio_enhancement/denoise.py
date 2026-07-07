@@ -12,6 +12,7 @@ from runflow.core.node import Node
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
+from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AUDIO
 from runner.nodes.models import Audio, stable_id
 
@@ -34,7 +35,7 @@ class DeepFilterNetStack:
 
 class DeepFilterNetDenoiseNode(Node):
     NODE_TYPE = "DeepFilterNetDenoise"
-    CATEGORY = "Audio / Enhancement"
+    CATEGORY = "Audio"
     SETTINGS = DeepFilterNetSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO)}
@@ -49,6 +50,7 @@ class DeepFilterNetDenoiseNode(Node):
 
     async def teardown(self, context: Any) -> None:
         self._stack = None
+        release_accelerator_memory()
 
     async def execute(self, batch, context):
         if self._stack is None:

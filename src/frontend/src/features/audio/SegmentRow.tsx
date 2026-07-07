@@ -1,4 +1,4 @@
-import { SPEAKERS } from "@/mock/constants";
+import { SPEAKER_NAMES } from "@/features/voices/constants";
 import { fmtClock } from "@/shared/format";
 import { Icon } from "@/shared/icons";
 import { cn } from "@/shared/ui/cn";
@@ -50,7 +50,7 @@ export function SegmentRow({ seg, index, isLast }: { seg: Segment; index: number
             className="h-7 w-full appearance-none rounded-md bg-panel-2 pl-2 pr-5 text-[11.5px] font-semibold text-txt-dim outline-none"
           >
             <option value="">None</option>
-            {SPEAKERS.map((n) => (
+            {SPEAKER_NAMES.map((n) => (
               <option key={n} value={n}>
                 {n}
               </option>

@@ -53,7 +53,7 @@ def prefetch_checkpoint_ref(value: CheckpointRef | dict[str, Any]) -> Checkpoint
 
 class ResolveCheckpointNode(Node):
     NODE_TYPE = "ResolveCheckpoint"
-    CATEGORY = "Assets / Checkpoints"
+    CATEGORY = "Assets"
     SETTINGS = ResolveCheckpointSettings
     IS_INPUT = True
     INPUTS = {}

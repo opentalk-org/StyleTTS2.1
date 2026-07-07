@@ -30,7 +30,7 @@ class PlanSegmentGroupsSettings(StrictSettings):
 
 class PlanSegmentGroupsNode(Node):
     NODE_TYPE = "PlanSegmentGroups"
-    CATEGORY = "Audio / Segments"
+    CATEGORY = "Audio"
     SETTINGS = PlanSegmentGroupsSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}

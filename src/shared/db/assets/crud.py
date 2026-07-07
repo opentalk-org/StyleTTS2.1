@@ -23,6 +23,8 @@ from shared.db.assets.schemas import (
     ExtraFileUpdate,
 )
 from shared.db.common import many, one
+from shared.db.settings import crud as settings_crud
+from shared.storage import S3ObjectStore
 
 
 def list_bucket_files(session: Session) -> Sequence[BucketFile]:
@@ -45,7 +47,7 @@ def create_checkpoint(session: Session, payload: CheckpointCreate) -> Checkpoint
     item_id = uuid.uuid4()
     path = f"checkpoints/{item_id}.tar"
     stored = checkpoint_tar(payload.folder_path)
-    object_store().upload(path, stored.data)
+    _object_store(session).upload(path, stored.data)
     item = Checkpoint(
         id=item_id,
         name=payload.name,
@@ -86,11 +88,11 @@ def list_configs(session: Session, type_: str | None = None) -> Sequence[Config]
 
 def read_checkpoint(session: Session, checkpoint_id: UUID) -> bytes:
     item = one(session, Checkpoint, checkpoint_id)
-    return object_store().download(item.path)
+    return _object_store(session).download(item.path)
 
 
 def get_checkpoint_path(session: Session, checkpoint_id: UUID) -> Path:
-    return checkpoint_cache_path(one(session, Checkpoint, checkpoint_id))
+    return checkpoint_cache_path(one(session, Checkpoint, checkpoint_id), _object_store(session))
 
 
 def update_checkpoint(session: Session, checkpoint_id: UUID, payload: CheckpointUpdate) -> Checkpoint:
@@ -101,7 +103,7 @@ def update_checkpoint(session: Session, checkpoint_id: UUID, payload: Checkpoint
     item.job_id = payload.job_id
     if payload.folder_path is not None:
         stored = checkpoint_tar(payload.folder_path)
-        object_store().upload(item.path, stored.data)
+        _object_store(session).upload(item.path, stored.data)
         item.size = stored.size
         item.content_hash = stored.content_hash
     session.commit()
@@ -111,7 +113,7 @@ def update_checkpoint(session: Session, checkpoint_id: UUID, payload: Checkpoint
 
 def delete_checkpoint(session: Session, checkpoint_id: UUID) -> None:
     item = one(session, Checkpoint, checkpoint_id)
-    object_store().delete(item.path)
+    _object_store(session).delete(item.path)
     session.delete(item)
     session.commit()
 
@@ -120,7 +122,7 @@ def create_extra_file(session: Session, payload: ExtraFileCreate) -> ExtraFile:
     stored = stored_bytes(payload.data)
     item_id = uuid.uuid4()
     path = f"extra-files/{item_id}"
-    object_store().upload(path, stored.data)
+    _object_store(session).upload(path, stored.data)
     item = ExtraFile(
         id=item_id,
         name=payload.name,
@@ -145,7 +147,7 @@ def read_extra_file(session: Session, extra_file_id: UUID) -> bytes:
 
 
 def get_extra_file_path(session: Session, extra_file_id: UUID) -> Path:
-    return extra_file_cache_path(one(session, ExtraFile, extra_file_id))
+    return extra_file_cache_path(one(session, ExtraFile, extra_file_id), _object_store(session))
 
 
 def update_extra_file(session: Session, extra_file_id: UUID, payload: ExtraFileUpdate) -> ExtraFile:
@@ -155,7 +157,7 @@ def update_extra_file(session: Session, extra_file_id: UUID, payload: ExtraFileU
     item.metadata_ = payload.metadata
     if payload.data is not None:
         stored = stored_bytes(payload.data)
-        object_store().upload(item.path, stored.data)
+        _object_store(session).upload(item.path, stored.data)
         item.size = stored.size
         item.content_hash = stored.content_hash
     session.commit()
@@ -165,7 +167,7 @@ def update_extra_file(session: Session, extra_file_id: UUID, payload: ExtraFileU
 
 def delete_extra_file(session: Session, extra_file_id: UUID) -> None:
     item = one(session, ExtraFile, extra_file_id)
-    object_store().delete(item.path)
+    _object_store(session).delete(item.path)
     session.delete(item)
     session.commit()
 
@@ -178,3 +180,7 @@ def create_config(session: Session, payload: ConfigCreate) -> Config:
     session.commit()
     session.refresh(item)
     return item
+
+
+def _object_store(session: Session) -> S3ObjectStore:
+    return object_store(settings_crud.object_store_config(session))

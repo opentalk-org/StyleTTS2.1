@@ -19,7 +19,7 @@ class AggregateStatisticsSettings(StrictSettings):
 
 class AggregateDatasetStatisticsNode(Node):
     NODE_TYPE = "AggregateDatasetStatistics"
-    CATEGORY = "Audio / Statistics"
+    CATEGORY = "Audio"
     SETTINGS = AggregateStatisticsSettings
     INPUTS = {
         "feature_records": Port("feature_records", JSON, mode=PortMode.LIST),

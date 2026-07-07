@@ -33,7 +33,6 @@ src/
               training, testing, checkpoints, jobs, runs, cluster, settings,
               workflows). Each keeps its own store.ts / logic.ts / actions.ts and
               its components as one-file-per-component.
-  mock/       Mock domain types + data generators (see below)
 ```
 
 ### Conventions
@@ -43,7 +42,7 @@ src/
   `store.ts` (Zustand), `logic.ts` (pure helpers), or `actions.ts` (mock actions).
 - **Imports:** use **relative imports for nearby files** (same feature folder or
   the same shared sub-tree) and **absolute imports (`@/…`) for app-level / shared
-  code** — anything under `@/shared`, `@/app`, `@/mock`, or another
+  code** — anything under `@/shared`, `@/app`, or another
   `@/features/*`. The `@` alias maps to `src/` (configured in `tsconfig.json` and
   `vite.config.ts`).
 - Separate **logic from components**: rendering in `*.tsx`, state/derivation in
@@ -52,18 +51,15 @@ src/
 
 ## Scale & virtualization
 
-The audio library is addressed as **~5,000,000 rows**. Rows are generated **on
-demand by index** (`mock/data.ts → getAudioRow(i)`, `AUDIO_COUNT`) and rendered
-through `shared/data/VirtualTable`, which keeps only the visible rows in the DOM.
-Never map a multi-million-row array into JSX — always window it. Toolbar
-filtering/sorting over that scale is a server concern; in the mock it is
-controlled UI state.
+Large dataset, audio, and job lists are expected to reach millions of rows.
+Render them through `shared/data/VirtualTable`, which keeps only the visible rows
+in the DOM. Never map a multi-million-row array into JSX — always window it.
+Toolbar filtering/sorting over that scale is a server concern.
 
 ## Mock data & actions
 
-- `mock/` holds the domain types (loosely mirroring `IDEA.md`) and deterministic
-  generators. Mutable collections (datasets, voices, checkpoints, jobs) live in
-  each feature's `store.ts`.
+- Temporary scaffold data belongs inside the feature that consumes it and behind
+  that feature's `api.ts` / `query.ts` seam.
 - Actions are mocked through shared helpers: `showToast`, `askConfirm`,
   `openParamModal` (the one reusable parameter-form/modal), and
   `useJobs().startJob(...)` which enqueues a job that animates to completion.

@@ -12,6 +12,7 @@ from runflow.core.node import Node
 from runflow.core.ports import JoinMode, Port, PortMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
+from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.asr.audio import extract_wav_range, wav_info
 from runner.nodes.assets.model_downloads import single_checkpoint_file
 from runner.nodes.datatypes import AUDIO, CHECKPOINT_REF, JSON
@@ -53,7 +54,7 @@ class DiarizationSegment:
 
 class VadDetectNode(Node):
     NODE_TYPE = "VadDetect"
-    CATEGORY = "Audio / Segmentation"
+    CATEGORY = "Audio"
     SETTINGS = VadSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}
@@ -70,7 +71,7 @@ class VadDetectNode(Node):
 
 class SortformerDiarizationNode(Node):
     NODE_TYPE = "SortformerDiarization"
-    CATEGORY = "Audio / Segmentation"
+    CATEGORY = "Audio"
     SETTINGS = SortformerSettings
     INPUTS = {"audio": Port("audio", AUDIO), "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST)}
     OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}
@@ -85,6 +86,7 @@ class SortformerDiarizationNode(Node):
     async def teardown(self, context: Any) -> None:
         self._model = None
         self._loaded_checkpoint_id = None
+        release_accelerator_memory()
 
     async def execute(self, batch, context):
         checkpoint = _typed_checkpoint(batch[0]["checkpoint"])
@@ -117,7 +119,7 @@ def _typed_checkpoint(value: CheckpointRef | dict[str, Any]) -> CheckpointRef:
 
 class CutAudioBySegmentsNode(Node):
     NODE_TYPE = "CutAudioBySegments"
-    CATEGORY = "Audio / Segmentation"
+    CATEGORY = "Audio"
     SETTINGS = CutAudioSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}
@@ -133,7 +135,7 @@ class CutAudioBySegmentsNode(Node):
 
 class CalculateAudioStatsNode(Node):
     NODE_TYPE = "CalculateAudioStats"
-    CATEGORY = "Audio / Statistics"
+    CATEGORY = "Audio"
     SETTINGS = AudioFeatureSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"stats": Port("stats", JSON)}

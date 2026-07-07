@@ -35,7 +35,7 @@ class ResolveStyleReferenceSettings(StrictSettings):
 
 class ResolveStyleReferenceNode(Node):
     NODE_TYPE = "ResolveStyleReference"
-    CATEGORY = "Synthesis / Inputs"
+    CATEGORY = "Inputs"
     SETTINGS = ResolveStyleReferenceSettings
     IS_INPUT = True
     INPUTS = {}

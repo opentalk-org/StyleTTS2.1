@@ -12,6 +12,7 @@ class StorageSettings(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     bucket: Mapped[str] = mapped_column(Text, nullable=False)
+    folder: Mapped[str] = mapped_column(Text, nullable=False, default="/")
     endpoint_url: Mapped[str] = mapped_column(Text, nullable=False)
     region_name: Mapped[str] = mapped_column(String(64), nullable=False)
     access_key_id: Mapped[str] = mapped_column(Text, nullable=False)

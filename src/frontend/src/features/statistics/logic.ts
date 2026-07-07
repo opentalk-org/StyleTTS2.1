@@ -1,5 +1,3 @@
-import { rng } from "@/mock/constants";
-
 /** Chart accent, mapped to Tailwind classes by the chart components. */
 export type Tone = "blue" | "emerald" | "amber" | "red";
 
@@ -33,6 +31,12 @@ export const TILE_TEXT_CLASS: Record<Tone, string> = {
   amber: "text-amber-700",
   red: "text-red-600",
 };
+
+/** Deterministic 0-1 pseudo-random from an integer seed. */
+function rng(seed: number): number {
+  const x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+}
 
 /**
  * Deterministic gaussian-ish histogram bins, normalized to [0,1]. `skew` shifts

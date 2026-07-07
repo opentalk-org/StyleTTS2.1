@@ -23,7 +23,7 @@ class SaveStatisticsEntrySettings(StrictSettings):
 
 class SaveStatisticsEntryNode(Node):
     NODE_TYPE = "SaveStatisticsEntry"
-    CATEGORY = "Audio / Statistics"
+    CATEGORY = "Audio"
     SETTINGS = SaveStatisticsEntrySettings
     INPUTS = {"statistics": Port("statistics", JSON)}
     OUTPUTS = {"statistics_entry": Port("statistics_entry", JSON)}

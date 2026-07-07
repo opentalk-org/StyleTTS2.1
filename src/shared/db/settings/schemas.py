@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict
 
 class StorageSettingsPayload(BaseModel):
     bucket: str = "runflow"
+    folder: str = "/"
     endpoint_url: str = "http://127.0.0.1:9000"
     region_name: str = "us-east-1"
     access_key_id: str = "runflow"

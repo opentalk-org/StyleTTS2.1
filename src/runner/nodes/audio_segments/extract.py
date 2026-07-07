@@ -34,7 +34,7 @@ class PersistSplitAudioRecordsSettings(StrictSettings):
 
 class ExtractSegmentGroupAudioNode(Node):
     NODE_TYPE = "ExtractSegmentGroupAudio"
-    CATEGORY = "Audio / Segments"
+    CATEGORY = "Audio"
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO)}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=8, max_size=32)
@@ -56,7 +56,7 @@ class ExtractSegmentGroupAudioNode(Node):
 
 class PersistSplitAudioRecordsNode(Node):
     NODE_TYPE = "PersistSplitAudioRecords"
-    CATEGORY = "Audio / Segments"
+    CATEGORY = "Audio"
     SETTINGS = PersistSplitAudioRecordsSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {

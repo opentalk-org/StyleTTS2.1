@@ -4,11 +4,12 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from shared.db.settings import crud as settings_crud
 from shared.db.waveforms.codec import FORMAT_VERSION, decode_peaks, downsample, encode_peaks, waveform_from_wav
 from shared.db.waveforms.models import AudioWaveform
 from shared.db.waveforms.pack_store import ObjectStore, WaveformPackConfig, WaveformPackWriter
 from shared.db.waveforms.schemas import WaveformInput, WaveformRead
-from shared.storage import ObjectStoreConfig, S3ObjectStore
+from shared.storage import S3ObjectStore
 
 
 def replace_waveform(
@@ -21,7 +22,7 @@ def replace_waveform(
 ) -> AudioWaveform:
     delete_waveform(session, audio_file_id, commit=False)
     data = encode_peaks(payload.peaks)
-    writer = WaveformPackWriter(session, _object_store(store), config)
+    writer = WaveformPackWriter(session, _object_store(session, store), config)
     write = writer.append(data)
     item = AudioWaveform(
         audio_file_id=audio_file_id,
@@ -68,7 +69,7 @@ def read_waveform(
     first = max(0, min(item.point_count, int(start * item.points_per_second)))
     last = max(first + 1, min(item.point_count, int(end * item.points_per_second) + 1))
     offset = item.byte_offset + first * 4
-    data = _object_store(store).read_range(item.pack.path, offset, (last - first) * 4)
+    data = _object_store(session, store).read_range(item.pack.path, offset, (last - first) * 4)
     peaks = downsample(decode_peaks(data), max_points)
     return WaveformRead(
         duration=item.duration,
@@ -98,10 +99,10 @@ def _waveform_from_audio(data: bytes) -> WaveformInput:
         raise ValueError("Waveform is required for non-WAV audio bytes") from error
 
 
-def _object_store(store: ObjectStore | None) -> ObjectStore:
+def _object_store(session: Session, store: ObjectStore | None) -> ObjectStore:
     if store is not None:
         return store
-    return S3ObjectStore(ObjectStoreConfig.from_env())
+    return S3ObjectStore(settings_crud.object_store_config(session))
 
 
 def _now() -> datetime:

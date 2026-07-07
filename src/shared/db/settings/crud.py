@@ -19,6 +19,7 @@ def get_storage_settings(session: Session) -> StorageSettings:
 def update_storage_settings(session: Session, payload: StorageSettingsPayload) -> StorageSettings:
     item = get_storage_settings(session)
     item.bucket = payload.bucket
+    item.folder = payload.folder
     item.endpoint_url = payload.endpoint_url
     item.region_name = payload.region_name
     item.access_key_id = payload.access_key_id
@@ -51,6 +52,7 @@ def object_store_config(session: Session) -> ObjectStoreConfig:
     item = get_storage_settings(session)
     return ObjectStoreConfig(
         bucket=item.bucket,
+        folder=item.folder,
         endpoint_url=item.endpoint_url,
         region_name=item.region_name,
         access_key_id=item.access_key_id,

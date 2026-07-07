@@ -323,6 +323,22 @@ async def delete_job(run_id: str) -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
 
+class JobRenameRequest(BaseModel):
+    name: str
+
+
+@app.patch("/jobs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def rename_job(run_id: str, request: JobRenameRequest) -> None:
+    name = request.name.strip()
+    if not name:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="name must not be empty")
+    try:
+        logger.info("rename job requested run_id=%s", run_id)
+        await manager.rename(run_id, name)
+    except KeyError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
 @app.post("/runs/{run_id}/nodes/{node_id}/load", response_model=RunStatus)
 async def load_run_node(run_id: str, node_id: str) -> RunStatus:
     try:

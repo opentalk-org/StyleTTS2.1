@@ -44,6 +44,15 @@ def upsert_job(session: Session, payload: JobUpsert) -> Job:
     return item
 
 
+def rename_job(session: Session, run_id: str, name: str) -> Job:
+    item = get_job(session, run_id)
+    item.name = name
+    item.updated_at = datetime.now(UTC)
+    session.commit()
+    session.refresh(item)
+    return item
+
+
 def delete_job(session: Session, run_id: str, *, force: bool = False) -> None:
     item = get_job(session, run_id)
     if not force and item.state in ACTIVE_JOB_STATES:

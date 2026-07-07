@@ -36,7 +36,7 @@ class ManifestLine:
 
 class BuildTrainingManifestNode(Node):
     NODE_TYPE = "BuildTrainingManifest"
-    CATEGORY = "Training / Preparation"
+    CATEGORY = "Training"
     SETTINGS = BuildTrainingManifestSettings
     INPUTS = {
         "audio_file_ids": Port("audio_file_ids", JSON),

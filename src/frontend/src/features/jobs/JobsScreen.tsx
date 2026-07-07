@@ -9,6 +9,7 @@ import { fmtAgo } from "@/shared/format";
 import { Button } from "@/shared/ui/Button";
 import { Card } from "@/shared/ui/Card";
 import { EmptyState } from "@/shared/ui/EmptyState";
+import { IconButton } from "@/shared/ui/IconButton";
 import { Select } from "@/shared/ui/Select";
 import { fetchJobGraph, type Job } from "./api";
 import { useJobActions, useJobsQuery } from "./query";
@@ -80,8 +81,14 @@ export function JobsScreen() {
 
 function JobRow({ job }: { job: Job }) {
   const [opening, setOpening] = useState(false);
-  const { remove, removing, stop, stopping } = useJobActions();
+  const [editing, setEditing] = useState(false);
+  const { remove, removing, stop, stopping, rename } = useJobActions();
   const active = ACTIVE_STATES.has(job.state);
+  const commitRename = (value: string) => {
+    setEditing(false);
+    const next = value.trim();
+    if (next && next !== job.name) rename(job.run_id, next);
+  };
   const openJob = async () => {
     setOpening(true);
     try {
@@ -115,11 +122,32 @@ function JobRow({ job }: { job: Job }) {
         {STATE_LABEL[job.state]}
       </span>
       <div className="min-w-0">
-        <div className="truncate font-mono text-[13px] font-semibold text-txt">{job.name}</div>
+        {editing ? (
+          <input
+            defaultValue={job.name}
+            autoFocus
+            onFocus={(e) => e.target.select()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitRename((e.target as HTMLInputElement).value);
+              if (e.key === "Escape") setEditing(false);
+            }}
+            onBlur={(e) => commitRename(e.target.value)}
+            className="h-[26px] w-full max-w-[320px] rounded-md border-2 border-blue-500 bg-panel-2 px-2 font-mono text-[13px] font-semibold text-txt outline-none"
+          />
+        ) : (
+          <button
+            onDoubleClick={() => setEditing(true)}
+            title="Double-click to rename"
+            className="block max-w-full cursor-text truncate text-left font-mono text-[13px] font-semibold text-txt"
+          >
+            {job.name}
+          </button>
+        )}
         <div className="truncate font-mono text-[11px] text-txt-mute">{job.run_id}</div>
       </div>
       <span className="text-xs text-txt-mute">{Number.isNaN(updatedAt) ? "-" : fmtAgo(updatedAt)}</span>
       <div className="flex justify-end gap-2">
+        <IconButton icon="edit" title="Rename" onClick={() => setEditing((v) => !v)} />
         <Button variant="secondary" size="sm" icon="folder-open" onClick={openJob} disabled={opening}>
           Open
         </Button>

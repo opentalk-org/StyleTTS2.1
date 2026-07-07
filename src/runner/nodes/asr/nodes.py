@@ -18,6 +18,7 @@ from runner.nodes.asr.audio import wav_duration, write_temp_wav
 from runner.nodes.asr.canary import load_canary_model, transcribe_wavs_to_segments as canary_transcribe_wavs
 from runner.nodes.asr.parakeet import load_parakeet_model, transcribe_wavs_to_segments as parakeet_transcribe_wavs
 from runner.nodes.asr.whisper import load_whisper_model, transcribe_wav_to_segments, transcribe_wav_to_text
+from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AUDIO, CHECKPOINT_REF
 from runner.nodes.models import Audio, AudioSegment, CheckpointRef, stable_id
 from shared.log_streams import route_output_to_logger
@@ -76,7 +77,7 @@ class CanaryTranscribeSettings(StrictSettings):
 
 
 class TranscribeNode(Node):
-    CATEGORY = "Audio / ASR"
+    CATEGORY = "ASR"
     MODEL_NAME = "asr"
     SETTINGS = TranscribeSettings
     INPUTS = {"checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST), "audio": Port("audio", AUDIO)}
@@ -92,6 +93,7 @@ class TranscribeNode(Node):
     async def teardown(self, context: Any) -> None:
         self._model = None
         self._loaded_checkpoint_id = None
+        release_accelerator_memory()
 
     async def execute(self, batch, context):
         checkpoint = _typed_checkpoint(batch[0]["checkpoint"])

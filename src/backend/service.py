@@ -147,6 +147,15 @@ class BackendManager:
                 if not existed:
                     raise
 
+    async def rename(self, run_id: str, name: str) -> None:
+        record = self._runs.get(run_id)
+        if record is not None:
+            record.name = name
+            persist_job(record)
+            return
+        with database_session() as session:
+            jobs_crud.rename_job(session, run_id, name)
+
     async def load_node(self, run_id: str, node_id: str) -> RunStatus:
         return await self._publish_node_lifecycle(run_id, node_id, "load_node")
 

@@ -32,7 +32,7 @@ class CatalogDownloadSettings(StrictSettings):
 
 class CatalogDownloadNode(Node):
     NODE_TYPE = "CatalogDownload"
-    CATEGORY = "Assets / Catalog"
+    CATEGORY = "Assets"
     SETTINGS = CatalogDownloadSettings
     IS_INPUT = True
     INPUTS = {}

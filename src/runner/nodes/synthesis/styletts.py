@@ -14,6 +14,7 @@ from runflow.core.node import Node
 from runflow.core.ports import JoinMode, Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
+from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AUDIO, CHECKPOINT_REF, JSON, SYNTHESIS_RESULT
 from runner.nodes.models import Audio, CheckpointRef, SynthesisResult, stable_id
 from runner.nodes.synthesis.styletts_runtime.actions import (
@@ -50,6 +51,9 @@ class StyleTtsSynthesisNode(Node):
     }
     OUTPUTS = {"synthesis_result": Port("synthesis_result", SYNTHESIS_RESULT), "audio": Port("audio", AUDIO)}
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, exclusive_group="accelerator")
+
+    async def teardown(self, context) -> None:
+        release_accelerator_memory()
 
     async def execute(self, batch, context):
         outputs = []

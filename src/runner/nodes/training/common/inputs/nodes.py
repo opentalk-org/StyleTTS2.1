@@ -78,7 +78,7 @@ class ListDatasetAudioIdsSettings(StrictSettings):
 
 class TrainingRunInputNode(Node):
     NODE_TYPE = "TrainingRunInput"
-    CATEGORY = "Training / Inputs"
+    CATEGORY = "Training"
     IS_INPUT = True
     INPUTS = {}
     OUTPUTS = {"run": Port("run", JSON)}
@@ -99,7 +99,7 @@ class TrainingRunInputNode(Node):
 
 class SelectTrainingDatasetNode(Node):
     NODE_TYPE = "SelectTrainingDataset"
-    CATEGORY = "Training / Inputs"
+    CATEGORY = "Training"
     SETTINGS = SelectTrainingDatasetSettings
     INPUTS = {"run": Port("run", JSON)}
     OUTPUTS = {"dataset_ref": Port("dataset_ref", JSON)}
@@ -124,7 +124,7 @@ class SelectTrainingDatasetNode(Node):
 
 class SelectCheckpointNode(Node):
     NODE_TYPE = "SelectCheckpoint"
-    CATEGORY = "Assets / Inputs"
+    CATEGORY = "Inputs"
     SETTINGS = SelectCheckpointSettings
     INPUTS = {"run": Port("run", JSON)}
     OUTPUTS = {"checkpoint_ref": Port("checkpoint_ref", CHECKPOINT_REF)}
@@ -138,7 +138,7 @@ class SelectCheckpointNode(Node):
 
 class SelectTrainingAssetsNode(Node):
     NODE_TYPE = "SelectTrainingAssets"
-    CATEGORY = "Training / Inputs"
+    CATEGORY = "Training"
     SETTINGS = SelectTrainingAssetsSettings
     INPUTS = {"run": Port("run", JSON)}
     OUTPUTS = {"asset_refs": Port("asset_refs", ASSET_BUNDLE)}
@@ -160,7 +160,7 @@ class SelectTrainingAssetsNode(Node):
 
 class PhonemeAlphabetNode(Node):
     NODE_TYPE = "PhonemeAlphabet"
-    CATEGORY = "Text / Inputs"
+    CATEGORY = "Inputs"
     SETTINGS = PhonemeAlphabetSettings
     INPUTS = {"run": Port("run", JSON)}
     OUTPUTS = {"phoneme_alphabet": Port("phoneme_alphabet", JSON)}
@@ -184,7 +184,7 @@ class PhonemeAlphabetNode(Node):
 
 class SelectOodTextSetsNode(Node):
     NODE_TYPE = "SelectOodTextSets"
-    CATEGORY = "Training / Inputs"
+    CATEGORY = "Training"
     SETTINGS = SelectOodTextSetsSettings
     INPUTS = {"run": Port("run", JSON)}
     OUTPUTS = {"ood_text_set_refs": Port("ood_text_set_refs", JSON)}
@@ -197,7 +197,7 @@ class SelectOodTextSetsNode(Node):
 
 class ListDatasetAudioIdsNode(Node):
     NODE_TYPE = "ListDatasetAudioIds"
-    CATEGORY = "Training / DB"
+    CATEGORY = "Training"
     SETTINGS = ListDatasetAudioIdsSettings
     INPUTS = {"dataset_ref": Port("dataset_ref", JSON)}
     OUTPUTS = {"audio_file_ids": Port("audio_file_ids", JSON)}
@@ -237,7 +237,7 @@ class PrefetchCheckpointNode(Node):
 
 class PrefetchTrainingAssetsNode(Node):
     NODE_TYPE = "PrefetchTrainingAssets"
-    CATEGORY = "Training / Assets"
+    CATEGORY = "Training"
     INPUTS = {"asset_refs": Port("asset_refs", ASSET_BUNDLE)}
     OUTPUTS = {"assets": Port("assets", ASSET_BUNDLE)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
@@ -248,7 +248,7 @@ class PrefetchTrainingAssetsNode(Node):
 
 class PrefetchOodTextSetsNode(Node):
     NODE_TYPE = "PrefetchOodTextSets"
-    CATEGORY = "Training / DB"
+    CATEGORY = "Training"
     INPUTS = {"ood_text_set_refs": Port("ood_text_set_refs", JSON)}
     OUTPUTS = {"ood_text_sets": Port("ood_text_sets", JSON)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)

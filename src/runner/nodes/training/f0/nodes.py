@@ -8,6 +8,7 @@ from runflow.core.node import Node
 from runflow.core.ports import JoinMode, Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
+from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import CHECKPOINT_REF, TRAINING_MANIFEST, TRAINING_RESULT
 from runner.nodes.models import TrainingManifest
 from runner.nodes.training.common.results import (
@@ -44,6 +45,9 @@ class F0ModelTrainingNode(Node):
     OUTPUTS = {"training_result": Port("training_result", TRAINING_RESULT)}
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 6}, exclusive_group="accelerator")
 
+    async def teardown(self, context) -> None:
+        release_accelerator_memory()
+
     async def execute(self, batch, context):
         return [{"training_result": _run_f0_training(self.settings, inputs, str(context.run_id))} for inputs in batch]
 
@@ -54,22 +58,25 @@ def _run_f0_training(settings: F0TrainingSettings, inputs: dict[str, Any], run_i
 
     manifest: TrainingManifest = inputs["training_manifest"]
     output_dir = training_output_dir(settings.output_checkpoint_dir, manifest, "f0")
-    train_f0_model(
-        aim_run=NoopAimRun(),
-        train_list_path=str(manifest.metadata["train_manifest_path"]),
-        val_list_path=str(manifest.metadata["validation_manifest_path"]),
-        run_dir=output_dir / "run",
-        weights_dir=output_dir,
-        epochs=settings.epochs,
-        batch_size=settings.batch_size,
-        learning_rate=settings.learning_rate,
-        lambda_f0=settings.lambda_f0,
-        checkpoint_save_interval_epochs=settings.save_interval_epochs,
-        pretrained_pth=checkpoint_weight(inputs["pretrained_checkpoint"]),
-        weight_decay=settings.weight_decay,
-        pct_start=settings.pct_start,
-        num_workers=settings.num_workers,
-    )
+    try:
+        train_f0_model(
+            aim_run=NoopAimRun(),
+            train_list_path=str(manifest.metadata["train_manifest_path"]),
+            val_list_path=str(manifest.metadata["validation_manifest_path"]),
+            run_dir=output_dir / "run",
+            weights_dir=output_dir,
+            epochs=settings.epochs,
+            batch_size=settings.batch_size,
+            learning_rate=settings.learning_rate,
+            lambda_f0=settings.lambda_f0,
+            checkpoint_save_interval_epochs=settings.save_interval_epochs,
+            pretrained_pth=checkpoint_weight(inputs["pretrained_checkpoint"]),
+            weight_decay=settings.weight_decay,
+            pct_start=settings.pct_start,
+            num_workers=settings.num_workers,
+        )
+    finally:
+        release_accelerator_memory()
     validate_f0_checkpoint_folder(output_dir)
     return publish_training_result(
         "F0ModelTraining",

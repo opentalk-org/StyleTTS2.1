@@ -8,6 +8,7 @@ import type { IntegrationSettings, IntegrationSettingsPayload, StorageSettings, 
 import {
   useIntegrationSettingsActions,
   useIntegrationSettingsQuery,
+  useStorageConnectionTest,
   useStorageSettingsActions,
   useStorageSettingsQuery,
 } from "./query";
@@ -22,6 +23,7 @@ type SettingsForm = {
 
 const DEFAULT_STORAGE_FORM: StorageSettingsPayload = {
   bucket: "runflow",
+  folder: "/",
   endpoint_url: "http://127.0.0.1:9000",
   region_name: "us-east-1",
   access_key_id: "runflow",
@@ -39,6 +41,7 @@ function createSettingsForm(backendUrl: string): SettingsForm {
 function storageFormFromSettings(settings: StorageSettings): StorageSettingsPayload {
   return {
     bucket: settings.bucket,
+    folder: settings.folder,
     endpoint_url: settings.endpoint_url,
     region_name: settings.region_name,
     access_key_id: settings.access_key_id,
@@ -52,6 +55,7 @@ function integrationFormFromSettings(settings: IntegrationSettings): Integration
 
 function storageFormsMatch(first: StorageSettingsPayload, second: StorageSettingsPayload): boolean {
   return first.bucket === second.bucket
+    && first.folder === second.folder
     && first.endpoint_url === second.endpoint_url
     && first.region_name === second.region_name
     && first.access_key_id === second.access_key_id
@@ -72,6 +76,7 @@ export function SettingsScreen() {
   const { backendUrl, setBackendUrl } = useNav();
   const storage = useStorageSettingsQuery();
   const updateStorage = useStorageSettingsActions();
+  const testStorage = useStorageConnectionTest();
   const integration = useIntegrationSettingsQuery();
   const updateIntegration = useIntegrationSettingsActions();
   const initialForm = createSettingsForm(backendUrl);
@@ -135,6 +140,14 @@ export function SettingsScreen() {
     }
     commitSettings(submittedForm, storageForm, integrationForm);
   };
+  const testStorageConnection = async () => {
+    try {
+      await testStorage.mutateAsync(form.storage);
+      showToast("Storage connection works");
+    } catch (error) {
+      showToast("Storage connection failed", error instanceof Error ? error.message : undefined, "error");
+    }
+  };
 
   return (
     <div className="mx-auto max-w-[720px] px-7 pb-16 pt-6">
@@ -154,6 +167,14 @@ export function SettingsScreen() {
         </SettingsRow>
         <SettingsRow title="Bucket" desc="Bucket that stores packed audio files, checkpoints, and extra files.">
           <Input filled className="h-9 w-[220px] font-mono" value={form.storage.bucket} onChange={(e) => setStorage("bucket", e.target.value)} />
+        </SettingsRow>
+        <SettingsRow title="Folder" desc="Object key prefix inside the bucket. Use / to keep existing files at the bucket root.">
+          <Input filled className="h-9 w-[220px] font-mono" value={form.storage.folder} onChange={(e) => setStorage("folder", e.target.value)} />
+        </SettingsRow>
+        <SettingsRow title="Connection" desc="Checks endpoint, bucket, region and credentials without saving changes.">
+          <Button icon="refresh" disabled={testStorage.isPending} onClick={testStorageConnection}>
+            {testStorage.isPending ? "Testing..." : "Test connection"}
+          </Button>
         </SettingsRow>
         <SettingsRow title="Region" desc="S3 region used by the object store client.">
           <Input filled className="h-9 w-[180px] font-mono" value={form.storage.region_name} onChange={(e) => setStorage("region_name", e.target.value)} />

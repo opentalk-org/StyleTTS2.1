@@ -76,7 +76,7 @@ def normalize_wav_bytes(audio_bytes: bytes, settings: NormalizeSettings) -> Norm
 
 class NormalizeLoudnessNode(Node):
     NODE_TYPE = "NormalizeLoudness"
-    CATEGORY = "Audio / Enhancement"
+    CATEGORY = "Audio"
     SETTINGS = NormalizeSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO)}

@@ -24,7 +24,7 @@ class AudioFeatureSettings(StrictSettings):
 
 class AnalyzeAudioFeaturesNode(Node):
     NODE_TYPE = "AnalyzeAudioFeatures"
-    CATEGORY = "Audio / Statistics"
+    CATEGORY = "Audio"
     SETTINGS = AudioFeatureSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"features": Port("features", JSON)}
