@@ -1,3 +1,5 @@
+from monotonic_align import maximum_path
+from monotonic_align import mask_from_lens
 from monotonic_align.core import maximum_path_c
 import numpy as np
 import torch
@@ -8,22 +10,6 @@ import torchaudio
 import librosa
 import matplotlib.pyplot as plt
 from munch import Munch
-
-def mask_from_lens(attn, in_lens, out_lens):
-  """Build a [b, t_t, t_s] boolean mask from text/mel lengths.
-
-  Matches the StyleTTS2 ``monotonic_align.mask_from_lens`` helper (the pip
-  ``monotonic_align`` wheel only ships ``maximum_path``/``core``). ``attn`` gives
-  the target shape; ``in_lens`` are text lengths (t_t axis) and ``out_lens`` are
-  downsampled mel lengths (t_s axis)."""
-  b, t_t, t_s = attn.shape
-  device = attn.device
-  in_lens = in_lens.to(device)
-  out_lens = out_lens.to(device)
-  in_mask = torch.arange(t_t, device=device)[None, :] < in_lens[:, None]
-  out_mask = torch.arange(t_s, device=device)[None, :] < out_lens[:, None]
-  return (in_mask[:, :, None] & out_mask[:, None, :])
-
 
 def maximum_path(neg_cent, mask):
   """ Cython optimized version.
