@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { backendResourceUrl } from "@/app/backend";
 import { useNav } from "@/app/navStore";
@@ -41,6 +41,7 @@ export function SegmentEditor() {
   const audio = useAudioFileQuery(activeAudioFileId);
   const queryClient = useQueryClient();
   const audioRef = useRef<HTMLAudioElement>(null);
+  const [copied, setCopied] = useState(false);
   const ed = useEditor();
   const {
     fileId, dur, segs, playPos, playing, speed, volume, loop, abA, abB, viewStart, viewEnd, dirty, segSel, segQuery,
@@ -152,11 +153,19 @@ export function SegmentEditor() {
             <span className="text-line">·</span>
             <button
               title="Copy audio ID"
-              onClick={async () => { if (await copyText(activeAudioFileId)) showToast("Audio ID copied"); }}
-              className="inline-flex items-center gap-1 font-mono text-txt-dim hover:text-txt"
+              onClick={async () => {
+                if (!(await copyText(activeAudioFileId))) return;
+                setCopied(true);
+                showToast("Audio ID copied");
+                window.setTimeout(() => setCopied(false), 1200);
+              }}
+              className={cn(
+                "inline-flex items-center gap-1 font-mono transition-all active:scale-95",
+                copied ? "text-emerald-600" : "text-txt-dim hover:text-txt",
+              )}
             >
-              <Icon name="copy" size={11} strokeWidth={2} />
-              {activeAudioFileId}
+              <Icon name={copied ? "check" : "copy"} size={11} strokeWidth={2.4} />
+              {copied ? "Copied" : activeAudioFileId}
             </button>
           </div>
         </div>
