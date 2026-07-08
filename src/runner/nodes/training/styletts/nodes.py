@@ -19,6 +19,7 @@ from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import ASSET_BUNDLE, CHECKPOINT_REF, TRAINING_MANIFEST, TRAINING_RESULT
 from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingManifest, TrainingResult, stable_id, typed_assets, typed_checkpoint
+from runner.nodes.training.common.manifest.cleanup import remove_run_dir
 from runner.nodes.training.common.results import NoopAimRun
 from runner.nodes.training.styletts.finetune.node_config import build_node_config
 from shared.db.assets import crud as asset_crud
@@ -58,6 +59,7 @@ class StyleTtsFinetuneSettings(StrictSettings):
     checkpoint_decoder_gradients: bool = Field(default=True, title="Checkpoint decoder gradients")
     checkpoint_discriminator_gradients: bool = Field(default=True, title="Checkpoint discriminator gradients")
     config_output_dir: str = Field(default="", title="Config output folder")
+    bucket_cache_budget_gb: float = Field(default=8.0, title="Bucket cache budget (GB)", gt=0, description="Max local disk the on-demand bucket cache may use when the manifest streams audio from buckets.")
 
 
 class StyleTtsFinetuneNode(Node):
@@ -79,15 +81,20 @@ class StyleTtsFinetuneNode(Node):
     async def execute(self, batch, context):
         outputs = []
         for inputs in batch:
+            manifest = inputs["training_manifest"]
             training_config = build_styletts_finetune_config(
-                manifest=inputs["training_manifest"],
+                manifest=manifest,
                 base_checkpoint=typed_checkpoint(inputs["checkpoint"]),
                 pretrained_assets=typed_assets(inputs["assets"]),
                 settings=self.settings,
             )
             config_path = _prepare_styletts_config(training_config, str(context.run_id))
-            _run_styletts_train(config_path)
-            outputs.append({"training_result": _latest_epoch_result(str(context.run_id))})
+            try:
+                _run_styletts_train(config_path)
+                result = _latest_epoch_result(str(context.run_id))
+            finally:
+                remove_run_dir(_manifest_run_dir(manifest))
+            outputs.append({"training_result": result})
         return outputs
 
 
@@ -212,6 +219,14 @@ def _latest_epoch_result(run_id: str) -> TrainingResult:
         lineage_id=result_id,
         metadata={"node_type": "StyleTtsFinetune", "checkpoint_id": str(checkpoint.id)},
     )
+
+
+def _manifest_run_dir(manifest: TrainingManifest) -> Path:
+    """The per-run manifest dir holding lists, cache, and materialized wavs.
+
+    ``train_manifest_path`` is ``<run_dir>/lists/train.txt``, so the run dir is
+    two levels up. Removing it drops all data the run prepared on disk."""
+    return Path(str(manifest.metadata["train_manifest_path"])).parent.parent
 
 
 def _config_output_dir(manifest: TrainingManifest, configured: str) -> Path:

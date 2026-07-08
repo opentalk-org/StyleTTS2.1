@@ -20,7 +20,7 @@ from shared.db.audio.pack_crud import (
 )
 from shared.db.audio.pack_prune import prune_fragmented_audio_packs
 from shared.db.audio.pack_store import AudioPackConfig, ObjectStore
-from shared.db.audio.schemas import AudioCreate, AudioPartRead, AudioUpdate
+from shared.db.audio.schemas import AudioBucketLocation, AudioCreate, AudioPartRead, AudioUpdate
 from shared.db.audio.segments_crud import (
     create_segment,
     delete_segment,
@@ -157,6 +157,31 @@ def bulk_read_audio_parts(
     store: ObjectStore | None = None,
 ) -> dict[uuid.UUID, bytes]:
     return bulk_read_packed_audio_parts(session, _object_store(session, store), requests)
+
+
+def audio_bucket_locations(
+    session: Session,
+    audio_file_ids: Sequence[uuid.UUID],
+) -> list[AudioBucketLocation]:
+    """Return the bucket file id and byte size for each audio id.
+
+    Lets callers group and size work by bucket (e.g. streaming a training set
+    bucket-by-bucket) without touching pack offsets. Order follows the request."""
+    statement = select(
+        AudioFile.id, AudioFile.bucket_file_id, AudioFile.byte_length
+    ).where(AudioFile.id.in_(audio_file_ids))
+    rows = {
+        audio_id: (bucket_file_id, byte_length)
+        for audio_id, bucket_file_id, byte_length in session.execute(statement)
+    }
+    return [
+        AudioBucketLocation(
+            audio_file_id=audio_file_id,
+            bucket_file_id=rows[audio_file_id][0],
+            byte_length=rows[audio_file_id][1],
+        )
+        for audio_file_id in audio_file_ids
+    ]
 
 
 def update_audio_file(

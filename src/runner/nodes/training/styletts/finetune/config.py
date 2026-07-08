@@ -31,6 +31,10 @@ def build_config(
     train_list: str,
     validation_list: str,
     root_path: str,
+    stream_from_buckets: bool,
+    stream_plan_path: str,
+    cache_dir: str,
+    bucket_cache_budget_bytes: int,
     ood_texts: str,
     pretrained_model: Path,
     asr_config: dict[str, Any],
@@ -73,6 +77,10 @@ def build_config(
         "root_path": root_path,
         "OOD_data": str(Path(ood_texts).resolve()),
         "min_length": 50,
+        "stream_from_buckets": bool(stream_from_buckets),
+        "stream_plan_path": stream_plan_path,
+        "cache_dir": cache_dir,
+        "bucket_cache_budget_bytes": int(bucket_cache_budget_bytes),
     }
     config["pretrained_model"] = str(pretrained_model.resolve())
     config["ASR_config"] = asr_config

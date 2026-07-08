@@ -82,6 +82,17 @@ class AudioPartRead(BaseModel):
     length: int
 
 
+class AudioBucketLocation(BaseModel):
+    """Which bucket file an audio row lives in, and how large its slice is.
+
+    Exposes only the bucket grouping key and the audio byte size so callers can
+    order/size work by bucket without managing pack offsets themselves."""
+
+    audio_file_id: UUID
+    bucket_file_id: UUID
+    byte_length: int
+
+
 class AudioFileRead(AudioFileCreate):
     id: UUID
     bucket_file: BucketFileRead

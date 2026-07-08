@@ -5,6 +5,8 @@ import time
 import random
 import numpy as np
 import random
+from pathlib import Path
+from uuid import UUID
 import soundfile as sf
 import librosa
 
@@ -12,7 +14,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import torchaudio
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Sampler
 
 import logging
 logger = logging.getLogger(__name__)
@@ -55,6 +57,7 @@ class FilePathDataset(torch.utils.data.Dataset):
                  OOD_data="Data/OOD_texts.txt",
                  min_length=50,
                  symbols=None,
+                 stream_cache=None,
                  ):
 
         spect_params = SPECT_PARAMS
@@ -64,6 +67,9 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.data_list = [data if len(data) == 3 else (*data, 0) for data in _data_list]
         self.text_cleaner = TextCleaner(symbols)
         self.sr = sr
+
+        self.stream_cache = stream_cache
+        self.row_by_audio_id = {UUID(Path(row[0]).stem): row for row in self.data_list} if stream_cache is not None else {}
 
         self.df = pd.DataFrame(self.data_list)
 
@@ -88,16 +94,16 @@ class FilePathDataset(torch.utils.data.Dataset):
         data = self.data_list[idx]
         path = data[0]
         
-        wave, text_tensor, speaker_id = self._load_tensor(data)
-        
+        wave, text_tensor, speaker_id = self._load_tensor(data, advance=True)
+
         mel_tensor = preprocess(wave).squeeze()
-        
+
         acoustic_feature = mel_tensor.squeeze()
         length_feature = acoustic_feature.size(1)
         acoustic_feature = acoustic_feature[:, :(length_feature - length_feature % 2)]
-        
+
         # get reference sample
-        ref_data = (self.df[self.df[2] == str(speaker_id)]).sample(n=1).iloc[0].tolist()
+        ref_data = self._reference_data(speaker_id)
         ref_mel_tensor, ref_label = self._load_data(ref_data[:3])
         
         # get OOD text
@@ -116,10 +122,33 @@ class FilePathDataset(torch.utils.data.Dataset):
         
         return speaker_id, acoustic_feature, text_tensor, ref_text, ref_mel_tensor, ref_label, path, wave
 
-    def _load_tensor(self, data):
+    def _reference_data(self, speaker_id):
+        """Pick a same-speaker reference row.
+
+        When streaming, draw only from rows whose bucket is currently resident so
+        the reference resolves without dragging an extra bucket onto disk; the
+        speaker-clustered bucket order keeps such candidates available. Falls back
+        to any same-speaker row if none are resident yet."""
+        if self.stream_cache is None:
+            return (self.df[self.df[2] == str(speaker_id)]).sample(n=1).iloc[0].tolist()
+        resident = self.stream_cache.resident_audio_ids()
+        candidates = [self.row_by_audio_id[audio_id] for audio_id in resident if audio_id in self.row_by_audio_id and self.row_by_audio_id[audio_id][2] == str(speaker_id)]
+        if not candidates:
+            candidates = [row for row in self.data_list if row[2] == str(speaker_id)]
+        return list(random.choice(candidates))
+
+    def _resolve_path(self, wave_path, advance):
+        if self.stream_cache is None:
+            return osp.join(self.root_path, wave_path)
+        audio_id = UUID(Path(wave_path).stem)
+        if advance:
+            self.stream_cache.advance(self.stream_cache.bucket_index_of(audio_id))
+        return str(self.stream_cache.ensure(audio_id))
+
+    def _load_tensor(self, data, advance=False):
         wave_path, text, speaker_id = data
         speaker_id = int(speaker_id)
-        wave, sr = sf.read(osp.join(self.root_path, wave_path))
+        wave, sr = sf.read(self._resolve_path(wave_path, advance))
         if wave.shape[-1] == 2:
             wave = wave[:, 0].squeeze()
         if sr != 24000:
@@ -211,6 +240,25 @@ class Collater(object):
 
 
 
+class StreamOrderSampler(Sampler):
+    """Yield sample indices in fixed bucket order and rewind the cache each epoch.
+
+    The manifest already writes rows in bucket-streaming order, so walking them
+    sequentially advances the cache cursor monotonically. Resetting on each new
+    iterator refills the cache from the first bucket."""
+
+    def __init__(self, length, stream_cache):
+        self.length = length
+        self.stream_cache = stream_cache
+
+    def __iter__(self):
+        self.stream_cache.reset()
+        return iter(range(self.length))
+
+    def __len__(self):
+        return self.length
+
+
 def build_dataloader(path_list,
                      root_path,
                      validation=False,
@@ -220,10 +268,22 @@ def build_dataloader(path_list,
                      num_workers=1,
                      device='cpu',
                      collate_config={},
-                     dataset_config={}):
-    
-    dataset = FilePathDataset(path_list, root_path, OOD_data=OOD_data, min_length=min_length, validation=validation, **dataset_config)
+                     dataset_config={},
+                     stream_cache=None):
+
+    dataset = FilePathDataset(path_list, root_path, OOD_data=OOD_data, min_length=min_length, validation=validation, stream_cache=stream_cache, **dataset_config)
     collate_fn = Collater(**collate_config)
+    # Streaming keeps a single in-process cache coherent, so the loader must run
+    # in the main process (no worker forks) and preserve the on-disk bucket order.
+    if stream_cache is not None:
+        stream_cache.start()
+        return DataLoader(dataset,
+                          batch_size=batch_size,
+                          sampler=StreamOrderSampler(len(dataset), stream_cache),
+                          num_workers=0,
+                          drop_last=(not validation),
+                          collate_fn=collate_fn,
+                          pin_memory=(device != 'cpu'))
     data_loader = DataLoader(dataset,
                              batch_size=batch_size,
                              shuffle=(not validation),

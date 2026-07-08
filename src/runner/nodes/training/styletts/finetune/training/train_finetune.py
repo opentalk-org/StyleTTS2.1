@@ -17,7 +17,10 @@ warnings.simplefilter('ignore')
 import os
 
 from aim import Run
+from pathlib import Path
 from runflow.runtime.cancellation import check_cancel
+from runner.nodes.training.common.manifest.stream_plan import read_stream_plan
+from runner.nodes.training.styletts.finetune.training.bucket_stream import BucketStreamCache
 from runner.nodes.training.styletts.finetune.training.meldataset import build_dataloader
 
 from runner.nodes.training.styletts.finetune.training.modules.slmadv import SLMAdversarialLoss
@@ -74,6 +77,19 @@ def _resolve_precision(precision: object) -> tuple[bool, torch.dtype | None, boo
     raise ValueError("precision_invalid")
 
 
+def _build_stream_cache(data_params):
+    """Build the on-demand bucket cache for the train loader, or None (eager)."""
+    if not data_params.get('stream_from_buckets', False):
+        return None
+    plan = read_stream_plan(Path(data_params['stream_plan_path']))
+    return BucketStreamCache(
+        plan,
+        Path(data_params['cache_dir']),
+        int(data_params['bucket_cache_budget_bytes']),
+        check_cancel=check_cancel,
+    )
+
+
 def train(config_path: str, *, aim_run: Run) -> None:
     config = yaml.safe_load(open(config_path))
     
@@ -105,6 +121,7 @@ def train(config_path: str, *, aim_run: Run) -> None:
     precision = config.get("precision", "fp32")
     
     train_list, val_list = get_data_path_list(train_path, val_path)
+    train_stream_cache = _build_stream_cache(data_params)
     device = 'cuda'
     autocast_enabled, autocast_dtype, use_grad_scaler = _resolve_precision(precision)
     if use_grad_scaler and not torch.cuda.is_available():
@@ -118,7 +135,8 @@ def train(config_path: str, *, aim_run: Run) -> None:
                                         batch_size=batch_size,
                                         num_workers=2,
                                         dataset_config={"symbols": symbols},
-                                        device=device)
+                                        device=device,
+                                        stream_cache=train_stream_cache)
 
     val_dataloader = build_dataloader(val_list,
                                       root_path,
@@ -806,3 +824,6 @@ def train(config_path: str, *, aim_run: Run) -> None:
                 epoch_1based=epoch + 1,
                 segment_slug=f"epoch_{epoch:05d}",
             )
+
+    if train_stream_cache is not None:
+        train_stream_cache.close()

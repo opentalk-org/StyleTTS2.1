@@ -20,10 +20,18 @@ export type TrainingNodeIds = {
   alphabet?: string;
 };
 
+export type TrainingSpecNode = {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  params?: Record<string, unknown>;
+};
+
 export type TrainingWorkflowSpec = {
   value: TrainTab;
   label: string;
-  nodes: { id: string; type: string; x: number; y: number }[];
+  nodes: TrainingSpecNode[];
   edges: WorkflowEdge[];
   ids: TrainingNodeIds;
 };
@@ -35,7 +43,7 @@ const STYLE_TTS_NODES = [
   { id: "base_checkpoint", type: "SelectCheckpoint", x: 64, y: 420 },
   { id: "assets", type: "SelectTrainingAssets", x: 64, y: 620 },
   { id: "alphabet", type: "PhonemeAlphabet", x: 64, y: 820 },
-  { id: "manifest", type: "BuildTrainingManifest", x: 620, y: 380 },
+  { id: "manifest", type: "BuildTrainingManifest", x: 620, y: 380, params: { stream_from_buckets: true } },
   { id: "styletts", type: "StyleTtsFinetune", x: 860, y: 560 },
 ];
 
@@ -144,7 +152,7 @@ export function createTrainingGraph(schema: WorkflowSchema, spec: TrainingWorkfl
         type: node.type,
         x: node.x,
         y: node.y,
-        params: structuredClone(info.settings_defaults),
+        params: { ...structuredClone(info.settings_defaults), ...(node.params ?? {}) },
         runtime: structuredClone(info.runtime_defaults),
       };
     }),

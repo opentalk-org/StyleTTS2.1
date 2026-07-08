@@ -28,7 +28,6 @@
         "y": 140,
         "params": {
           "virtual": false,
-          "create_waveforms": false,
           "bulk_import_packs": true
         },
         "runtime": {}

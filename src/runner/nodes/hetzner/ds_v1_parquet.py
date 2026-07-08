@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import io
+import json
 import re
 import subprocess
 import time
@@ -20,7 +21,11 @@ from runner.nodes.models import Audio, stable_id
 
 
 DEFAULT_PARQUET_PATH = "/home/ds_v1/000f72c2-caa7-4958-b8e8-0e7668bb9bb6_20260512T173847038808Z.parquet"
-PARQUET_COLUMNS = ("filename", "opus")
+AUDIO_COLUMN = "audio_bytes"
+# ds_v1 rows are long recordings (fewer, longer videos) with a large metadata
+# block. Columns that hold structured JSON payloads are decoded before storing.
+JSON_METADATA_COLUMNS = ("categories_json", "tags_json")
+NAME_COLUMNS = ("video_id", "opus_file", "metadata_id", "title")
 
 
 class HetznerDsV1ParquetAudioSourceSettings(StrictSettings):
@@ -143,12 +148,13 @@ def _iter_parquet_rows(path: Path, row_offset: int, row_limit: int):
 
     parquet = pq.ParquetFile(path)
     available = set(parquet.schema.names)
-    if "opus" not in available:
-        raise ValueError(f"Parquet file has no opus column: {path}")
-    columns = [name for name in PARQUET_COLUMNS if name in available]
+    if AUDIO_COLUMN not in available:
+        raise ValueError(f"Parquet file has no {AUDIO_COLUMN} column: {path}")
+    # Import all metadata: read every column, not a fixed subset. ds_v1 rows are
+    # large (long recordings), so keep the batch small to bound memory.
     seen = 0
     emitted = 0
-    for batch in parquet.iter_batches(batch_size=max(1, min(16, row_limit)), columns=columns):
+    for batch in parquet.iter_batches(batch_size=max(1, min(4, row_limit))):
         for row in batch.to_pylist():
             absolute_index = seen
             seen += 1
@@ -161,7 +167,7 @@ def _iter_parquet_rows(path: Path, row_offset: int, row_limit: int):
 
 
 def _audio_from_row(row: dict[str, Any], settings: HetznerDsV1ParquetAudioSourceSettings, row_index: int) -> Audio:
-    opus_bytes = _required_bytes(row.get("opus"), row_index)
+    opus_bytes = _required_bytes(row.get(AUDIO_COLUMN), row_index)
     wav_bytes, info = _decode_opus_to_wav(opus_bytes)
     duration = info["duration"]
     sample_rate = info["sample_rate"]
@@ -219,18 +225,32 @@ def _audio_metadata(
     duration: float,
     source_byte_length: int,
 ) -> dict[str, Any]:
-    return {
-        "source": "hetzner_ds_v1",
-        "source_host": settings.host,
-        "source_parquet_path": settings.remote_parquet_path,
-        "source_row_index": row_index,
-        "sample_rate": sample_rate,
-        "channels": channels,
-        "duration": duration,
-        "filename": _string_or_none(row.get("filename")),
-        "source_format": "opus",
-        "source_byte_length": source_byte_length,
-    }
+    # Import all metadata columns from the parquet row (everything except the
+    # raw audio payload), decoding JSON blobs and normalizing empty strings.
+    metadata: dict[str, Any] = {}
+    for column, value in row.items():
+        if column == AUDIO_COLUMN:
+            continue
+        if column in JSON_METADATA_COLUMNS:
+            metadata[column] = _json_or_text(value)
+        else:
+            metadata[column] = _scalar_or_none(value)
+    # Provenance and decoded-audio properties. Keys are chosen to not clobber
+    # any imported column (the parquet already carries its own `duration`).
+    metadata.update(
+        {
+            "source": "hetzner_ds_v1",
+            "source_host": settings.host,
+            "source_parquet_path": settings.remote_parquet_path,
+            "source_row_index": row_index,
+            "source_format": "opus",
+            "source_byte_length": source_byte_length,
+            "sample_rate": sample_rate,
+            "channels": channels,
+            "audio_duration_sec": duration,
+        }
+    )
+    return metadata
 
 
 def _required_bytes(value: Any, row_index: int) -> bytes:
@@ -238,19 +258,49 @@ def _required_bytes(value: Any, row_index: int) -> bytes:
         return value
     if isinstance(value, bytearray):
         return bytes(value)
-    raise ValueError(f"ds_v1 row {row_index} has no opus bytes")
+    raise ValueError(f"ds_v1 row {row_index} has no {AUDIO_COLUMN} bytes")
 
 
 def _audio_name(prefix: str, row: dict[str, Any], row_index: int) -> str:
-    raw = _string_or_none(row.get("filename")) or f"row_{row_index:06d}.opus"
+    raw = next((value for column in NAME_COLUMNS if (value := _string_or_none(row.get(column)))), None)
+    raw = raw or f"row_{row_index:06d}"
     stem = Path(raw).stem or f"row_{row_index:06d}"
     safe_stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", stem).strip("._") or f"row_{row_index:06d}"
     safe_prefix = re.sub(r"[^A-Za-z0-9_.-]+", "_", prefix).strip("._") or "ds_v1"
     return f"{safe_prefix}_{row_index:06d}_{safe_stem}.wav"
 
 
+def _json_or_text(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    if not isinstance(value, (str, bytes)):
+        return value
+    text = value.decode("utf-8", "replace") if isinstance(value, bytes) else value
+    stripped = text.strip()
+    if not stripped:
+        return None
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        return stripped
+
+
+def _scalar_or_none(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", "replace")
+    if isinstance(value, str):
+        return value if value else None
+    return value
+
+
 def _string_or_none(value: Any) -> str | None:
     if value is None:
         return None
-    text = str(value)
+    text = value.decode("utf-8", "replace") if isinstance(value, bytes) else str(value)
     return text if text else None
