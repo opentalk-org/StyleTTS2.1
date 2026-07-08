@@ -6,6 +6,7 @@ import { Card } from "@/shared/ui/Card";
 import { Field } from "@/shared/ui/form/Field";
 import { NumberInput } from "@/shared/ui/form/NumberInput";
 import { Slider } from "@/shared/ui/form/Slider";
+import { Input } from "@/shared/ui/Input";
 import { Select } from "@/shared/ui/Select";
 import { Textarea } from "@/shared/ui/Textarea";
 import { cn } from "@/shared/ui/cn";
@@ -16,7 +17,7 @@ import { useVoicesQuery } from "../voices/query";
 import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../workflows/logic";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
 import { DatasetField } from "./DatasetField";
-import { checkpointOptions, enumOptions, numericSetting, sweepConfigFromGraph, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
+import { checkpointOptions, numericSetting, sweepConfigFromGraph, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
 import { useTesting, type SweepDisplay } from "./store";
 
 const VOICE_QUERY = { query: "", limit: 200, offset: 0 };
@@ -92,10 +93,10 @@ export function SweepPanel({
             />
           </Field>
           <Field label="Language">
-            <Select
+            <Input
               value={String(prompt.params.language)}
-              onChange={(language) => updateParams(prompt.id, { ...prompt.params, language })}
-              options={enumOptions(schema, prompt, "language")}
+              onChange={(event) => updateParams(prompt.id, { ...prompt.params, language: event.target.value })}
+              filled
             />
           </Field>
           <DatasetField graph={graph} datasetNodeId={spec.ids.dataset} onChange={onChange} />

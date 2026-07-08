@@ -8,6 +8,7 @@ export type Screen =
   | "audio"
   | "editor"
   | "statistics"
+  | "artifacts"
   | "workflows"
   | "checkpoints"
   | "training"

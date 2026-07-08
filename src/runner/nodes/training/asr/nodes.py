@@ -31,7 +31,7 @@ class AsrModelTrainingNode(Node):
     CATEGORY = "Training"
     SETTINGS = AsrTrainingSettings
     INPUTS = {
-        "pretrained_checkpoint": Port("pretrained_checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
+        "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
         "phoneme_alphabet": Port("phoneme_alphabet", JSON, join_mode=JoinMode.BROADCAST),
         "training_manifest": Port("training_manifest", TRAINING_MANIFEST),
     }
@@ -70,7 +70,7 @@ def _run_asr_training(settings: AsrTrainingSettings, inputs: dict[str, Any], run
             batch_size=settings.batch_size,
             learning_rate=settings.learning_rate,
             checkpoint_save_interval_epochs=settings.save_interval_epochs,
-            pretrained_weights_path=checkpoint_weight(inputs["pretrained_checkpoint"]),
+            pretrained_weights_path=checkpoint_weight(inputs["checkpoint"]),
             num_workers=settings.dataloader_workers,
         )
     finally:

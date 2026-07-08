@@ -33,7 +33,6 @@ def build_node_config(
     manifest: TrainingManifest,
     base_checkpoint: CheckpointRef,
     pretrained_assets: AssetBundleRef | None,
-    ood_text_sets: dict[str, Any],
     settings: Any,
     output_dir: Path,
 ) -> tuple[Path, dict[str, Any]]:
@@ -43,13 +42,13 @@ def build_node_config(
     symbols = symbol_list
     base_root = base_checkpoint.path
     pretrained_model = styletts_layout.latest_weight(base_root)
-    asset_paths = _training_asset_paths(pretrained_assets)
+    asset_paths, ood_paths = _training_asset_paths(pretrained_assets)
     styletts_yaml = styletts_config.build_config(
         log_dir=output_dir / "run",
         train_list=str(manifest.metadata["train_manifest_path"]),
         validation_list=str(manifest.metadata["validation_manifest_path"]),
         root_path=str(manifest.metadata["root_path"]),
-        ood_texts=str(_ood_text_path(ood_text_sets, asset_paths, output_dir)),
+        ood_texts=str(_ood_text_path(ood_paths, output_dir)),
         pretrained_model=pretrained_model,
         asr_config=_asr_config(symbol_count),
         asr_path=asset_paths["asr_bundle"],
@@ -89,34 +88,29 @@ def build_node_config(
     return config_path, styletts_yaml
 
 
-def _training_asset_paths(ref: AssetBundleRef | None) -> dict[str, Path | None]:
-    paths: dict[str, Path | None] = {"asr_bundle": None, "f0_model": None, "plbert": None, "ood_text_set": None}
+def _training_asset_paths(ref: AssetBundleRef | None) -> tuple[dict[str, Path | None], list[Path]]:
+    paths: dict[str, Path | None] = {"asr_bundle": None, "f0_model": None, "plbert": None}
+    ood_paths: list[Path] = []
     if ref is None:
-        return paths
-    assets = ref.metadata["assets"]
-    for asset in assets:
+        return paths, ood_paths
+    for asset in ref.metadata["assets"]:
         role = str(asset["role"])
-        if role in paths and paths[role] is None:
+        if role == "ood_text_set":
+            ood_paths.append(Path(str(asset["path"])))
+        elif role in paths and paths[role] is None:
             paths[role] = Path(str(asset["path"]))
-    return paths
+    return paths, ood_paths
 
 
-def _ood_text_path(ood_text_sets: dict[str, Any], asset_paths: dict[str, Path | None], output_dir: Path) -> Path:
-    if "path" in ood_text_sets:
-        path = Path(str(ood_text_sets["path"]))
-        if path.is_file():
-            return path
-    if "paths" in ood_text_sets:
-        paths = [Path(str(item)) for item in ood_text_sets["paths"]]
-        if len(paths) == 1 and paths[0].is_file():
-            return paths[0]
-        combined = output_dir / "ood_texts.txt"
-        combined.write_text("\n".join(path.read_text(encoding="utf-8").strip() for path in paths), encoding="utf-8")
-        return combined
-    asset_path = asset_paths["ood_text_set"]
-    if asset_path is not None and asset_path.is_file():
-        return asset_path
-    raise ValueError("StyleTTS finetune config requires an OOD text file path")
+def _ood_text_path(ood_paths: list[Path], output_dir: Path) -> Path:
+    existing = [path for path in ood_paths if path.is_file()]
+    if not existing:
+        raise ValueError("StyleTTS finetune config requires an OOD text file path")
+    if len(existing) == 1:
+        return existing[0]
+    combined = output_dir / "ood_texts.txt"
+    combined.write_text("\n".join(path.read_text(encoding="utf-8").strip() for path in existing), encoding="utf-8")
+    return combined
 
 
 def _asr_config(symbol_count: int) -> dict[str, Any]:

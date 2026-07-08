@@ -3,13 +3,14 @@ import { Card } from "@/shared/ui/Card";
 import { Field } from "@/shared/ui/form/Field";
 import { NumberInput } from "@/shared/ui/form/NumberInput";
 import { Slider } from "@/shared/ui/form/Slider";
+import { Input } from "@/shared/ui/Input";
 import { Select } from "@/shared/ui/Select";
 import { Textarea } from "@/shared/ui/Textarea";
-import { useAudioFilesQuery } from "../audio/query";
 import { useCheckpointsQuery } from "../checkpoints/query";
+import { AudioSinglePickerField } from "../workflows/components/WorkflowFieldPickers";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
 import { DatasetField } from "./DatasetField";
-import { checkpointOptions, enumOptions, numericSetting, styleReferenceOptions, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
+import { checkpointOptions, numericSetting, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
 
 function GroupTitle({ children }: { children: string }) {
   return (
@@ -41,7 +42,6 @@ export function ConfigCard({
   onChange: (graph: WorkflowGraph) => void;
 }) {
   const checkpoints = useCheckpointsQuery();
-  const audioFiles = useAudioFilesQuery({ query: "", dataset: "all", sort: "updated", limit: 100, offset: 0 });
   if (!spec.ids.styleRef || !spec.ids.synthesis) {
     throw new Error("Single testing workflow ids are incomplete");
   }
@@ -67,10 +67,10 @@ export function ConfigCard({
         </Field>
         <FieldGrid>
           <Field label="Language">
-            <Select
+            <Input
               value={String(prompt.params.language)}
-              onChange={(language) => updateParams(prompt.id, { ...prompt.params, language })}
-              options={enumOptions(schema, prompt, "language")}
+              onChange={(event) => updateParams(prompt.id, { ...prompt.params, language: event.target.value })}
+              filled
             />
           </Field>
           <Field label="Diffusion steps">
@@ -116,13 +116,11 @@ export function ConfigCard({
       <div className="flex flex-col gap-2.5">
         <GroupTitle>Style reference</GroupTitle>
         <FieldGrid>
-          <Field label="Reference">
-            <Select
-              value={String(styleRef.params.reference_id)}
-              onChange={(reference_id) => updateParams(styleRef.id, { ...styleRef.params, reference_id })}
-              options={styleReferenceOptions(audioFiles.data?.rows ?? [])}
-            />
-          </Field>
+          <AudioSinglePickerField
+            label="Reference"
+            value={styleRef.params.reference_id}
+            onChange={(reference_id) => updateParams(styleRef.id, { ...styleRef.params, reference_id })}
+          />
           <Field label="Alpha" hint="Timbre adherence to reference.">
             <NumberInput
               value={Number(styleRef.params.alpha)}

@@ -17,7 +17,6 @@ TARGET_SR = 24_000
 
 
 class NormalizeSettings(StrictSettings):
-    target_lufs: float = Field(default=-23.0, ge=-40.0, le=-6.0)
     target_rms_db: float = Field(default=-20.0, ge=-40.0, le=0.0)
     silence_threshold_db: float = Field(default=-40.0, ge=-80.0, le=0.0)
     padding_ms: int = Field(default=120, ge=0, le=1000)

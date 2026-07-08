@@ -10,7 +10,7 @@ from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy
 from runner.nodes.datatypes import AUDIO, JSON
-from runner.nodes.models import Audio, stable_id
+from runner.nodes.models import Audio
 from runner.nodes.statistics.segments import speech_segment_records
 
 
@@ -18,7 +18,6 @@ FRAME_LENGTH = 2048
 
 
 class AudioFeatureSettings(StrictSettings):
-    histogram_bins: int = Field(default=50, ge=10, le=200)
     silence_threshold_db: float = Field(default=-40.0, ge=-80.0, le=0.0)
     hop_length: int = Field(default=512, ge=64, le=4096)
 
@@ -28,12 +27,11 @@ class AnalyzeAudioFeaturesNode(Node):
     CATEGORY = "Audio"
     SETTINGS = AudioFeatureSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"features": Port("features", JSON)}
+    OUTPUTS = {"feature_records": Port("feature_records", JSON)}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
 
     async def execute(self, batch, context):
         outputs = []
-        lineage_id = _statistics_lineage_id(context, self.id)
         for inputs in batch:
             audio = inputs["audio"]
             assert isinstance(audio, Audio), f"unsupported audio input: {type(audio).__name__}"
@@ -41,14 +39,8 @@ class AnalyzeAudioFeaturesNode(Node):
             speech = speech_segment_records(audio)
             features["segments"] = speech["segments"]
             features["duplicate_segments_collapsed"] = speech["duplicate_segments_collapsed"]
-            outputs.append({"features": StatisticsFeatureRecord(lineage_id, features)})
+            outputs.append({"feature_records": features})
         return outputs
-
-
-class StatisticsFeatureRecord(dict):
-    def __init__(self, lineage_id: str, payload: dict[str, Any]):
-        super().__init__(payload)
-        self.lineage_id = lineage_id
 
 
 def analyze_audio_features(audio: Audio, silence_threshold_db: float, hop_length: int) -> dict[str, Any]:
@@ -180,9 +172,3 @@ def _json_value(value: Any) -> Any:
     if isinstance(value, tuple):
         return [_json_value(item) for item in value]
     return value
-
-
-def _statistics_lineage_id(context: Any, node_id: str) -> str:
-    run_id = getattr(context, "run_id", "manual")
-    window_index = getattr(context, "window_index", 0)
-    return stable_id("statistics", run_id, window_index, node_id)

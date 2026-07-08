@@ -17,8 +17,8 @@ from runflow.core.ports import JoinMode, Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
-from runner.nodes.datatypes import ASSET_BUNDLE, CHECKPOINT_REF, JSON, TRAINING_MANIFEST, TRAINING_RESULT
-from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingManifest, TrainingResult, stable_id
+from runner.nodes.datatypes import ASSET_BUNDLE, CHECKPOINT_REF, TRAINING_MANIFEST, TRAINING_RESULT
+from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingManifest, TrainingResult, stable_id, typed_assets, typed_checkpoint
 from runner.nodes.training.common.results import NoopAimRun
 from runner.nodes.training.styletts.finetune.node_config import build_node_config
 from shared.db.assets import crud as asset_crud
@@ -57,38 +57,7 @@ class StyleTtsFinetuneSettings(StrictSettings):
     multispeaker: bool = Field(default=True, title="Multi-speaker mode")
     checkpoint_decoder_gradients: bool = Field(default=True, title="Checkpoint decoder gradients")
     checkpoint_discriminator_gradients: bool = Field(default=True, title="Checkpoint discriminator gradients")
-
-
-class BuildStyleTtsFinetuneConfigSettings(StyleTtsFinetuneSettings):
     config_output_dir: str = Field(default="", title="Config output folder")
-
-
-class BuildStyleTtsFinetuneConfigNode(Node):
-    NODE_TYPE = "BuildStyleTtsFinetuneConfig"
-    CATEGORY = "Training"
-    SETTINGS = BuildStyleTtsFinetuneConfigSettings
-    INPUTS = {
-        "training_manifest": Port("training_manifest", TRAINING_MANIFEST),
-        "base_checkpoint": Port("base_checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
-        "pretrained_assets": Port("pretrained_assets", ASSET_BUNDLE, join_mode=JoinMode.BROADCAST),
-        "ood_text_sets": Port("ood_text_sets", JSON, join_mode=JoinMode.BROADCAST),
-    }
-    OUTPUTS = {"training_config": Port("training_config", JSON)}
-    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
-
-    async def execute(self, batch, context):
-        return [
-            {
-                "training_config": build_styletts_finetune_config(
-                    manifest=inputs["training_manifest"],
-                    base_checkpoint=_typed_checkpoint(inputs["base_checkpoint"]),
-                    pretrained_assets=_typed_assets(inputs["pretrained_assets"]),
-                    ood_text_sets=inputs["ood_text_sets"],
-                    settings=self.settings,
-                )
-            }
-            for inputs in batch
-        ]
 
 
 class StyleTtsFinetuneNode(Node):
@@ -97,9 +66,8 @@ class StyleTtsFinetuneNode(Node):
     SETTINGS = StyleTtsFinetuneSettings
     INPUTS = {
         "training_manifest": Port("training_manifest", TRAINING_MANIFEST),
-        "base_checkpoint": Port("base_checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
-        "pretrained_assets": Port("pretrained_assets", ASSET_BUNDLE, join_mode=JoinMode.BROADCAST),
-        "ood_text_sets": Port("ood_text_sets", JSON, join_mode=JoinMode.BROADCAST),
+        "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
+        "assets": Port("assets", ASSET_BUNDLE, join_mode=JoinMode.BROADCAST),
     }
     OUTPUTS = {"training_result": Port("training_result", TRAINING_RESULT)}
     BATCH_POLICY = BatchPolicy(BatchMode.DISABLED)
@@ -113,10 +81,9 @@ class StyleTtsFinetuneNode(Node):
         for inputs in batch:
             training_config = build_styletts_finetune_config(
                 manifest=inputs["training_manifest"],
-                base_checkpoint=_typed_checkpoint(inputs["base_checkpoint"]),
-                pretrained_assets=_typed_assets(inputs["pretrained_assets"]),
-                ood_text_sets=inputs["ood_text_sets"],
-                settings=BuildStyleTtsFinetuneConfigSettings(**self.settings.model_dump()),
+                base_checkpoint=typed_checkpoint(inputs["checkpoint"]),
+                pretrained_assets=typed_assets(inputs["assets"]),
+                settings=self.settings,
             )
             config_path = _prepare_styletts_config(training_config, str(context.run_id))
             _run_styletts_train(config_path)
@@ -128,8 +95,7 @@ def build_styletts_finetune_config(
     manifest: TrainingManifest,
     base_checkpoint: CheckpointRef,
     pretrained_assets: AssetBundleRef | None,
-    ood_text_sets: dict[str, Any],
-    settings: BuildStyleTtsFinetuneConfigSettings,
+    settings: StyleTtsFinetuneSettings,
 ) -> dict[str, Any]:
     output_dir = _config_output_dir(manifest, settings.config_output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -137,26 +103,19 @@ def build_styletts_finetune_config(
         manifest=manifest,
         base_checkpoint=base_checkpoint,
         pretrained_assets=pretrained_assets,
-        ood_text_sets=ood_text_sets,
         settings=settings,
         output_dir=output_dir,
     )
     return {
         "version": 2,
-        "node_type": BuildStyleTtsFinetuneConfigNode.NODE_TYPE,
+        "node_type": StyleTtsFinetuneNode.NODE_TYPE,
         "config_path": str(config_path),
         "manifest": _manifest_payload(manifest),
         "base_checkpoint": _checkpoint_payload(base_checkpoint),
         "pretrained_assets": _assets_payload(pretrained_assets),
-        "ood_text_sets": ood_text_sets,
         "training": settings.model_dump(mode="json"),
         "styletts_yaml": styletts_yaml,
     }
-
-
-def training_config_output_dir(training_config: dict[str, Any]) -> str:
-    training = training_config["training"]
-    return str(training["output_checkpoint_dir"])
 
 
 def _prepare_styletts_config(training_config: dict[str, Any], run_id: str) -> Path:
@@ -253,18 +212,6 @@ def _latest_epoch_result(run_id: str) -> TrainingResult:
         lineage_id=result_id,
         metadata={"node_type": "StyleTtsFinetune", "checkpoint_id": str(checkpoint.id)},
     )
-
-
-def _typed_checkpoint(value: CheckpointRef | dict[str, Any]) -> CheckpointRef:
-    if isinstance(value, CheckpointRef):
-        return value
-    raise TypeError("BuildStyleTtsFinetuneConfig requires a resolved CheckpointRef for base_checkpoint")
-
-
-def _typed_assets(value: AssetBundleRef | dict[str, Any] | None) -> AssetBundleRef | None:
-    if value is None or isinstance(value, AssetBundleRef):
-        return value
-    raise TypeError("BuildStyleTtsFinetuneConfig requires resolved AssetBundleRef values for pretrained_assets")
 
 
 def _config_output_dir(manifest: TrainingManifest, configured: str) -> Path:

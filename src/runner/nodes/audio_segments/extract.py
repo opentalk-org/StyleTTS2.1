@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import Field
-
 from runflow.core.node import Node
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings

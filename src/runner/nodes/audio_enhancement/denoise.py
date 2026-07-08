@@ -6,8 +6,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field
-
 from runflow.core.node import Node
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
@@ -23,7 +21,6 @@ _PATCHED_NP: Any | None = None
 
 class DeepFilterNetSettings(StrictSettings):
     model: str = "deepfilternet3"
-    strength: float = Field(default=0.8, ge=0.0, le=1.0)
 
 
 @dataclass(frozen=True)
@@ -60,7 +57,7 @@ class DeepFilterNetDenoiseNode(Node):
             audio = inputs["audio"]
             assert isinstance(audio, Audio), f"unsupported audio input: {type(audio).__name__}"
             denoised = denoise_wav_bytes(audio.data, self._stack)
-            denoised_id = stable_id("audio", audio.id, "denoise", self.settings.model, self.settings.strength)
+            denoised_id = stable_id("audio", audio.id, "denoise", self.settings.model)
             outputs.append({
                 "audio": replace(
                     audio,
@@ -70,7 +67,6 @@ class DeepFilterNetDenoiseNode(Node):
                         **audio.metadata,
                         "denoise": {
                             "model": self.settings.model,
-                            "strength": self.settings.strength,
                         },
                     },
                 ),

@@ -29,13 +29,6 @@ def transcribe_wav_to_segments(model: Any, wav_path: Path, duration_sec: float, 
     return [(0.0, max(0.0, duration_sec), text)]
 
 
-def transcribe_wav_to_text(model: Any, wav_path: Path, language: str) -> str:
-    result = model.transcribe(str(wav_path), language=_whisper_language(language))
-    if not isinstance(result, dict):
-        return ""
-    return str(result.get("text", "")).strip()
-
-
 def _span_from_whisper_segment(item: dict, duration_sec: float) -> tuple[float, float, str]:
     start = max(0.0, float(item.get("start", 0.0)))
     end = max(start, float(item.get("end", start)))

@@ -14,9 +14,7 @@ export type HistogramConfig = {
   title: string;
   unit: string;
   bins: number[];
-  xmin: string;
-  xmid: string;
-  xmax: string;
+  ticks: string[];
   tone: Tone;
 };
 
@@ -56,17 +54,21 @@ export function fmtDuration(seconds: number): string {
   return `${seconds.toFixed(1)}s`;
 }
 
-function histAxis(h: Histogram, fmt: (v: number) => string): { xmin: string; xmid: string; xmax: string } {
+const AXIS_TICKS = 7;
+
+function histTicks(h: Histogram, fmt: (v: number) => string, count: number = AXIS_TICKS): string[] {
   const edges = h.edges.length ? h.edges : [0, 1];
-  return {
-    xmin: fmt(edges[0]!),
-    xmid: fmt(edges[Math.floor(edges.length / 2)]!),
-    xmax: fmt(edges[edges.length - 1]!),
-  };
+  const last = edges.length - 1;
+  const ticks: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const idx = Math.round((i / (count - 1)) * last);
+    ticks.push(fmt(edges[idx]!));
+  }
+  return ticks;
 }
 
 function histConfig(title: string, unit: string, h: Histogram, tone: Tone, fmt: (v: number) => string): HistogramConfig {
-  return { title, unit, bins: h.counts, ...histAxis(h, fmt), tone };
+  return { title, unit, bins: h.counts, ticks: histTicks(h, fmt), tone };
 }
 
 function hbars(pairs: Pair[], fmt: (v: number) => string, limit: number): HBarItem[] {
@@ -148,7 +150,7 @@ export type CorpusData = {
   unit: string;
   available: boolean;
   lengthBins: number[];
-  lengthAxis: { xmin: string; xmid: string; xmax: string };
+  lengthTicks: string[];
   speakerLength: HBarItem[];
   grams1: HBarItem[];
   trigramsTop: RankItem[];
@@ -167,7 +169,7 @@ export function corpusData(p: StatisticsPayload, tab: CorpusTab): CorpusData {
     unit: isIpa ? "phonemes" : "characters",
     available: isIpa ? p.phonemes_available : true,
     lengthBins: lengthHist.counts,
-    lengthAxis: histAxis(lengthHist, fmtInt),
+    lengthTicks: histTicks(lengthHist, fmtInt),
     speakerLength: hbars(speaker, fmtCompact, 15),
     grams1: hbars(grams, fmtCompact, 24),
     trigramsTop: ranks(top),

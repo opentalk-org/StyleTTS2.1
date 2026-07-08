@@ -69,12 +69,6 @@ def resolve_training_asset_bundle(
     )
 
 
-def prefetch_training_assets(value: AssetBundleRef | dict[str, Any]) -> AssetBundleRef:
-    if isinstance(value, AssetBundleRef):
-        return value
-    raise TypeError("PrefetchTrainingAssets requires a resolved AssetBundleRef")
-
-
 def _requested_assets(
     asr_bundle_file_ids: list[str],
     f0_model_file_id: str,
@@ -163,7 +157,7 @@ class ResolveTrainingAssetsNode(Node):
     SETTINGS = ResolveTrainingAssetsSettings
     IS_INPUT = True
     INPUTS = {}
-    OUTPUTS = {"asset_refs": Port("asset_refs", ASSET_BUNDLE)}
+    OUTPUTS = {"assets": Port("assets", ASSET_BUNDLE)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     def __init__(self, node_id: str | None = None, **params):
@@ -178,7 +172,7 @@ class ResolveTrainingAssetsNode(Node):
         self._emitted = True
         return [
             {
-                "asset_refs": resolve_training_asset_bundle(
+                "assets": resolve_training_asset_bundle(
                     self.settings.asr_bundle_file_ids,
                     self.settings.f0_model_file_id,
                     self.settings.plbert_file_id,

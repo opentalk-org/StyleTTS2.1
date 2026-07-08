@@ -37,6 +37,20 @@ export async function deleteJob(runId: string): Promise<void> {
   if (!response.ok) throw new Error(`Backend request failed: ${response.status}`);
 }
 
+export async function deleteJobs(runIds: string[]): Promise<void> {
+  const response = await backendFetch(`/jobs/bulk-delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ run_ids: runIds }),
+  });
+  if (!response.ok) throw new Error(`Backend request failed: ${response.status}`);
+}
+
+export async function deleteAllJobs(): Promise<void> {
+  const response = await backendFetch(`/jobs`, { method: "DELETE" });
+  if (!response.ok) throw new Error(`Backend request failed: ${response.status}`);
+}
+
 export async function renameJob(runId: string, name: string): Promise<void> {
   const response = await backendFetch(`/jobs/${encodeURIComponent(runId)}`, {
     method: "PATCH",

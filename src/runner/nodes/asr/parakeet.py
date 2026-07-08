@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from runner.nodes.accelerator_memory import maybe_cuda_half
 from runner.nodes.assets.model_downloads import single_checkpoint_file
 
 
@@ -16,7 +17,7 @@ def load_parakeet_model(checkpoint_dir: Path) -> Any:
     model.change_attention_model(self_attention_model="rel_pos_local_attn", att_context_size=[256, 256])
     _set_cuda_graph_decoder(model, enabled=False)
     model.eval()
-    return _maybe_cuda_half(model)
+    return maybe_cuda_half(model)
 
 
 def _set_cuda_graph_decoder(model: Any, *, enabled: bool) -> None:
@@ -52,14 +53,6 @@ def transcribe_wavs_to_segments(
     with torch.no_grad():
         outputs = model.transcribe([str(path) for path in wav_paths], batch_size=batch_size, timestamps=True, num_workers=0)
     return [_segments_from_hypothesis(output, durations_sec[index]) for index, output in enumerate(outputs)]
-
-
-def _maybe_cuda_half(model: Any) -> Any:
-    import torch
-
-    if torch.cuda.is_available():
-        return model.cuda().half()
-    return model
 
 
 def _segments_from_hypothesis(output: Any, duration_sec: float) -> list[tuple[float, float, str]]:

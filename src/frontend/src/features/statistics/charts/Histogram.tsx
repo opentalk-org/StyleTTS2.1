@@ -1,21 +1,17 @@
 import { BAR_CLASS, type Tone } from "../logic";
 
 /**
- * Vertical bar histogram over pre-binned, [0,1]-normalized values. The x-axis
- * shows only min / mid / max labels plus the unit — enough to read the shape of
- * a distribution without a full scale.
+ * Vertical bar histogram over pre-binned values. The x-axis shows a row of
+ * evenly-spaced tick labels (derived from the real bin edges) plus the unit,
+ * so the distribution can be read against an actual scale.
  */
 export function Histogram({
   bins,
-  xmin,
-  xmid,
-  xmax,
+  ticks,
   tone = "blue",
 }: {
   bins: number[];
-  xmin: string;
-  xmid: string;
-  xmax: string;
+  ticks: string[];
   tone?: Tone;
 }) {
   const max = Math.max(...bins, 0.001);
@@ -31,7 +27,7 @@ export function Histogram({
         ))}
       </div>
       <div className="mt-[7px] flex justify-between border-t border-line pt-[6px]">
-        {[xmin, xmid, xmax].map((t, i) => (
+        {ticks.map((t, i) => (
           <span key={i} className="text-[10px] tabular-nums text-txt-mute">
             {t}
           </span>

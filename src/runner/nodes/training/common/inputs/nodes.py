@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from enum import Enum
-from pathlib import Path
 from uuid import UUID
 
 from pydantic import Field
@@ -10,12 +9,11 @@ from runflow.core.node import Node
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.assets.checkpoints import prefetch_checkpoint_ref, resolve_checkpoint_ref
-from runner.nodes.assets.training_assets import prefetch_training_assets, resolve_training_asset_bundle
+from runner.nodes.assets.checkpoints import resolve_checkpoint_ref
+from runner.nodes.assets.training_assets import resolve_training_asset_bundle
 from runner.nodes.datatypes import ASSET_BUNDLE, CHECKPOINT_REF, JSON
 from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
 from shared.db import database_session
-from shared.db.assets import crud as asset_crud
 from shared.db.common import one
 from shared.db.datasets.models import Dataset
 
@@ -55,21 +53,12 @@ class SelectTrainingAssetsSettings(StrictSettings):
     f0_model: str = Field(default="", title="F0 model")
     asr_model: str = Field(default="", title="ASR model")
     plbert_model: str = Field(default="", title="PL-BERT")
+    ood_text_set_file_ids: list[str] = Field(default_factory=list, title="OOD text sets")
 
 
 class PhonemeAlphabetSettings(StrictSettings):
     preset: AlphabetPreset = Field(default=AlphabetPreset.IPA, title="Alphabet preset")
     symbols: str = Field(default=DEFAULT_ALPHABET, title="Symbols")
-
-
-class OodTextSet(StrictSettings):
-    id: str
-    name: str
-    line_count: int
-
-
-class SelectOodTextSetsSettings(StrictSettings):
-    sets: list[OodTextSet] = Field(default_factory=list, title="Reference text sets")
 
 
 class ListDatasetAudioIdsSettings(StrictSettings):
@@ -127,13 +116,13 @@ class SelectCheckpointNode(Node):
     CATEGORY = "Inputs"
     SETTINGS = SelectCheckpointSettings
     INPUTS = {"run": Port("run", JSON)}
-    OUTPUTS = {"checkpoint_ref": Port("checkpoint_ref", CHECKPOINT_REF)}
+    OUTPUTS = {"checkpoint": Port("checkpoint", CHECKPOINT_REF)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
         if not self.settings.checkpoint_id:
             raise ValueError("SelectCheckpoint requires checkpoint_id")
-        return [{"checkpoint_ref": resolve_checkpoint_ref(self.settings.checkpoint_id)} for _inputs in batch]
+        return [{"checkpoint": resolve_checkpoint_ref(self.settings.checkpoint_id)} for _inputs in batch]
 
 
 class SelectTrainingAssetsNode(Node):
@@ -141,17 +130,17 @@ class SelectTrainingAssetsNode(Node):
     CATEGORY = "Training"
     SETTINGS = SelectTrainingAssetsSettings
     INPUTS = {"run": Port("run", JSON)}
-    OUTPUTS = {"asset_refs": Port("asset_refs", ASSET_BUNDLE)}
+    OUTPUTS = {"assets": Port("assets", ASSET_BUNDLE)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
         return [
             {
-                "asset_refs": resolve_training_asset_bundle(
+                "assets": resolve_training_asset_bundle(
                     [self.settings.asr_model] if self.settings.asr_model else [],
                     self.settings.f0_model,
                     self.settings.plbert_model,
-                    [],
+                    self.settings.ood_text_set_file_ids,
                 )
             }
             for inputs in batch
@@ -180,19 +169,6 @@ class PhonemeAlphabetNode(Node):
             }
             for inputs in batch
         ]
-
-
-class SelectOodTextSetsNode(Node):
-    NODE_TYPE = "SelectOodTextSets"
-    CATEGORY = "Training"
-    SETTINGS = SelectOodTextSetsSettings
-    INPUTS = {"run": Port("run", JSON)}
-    OUTPUTS = {"ood_text_set_refs": Port("ood_text_set_refs", JSON)}
-    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
-
-    async def execute(self, batch, context):
-        selected = _resolve_ood_text_sets(self.settings.sets)
-        return [{"ood_text_set_refs": {**selected, "run": inputs["run"]}} for inputs in batch]
 
 
 class ListDatasetAudioIdsNode(Node):
@@ -224,64 +200,3 @@ class ListDatasetAudioIdsNode(Node):
         return outputs
 
 
-class PrefetchCheckpointNode(Node):
-    NODE_TYPE = "PrefetchCheckpoint"
-    CATEGORY = "Assets"
-    INPUTS = {"checkpoint_ref": Port("checkpoint_ref", CHECKPOINT_REF)}
-    OUTPUTS = {"checkpoint": Port("checkpoint", CHECKPOINT_REF)}
-    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
-
-    async def execute(self, batch, context):
-        return [{"checkpoint": prefetch_checkpoint_ref(inputs["checkpoint_ref"])} for inputs in batch]
-
-
-class PrefetchTrainingAssetsNode(Node):
-    NODE_TYPE = "PrefetchTrainingAssets"
-    CATEGORY = "Training"
-    INPUTS = {"asset_refs": Port("asset_refs", ASSET_BUNDLE)}
-    OUTPUTS = {"assets": Port("assets", ASSET_BUNDLE)}
-    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
-
-    async def execute(self, batch, context):
-        return [{"assets": prefetch_training_assets(inputs["asset_refs"])} for inputs in batch]
-
-
-class PrefetchOodTextSetsNode(Node):
-    NODE_TYPE = "PrefetchOodTextSets"
-    CATEGORY = "Training"
-    INPUTS = {"ood_text_set_refs": Port("ood_text_set_refs", JSON)}
-    OUTPUTS = {"ood_text_sets": Port("ood_text_sets", JSON)}
-    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
-
-    async def execute(self, batch, context):
-        return [{"ood_text_sets": _prefetch_ood_text_sets(inputs["ood_text_set_refs"])} for inputs in batch]
-
-
-def _resolve_ood_text_sets(sets: list[OodTextSet]) -> dict:
-    if not sets:
-        raise ValueError("SelectOodTextSets requires at least one text set")
-    rows = []
-    with database_session() as session:
-        for item in sets:
-            file_id = UUID(item.id)
-            extra_file = asset_crud.get_extra_file(session, file_id)
-            path = asset_crud.get_extra_file_path(session, file_id)
-            if not path.is_file():
-                raise ValueError(f"OOD text set file is missing: {file_id}")
-            rows.append({
-                "id": str(file_id),
-                "name": item.name or extra_file.name,
-                "line_count": item.line_count,
-                "path": str(path),
-                "type": extra_file.type_,
-                "content_hash": extra_file.content_hash,
-            })
-    return {"sets": rows, "paths": [row["path"] for row in rows]}
-
-
-def _prefetch_ood_text_sets(value: dict) -> dict:
-    paths = [Path(str(path)) for path in value["paths"]]
-    missing = [str(path) for path in paths if not path.is_file()]
-    if missing:
-        raise ValueError(f"OOD text set files are missing: {missing}")
-    return value

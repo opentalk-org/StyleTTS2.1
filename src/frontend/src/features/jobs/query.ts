@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { showToast } from "@/shared/feedback/Toast";
-import { type JobQuery, deleteJob, fetchJobs, renameJob, stopJob } from "./api";
+import { type JobQuery, deleteAllJobs, deleteJob, deleteJobs, fetchJobs, renameJob, stopJob } from "./api";
 
 const JOBS_KEY = "jobs";
 
@@ -39,13 +39,31 @@ export function useJobActions() {
       invalidateJobs();
     },
   });
+  const removeMany = useMutation({
+    mutationFn: deleteJobs,
+    onSuccess: (_data, runIds) => {
+      showToast(`Removed ${runIds.length} job${runIds.length === 1 ? "" : "s"}`, undefined, "error");
+      invalidateJobs();
+    },
+  });
+  const removeAll = useMutation({
+    mutationFn: deleteAllJobs,
+    onSuccess: () => {
+      showToast("Removed all jobs", undefined, "error");
+      invalidateJobs();
+    },
+  });
 
   return {
     remove: (runId: string) => remove.mutate(runId),
     stop: (runId: string) => stop.mutate(runId),
     rename: (runId: string, name: string) => rename.mutate({ runId, name }),
+    removeMany: (runIds: string[], options?: { onSuccess?: () => void }) => removeMany.mutate(runIds, options),
+    removeAll: (options?: { onSuccess?: () => void }) => removeAll.mutate(undefined, options),
     removing: remove.isPending,
     stopping: stop.isPending,
     renaming: rename.isPending,
+    removingMany: removeMany.isPending,
+    removingAll: removeAll.isPending,
   };
 }

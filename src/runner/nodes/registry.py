@@ -9,19 +9,20 @@ from runner.nodes.asr import (
 )
 from runner.nodes.audio_io import LoadAudioNode, SaveAudioArtifactNode
 from runner.nodes.audio_processing import (
-    CalculateAudioStatsNode,
     CutAudioBySegmentsNode,
     SortformerDiarizationNode,
     VadDetectNode,
 )
 from runner.nodes.statistics.aggregate import AggregateDatasetStatisticsNode
 from runner.nodes.statistics.audio_features import AnalyzeAudioFeaturesNode
+from runner.nodes.statistics.voice_embedding_plot import EmbedVoicesPcaPlotNode
 from runner.nodes.statistics.writeback import SaveStatisticsEntryNode
 from runner.nodes.synthesis.style_reference import ResolveStyleReferenceNode
 from runner.nodes.synthesis.styletts import StyleTtsSynthesisNode
 from runner.nodes.audio_enhancement.denoise import DeepFilterNetDenoiseNode
 from runner.nodes.audio_enhancement.normalize import NormalizeLoudnessNode
 from runner.nodes.audio_segments.extract import ExtractSegmentGroupAudioNode, PersistSplitAudioRecordsNode
+from runner.nodes.audio_segments.dedup_overlap import DeduplicateOverlappingSegmentsNode
 from runner.nodes.audio_segments.grouping import PlanSegmentGroupsNode
 from runner.nodes.audio_segments.speaker_split import DiarizeSplitSpeakersNode
 from runner.nodes.audio_segments.writeback import (
@@ -47,11 +48,7 @@ from runner.nodes.testing import (
 from runner.nodes.training.common.inputs import (
     ListDatasetAudioIdsNode,
     PhonemeAlphabetNode,
-    PrefetchCheckpointNode,
-    PrefetchOodTextSetsNode,
-    PrefetchTrainingAssetsNode,
     SelectCheckpointNode,
-    SelectOodTextSetsNode,
     SelectTrainingAssetsNode,
     SelectTrainingDatasetNode,
     TrainingRunInputNode,
@@ -59,7 +56,7 @@ from runner.nodes.training.common.inputs import (
 from runner.nodes.training.asr import AsrModelTrainingNode
 from runner.nodes.training.common.manifest import BuildTrainingManifestNode
 from runner.nodes.training.f0 import F0ModelTrainingNode
-from runner.nodes.training.styletts import BuildStyleTtsFinetuneConfigNode, StyleTtsFinetuneNode
+from runner.nodes.training.styletts import StyleTtsFinetuneNode
 
 
 def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
@@ -83,10 +80,11 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         DeepFilterNetDenoiseNode,
         NormalizeLoudnessNode,
         AnalyzeAudioFeaturesNode,
-        CalculateAudioStatsNode,
+        EmbedVoicesPcaPlotNode,
         AggregateDatasetStatisticsNode,
         SaveStatisticsEntryNode,
         PlanSegmentGroupsNode,
+        DeduplicateOverlappingSegmentsNode,
         DiarizeSplitSpeakersNode,
         ExtractSegmentGroupAudioNode,
         PersistSplitAudioRecordsNode,
@@ -102,13 +100,8 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         SelectCheckpointNode,
         SelectTrainingAssetsNode,
         PhonemeAlphabetNode,
-        SelectOodTextSetsNode,
         ListDatasetAudioIdsNode,
-        PrefetchCheckpointNode,
-        PrefetchTrainingAssetsNode,
-        PrefetchOodTextSetsNode,
         BuildTrainingManifestNode,
-        BuildStyleTtsFinetuneConfigNode,
         StyleTtsFinetuneNode,
         F0ModelTrainingNode,
         AsrModelTrainingNode,

@@ -7,7 +7,7 @@ import subprocess
 import time
 from pathlib import Path
 from typing import Any, Literal
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import Field
 

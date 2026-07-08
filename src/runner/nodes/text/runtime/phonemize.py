@@ -6,25 +6,6 @@ import re
 DEFAULT_PUNCTUATION_MARKS = ';:,.!?¡¿—…\\"«»\\"\\"'
 
 
-def phonemize_text(
-    text: str,
-    *,
-    language: str,
-    tie: bool,
-    punctuation_marks: str,
-    espeak_workers: int,
-    align_threads: int,
-) -> str:
-    return phonemize_texts(
-        [text],
-        language=language,
-        tie=tie,
-        punctuation_marks=punctuation_marks,
-        espeak_workers=espeak_workers,
-        align_threads=align_threads,
-    )[0]
-
-
 def phonemize_texts(
     texts: list[str],
     *,

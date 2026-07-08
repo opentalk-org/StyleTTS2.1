@@ -73,7 +73,6 @@ export function groupCheckpoints(items: Checkpoint[], query: string, type: strin
 export type CatalogItem = {
   name: string;
   file: string;
-  size: string;
   group: "StyleTTS2" | "Training assets" | "Transcription" | "Diarization";
   catalogKey: string;
   item: string;
@@ -94,7 +93,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "StyleTTS2 · LibriTTS",
     file: "epochs_2nd_00020.pth",
-    size: "1.2 GB",
     group: "StyleTTS2",
     catalogKey: "official_checkpoints",
     item: "official_styletts2_libritts",
@@ -102,7 +100,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "StyleTTS2 · LJSpeech",
     file: "epoch_2nd_00100.pth",
-    size: "842 MB",
     group: "StyleTTS2",
     catalogKey: "official_checkpoints",
     item: "official_styletts2_ljspeech",
@@ -110,7 +107,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "StyleTTS2 · Vokan",
     file: "epoch_2nd_00012.pth",
-    size: "842 MB",
     group: "StyleTTS2",
     catalogKey: "vokan_checkpoint",
     item: "vokan_styletts2",
@@ -118,7 +114,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "PL-BERT · multilingual",
     file: "step_1100000.t7",
-    size: "420 MB",
     group: "Training assets",
     catalogKey: "papercup_multilingual_pl_bert",
     item: "papercup_multilingual_pl_bert",
@@ -126,7 +121,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "ASR · base aligner",
     file: "epoch_00080.pth",
-    size: "310 MB",
     group: "Training assets",
     catalogKey: "styletts2_utils",
     item: "styletts2_utils_asr",
@@ -134,7 +128,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "F0 · JDC",
     file: "bst.t7",
-    size: "18 MB",
     group: "Training assets",
     catalogKey: "styletts2_utils",
     item: "styletts2_utils_f0",
@@ -142,7 +135,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "PL-BERT · StyleTTS2 utils",
     file: "step_1000000.t7",
-    size: "420 MB",
     group: "Training assets",
     catalogKey: "styletts2_utils",
     item: "styletts2_utils_plbert",
@@ -150,7 +142,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Whisper · tiny",
     file: "tiny.pt",
-    size: "75 MB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "whisper:tiny",
@@ -158,7 +149,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Whisper · tiny.en",
     file: "tiny.en.pt",
-    size: "75 MB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "whisper:tiny.en",
@@ -166,7 +156,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Whisper · base",
     file: "base.pt",
-    size: "142 MB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "whisper:base",
@@ -174,7 +163,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Whisper · base.en",
     file: "base.en.pt",
-    size: "142 MB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "whisper:base.en",
@@ -182,7 +170,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Whisper · small",
     file: "small.pt",
-    size: "462 MB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "whisper:small",
@@ -190,7 +177,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Whisper · small.en",
     file: "small.en.pt",
-    size: "462 MB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "whisper:small.en",
@@ -198,7 +184,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Whisper · medium",
     file: "medium.pt",
-    size: "1.5 GB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "whisper:medium",
@@ -206,7 +191,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Whisper · medium.en",
     file: "medium.en.pt",
-    size: "1.5 GB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "whisper:medium.en",
@@ -214,7 +198,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Whisper · large",
     file: "large.pt",
-    size: "2.9 GB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "whisper:large",
@@ -222,7 +205,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Whisper · large-v1",
     file: "large-v1.pt",
-    size: "2.9 GB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "whisper:large-v1",
@@ -230,7 +212,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Whisper · large-v2",
     file: "large-v2.pt",
-    size: "2.9 GB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "whisper:large-v2",
@@ -238,7 +219,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Whisper · large-v3",
     file: "large-v3.pt",
-    size: "2.9 GB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "whisper:large-v3",
@@ -246,7 +226,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Whisper · turbo",
     file: "large-v3-turbo.pt",
-    size: "1.5 GB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "whisper:turbo",
@@ -254,7 +233,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Parakeet · TDT 0.6B v2",
     file: "parakeet-tdt-0.6b-v2.nemo",
-    size: "2.4 GB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "parakeet:nvidia/parakeet-tdt-0.6b-v2",
@@ -262,7 +240,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Parakeet · TDT 0.6B v3",
     file: "parakeet-tdt-0.6b-v3.nemo",
-    size: "2.4 GB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "parakeet:nvidia/parakeet-tdt-0.6b-v3",
@@ -270,7 +247,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Canary · 1B v2",
     file: "canary-1b-v2.nemo",
-    size: "6.4 GB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "canary:nvidia/canary-1b-v2",
@@ -278,7 +254,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Canary · 1B",
     file: "canary-1b.nemo",
-    size: "4.9 GB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "canary:nvidia/canary-1b",
@@ -286,7 +261,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Canary · 1B Flash",
     file: "canary-1b-flash.nemo",
-    size: "3.9 GB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "canary:nvidia/canary-1b-flash",
@@ -294,7 +268,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Canary · 180M Flash",
     file: "canary-180m-flash.nemo",
-    size: "730 MB",
     group: "Transcription",
     catalogKey: "asr_models",
     item: "canary:nvidia/canary-180m-flash",
@@ -302,7 +275,6 @@ export const CATALOG: CatalogItem[] = [
   {
     name: "Sortformer · 4spk v1",
     file: "diar_sortformer_4spk-v1.nemo",
-    size: "460 MB",
     group: "Diarization",
     catalogKey: "asr_models",
     item: "sortformer:nvidia/diar_sortformer_4spk-v1",

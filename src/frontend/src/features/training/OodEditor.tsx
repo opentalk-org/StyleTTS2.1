@@ -1,6 +1,5 @@
 import { type ChangeEvent, useRef, useState } from "react";
 
-import type { SchemaValues } from "@/shared/schema-form/types";
 import { showToast } from "@/shared/feedback/Toast";
 import { Icon } from "@/shared/icons";
 import { IconButton } from "@/shared/ui/IconButton";
@@ -12,29 +11,29 @@ import type { OodSetValue } from "./logic";
 
 /** Out-of-domain reference text sets: select bucket files or upload a new one. */
 export function OodEditor({
-  values,
+  selectedIds,
   availableSets,
   onChange,
   onCreate,
 }: {
-  values: SchemaValues;
+  selectedIds: string[];
   availableSets: OodSetValue[];
-  onChange: (values: SchemaValues) => void;
+  onChange: (ids: string[]) => void;
   onCreate: (payload: { name: string; content: string }) => Promise<OodSetValue>;
 }) {
-  const oodSets = values.sets as OodSetValue[];
-  const choices = availableSets.filter((item) => !oodSets.some((selected) => selected.id === item.id));
+  const oodSets = selectedIds.map((id) => availableSets.find((item) => item.id === id) ?? { id, name: id, line_count: 0 });
+  const choices = availableSets.filter((item) => !selectedIds.includes(item.id));
   const [selectedId, setSelectedId] = useState("");
   const [creating, setCreating] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const addOod = () => {
     const item = choices.find((choice) => choice.id === selectedId);
     if (!item) return;
-    onChange({ ...values, sets: [...oodSets, item] });
+    onChange([...selectedIds, item.id]);
     setSelectedId("");
   };
   const removeOod = (id: string) => {
-    onChange({ ...values, sets: oodSets.filter((set) => set.id !== id) });
+    onChange(selectedIds.filter((setId) => setId !== id));
   };
   const uploadOod = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -49,7 +48,7 @@ export function OodEditor({
       }
       const name = file.name.replace(/\.[^.]+$/, "").trim() || file.name;
       const item = await onCreate({ name, content });
-      onChange({ ...values, sets: [...oodSets, item] });
+      onChange([...selectedIds, item.id]);
     } catch {
       showToast("Could not upload OOD text file", undefined, "error");
     } finally {

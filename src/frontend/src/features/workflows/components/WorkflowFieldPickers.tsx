@@ -10,10 +10,17 @@ import { cn } from "@/shared/ui/cn";
 import type { AudioFile } from "../../audio/api";
 import { useAudioFileQuery, useAudioFilesQuery } from "../../audio/query";
 import { useDatasetsQuery } from "../../datasets/query";
+import { useCheckpointsQuery } from "../../checkpoints/query";
 
 const DATASET_FIELDS = new Set(["dataset_id", "source_dataset_id", "target_dataset_id"]);
 const AUDIO_MULTI_FIELDS = new Set(["audio_file_ids"]);
 const AUDIO_SINGLE_FIELDS = new Set(["audio_file_id", "reference_id"]);
+const CHECKPOINT_FIELDS: Record<string, string | undefined> = {
+  checkpoint_id: undefined,
+  asr_checkpoint_id: "asr_bundle",
+  f0_checkpoint_id: "f0_model",
+  plbert_checkpoint_id: "plbert",
+};
 
 export function buildWorkflowFieldOverrides(settings: JsonSchema): Record<string, FieldOverride> {
   const overrides: Record<string, FieldOverride> = {};
@@ -24,6 +31,9 @@ export function buildWorkflowFieldOverrides(settings: JsonSchema): Record<string
       overrides[name] = ({ label, description, value, onChange }) => <AudioMultiPickerField label={label} description={description} value={value} onChange={onChange} />;
     } else if (AUDIO_SINGLE_FIELDS.has(name)) {
       overrides[name] = ({ label, description, value, onChange }) => <AudioSinglePickerField label={label} description={description} value={value} onChange={onChange} />;
+    } else if (name in CHECKPOINT_FIELDS) {
+      const type = CHECKPOINT_FIELDS[name];
+      overrides[name] = ({ label, description, value, onChange }) => <CheckpointPickerField label={label} description={description} value={value} onChange={onChange} type={type} />;
     }
   }
   return overrides;
@@ -47,6 +57,23 @@ function DatasetPickerField({ label, description, value, onChange }: { label: st
         value={String(value ?? "")}
         onChange={(dataset_id) => onChange(dataset_id)}
         options={[{ value: "", label: list.length ? "— select dataset —" : "No datasets" }, ...list.map((item) => ({ value: item.id, label: item.name }))]}
+      />
+    </Field>
+  );
+}
+
+function CheckpointPickerField({ label, description, value, onChange, type }: { label: string; description?: string; value: unknown; onChange: (value: unknown) => void; type?: string }) {
+  const checkpoints = useCheckpointsQuery();
+  const list = (checkpoints.data ?? []).filter((item) => !type || item.type_ === type);
+  return (
+    <Field label={label} hint={description}>
+      <Select
+        value={String(value ?? "")}
+        onChange={(checkpoint_id) => onChange(checkpoint_id)}
+        options={[
+          { value: "", label: list.length ? "— select checkpoint —" : "No checkpoints" },
+          ...list.map((item) => ({ value: item.id, label: type ? item.name : `${item.name} · ${item.type_}` })),
+        ]}
       />
     </Field>
   );
@@ -135,7 +162,7 @@ function TriggerButton({ open, onClick, children }: { open: boolean; onClick: ()
   );
 }
 
-function AudioSinglePickerField({ label, description, value, onChange }: { label: string; description?: string; value: unknown; onChange: (value: unknown) => void }) {
+export function AudioSinglePickerField({ label, description, value, onChange }: { label: string; description?: string; value: unknown; onChange: (value: unknown) => void }) {
   const [open, setOpen] = useState(false);
   const current = String(value ?? "");
   const audio = useAudioFileQuery(current || null);

@@ -22,6 +22,10 @@ def list_jobs(session: Session, limit: int, offset: int) -> tuple[Sequence[Job],
     return rows, total
 
 
+def list_all_job_ids(session: Session) -> list[str]:
+    return list(session.execute(select(Job.run_id)).scalars().all())
+
+
 def get_job(session: Session, run_id: str) -> Job:
     item = session.get(Job, run_id)
     if item is None:

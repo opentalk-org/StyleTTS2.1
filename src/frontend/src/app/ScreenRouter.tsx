@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 
+import { ArtifactsScreen } from "@/features/artifacts/ArtifactsScreen";
 import { AudioScreen } from "@/features/audio/AudioScreen";
 import { SegmentEditor } from "@/features/audio/SegmentEditor";
 import { CheckpointsScreen } from "@/features/checkpoints/CheckpointsScreen";
@@ -22,6 +23,7 @@ const SCREENS: Record<Screen, ComponentType> = {
   audio: AudioScreen,
   editor: SegmentEditor,
   statistics: StatisticsScreen,
+  artifacts: ArtifactsScreen,
   workflows: WorkflowsScreen,
   checkpoints: CheckpointsScreen,
   training: TrainingScreen,

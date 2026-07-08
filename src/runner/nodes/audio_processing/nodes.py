@@ -15,10 +15,9 @@ from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.asr.audio import extract_wav_range, wav_info
 from runner.nodes.assets.model_downloads import single_checkpoint_file
-from runner.nodes.datatypes import AUDIO, CHECKPOINT_REF, JSON
-from runner.nodes.models import Audio, AudioSegment, CheckpointRef, stable_id
+from runner.nodes.datatypes import AUDIO, CHECKPOINT_REF
+from runner.nodes.models import Audio, AudioSegment, stable_id, typed_checkpoint
 from shared.log_streams import route_output_to_logger
-from runner.nodes.statistics.audio_features import AnalyzeAudioFeaturesNode, AudioFeatureSettings, analyze_audio_features
 
 
 class VadSettings(StrictSettings):
@@ -28,10 +27,6 @@ class VadSettings(StrictSettings):
     max_silence_gap_ms: int = Field(default=400, ge=50, le=30000)
     silence_threshold_db: float = Field(default=-40.0, ge=-80.0, le=0.0)
     hop_length: int = Field(default=512, ge=64, le=4096)
-
-
-class CutAudioSettings(StrictSettings):
-    fade_ms: int = Field(default=0, ge=0, le=100)
 
 
 class SortformerSettings(StrictSettings):
@@ -89,7 +84,7 @@ class SortformerDiarizationNode(Node):
         release_accelerator_memory()
 
     async def execute(self, batch, context):
-        checkpoint = _typed_checkpoint(batch[0]["checkpoint"])
+        checkpoint = typed_checkpoint(batch[0]["checkpoint"])
         if self._model is None or self._loaded_checkpoint_id != checkpoint.checkpoint_id:
             self._model = await asyncio.to_thread(self._load_model, checkpoint.path)
             self._loaded_checkpoint_id = checkpoint.checkpoint_id
@@ -111,16 +106,9 @@ class SortformerDiarizationNode(Node):
             return load_sortformer_model(checkpoint_dir, self.settings)
 
 
-def _typed_checkpoint(value: CheckpointRef | dict[str, Any]) -> CheckpointRef:
-    if isinstance(value, CheckpointRef):
-        return value
-    raise TypeError("Sortformer diarization requires a resolved CheckpointRef")
-
-
 class CutAudioBySegmentsNode(Node):
     NODE_TYPE = "CutAudioBySegments"
     CATEGORY = "Audio"
-    SETTINGS = CutAudioSettings
     INPUTS = {"audio": Port("audio", AUDIO)}
     OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}
 
@@ -129,24 +117,7 @@ class CutAudioBySegmentsNode(Node):
         for inputs in batch:
             audio = inputs["audio"]
             assert isinstance(audio, Audio), f"unsupported audio input: {type(audio).__name__}"
-            outputs.extend({"audio": item} for item in cut_audio_by_segments(audio, self.settings))
-        return outputs
-
-
-class CalculateAudioStatsNode(Node):
-    NODE_TYPE = "CalculateAudioStats"
-    CATEGORY = "Audio"
-    SETTINGS = AudioFeatureSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"stats": Port("stats", JSON)}
-    BATCH_POLICY = AnalyzeAudioFeaturesNode.BATCH_POLICY
-
-    async def execute(self, batch, context):
-        outputs = []
-        for inputs in batch:
-            audio = inputs["audio"]
-            assert isinstance(audio, Audio), f"unsupported audio input: {type(audio).__name__}"
-            outputs.append({"stats": analyze_audio_features(audio, self.settings.silence_threshold_db, self.settings.hop_length)})
+            outputs.extend({"audio": item} for item in cut_audio_by_segments(audio))
         return outputs
 
 
@@ -233,14 +204,13 @@ def speaker_audio_segments(audio: Audio, segments: list[DiarizationSegment], set
     return outputs
 
 
-def cut_audio_by_segments(audio: Audio, settings: CutAudioSettings) -> list[Audio]:
+def cut_audio_by_segments(audio: Audio) -> list[Audio]:
     assert audio.data is not None, f"audio bytes are required: {audio.id}"
     assert audio.segments, f"audio segments are required: {audio.id}"
-    return [cut_audio_by_segment(audio, segment, settings, index) for index, segment in enumerate(audio.segments)]
+    return [cut_audio_by_segment(audio, segment, index) for index, segment in enumerate(audio.segments)]
 
 
-def cut_audio_by_segment(audio: Audio, segment: AudioSegment, settings: CutAudioSettings, index: int = 0) -> Audio:
-    del settings
+def cut_audio_by_segment(audio: Audio, segment: AudioSegment, index: int = 0) -> Audio:
     local_start = max(0.0, float(segment.start) - audio.start)
     local_end = max(local_start, segment.end - audio.start)
     assert local_end <= audio.duration + 1e-6, f"segment outside audio bounds: {segment.id}"

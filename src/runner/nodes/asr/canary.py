@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from runner.nodes.accelerator_memory import maybe_cuda_half
 from runner.nodes.assets.model_downloads import single_checkpoint_file
 
 
@@ -14,7 +15,7 @@ def load_canary_model(checkpoint_dir: Path) -> Any:
     weights = single_checkpoint_file(checkpoint_dir, (".nemo",))
     model = nemo_asr.models.ASRModel.restore_from(restore_path=str(weights))
     model.eval()
-    return _maybe_cuda_half(model)
+    return maybe_cuda_half(model)
 
 
 def transcribe_wavs_to_segments(
@@ -40,14 +41,6 @@ def transcribe_wavs_to_segments(
             pnc="yes" if pnc else "no",
         )
     return [_segments_from_output(output, durations_sec[index]) for index, output in enumerate(outputs)]
-
-
-def _maybe_cuda_half(model: Any) -> Any:
-    import torch
-
-    if torch.cuda.is_available():
-        return model.cuda().half()
-    return model
 
 
 def _segments_from_output(output: Any, duration_sec: float) -> list[tuple[float, float, str]]:

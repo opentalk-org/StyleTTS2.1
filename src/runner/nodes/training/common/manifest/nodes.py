@@ -13,7 +13,7 @@ from runflow.core.ports import JoinMode, Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import ASSET_BUNDLE, CHECKPOINT_REF, JSON, TRAINING_MANIFEST
-from runner.nodes.models import AssetBundleRef, AudioRecordRef, AudioSegment, CheckpointRef, TrainingManifest, stable_id
+from runner.nodes.models import AssetBundleRef, AudioRecordRef, AudioSegment, CheckpointRef, TrainingManifest, stable_id, typed_assets, typed_checkpoint
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 
@@ -40,7 +40,7 @@ class BuildTrainingManifestNode(Node):
     SETTINGS = BuildTrainingManifestSettings
     INPUTS = {
         "audio_file_ids": Port("audio_file_ids", JSON),
-        "base_checkpoint": Port("base_checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
+        "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
         "assets": Port("assets", ASSET_BUNDLE, join_mode=JoinMode.BROADCAST, optional=True, default=None),
         "phoneme_alphabet": Port("phoneme_alphabet", JSON, join_mode=JoinMode.BROADCAST, optional=True, default={}),
     }
@@ -56,8 +56,8 @@ class BuildTrainingManifestNode(Node):
                 "training_manifest": build_training_manifest(
                     dataset_id=selection.dataset_id,
                     segments=segments_from_audio_file_ids(selection.audio_file_ids),
-                    base_checkpoint=_typed_checkpoint(inputs["base_checkpoint"]),
-                    assets=_typed_assets(inputs["assets"]),
+                    base_checkpoint=typed_checkpoint(inputs["checkpoint"]),
+                    assets=typed_assets(inputs["assets"]),
                     phoneme_alphabet=phoneme_alphabet_symbols(inputs["phoneme_alphabet"]),
                     settings=settings,
                 )
@@ -311,18 +311,6 @@ def _segment_sidecar_row(segment: AudioSegment) -> dict[str, object]:
         "voice_id": str(segment.voice_id) if segment.voice_id is not None else None,
         "metadata": segment.metadata,
     }
-
-
-def _typed_checkpoint(value: CheckpointRef | dict) -> CheckpointRef:
-    if isinstance(value, CheckpointRef):
-        return value
-    raise TypeError("BuildTrainingManifest requires a resolved CheckpointRef for base_checkpoint")
-
-
-def _typed_assets(value: AssetBundleRef | dict | None) -> AssetBundleRef | None:
-    if value is None or isinstance(value, AssetBundleRef):
-        return value
-    raise TypeError("BuildTrainingManifest requires resolved AssetBundleRef values for assets")
 
 
 def _optional_uuid(value: object) -> UUID | None:

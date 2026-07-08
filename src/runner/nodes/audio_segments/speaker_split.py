@@ -18,7 +18,7 @@ from runner.nodes.audio_processing.nodes import (
     load_sortformer_model,
 )
 from runner.nodes.datatypes import AUDIO, CHECKPOINT_REF
-from runner.nodes.models import Audio, AudioSegment, CheckpointRef, stable_id
+from runner.nodes.models import Audio, AudioSegment, stable_id, typed_checkpoint
 from shared.db import database_session
 from shared.db.voices import crud as voice_crud
 from shared.db.voices.schemas import VoiceCreate
@@ -78,7 +78,7 @@ class DiarizeSplitSpeakersNode(Node):
         )
 
     async def execute(self, batch, context):
-        checkpoint = _typed_checkpoint(batch[0]["checkpoint"])
+        checkpoint = typed_checkpoint(batch[0]["checkpoint"])
         sort_settings = self._sortformer_settings()
         if self._model is None or self._loaded_checkpoint_id != checkpoint.checkpoint_id:
             with route_output_to_logger(self.logger):
@@ -210,12 +210,6 @@ class _LocalSegment:
         self.text = text
         self.segment = segment
         self.speaker = "speaker_0"
-
-
-def _typed_checkpoint(value: CheckpointRef | dict[str, Any]) -> CheckpointRef:
-    if isinstance(value, CheckpointRef):
-        return value
-    raise TypeError("DiarizeSplitSpeakers requires a resolved sortformer CheckpointRef")
 
 
 def _speaker_for_span(start: float, end: float, diar) -> str:

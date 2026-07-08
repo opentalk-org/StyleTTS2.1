@@ -14,20 +14,19 @@ from runflow.core.node import Node
 from runflow.core.ports import JoinMode, Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
-from runner.nodes.asr.audio import wav_duration, write_temp_wav
+from runner.nodes.asr.audio import write_temp_wav
 from runner.nodes.asr.canary import load_canary_model, transcribe_wavs_to_segments as canary_transcribe_wavs
 from runner.nodes.asr.parakeet import load_parakeet_model, transcribe_wavs_to_segments as parakeet_transcribe_wavs
-from runner.nodes.asr.whisper import load_whisper_model, transcribe_wav_to_segments, transcribe_wav_to_text
+from runner.nodes.asr.whisper import load_whisper_model, transcribe_wav_to_segments
 from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AUDIO, CHECKPOINT_REF
-from runner.nodes.models import Audio, AudioSegment, CheckpointRef, stable_id
+from runner.nodes.models import Audio, AudioSegment, CheckpointRef, stable_id, typed_checkpoint
 from shared.log_streams import route_output_to_logger
 
 
 class TranscribeSettings(StrictSettings):
     language: str = "auto"
     batch_size: int = Field(default=16, ge=1, le=128)
-    segment_batch_size: int = Field(default=16, ge=1, le=128)
 
 
 class WhisperTranscribeSettings(StrictSettings):
@@ -36,7 +35,6 @@ class WhisperTranscribeSettings(StrictSettings):
 
 class ParakeetTranscribeSettings(StrictSettings):
     batch_size: int = Field(default=16, ge=1, le=128)
-    segment_batch_size: int = Field(default=16, ge=1, le=128)
 
 
 class CanaryLanguage(str, Enum):
@@ -73,7 +71,6 @@ class CanaryTranscribeSettings(StrictSettings):
     target_language: CanaryLanguage = Field(default=CanaryLanguage.PL, title="Target language")
     punctuation_and_capitalization: bool = Field(default=True, title="Punctuation and capitalization")
     batch_size: int = Field(default=16, ge=1, le=128)
-    segment_batch_size: int = Field(default=16, ge=1, le=128)
 
 
 class TranscribeNode(Node):
@@ -96,7 +93,7 @@ class TranscribeNode(Node):
         release_accelerator_memory()
 
     async def execute(self, batch, context):
-        checkpoint = _typed_checkpoint(batch[0]["checkpoint"])
+        checkpoint = typed_checkpoint(batch[0]["checkpoint"])
         await self._ensure_model(checkpoint)
         outputs = []
         for index, inputs in enumerate(batch, start=1):
@@ -135,9 +132,6 @@ class TranscribeNode(Node):
     def _transcribe_full_path(self, path: Path, duration_sec: float) -> list[tuple[float, float, str]]:
         raise NotImplementedError
 
-    def _transcribe_segment_paths(self, paths: list[Path]) -> list[str]:
-        raise NotImplementedError
-
     def _transcript_language(self) -> str:
         return str(getattr(self.settings, "language", "auto"))
 
@@ -153,9 +147,6 @@ class WhisperTranscribeNode(TranscribeNode):
     def _transcribe_full_path(self, path: Path, duration_sec: float) -> list[tuple[float, float, str]]:
         return transcribe_wav_to_segments(self._model, path, duration_sec, self.settings.language)
 
-    def _transcribe_segment_paths(self, paths: list[Path]) -> list[str]:
-        return [transcribe_wav_to_text(self._model, path, self.settings.language) for path in paths]
-
 
 class ParakeetTranscribeNode(TranscribeNode):
     NODE_TYPE = "ParakeetTranscribe"
@@ -168,11 +159,6 @@ class ParakeetTranscribeNode(TranscribeNode):
     def _transcribe_full_path(self, path: Path, duration_sec: float) -> list[tuple[float, float, str]]:
         batches = parakeet_transcribe_wavs(self._model, [path], [duration_sec], batch_size=self.settings.batch_size)
         return batches[0] if batches else []
-
-    def _transcribe_segment_paths(self, paths: list[Path]) -> list[str]:
-        durations = [wav_duration(path.read_bytes()) for path in paths]
-        batches = parakeet_transcribe_wavs(self._model, paths, durations, batch_size=self.settings.segment_batch_size)
-        return [_joined_text(spans) for spans in batches]
 
 
 class CanaryTranscribeNode(TranscribeNode):
@@ -188,12 +174,7 @@ class CanaryTranscribeNode(TranscribeNode):
         batches = canary_transcribe_wavs(self._model, [path], [duration_sec], **prompt)
         return batches[0] if batches else []
 
-    def _transcribe_segment_paths(self, paths: list[Path]) -> list[str]:
-        durations = [wav_duration(path.read_bytes()) for path in paths]
-        batches = canary_transcribe_wavs(self._model, paths, durations, **self._prompt_settings(self.settings.segment_batch_size))
-        return [_joined_text(spans) for spans in batches]
-
-    def _prompt_settings(self, batch_size: int | None = None) -> dict[str, Any]:
+    def _prompt_settings(self) -> dict[str, Any]:
         source_language = self.settings.language.value
         target_language = self.settings.target_language.value
         if source_language == CanaryLanguage.AUTO.value or target_language == CanaryLanguage.AUTO.value:
@@ -202,14 +183,8 @@ class CanaryTranscribeNode(TranscribeNode):
             "source_language": source_language,
             "target_language": target_language,
             "pnc": self.settings.punctuation_and_capitalization,
-            "batch_size": batch_size or self.settings.batch_size,
+            "batch_size": self.settings.batch_size,
         }
-
-
-def _typed_checkpoint(value: CheckpointRef | dict[str, Any]) -> CheckpointRef:
-    if isinstance(value, CheckpointRef):
-        return value
-    raise TypeError("transcription requires a resolved CheckpointRef")
 
 
 def _audio_with_transcript_segments(

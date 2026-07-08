@@ -238,10 +238,6 @@ def _segment_dict(segment: AudioSegment) -> dict[str, Any]:
     }
 
 
-def _save_group_segments(session: Any, ref: AudioRecordRef, group: SegmentGroup, mode: Literal["replace", "append"]) -> list[dict[str, Any]]:
-    return audio_crud.replace_audio_segments(session, ref.audio_file_id, _new_group_segments(session, ref, group, mode))
-
-
 def _new_group_segments(session: Any, ref: AudioRecordRef, group: SegmentGroup, mode: Literal["replace", "append"]) -> list[dict[str, Any]]:
     new_segments = [_segment_dict(segment) for segment in group.segments]
     if mode == "append":

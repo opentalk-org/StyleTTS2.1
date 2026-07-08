@@ -12,7 +12,6 @@ IPA_SYMBOLS = (
 
 DEFAULT_STYLETTS_SYMBOLS = [PAD_SYMBOL] + list(PUNCTUATION_SYMBOLS) + list(LETTER_SYMBOLS) + list(IPA_SYMBOLS)
 DEFAULT_STYLETTS_SYMBOL_INDEX = {symbol: index for index, symbol in enumerate(DEFAULT_STYLETTS_SYMBOLS)}
-symbols = DEFAULT_STYLETTS_SYMBOLS
 logger = logging.getLogger(__name__)
 
 

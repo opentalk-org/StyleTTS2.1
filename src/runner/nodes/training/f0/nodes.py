@@ -39,7 +39,7 @@ class F0ModelTrainingNode(Node):
     CATEGORY = "Training"
     SETTINGS = F0TrainingSettings
     INPUTS = {
-        "pretrained_checkpoint": Port("pretrained_checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
+        "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
         "training_manifest": Port("training_manifest", TRAINING_MANIFEST),
     }
     OUTPUTS = {"training_result": Port("training_result", TRAINING_RESULT)}
@@ -70,7 +70,7 @@ def _run_f0_training(settings: F0TrainingSettings, inputs: dict[str, Any], run_i
             learning_rate=settings.learning_rate,
             lambda_f0=settings.lambda_f0,
             checkpoint_save_interval_epochs=settings.save_interval_epochs,
-            pretrained_pth=checkpoint_weight(inputs["pretrained_checkpoint"]),
+            pretrained_pth=checkpoint_weight(inputs["checkpoint"]),
             weight_decay=settings.weight_decay,
             pct_start=settings.pct_start,
             num_workers=settings.num_workers,

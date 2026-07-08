@@ -91,7 +91,7 @@ export function CheckpointsScreen() {
                     <div className="min-w-0 flex-1">
                       <div className="text-[13px] font-bold text-txt">{item.name}</div>
                       <div className="font-mono text-[11px] text-txt-mute">
-                        {item.file} · {item.size}
+                        {item.file}
                       </div>
                     </div>
                     <IconButton

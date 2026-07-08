@@ -34,6 +34,7 @@ This project is a ComfyUI-style workflow system for typed, batched, concurrent p
 ## Node quality
 
 - A good node is typed, batch-aware, cancellable, and honest about resources. Declare precise ports, settings, `BATCH_POLICY`, `RESOURCE_POLICY`, and `QUEUE_MAX_SIZE`; do not rely on scheduler special cases.
+- Never use union datatypes for node ports. Model alternatives as separate explicit ports, separate nodes, or a concrete wrapper datatype with a clear discriminator.
 - Design for high throughput. Process the whole incoming `batch` when the underlying library supports it, avoid per-item model reloads, use bulk DB/storage calls, and stream or chunk large inputs instead of materializing full datasets in memory.
 - Keep expensive resources behind `setup`/`teardown` and `keep_loaded` policies. Load models, remote clients, and caches once per node lifecycle; release file handles, subprocesses, GPU memory, and temporary directories reliably.
 - Make cancellation work in long loops and multi-step jobs. Call `context.check_cancel()` between chunks, batches, downloads, subprocess waits, and training epochs; propagate cancellation into child processes or library callbacks when possible.
@@ -72,8 +73,7 @@ This project is a ComfyUI-style workflow system for typed, batched, concurrent p
 ## Development workflow
 
 - Before changing behavior, find the relevant example or smoke workflow and run it before and after the change when practical.
-- Start the local NATS JetStream, backend, and one runner with `sudo nix develop --command runflow-dev`.
-- Open the UI at `http://127.0.0.1:8000/ui`; stop the local stack with Ctrl-C.
+- Start the local NATS JetStream, backend, and one runner with `sudo nix develop --command runflow-dev`. prefer to start full stack not only backend so i can see in real time changes on ui. RUN IT AS USER NOT ROOT.
 - Use the project virtual environment at `/workspace2/styletts_studio_v2/.venv`; do not use or mutate a system Python environment.
 - Add or change Python dependencies in `pyproject.toml`, then update the lock with the existing `uv` workflow; do not install packages with `pip install` into the environment.
 - For backend or frontend changes, use the package manager and commands already present in that subproject. Do not introduce a new toolchain unless requested.

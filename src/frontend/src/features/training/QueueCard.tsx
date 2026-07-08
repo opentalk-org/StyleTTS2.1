@@ -21,7 +21,7 @@ export function QueueCard({
   const dataset = graph?.nodes.find((node) => node.type === "SelectTrainingDataset");
   const checkpoint = graph?.nodes.find((node) => node.type === "SelectCheckpoint");
   const alphabet = graph?.nodes.find((node) => node.type === "PhonemeAlphabet");
-  const oodSets = graph?.nodes.find((node) => node.type === "SelectOodTextSets");
+  const assets = graph?.nodes.find((node) => node.type === "SelectTrainingAssets");
   const alphabetSymbols = String(alphabet?.params.symbols ?? "");
   const alphabetValid = !alphabet || alphabetSymbols.trim().split(/\s+/).filter(Boolean).length === BASE_SYMBOLS;
 
@@ -30,7 +30,7 @@ export function QueueCard({
     { ok: Boolean(dataset?.params.dataset_id), label: "Training dataset selected" },
     { ok: Boolean(checkpoint?.params.checkpoint_id), label: "Base checkpoint required" },
     { ok: alphabetValid, label: "Phoneme alphabet valid" },
-    { ok: hasOodSet(oodSets), label: "OOD reference set added" },
+    { ok: hasOodSet(assets), label: "OOD reference set added" },
   ];
 
   const queue = () => {
@@ -86,6 +86,6 @@ export function QueueCard({
 }
 
 function hasOodSet(node: WorkflowNode | undefined): boolean {
-  const sets = node?.params.sets;
-  return Array.isArray(sets) && sets.length > 0;
+  const ids = node?.params.ood_text_set_file_ids;
+  return Array.isArray(ids) && ids.length > 0;
 }

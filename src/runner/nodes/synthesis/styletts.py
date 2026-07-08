@@ -16,14 +16,15 @@ from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AUDIO, CHECKPOINT_REF, JSON, SYNTHESIS_RESULT
-from runner.nodes.models import Audio, CheckpointRef, SynthesisResult, stable_id
+from runner.nodes.models import Audio, SynthesisResult, stable_id, typed_checkpoint
 from runner.nodes.synthesis.styletts_runtime.actions import (
     StyleTtsRequestSettings,
     build_styletts_payload,
-    load_synthesis_runtime,
     synthesize_to_wav_bytes,
     temporary_synthesis_dir,
+    _prompt_text,
 )
+from runner.nodes.synthesis.styletts_runtime.runtime import load_synthesis_runtime
 
 class StyleTtsSynthesisSettings(StrictSettings):
     diffusion_steps: int = Field(default=5, title="Diffusion steps", ge=1, le=100)
@@ -94,7 +95,7 @@ def synthesize_styletts(
     runtime: Any | None,
 ) -> dict[str, Audio | SynthesisResult]:
     request_id = stable_id("synthesis_request", node_type, run_id, output_index, _prompt_text(inputs["prompt_text"]), inputs["style_reference"])
-    checkpoint = _typed_checkpoint(inputs["checkpoint"])
+    checkpoint = typed_checkpoint(inputs["checkpoint"])
     with temporary_synthesis_dir() as tmp:
         payload = build_styletts_payload(
             checkpoint=checkpoint,
@@ -126,7 +127,7 @@ def _load_runtime_for_inputs(
 ) -> Any:
     with temporary_synthesis_dir() as tmp:
         payload = build_styletts_payload(
-            checkpoint=_typed_checkpoint(inputs["checkpoint"]),
+            checkpoint=typed_checkpoint(inputs["checkpoint"]),
             prompt_text=inputs["prompt_text"],
             style_reference=inputs["style_reference"],
             settings=_request_settings(settings),
@@ -138,12 +139,6 @@ def _load_runtime_for_inputs(
 
 def _request_settings(settings: StyleTtsSynthesisSettings) -> StyleTtsRequestSettings:
     return StyleTtsRequestSettings.model_validate(settings.model_dump(mode="python"))
-
-
-def _typed_checkpoint(value: CheckpointRef | dict[str, Any]) -> CheckpointRef:
-    if isinstance(value, CheckpointRef):
-        return value
-    raise TypeError("StyleTTS synthesis requires a resolved CheckpointRef")
 
 
 def _audio_from_wav(output_name: str, wav_bytes: bytes, request_id: str, node_type: str) -> Audio:
@@ -170,14 +165,6 @@ def _wav_info(wav_bytes: bytes) -> dict[str, int | float]:
         frame_count = wav_file.getnframes()
         sample_rate = wav_file.getframerate()
         return {"sample_rate": sample_rate, "channels": wav_file.getnchannels(), "duration": frame_count / sample_rate}
-
-
-def _prompt_text(value: dict[str, Any]) -> str:
-    if "text" in value:
-        return str(value["text"])
-    if "settings" in value:
-        return str(value["settings"]["text"])
-    return str(value)
 
 
 def _result_metadata(payload: dict[str, Any], audio: Audio, settings: StyleTtsSynthesisSettings) -> dict[str, Any]:

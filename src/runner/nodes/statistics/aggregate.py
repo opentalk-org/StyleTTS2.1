@@ -28,7 +28,6 @@ class AggregateDatasetStatisticsNode(Node):
     SETTINGS = AggregateStatisticsSettings
     INPUTS = {
         "feature_records": Port("feature_records", JSON, mode=PortMode.LIST),
-        "segment_records": Port("segment_records", JSON, mode=PortMode.LIST, optional=True, default=[]),
     }
     OUTPUTS = {"statistics": Port("statistics", JSON)}
     BATCH_POLICY = BatchPolicy(BatchMode.DISABLED)
@@ -36,19 +35,15 @@ class AggregateDatasetStatisticsNode(Node):
     def __init__(self, node_id: str | None = None, **params: Any):
         super().__init__(node_id=node_id, **params)
         self._pending_features: dict[str, list[dict[str, Any]]] = {}
-        self._pending_extra_segments: list[Any] = []
 
     async def execute(self, batch, context):
         outputs = []
         for inputs in batch:
             features = [_record(item) for item in _list_value(inputs["feature_records"])]
-            self._pending_extra_segments.extend(_list_value(inputs["segment_records"]))
             ready = self._ready_feature_records(features)
             if ready is None:
                 continue
-            extra = self._pending_extra_segments
-            self._pending_extra_segments = []
-            segments = _flatten_segments(ready) + _flatten_segments(extra)
+            segments = _flatten_segments(ready)
             outputs.append({"statistics": aggregate_dataset_statistics(ready, segments, self.settings)})
         return outputs
 

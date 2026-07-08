@@ -1,0 +1,63 @@
+{
+  "name": "Voice style embeddings — StyleTTS style encoder → PCA scatter coloured by voice",
+  "hidden": false,
+  "data": {
+    "nodes": [
+      {
+        "id": "src",
+        "type": "AudioSource",
+        "x": 0,
+        "y": 120,
+        "params": {
+          "source": "dataset",
+          "dataset_id": "feab483e-2336-46b3-89e9-9f484e5abb6f",
+          "include_virtual": false
+        },
+        "runtime": {}
+      },
+      {
+        "id": "embed",
+        "type": "EmbedVoicesPcaPlot",
+        "x": 300,
+        "y": 120,
+        "params": {
+          "checkpoint_id": "f0d41c4b-5e5c-4be0-abe2-dfb15649ed52",
+          "label_source": "speaker",
+          "embedding_component": "both",
+          "title": "Voice style embeddings (PCA)",
+          "point_size": 44,
+          "artifact_name": "voice_embedding_pca.html"
+        },
+        "runtime": {}
+      }
+    ],
+    "edges": [
+      {
+        "source_node": "src",
+        "source_port": "audio",
+        "target_node": "embed",
+        "target_port": "audio"
+      }
+    ],
+    "context": {
+      "work_dir": "work",
+      "cache_dir": "cache",
+      "output_dir": "outputs",
+      "device": "cuda",
+      "config": {
+        "resources": {
+          "io": 2,
+          "cpu_workers": 2,
+          "accelerator": 1,
+          "vram_gb": 8
+        }
+      },
+      "input_items": []
+    },
+    "launch_source": {
+      "kind": "dataset_audio",
+      "dataset_id": "feab483e-2336-46b3-89e9-9f484e5abb6f",
+      "include_virtual": false
+    }
+  }
+}

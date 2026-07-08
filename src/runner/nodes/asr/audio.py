@@ -14,19 +14,6 @@ def write_temp_wav(data: bytes) -> Path:
     return path
 
 
-def write_segment_wavs(data: bytes, ranges: list[tuple[float, float]]) -> list[Path]:
-    info = wav_info(data)
-    paths: list[Path] = []
-    try:
-        for start, end in ranges:
-            paths.append(write_temp_wav(extract_wav_range(data, start, end, info)))
-    except Exception:
-        for path in paths:
-            path.unlink(missing_ok=True)
-        raise
-    return paths
-
-
 def wav_info(data: bytes) -> dict[str, int]:
     try:
         with wave.open(io.BytesIO(data), "rb") as source:
@@ -38,11 +25,6 @@ def wav_info(data: bytes) -> dict[str, int]:
             }
     except wave.Error as exc:
         raise ValueError("ASR nodes support WAV audio bytes") from exc
-
-
-def wav_duration(data: bytes) -> float:
-    info = wav_info(data)
-    return float(info["frame_count"]) / float(info["sample_rate"])
 
 
 def extract_wav_range(data: bytes, start: float, end: float, info: dict[str, int] | None = None) -> bytes:

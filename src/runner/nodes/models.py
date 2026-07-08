@@ -13,6 +13,18 @@ def stable_id(prefix: str, *parts: object) -> str:
     return f"{prefix}_{digest}"
 
 
+def typed_checkpoint(value: "CheckpointRef | dict[str, Any]") -> "CheckpointRef":
+    if isinstance(value, CheckpointRef):
+        return value
+    raise TypeError("expected a resolved CheckpointRef")
+
+
+def typed_assets(value: "AssetBundleRef | dict[str, Any] | None") -> "AssetBundleRef | None":
+    if value is None or isinstance(value, AssetBundleRef):
+        return value
+    raise TypeError("expected a resolved AssetBundleRef")
+
+
 @dataclass(frozen=True)
 class AudioRecordRef:
     audio_file_id: UUID

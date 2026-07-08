@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from enum import Enum
 from uuid import UUID
 
 from pydantic import Field
@@ -16,17 +15,9 @@ from shared.db.audio import crud as audio_crud
 from shared.db.voices import crud as voice_crud
 
 
-class TestingLanguage(str, Enum):
-    EN_US = "en-us"
-    EN_GB = "en-gb"
-    ES = "es"
-    DE = "de"
-    PL = "pl"
-
-
 class TestingTextPromptSettings(StrictSettings):
     text: str = Field(default="", title="Text")
-    language: TestingLanguage = Field(default=TestingLanguage.EN_US, title="Language")
+    language: str = Field(default="en-us", title="Language")
 
 
 class SelectStyleReferenceSettings(StrictSettings):

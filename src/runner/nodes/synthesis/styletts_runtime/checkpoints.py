@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -43,28 +42,6 @@ def resolve_slot_checkpoint(checkpoint_id: UUID, expected_type: str) -> Resolved
     if item.type_ != expected_type:
         raise ValueError(f"checkpoint {checkpoint_id} has type {item.type_}, expected {expected_type}")
     return ResolvedCheckpoint(item.id, item.name, root, item.type_, item.metadata_)
-
-
-def resolve_weights_path(root: Path, weights_relpath: str) -> Path:
-    raw = weights_relpath.strip().replace("\\", "/")
-    if not raw:
-        return latest_weight(root)
-    if raw.startswith("/") or ".." in Path(raw).parts:
-        raise ValueError("finetune_test_weights_invalid")
-    norm = os.path.normpath(raw)
-    if norm in (".", "..") or norm.startswith(".." + os.sep):
-        raise ValueError("finetune_test_weights_invalid")
-    root_r = root.resolve()
-    target = (root_r / norm).resolve()
-    try:
-        target.relative_to(root_r)
-    except ValueError:
-        raise ValueError("finetune_test_weights_invalid") from None
-    if not target.is_file():
-        raise ValueError("finetune_test_weights_not_found")
-    if target.suffix.lower() != ".pth":
-        raise ValueError("finetune_test_weights_invalid")
-    return target
 
 
 def latest_weight(root: Path) -> Path:

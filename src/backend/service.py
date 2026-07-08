@@ -147,6 +147,18 @@ class BackendManager:
                 if not existed:
                     raise
 
+    async def remove_many(self, run_ids: list[str]) -> None:
+        for run_id in run_ids:
+            try:
+                await self.remove(run_id)
+            except KeyError:
+                self.logger.info("skip remove of missing job run_id=%s", run_id)
+
+    async def remove_all(self) -> None:
+        with database_session() as session:
+            persisted = jobs_crud.list_all_job_ids(session)
+        await self.remove_many(list({*persisted, *self._runs.keys()}))
+
     async def rename(self, run_id: str, name: str) -> None:
         record = self._runs.get(run_id)
         if record is not None:

@@ -9,26 +9,24 @@ from pydantic import BaseModel
 
 from runner.nodes.models import CheckpointRef
 from runner.nodes.synthesis.styletts_runtime.checkpoints import (
+    latest_weight,
     resolve_asr_payload,
     resolve_f0_path,
     resolve_main_checkpoint,
     resolve_plbert_payload,
     resolve_symbols,
-    resolve_weights_path,
 )
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 
 
 class StyleTtsRequestSettings(BaseModel):
-    weights_file: str = ""
     diffusion_steps: int
     embedding_scale: float
     phoneme_language: str
     phoneme_tie: bool
     alpha: float
     beta: float
-    output_name: str
     asr_checkpoint_id: UUID | None
     f0_checkpoint_id: UUID | None
     f0_inner_filename: str
@@ -46,7 +44,7 @@ def build_styletts_payload(
 ) -> dict[str, Any]:
     main = resolve_main_checkpoint(checkpoint)
     symbols = resolve_symbols(main.metadata)
-    weights_path = resolve_weights_path(main.root, settings.weights_file)
+    weights_path = latest_weight(main.root)
     asr_config, asr_path = resolve_asr_payload(settings.asr_checkpoint_id, symbols)
     f0_path = resolve_f0_path(settings.f0_checkpoint_id, settings.f0_inner_filename)
     plbert_config, plbert_path = resolve_plbert_payload(settings.plbert_checkpoint_id, symbols)
@@ -57,7 +55,7 @@ def build_styletts_payload(
         "text": _prompt_text(prompt_text),
         "diffusion_steps": settings.diffusion_steps,
         "embedding_scale": settings.embedding_scale,
-        "phoneme_language": settings.phoneme_language,
+        "phoneme_language": _phoneme_language(prompt_text, settings.phoneme_language),
         "phoneme_tie": settings.phoneme_tie,
         "alpha": _mix_value(style_reference, "alpha", settings.alpha),
         "beta": _mix_value(style_reference, "beta", settings.beta),
@@ -110,18 +108,24 @@ def temporary_synthesis_dir():
     return tempfile.TemporaryDirectory(prefix="runflow-styletts-synthesis-")
 
 
-def load_synthesis_runtime(payload: dict[str, Any]) -> Any:
-    from runner.nodes.synthesis.styletts_runtime.runtime import load_synthesis_runtime as load_runtime
-
-    return load_runtime(payload)
-
-
 def _prompt_text(value: dict[str, Any]) -> str:
     if "text" in value:
         return str(value["text"])
     if "settings" in value:
         return str(value["settings"]["text"])
     return str(value)
+
+
+def _phoneme_language(prompt_text: dict[str, Any], default_language: str) -> str:
+    if "settings" in prompt_text:
+        settings = prompt_text["settings"]
+        assert isinstance(settings, dict), "prompt settings must be a dict"
+        if "language" in settings:
+            language = str(settings["language"]).strip()
+            if not language:
+                raise ValueError("finetune_test_synth_language_empty")
+            return language
+    return default_language
 
 
 def _mix_value(reference: dict[str, Any], name: str, default: float) -> float:

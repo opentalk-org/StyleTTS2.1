@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
 from uuid import UUID
 
 from pydantic import Field
@@ -45,19 +44,13 @@ def resolve_checkpoint_ref(checkpoint_id: str, expected_type: str = "") -> Check
     )
 
 
-def prefetch_checkpoint_ref(value: CheckpointRef | dict[str, Any]) -> CheckpointRef:
-    if isinstance(value, CheckpointRef):
-        return value
-    raise TypeError("PrefetchCheckpoint requires a resolved CheckpointRef")
-
-
 class ResolveCheckpointNode(Node):
     NODE_TYPE = "ResolveCheckpoint"
     CATEGORY = "Assets"
     SETTINGS = ResolveCheckpointSettings
     IS_INPUT = True
     INPUTS = {}
-    OUTPUTS = {"checkpoint_ref": Port("checkpoint_ref", CHECKPOINT_REF)}
+    OUTPUTS = {"checkpoint": Port("checkpoint", CHECKPOINT_REF)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     def __init__(self, node_id: str | None = None, **params):
@@ -72,7 +65,7 @@ class ResolveCheckpointNode(Node):
         self._emitted = True
         return [
             {
-                "checkpoint_ref": resolve_checkpoint_ref(
+                "checkpoint": resolve_checkpoint_ref(
                     self.settings.checkpoint_id,
                     self.settings.expected_type,
                 )

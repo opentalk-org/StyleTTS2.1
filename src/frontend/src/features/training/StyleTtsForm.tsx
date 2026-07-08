@@ -47,7 +47,6 @@ export function StyleTtsForm({
   const checkpoint = trainingNode(graph, spec.ids.checkpoint);
   const assets = trainingNode(graph, spec.ids.assets as string);
   const alphabet = trainingNode(graph, spec.ids.alphabet as string);
-  const oodSets = trainingNode(graph, spec.ids.oodSets as string);
   const values = training.params;
   const trainingInfo = schema.nodes[training.type];
   if (!trainingInfo) throw new Error(`Training node is not registered: ${training.type}`);
@@ -174,9 +173,9 @@ export function StyleTtsForm({
       </FormSection>
 
       <OodEditor
-        values={oodSets.params}
+        selectedIds={(assets.params.ood_text_set_file_ids as string[]) ?? []}
         availableSets={oodSetValues(oodAssets.data ?? [])}
-        onChange={(params) => updateParams(oodSets.id, params)}
+        onChange={(ids) => updateParams(assets.id, { ...assets.params, ood_text_set_file_ids: ids })}
         onCreate={async ({ name, content }) => {
           const item = await createOod.mutateAsync({
             name,

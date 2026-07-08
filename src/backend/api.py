@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnec
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from backend.artifacts import router as artifacts_router
 from backend.audio import router as audio_router
 from backend.audio.api import waveform_service
 from backend.checkpoints import router as checkpoints_router
@@ -74,6 +75,7 @@ app.add_middleware(
 )
 app.mount("/ui-old", StaticFiles(directory=old_static_dir, html=True), name="ui-old")
 app.include_router(audio_router)
+app.include_router(artifacts_router)
 app.include_router(checkpoints_router)
 app.include_router(jobs_router)
 app.include_router(runners_router)
@@ -316,6 +318,22 @@ async def stop_run(run_id: str) -> RunStatus:
         return await manager.stop(run_id)
     except KeyError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
+class JobBulkDeleteRequest(BaseModel):
+    run_ids: list[str]
+
+
+@app.delete("/jobs", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_all_jobs() -> None:
+    logger.info("remove all jobs requested")
+    await manager.remove_all()
+
+
+@app.post("/jobs/bulk-delete", status_code=status.HTTP_204_NO_CONTENT)
+async def bulk_delete_jobs(request: JobBulkDeleteRequest) -> None:
+    logger.info("bulk remove jobs requested count=%s", len(request.run_ids))
+    await manager.remove_many(request.run_ids)
 
 
 @app.delete("/jobs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
