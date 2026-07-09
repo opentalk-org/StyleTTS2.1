@@ -18,6 +18,14 @@ dependencies = [
     "einops>=0.8",
     "einops-exts>=0.0.4",
     "gdown>=5.2",
+    "kokoro>=0.9",
+    "chatterbox-tts",
+    "f5-tts",
+    "orpheus-speech",
+    # Kokoro's English G2P (misaki) needs this spaCy model; ship it so it is never
+    # fetched at runtime (a runtime `spacy download` shells out to pip and fails in the
+    # immutable nix store interpreter).
+    "en-core-web-sm",
     "librosa>=0.10",
     "matplotlib>=3.8",
     "monotonic-align",
@@ -50,10 +58,32 @@ dependencies = [
 # down to the torch-2.8 line while our `torch>=2.11` override keeps torch at 2.11 --
 # a mismatched torch stack whose C++ extensions fail to load. Force torchaudio and
 # torchvision onto the matching 2.11 / 0.26 line so the whole stack stays consistent.
+# Adding kokoro makes the resolver try to backtrack nemo-toolkit to 2.1.0 (which pins the
+# unbuildable onnx 1.12.0) to fit kokoro's tree. Force nemo/onnx to stay on the newer,
+# buildable line so kokoro is resolved against them instead of dragging the ASR stack down,
+# and keep transformers on the 4.x line (nemo needs <5).
 [tool.uv]
-override-dependencies = ["numpy>=2.1,<2.5", "torch>=2.11", "torchaudio>=2.11", "torchvision>=0.26"]
+override-dependencies = [
+    "numpy>=2.1,<2.5",
+    "torch>=2.11",
+    "torchaudio>=2.11",
+    "torchvision>=0.26",
+    "transformers>=4.45,<5",
+    "nemo-toolkit>=2.7",
+    "onnx>=1.19",
+    # f5-tts pulls torchcodec 0.7 (built for torch 2.9 → ABI-incompatible with 2.11).
+    # 0.11.1 has the torch-2.11 ABI and an ffmpeg-7 core; force it up.
+    "torchcodec==0.11.1",
+    "vllm>=0.20,<0.24",
+    "packaging>=24.2",
+]
 
 [tool.uv.sources]
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
+# vLLM's PyPI wheel is a CUDA-13 build (its _C links libcudart.so.13). Pin vLLM's cu129
+# wheel instead: it is CUDA major-12 (links libcudart.so.12), which the cu128 torch stack
+# already provides — so Orpheus/vLLM run without migrating the stack off CUDA 12.8.
+vllm = [{ url = "https://wheels.vllm.ai/ad7125a431e176d4161099480a66f0169609a690/vllm-0.21.0%2Bcu129-cp38-abi3-manylinux_2_34_x86_64.whl", marker = "sys_platform == 'linux'" }]
 torch = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux'" }]
 torchaudio = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux'" }]
 torchvision = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux'" }]

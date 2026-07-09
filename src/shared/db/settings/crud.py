@@ -43,6 +43,7 @@ def get_integration_settings(session: Session) -> IntegrationSettings:
 def update_integration_settings(session: Session, payload: IntegrationSettingsPayload) -> IntegrationSettings:
     item = get_integration_settings(session)
     item.hf_token = payload.hf_token
+    item.openrouter_token = payload.openrouter_token
     session.commit()
     session.refresh(item)
     return item

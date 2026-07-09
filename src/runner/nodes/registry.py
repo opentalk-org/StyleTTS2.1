@@ -40,7 +40,9 @@ from runner.nodes.assets.training_assets import ResolveTrainingAssetsNode
 from runner.nodes.dataset_writeback import AddAudioToDatasetNode, AssignVoiceNode, DeleteAudioRecordsNode, RemoveAudioFromDatasetNode
 from runner.nodes.datatypes import register_runner_types
 from runner.nodes.hetzner import HetznerDsV1ParquetAudioSourceNode, HetznerDsV2ParquetAudioSourceNode
+from runner.nodes.text_generation import OpenRouterGenerateTextsNode
 from runner.nodes.text_processing import PhonemizeSegmentsNode
+from runner.nodes.tts import TTS_NODES
 from runner.nodes.testing import (
     SelectStyleReferenceNode,
     StyleReferenceSweepNode,
@@ -115,6 +117,8 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         StyleReferenceSweepNode,
         ResolveStyleReferenceNode,
         StyleTtsSynthesisNode,
+        OpenRouterGenerateTextsNode,
+        *TTS_NODES,
     ]:
         registry.register(node_cls)
     return registry

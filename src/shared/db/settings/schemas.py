@@ -19,6 +19,7 @@ class StorageSettingsRead(StorageSettingsPayload):
 
 class IntegrationSettingsPayload(BaseModel):
     hf_token: str = ""
+    openrouter_token: str = ""
 
 
 class IntegrationSettingsRead(IntegrationSettingsPayload):

@@ -277,23 +277,73 @@ if ! aws --endpoint-url "$AWS_ENDPOINT_URL" s3api head-bucket \
     --bucket "$RUSTFS_BUCKET" >/dev/null
 fi
 
+# Recursively TERM a process and all its descendants (children first), so killing a
+# supervised service also stops its reload workers / spawned subprocesses.
+kill_tree() {
+  local pid="$1" kid
+  for kid in $(pgrep -P "$pid" 2>/dev/null || true); do
+    kill_tree "$kid"
+  done
+  kill "$pid" 2>/dev/null || true
+}
+
+# Keep a service alive: (re)launch the command and, whenever it exits, restart it
+# after a short delay instead of letting a crash take the whole dev stack down.
+# Backgrounded as a subshell whose pid we track; on shutdown we TERM the subshell,
+# whose trap kills the currently-running child (and its descendants). Optional
+# `--port N` frees a stale listener before each (re)spawn so a crashed reload-worker
+# can't block the restart. Disable restart-on-crash with RUNFLOW_RESTART=0.
+supervise() {
+  local label="$1"; shift
+  local port=""
+  if [ "$1" = "--port" ]; then port="$2"; shift 2; fi
+  local delay="${RUNFLOW_RESTART_DELAY:-2}"
+  local child=""
+  trap 'trap - TERM INT; [ -n "$child" ] && kill_tree "$child"; exit 0' TERM INT
+  local first=1
+  while true; do
+    if [ "$first" = 0 ] && [ -n "$port" ]; then
+      free_port "$port" "$label"
+    fi
+    first=0
+    "$@" &
+    child=$!
+    wait "$child" || true
+    if [ "${RUNFLOW_RESTART:-1}" != "1" ]; then
+      echo "[$label] exited; restart-on-crash disabled (RUNFLOW_RESTART=0)" >&2
+      return 0
+    fi
+    echo "[$label] exited; restarting in ${delay}s" >&2
+    sleep "$delay"
+  done
+}
+
 echo "Legacy static UI is available at http://$BACKEND_HOST:$BACKEND_PORT/ui-old"
 echo "Starting backend API at http://$BACKEND_HOST:$BACKEND_PORT"
 # Auto-reload backend + runner on source changes so node edits (and the node schema
 # the UI reads) take effect without a manual restart. Disable with RUNFLOW_RELOAD=0.
+# Both are also supervised (see supervise()), so a crash is restarted automatically.
 export RUNFLOW_RELOAD="${RUNFLOW_RELOAD:-1}"
 backend_reload_args=()
 if [ "$RUNFLOW_RELOAD" = "1" ]; then
   backend_reload_args=(--reload --reload-dir src)
 fi
 free_port "$BACKEND_PORT" backend
-uvicorn backend.api:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" "${backend_reload_args[@]}" &
+supervise backend --port "$BACKEND_PORT" uvicorn backend.api:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" "${backend_reload_args[@]}" &
 pid_backend=$!
 
+# pid_backend is the supervisor, which stays up across backend restarts. Bound the
+# wait so a crash-looping backend prints its errors instead of hanging startup here.
+backend_wait=0
 until python -c "from urllib.request import urlopen; urlopen('http://127.0.0.1:$BACKEND_PORT/health', timeout=1).read()" >/dev/null 2>&1; do
   if [ -n "$pid_backend" ] && ! kill -0 "$pid_backend" 2>/dev/null; then
-    echo "Backend exited before becoming ready"
+    echo "Backend supervisor exited before becoming ready"
     exit 1
+  fi
+  backend_wait=$((backend_wait + 1))
+  if [ "$backend_wait" -ge 120 ]; then
+    echo "Backend not healthy after ${backend_wait}s; continuing (supervisor keeps retrying)"
+    break
   fi
   sleep 1
 done
@@ -319,7 +369,7 @@ free_port "$FRONTEND_PORT" frontend
 pid_frontend=$!
 
 echo "Starting runners"
-bash nix/runner-launch.sh &
+supervise runner bash nix/runner-launch.sh &
 pid_runners=$!
 
 shutdown() {

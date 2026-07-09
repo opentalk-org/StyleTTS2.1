@@ -13,6 +13,19 @@ _LOGGER = logging.getLogger(__name__)
 # Env overrides win over the stored setting so CI / one-off runs can inject a token.
 _HF_TOKEN_ENV_VARS = ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_TOKEN")
 _HF_HOSTS = ("huggingface.co", "hf.co")
+_OPENROUTER_TOKEN_ENV_VARS = ("OPENROUTER_API_KEY", "OPENROUTER_TOKEN")
+
+
+def openrouter_token() -> str | None:
+    """Resolve the OpenRouter API key from the environment, then the settings row."""
+    for name in _OPENROUTER_TOKEN_ENV_VARS:
+        value = os.environ.get(name)
+        if value and value.strip():
+            return value.strip()
+    with database_session() as session:
+        token = settings_crud.get_integration_settings(session).openrouter_token
+    token = token.strip()
+    return token or None
 
 
 def huggingface_token() -> str | None:

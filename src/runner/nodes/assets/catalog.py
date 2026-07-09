@@ -22,6 +22,7 @@ class CatalogKey(str, Enum):
     PAPERCUP_MULTILINGUAL_PL_BERT = "papercup_multilingual_pl_bert"
     VOKAN_CHECKPOINT = "vokan_checkpoint"
     ASR_MODELS = "asr_models"
+    TTS_MODELS = "tts_models"
 
 
 class CatalogDownloadSettings(StrictSettings):

@@ -13,6 +13,18 @@ from runner.nodes.assets.model_downloads import download_hf_snapshot, download_n
 
 _NEMO_ASR_KINDS = {"parakeet", "canary", "sortformer"}
 
+# Default HuggingFace snapshot per TTS engine. ``item`` may be an engine key (use the
+# default repo) or "engine:repo_id" to pin a specific / language-variant checkpoint.
+_TTS_DEFAULT_REPOS = {
+    "kokoro": "hexgrad/Kokoro-82M",
+    "chatterbox": "ResembleAI/chatterbox",
+    "f5_tts": "SWivid/F5-TTS",
+    "orpheus": "unsloth/orpheus-3b-0.1-ft",
+    "dia": "nari-labs/Dia-1.6B-0626",
+    "fish_speech": "fishaudio/openaudio-s1-mini",
+    "raon_opentts": "KRAFTON/Raon-OpenTTS-1B",
+}
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -98,6 +110,32 @@ def bootstrap_asr_model(item: str = "", *, logger: logging.Logger | None = None)
     }
 
 
+def bootstrap_tts_model(item: str = "", *, logger: logging.Logger | None = None) -> dict[str, Any]:
+    log = logger or _LOGGER
+    engine, repo = _parse_tts_item(item)
+    log.info("tts model download starting engine=%s repo=%s", engine, repo)
+    ref = ensure_model_checkpoint(engine, repo, lambda folder: download_hf_snapshot(repo, folder))
+    log.info("tts model download resolved engine=%s repo=%s checkpoint=%s", engine, repo, ref.checkpoint_id)
+    return {
+        "model_checkpoint": {
+            "engine": engine,
+            "repo": repo,
+            "checkpoint_id": str(ref.checkpoint_id),
+            "name": ref.name,
+        }
+    }
+
+
+def _parse_tts_item(item: str) -> tuple[str, str]:
+    requested = item.strip()
+    engine, separator, repo = requested.partition(":")
+    engine = engine.strip()
+    if engine not in _TTS_DEFAULT_REPOS:
+        raise ValueError(f"catalog_item_unknown:{item}")
+    repo_id = repo.strip() if separator and repo.strip() else _TTS_DEFAULT_REPOS[engine]
+    return engine, repo_id
+
+
 def _parse_asr_item(item: str) -> tuple[str, str]:
     requested = item.strip()
     kind, separator, model_id = requested.partition(":")
@@ -142,5 +180,9 @@ CATALOG_DOWNLOAD_TASKS: dict[str, CatalogTask] = {
     "asr_models": CatalogTask(
         key="asr_models",
         run=bootstrap_asr_model,
+    ),
+    "tts_models": CatalogTask(
+        key="tts_models",
+        run=bootstrap_tts_model,
     ),
 }

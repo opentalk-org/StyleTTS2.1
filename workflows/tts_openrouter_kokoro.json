@@ -1,0 +1,101 @@
+{
+  "name": "TTS dataset — OpenRouter (64 texts) → Kokoro × 5 random voices",
+  "hidden": false,
+  "data": {
+    "nodes": [
+      {
+        "id": "kokoro_ckpt",
+        "type": "CatalogDownload",
+        "x": 0,
+        "y": 0,
+        "params": {
+          "catalog_key": "tts_models",
+          "item": "kokoro"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "gen_texts",
+        "type": "OpenRouterGenerateTexts",
+        "x": 0,
+        "y": 220,
+        "params": {
+          "model": "openai/gpt-4o-mini",
+          "count": 64,
+          "language": "en",
+          "batch_size": 16,
+          "temperature": 1.0,
+          "seed": 0,
+          "length_mode": "gaussian",
+          "length_mean_words": 12.0,
+          "length_std_words": 5.0,
+          "length_min_words": 4,
+          "length_max_words": 24,
+          "keywords_per_text": 2
+        },
+        "runtime": {}
+      },
+      {
+        "id": "random_voices",
+        "type": "TtsRandomVoices",
+        "x": 0,
+        "y": 440,
+        "params": {
+          "engine": "kokoro",
+          "count": 5,
+          "samples_per_voice": 1,
+          "seed": 0
+        },
+        "runtime": {}
+      },
+      {
+        "id": "kokoro_synth",
+        "type": "KokoroSynthesis",
+        "x": 320,
+        "y": 220,
+        "params": {
+          "language": "en",
+          "output_name": "kokoro.wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_audio",
+        "type": "SaveAudioArtifact",
+        "x": 640,
+        "y": 220,
+        "params": {
+          "output_subdir": "tts_kokoro",
+          "extension": "wav"
+        },
+        "runtime": {}
+      }
+    ],
+    "edges": [
+      {
+        "source_node": "kokoro_ckpt",
+        "source_port": "checkpoint",
+        "target_node": "kokoro_synth",
+        "target_port": "checkpoint"
+      },
+      {
+        "source_node": "gen_texts",
+        "source_port": "text",
+        "target_node": "kokoro_synth",
+        "target_port": "text"
+      },
+      {
+        "source_node": "random_voices",
+        "source_port": "voice",
+        "target_node": "kokoro_synth",
+        "target_port": "voice"
+      },
+      {
+        "source_node": "kokoro_synth",
+        "source_port": "audio",
+        "target_node": "save_audio",
+        "target_port": "audio"
+      }
+    ]
+  }
+}

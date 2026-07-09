@@ -35,6 +35,7 @@ export function testStorageSettings(payload: StorageSettingsPayload): Promise<{ 
 export type IntegrationSettings = {
   id: string;
   hf_token: string;
+  openrouter_token: string;
 };
 
 export type IntegrationSettingsPayload = Omit<IntegrationSettings, "id">;

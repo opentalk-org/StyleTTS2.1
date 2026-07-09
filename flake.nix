@@ -70,7 +70,9 @@
             TRITON_PTXAS_PATH = "${cudaNvcc}/bin/ptxas";
             TRITON_PTXAS_BLACKWELL_PATH = "${cudaNvcc}/bin/ptxas";
             TRITON_LIBCUDA_PATH = "/usr/local/nvidia/lib";
-            LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib:${nvidiaDriverPath}";
+            # torchcodec (pulled by f5-tts / used by torchaudio 2.11 for decoding) dlopens
+            # libavutil/libavcodec at import; expose ffmpeg-7's shared libs so core7 loads.
+            LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib:${pkgs.ffmpeg-headless.lib}/lib:${nvidiaDriverPath}";
             LIBRARY_PATH = nvidiaDriverPath;
           };
         };
@@ -165,6 +167,9 @@
         text = (pythonEnvExports pythonRuntime) + ''
           cd ${./.}
           export PYTHONPATH="${./src}"
+          # PYTHONPATH points at an isolated src/ store path, so the Alembic dir cannot
+          # be found relative to the source tree; point at it explicitly.
+          export RUNFLOW_ALEMBIC_DIR="${./migrations}"
           export RUNFLOW_UI_STATIC_DIR="${frontendStatic}"
           exec uv run --frozen uvicorn backend.api:app --host 0.0.0.0 --port "''${BACKEND_PORT:-8000}"
         '';
