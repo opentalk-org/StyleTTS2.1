@@ -1,4 +1,5 @@
 import asyncio
+import shutil
 import traceback
 from datetime import UTC, datetime
 from pathlib import Path
@@ -179,6 +180,7 @@ class RunnerWorker:
             graph = build_inline_graph(request)
             context = self._context(request, run_id)
             self._run_work_dirs[run_id] = context.work_dir
+            await asyncio.to_thread(self._cleanup_stale_run_dirs, context.work_dir, run_id)
             context.event_sink = self._threadsafe_event_sink()
             log_manager = NodeLogManager(context.work_dir, run_id)
             log_manager.attach(list(graph.nodes.values()))
@@ -202,6 +204,26 @@ class RunnerWorker:
             if log_manager is not None:
                 log_manager.detach()
             self._active_schedulers.pop(run_id, None)
+
+    def _cleanup_stale_run_dirs(self, work_dir: Path, current_run_id: str) -> None:
+        """Remove work dirs from previous runs when a new run starts.
+
+        Nothing reads a finished run's ``work/<run_id>`` tree — the backend has already
+        pulled its node logs into its own DB — so we reclaim the disk on the next run.
+        Every currently-active run (this one included) is kept so a concurrent run's logs
+        are never deleted out from under it.
+        """
+        if not work_dir.exists():
+            return
+        keep = set(self._active_runs) | {current_run_id}
+        for child in work_dir.iterdir():
+            if not child.is_dir() or child.name in keep:
+                continue
+            try:
+                shutil.rmtree(child)
+                self.logger.info("removed stale run dir %s", child.name)
+            except OSError as error:
+                self.logger.warning("failed to remove stale run dir %s: %s", child.name, error)
 
     def _threadsafe_event_sink(self):
         loop = asyncio.get_running_loop()

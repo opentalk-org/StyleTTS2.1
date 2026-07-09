@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from runner.nodes.asr.confidence import confidence_from_avg_logprob
 from runner.nodes.assets.model_downloads import single_checkpoint_file
 
 
@@ -15,7 +16,9 @@ def load_whisper_model(checkpoint_dir: Path) -> Any:
     return whisper.load_model(str(weights))
 
 
-def transcribe_wav_to_segments(model: Any, wav_path: Path, duration_sec: float, language: str) -> list[tuple[float, float, str]]:
+def transcribe_wav_to_segments(
+    model: Any, wav_path: Path, duration_sec: float, language: str
+) -> list[tuple[float, float, str, float | None]]:
     result = model.transcribe(str(wav_path), language=_whisper_language(language))
     if not isinstance(result, dict):
         return []
@@ -26,16 +29,17 @@ def transcribe_wav_to_segments(model: Any, wav_path: Path, duration_sec: float, 
     text = str(result.get("text", "")).strip()
     if not text:
         return []
-    return [(0.0, max(0.0, duration_sec), text)]
+    return [(0.0, max(0.0, duration_sec), text, None)]
 
 
-def _span_from_whisper_segment(item: dict, duration_sec: float) -> tuple[float, float, str]:
+def _span_from_whisper_segment(item: dict, duration_sec: float) -> tuple[float, float, str, float | None]:
     start = max(0.0, float(item.get("start", 0.0)))
     end = max(start, float(item.get("end", start)))
     if duration_sec > 0:
         start = min(start, duration_sec)
         end = min(max(start, end), duration_sec)
-    return start, end, str(item.get("text", "")).strip()
+    confidence = confidence_from_avg_logprob(item.get("avg_logprob"))
+    return start, end, str(item.get("text", "")).strip(), confidence
 
 
 def _whisper_language(language: str) -> str | None:

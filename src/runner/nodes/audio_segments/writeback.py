@@ -227,6 +227,7 @@ def _audio_segment_from_dict(ref: AudioRecordRef, segment: dict[str, Any]) -> Au
         segment_id=segment_id,
         speaker=speaker,
         voice_id=_optional_uuid(segment["voice_id"]) if "voice_id" in segment else None,
+        confidence=_optional_float(segment.get("confidence")),
         metadata=metadata,
         alignment=segment["alignment"] if isinstance(segment.get("alignment"), list) else None,
     )
@@ -242,6 +243,7 @@ def _segment_dict(segment: AudioSegment) -> dict[str, Any]:
         "phon": segment.phon,
         "speaker": segment.speaker or "",
         "voice_id": str(segment.voice_id) if segment.voice_id is not None else None,
+        "confidence": segment.confidence,
         "type_": type_,
         "metadata": {**segment.metadata, "type_": type_},
         "alignment": segment.alignment,
@@ -284,6 +286,12 @@ def _optional_uuid(value: object) -> UUID | None:
     if value is None or value == "":
         return None
     return UUID(str(value))
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None or value == "":
+        return None
+    return float(value)  # type: ignore[arg-type]
 
 
 def _save_result(path: str, kind: str, lineage_id: str, metadata: dict[str, Any]) -> SaveResult:

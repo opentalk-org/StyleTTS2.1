@@ -8,6 +8,9 @@ import { FormSection } from "@/shared/ui/FormSection";
 import { Input } from "@/shared/ui/Input";
 import { Select } from "@/shared/ui/Select";
 import { Tabs } from "@/shared/ui/Tabs";
+import { copyText } from "@/shared/clipboard";
+import { showToast } from "@/shared/feedback/Toast";
+import { Icon } from "@/shared/icons";
 import type { WorkflowNode } from "../types";
 import { fetchNodeLog, nodeSnapshot } from "../api";
 import { useLoadNodeMutation, useUnloadNodeMutation } from "../query";
@@ -90,9 +93,22 @@ export function WorkflowInspector() {
           {!activeRunId ? <p className="font-mono text-[12px] text-txt-mute">Start or select a run to view node logs.</p> : null}
           {log?.truncated ? <p className="font-mono text-[11px] text-amber-700">Showing latest 1 MB.</p> : null}
           {log?.error ? <p className="font-mono text-[11px] text-red-600">{log.error}</p> : null}
-          <pre className="min-h-[340px] max-h-[calc(100vh-220px)] overflow-auto rounded-md border border-line bg-panel-2 p-3 font-mono text-[11px] leading-relaxed text-txt-dim">
-            {log?.content || "No log lines for this node yet."}
-          </pre>
+          <div className="relative">
+            <button
+              type="button"
+              title="Copy logs"
+              disabled={!log?.content}
+              onClick={async () => {
+                if (log?.content && (await copyText(log.content))) showToast("Node logs copied");
+              }}
+              className="absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-md border border-line bg-panel text-txt-mute shadow-sm transition hover:text-txt disabled:opacity-40"
+            >
+              <Icon name="copy" size={13} strokeWidth={2.2} />
+            </button>
+            <pre className="min-h-[340px] max-h-[calc(100vh-220px)] overflow-auto rounded-md border border-line bg-panel-2 p-3 pr-11 font-mono text-[11px] leading-relaxed text-txt-dim">
+              {log?.content || "No log lines for this node yet."}
+            </pre>
+          </div>
         </div>
       ) : null}
     </InspectorShell>

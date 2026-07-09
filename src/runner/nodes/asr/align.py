@@ -17,7 +17,6 @@ from runner.nodes.asr.audio import write_temp_wav
 from runner.nodes.asr.whisperx import align_words, load_whisperx_align_model, whisperx_device
 from runner.nodes.datatypes import AudioPort, CheckpointRefPort
 from runner.nodes.models import Audio, AudioSegment, CheckpointRef, typed_checkpoint
-from shared.log_streams import route_output_to_logger
 
 
 class WhisperXAlignSettings(StrictSettings):
@@ -61,8 +60,7 @@ class WhisperXAlignNode(Node):
         for index, inputs in enumerate(batch, start=1):
             audio: Audio = inputs["audio"]
             await context.report_progress(self.id, index, len(batch), f"whisperx aligned {index}/{len(batch)}")
-            with route_output_to_logger(self.logger):
-                aligned = self._align_audio(audio)
+            aligned = self._align_audio(audio)
             outputs.append({"audio": aligned})
         return outputs
 
@@ -75,8 +73,7 @@ class WhisperXAlignNode(Node):
     def _load_model_logged(self, checkpoint_dir: Path) -> tuple[Any, Any, str]:
         device = whisperx_device()
         self.logger.info("loading whisperx align model (%s) on %s", self.settings.language, device)
-        with route_output_to_logger(self.logger):
-            model, metadata = load_whisperx_align_model(checkpoint_dir, self.settings.language, device)
+        model, metadata = load_whisperx_align_model(checkpoint_dir, self.settings.language, device)
         return model, metadata, device
 
     def _align_audio(self, audio: Audio) -> Audio:

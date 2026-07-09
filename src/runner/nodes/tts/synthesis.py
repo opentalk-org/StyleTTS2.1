@@ -19,7 +19,6 @@ from runner.nodes.tts.audio_out import audio_from_samples
 from runner.nodes.tts.engines import load_engine
 from runner.nodes.tts.engines.base import EngineRuntime
 from runner.nodes.tts.voices import TtsEngine, Voice, expand_voice_batch, parse_voice
-from shared.log_streams import route_output_to_logger
 
 
 class TtsSynthesisSettings(StrictSettings):
@@ -79,8 +78,7 @@ class TtsSynthesisNode(Node):
 
     def _load_runtime_logged(self, checkpoint_dir: Path) -> EngineRuntime:
         self.logger.info("loading %s engine from checkpoint", self.ENGINE.value)
-        with route_output_to_logger(self.logger):
-            return load_engine(self.ENGINE, checkpoint_dir)
+        return load_engine(self.ENGINE, checkpoint_dir)
 
     def _resolve_voices(self, payload: dict[str, Any]) -> tuple[list[Voice], int]:
         if payload["kind"] == "tts_voice_batch":
@@ -91,8 +89,7 @@ class TtsSynthesisNode(Node):
         assert self._runtime is not None, "runtime not loaded"
         voice_key = voice.preset if voice.preset is not None else "clone"
         request_id = stable_id("tts_request", self.NODE_TYPE, run_id, text, voice_key, sample_index)
-        with route_output_to_logger(self.logger):
-            samples, sample_rate = self._runtime.synthesize(text, voice, self.settings.language.value)
+        samples, sample_rate = self._runtime.synthesize(text, voice, self.settings.language.value)
         metadata = {
             "engine": self.ENGINE.value,
             "voice": voice_key,

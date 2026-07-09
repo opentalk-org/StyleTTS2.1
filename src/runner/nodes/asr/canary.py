@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from runner.nodes.accelerator_memory import maybe_cuda_half
+from runner.nodes.asr.confidence import nemo_hypothesis_confidence
 from runner.nodes.assets.model_downloads import single_checkpoint_file
 
 
@@ -27,7 +28,7 @@ def transcribe_wavs_to_segments(
     target_language: str,
     pnc: bool,
     batch_size: int,
-) -> list[list[tuple[float, float, str]]]:
+) -> list[list[tuple[float, float, str, float | None]]]:
     import torch
 
     with torch.no_grad():
@@ -43,8 +44,9 @@ def transcribe_wavs_to_segments(
     return [_segments_from_output(output, durations_sec[index]) for index, output in enumerate(outputs)]
 
 
-def _segments_from_output(output: Any, duration_sec: float) -> list[tuple[float, float, str]]:
+def _segments_from_output(output: Any, duration_sec: float) -> list[tuple[float, float, str, float | None]]:
     text = str(getattr(output, "text", output)).strip()
     if not text:
         return []
-    return [(0.0, max(0.0, duration_sec), text)]
+    # Canary emits one whole-clip segment; attach the utterance-level confidence to it.
+    return [(0.0, max(0.0, duration_sec), text, nemo_hypothesis_confidence(output))]

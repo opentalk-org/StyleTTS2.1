@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 
 from runner.nodes.asr.audio import write_temp_wav
-from runner.nodes.tts.engines.base import EngineRuntime, resolve_device
+from runner.nodes.tts.engines.base import EngineRuntime, require_checkpoint_dir, resolve_device
 from runner.nodes.tts.voices import Voice
 
 CHATTERBOX_REPO_ID = "ResembleAI/chatterbox"
@@ -41,7 +41,9 @@ def load(checkpoint_dir: Path, device: str | None = None, multilingual: bool = T
             from chatterbox.tts import ChatterboxTTS as Model
     except ImportError as exc:
         raise RuntimeError("chatterbox_not_installed") from exc
-    model = Model.from_pretrained(device=device)
+    # Load the weights from our downloaded checkpoint folder rather than letting from_pretrained
+    # re-fetch the whole repo into a separate HF cache.
+    model = Model.from_local(require_checkpoint_dir(checkpoint_dir), device)
     return ChatterboxRuntime(model, multilingual)
 
 

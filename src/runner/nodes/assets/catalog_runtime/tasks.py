@@ -25,6 +25,37 @@ _TTS_DEFAULT_REPOS = {
     "raon_opentts": "KRAFTON/Raon-OpenTTS-1B",
 }
 
+# Per-engine snapshot filters so we only download the files each engine's ``load()`` actually reads.
+# Repos ship the same weights in several redundant formats / checkpoint variants; without a filter
+# the whole repo is pulled and most of it never loaded. Keys map to snapshot_download kwargs.
+_TTS_DOWNLOAD_FILTERS: dict[str, dict[str, list[str]]] = {
+    # transformers loads the sharded ``.safetensors``; the ``.pth`` + ``.bin`` are the same weights again.
+    "dia": {"ignore_patterns": ["dia-v1.pth", "pytorch_model.bin"]},
+    # chatterbox.from_local reads a fixed file set (multilingual + english modes); everything else in the
+    # repo is alternate variants (t3_mtl23ls_v3, t3_23lang, s3gen_v3, *.pt duplicates) we never load.
+    "chatterbox": {
+        "allow_patterns": [
+            "ve.pt",
+            "ve.safetensors",
+            "t3_mtl23ls_v2.safetensors",
+            "t3_cfg.safetensors",
+            "s3gen.pt",
+            "s3gen.safetensors",
+            "tokenizer.json",
+            "grapheme_mtl_merged_expanded_v1.json",
+            "Cangjie5_TC.json",
+            "conds.pt",
+        ]
+    },
+    # F5 loader uses only the F5TTS_v1_Base variant (weights + vocab); the repo also ships Base / bigvgan
+    # / no_zero_init variants, each duplicated as ``.pt`` and ``.safetensors``.
+    "f5_tts": {"allow_patterns": ["F5TTS_v1_Base/*"]},
+}
+
+# whisperx alignment loads a transformers Wav2Vec2 model: weights + config + vocab only. Skip the Flax
+# ``.msgpack`` copy, the KenLM ``language_model/`` (unused by alignment), and the repo's eval artifacts.
+_WHISPERX_IGNORE_PATTERNS = ["*.msgpack", "language_model/*", "log_*.txt", "*eval_results*.txt", "eval.py", "full_eval.sh"]
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -94,7 +125,7 @@ def bootstrap_asr_model(item: str = "", *, logger: logging.Logger | None = None)
     elif kind in _NEMO_ASR_KINDS:
         download = lambda folder: download_nemo_snapshot(model_id, folder)
     elif kind == "whisperx":
-        download = lambda folder: download_hf_snapshot(model_id, folder)
+        download = lambda folder: download_hf_snapshot(model_id, folder, ignore_patterns=_WHISPERX_IGNORE_PATTERNS)
     else:
         raise ValueError(f"catalog_item_unknown:{item}")
     log.info("asr model download starting kind=%s model=%s", kind, model_id)
@@ -114,7 +145,8 @@ def bootstrap_tts_model(item: str = "", *, logger: logging.Logger | None = None)
     log = logger or _LOGGER
     engine, repo = _parse_tts_item(item)
     log.info("tts model download starting engine=%s repo=%s", engine, repo)
-    ref = ensure_model_checkpoint(engine, repo, lambda folder: download_hf_snapshot(repo, folder))
+    filters = _TTS_DOWNLOAD_FILTERS.get(engine, {})
+    ref = ensure_model_checkpoint(engine, repo, lambda folder: download_hf_snapshot(repo, folder, **filters))
     log.info("tts model download resolved engine=%s repo=%s checkpoint=%s", engine, repo, ref.checkpoint_id)
     return {
         "model_checkpoint": {

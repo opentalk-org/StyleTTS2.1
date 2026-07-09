@@ -22,7 +22,6 @@ from runner.nodes.models import Audio, AudioSegment, stable_id, typed_checkpoint
 from shared.db import database_session
 from shared.db.voices import crud as voice_crud
 from shared.db.voices.schemas import VoiceCreate
-from shared.log_streams import route_output_to_logger
 
 _PUNCTUATION = ".,!?;:…—"
 
@@ -81,13 +80,11 @@ class DiarizeSplitSpeakersNode(Node):
         checkpoint = typed_checkpoint(batch[0]["checkpoint"])
         sort_settings = self._sortformer_settings()
         if self._model is None or self._loaded_checkpoint_id != checkpoint.checkpoint_id:
-            with route_output_to_logger(self.logger):
-                self._model = load_sortformer_model(checkpoint.path, sort_settings)
+            self._model = load_sortformer_model(checkpoint.path, sort_settings)
             self._loaded_checkpoint_id = checkpoint.checkpoint_id
 
         audios = [inputs["audio"] for inputs in batch]
-        with route_output_to_logger(self.logger):
-            diarized = diarize_audio_batch(self._model, audios, sort_settings)
+        diarized = diarize_audio_batch(self._model, audios, sort_settings)
 
         outputs: list[dict[str, list[Audio]]] = []
         with database_session() as session:

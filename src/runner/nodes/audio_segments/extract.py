@@ -310,6 +310,7 @@ def _segment_from_payload(ref: AudioRecordRef, payload: dict[str, Any]) -> Audio
         segment_id=segment_id,
         speaker=str(payload["speaker"]) if "speaker" in payload else None,
         voice_id=UUID(str(payload["voice_id"])) if payload.get("voice_id") else None,
+        confidence=float(payload["confidence"]) if payload.get("confidence") is not None else None,
         metadata=metadata,
     )
 

@@ -9,9 +9,9 @@ from runflow.core.node import Node
 from runflow.core.task import Packet, Task, lineage_from_value, metadata_from_value
 from runflow.planning.batch_planner import BatchPlanner
 from runflow.planning.graph_validator import GraphValidator
-from runflow.runtime.artifact_store import ArtifactStore
 from runflow.runtime.cancellation import cancellation_scope
 from runflow.runtime.input_progress import remaining_counts
+from runflow.runtime.log_capture import route_output_to_logger
 from runflow.runtime.node_manager import NodeManager
 from runflow.runtime.output_values import output_values
 from runflow.runtime.resource_pool import ResourcePool
@@ -29,7 +29,6 @@ class WindowedScheduler:
         self.events = SchedulerEventEmitter(context)
         self.batch_planner = BatchPlanner()
         self.node_manager = NodeManager(context)
-        self.artifact_store = ArtifactStore(context.work_dir / context.run_id)
 
         self.resource_pool = ResourcePool(limits=dict(context.config.resources))
 
@@ -76,7 +75,6 @@ class WindowedScheduler:
         try:
             await self._run_until_idle(input_nodes, counts)
             self.context.check_cancel()
-            self.artifact_store.write_index()
             await self.context.emit_event("run_completed", message="run completed")
             self.logger.info("run completed")
         finally:
@@ -200,7 +198,7 @@ class WindowedScheduler:
 
     async def _execute_node(self, node: Node, inputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         def run_execute() -> list[dict[str, Any]]:
-            with cancellation_scope(self.context.cancel_token):
+            with cancellation_scope(self.context.cancel_token), route_output_to_logger(node.logger):
                 return asyncio.run(node.execute(inputs, self.context))
 
         return await asyncio.to_thread(run_execute)
@@ -274,7 +272,6 @@ class WindowedScheduler:
                         lineage_id=lineage_from_value(item, inherited=task.lineage_id),
                         metadata={**task.metadata, **metadata_from_value(item)},
                     )
-                    self.artifact_store.register_packet(packet)
                     await self.events.packet_created(packet, batch_index)
                     await self._deliver_packet(packet)
 

@@ -116,7 +116,7 @@ def _local_parquet_path(settings: HetznerDsV2ParquetAudioSourceSettings, context
         if not settings.local_parquet_path:
             raise ValueError("local_parquet_path is required when source is local")
         return Path(settings.local_parquet_path).expanduser()
-    cache_dir = Path(context.cache_dir) / "hetzner" / "ds_v2"
+    cache_dir = Path(context.cache_dir) / "hetzner"
     cache_dir.mkdir(parents=True, exist_ok=True)
     cached = cache_dir / _cache_name(settings.remote_parquet_path)
     if cached.exists() and settings.cache_download:

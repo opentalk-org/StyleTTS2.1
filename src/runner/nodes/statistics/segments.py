@@ -144,23 +144,112 @@ def _overlap_ratio(left: AudioSegment, right: AudioSegment) -> float:
     return overlap / shortest
 
 
+# Least-confident cluster member still keeps this fraction of a vote, so no segment is
+# silently dropped from the consensus and a numeric majority is not overturned by a single
+# very confident model — confidence tilts the vote, it does not replace counting.
+CONFIDENCE_WEIGHT_FLOOR = 0.7
+
+
 def _consensus_segment(members: list[AudioSegment]) -> AudioSegment:
     if len(members) == 1:
         return members[0]
     normals = [_normalized_text(member) for member in members]
+    weights = _confidence_weights(members)
     ranked = sorted(
         range(len(members)),
-        key=lambda index: (-_agreement_score(normals, index), _model_rank(members[index]), -len(normals[index])),
+        key=lambda index: (
+            -_confidence_weighted_support(normals, weights, index),
+            -(members[index].confidence if members[index].confidence is not None else 0.0),
+            _model_rank(members[index]),
+            -len(normals[index]),
+        ),
     )
-    winner = members[ranked[0]]
-    score = _agreement_score(normals, ranked[0]) / (len(members) - 1)
+    winner_index = ranked[0]
+    winner = members[winner_index]
+    # Similarity + confidence of every other member relative to the winner, used for both the
+    # disagreement penalty and the corroboration bonus.
+    others = [index for index in range(len(members)) if index != winner_index]
+    sims = [_text_similarity(normals[winner_index], normals[index]) for index in others]
+    other_confidences = [members[index].confidence for index in others]
+    # Mean text similarity of the winner to the rest of the cluster: model-agnostic, in [0, 1].
+    agreement = sum(sims) / len(sims)
     metadata = {
         **winner.metadata,
         "overlap_cluster_size": len(members),
-        "overlap_consensus_score": round(score, 6),
-        "overlap_alternatives": [member.text.strip() for index, member in enumerate(members) if index != ranked[0]],
+        "overlap_consensus_score": round(agreement, 6),
+        "overlap_selected_model_confidence": winner.confidence,
+        # Keep every member's text + score so nothing is lost when the cluster collapses.
+        "overlap_members": [
+            {"model": _segment_model(member), "text": member.text.strip(), "confidence": member.confidence}
+            for member in members
+        ],
+        "overlap_alternatives": [member.text.strip() for index, member in enumerate(members) if index != winner_index],
     }
-    return replace(winner, metadata=metadata)
+    confidence = _consensus_confidence(winner.confidence, sims, other_confidences)
+    return replace(winner, confidence=confidence, metadata=metadata)
+
+
+# How much a fully-confident, fully-agreeing peer can lift the score toward 1.0. Damped well
+# below 1.0 because engine confidences are not calibrated and models make correlated errors,
+# so agreement is corroborating evidence, not independent probability to be multiplied out.
+CONSENSUS_BONUS_DAMPING = 0.5
+
+
+def _consensus_confidence(
+    winner_confidence: float | None, sims: list[float], other_confidences: list[float | None]
+) -> float | None:
+    """Semi-normalized cluster confidence: winner score, penalized by disagreement then lifted a
+    bounded amount by confident corroboration.
+
+    ``base`` is the winner's acoustic score scaled by mean agreement (model-agnostic, so texts
+    not matching always lowers it). On top, each *other* member that both agrees and is confident
+    closes part of the remaining gap to 1.0, so a cross-checked segment outranks a lone confident
+    one — but the damping keeps consensus from saturating the score. Bounds: ``base <= result < 1``.
+    """
+    agreement = sum(sims) / len(sims)
+    base = agreement if winner_confidence is None else winner_confidence * agreement
+    corroboration = sum(
+        sim * (conf if conf is not None else 0.0) for sim, conf in zip(sims, other_confidences)
+    ) / len(sims)
+    return base + (1.0 - base) * corroboration * CONSENSUS_BONUS_DAMPING
+
+
+def _confidence_weights(members: list[AudioSegment]) -> list[float]:
+    """Per-member vote weights, min-max normalized within the cluster into ``[FLOOR, 1.0]``.
+
+    Normalizing *within the cluster* makes the weight relative (who is most confident here),
+    which neutralizes the fact that engines report confidence on different scales. Missing
+    scores get a neutral weight, and the floor guarantees every member still votes.
+    """
+    confidences = [member.confidence for member in members]
+    present = [value for value in confidences if value is not None]
+    if len(present) < 2:
+        return [1.0] * len(members)
+    low, high = min(present), max(present)
+    span = high - low
+    if span <= 0.0:
+        return [1.0] * len(members)
+    weights = []
+    for value in confidences:
+        if value is None:
+            weights.append(1.0)
+        else:
+            weights.append(CONFIDENCE_WEIGHT_FLOOR + (1.0 - CONFIDENCE_WEIGHT_FLOOR) * (value - low) / span)
+    return weights
+
+
+def _confidence_weighted_support(normals: list[str], weights: list[float], index: int) -> float:
+    """Confidence-weighted support for a member's text, summed over the whole cluster.
+
+    Self is included (``sim == 1``), which is what makes the score symmetric: two members
+    with identical text get identical support regardless of their own weights, so selection
+    among them falls through to the confidence tiebreak instead of favouring whoever happened
+    to sit next to the more confident peers.
+    """
+    return sum(
+        _text_similarity(normals[index], normals[other]) * weights[other]
+        for other in range(len(normals))
+    )
 
 
 def _agreement_score(normals: list[str], index: int) -> float:

@@ -32,8 +32,8 @@ def ensure_model_checkpoint(kind: str, model_id: str, download: Callable[[Path],
 
     ``kind`` is the checkpoint ``type_`` (e.g. "whisper", "parakeet"). Idempotent: a checkpoint whose
     metadata records the same ``kind``/``model_id`` is reused instead of re-downloaded. ``download`` is
-    called with a fresh empty folder and must populate it with the model's weight file(s). Callers that
-    want the download's tqdm/prints in a node log wrap this call in ``route_output_to_logger``.
+    called with a fresh empty folder and must populate it with the model's weight file(s). The
+    download's tqdm/prints land in the node log automatically while the node is executing.
     """
     existing_id = _find_model_checkpoint_id(kind, model_id)
     if existing_id is not None:
@@ -106,14 +106,32 @@ def _disable_hf_progress_bars() -> None:
     disable_progress_bars()
 
 
-def download_hf_snapshot(model_id: str, folder: Path) -> None:
-    """Download a full HuggingFace model snapshot (e.g. a wav2vec2 aligner) into ``folder``."""
+def download_hf_snapshot(
+    model_id: str,
+    folder: Path,
+    *,
+    allow_patterns: list[str] | None = None,
+    ignore_patterns: list[str] | None = None,
+) -> None:
+    """Download a HuggingFace model snapshot (e.g. a wav2vec2 aligner) into ``folder``.
+
+    ``allow_patterns``/``ignore_patterns`` are forwarded to ``snapshot_download`` so callers only
+    fetch the files their loader actually reads. Many TTS/ASR repos ship the same weights in several
+    redundant formats (``.pth`` + ``.bin`` + ``.safetensors``, Flax ``.msgpack``, extra checkpoint
+    variants); without a filter the whole repo is pulled and most of it is never loaded.
+    """
     try:
         from huggingface_hub import snapshot_download
     except ImportError as exc:
         raise RuntimeError("huggingface_hub_not_installed") from exc
     _disable_hf_progress_bars()
-    snapshot_download(repo_id=model_id, local_dir=str(folder), token=huggingface_token())
+    snapshot_download(
+        repo_id=model_id,
+        local_dir=str(folder),
+        token=huggingface_token(),
+        allow_patterns=allow_patterns,
+        ignore_patterns=ignore_patterns,
+    )
 
 
 def download_nemo_snapshot(model_id: str, folder: Path) -> None:

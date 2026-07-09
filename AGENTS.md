@@ -13,7 +13,7 @@ This project is a ComfyUI-style workflow system for typed, batched, concurrent p
 - `src/runner/` — NATS-backed worker/CLI that runs workflows using `runflow` and owns project-specific node definitions.
 - `src/shared/` — shared database, storage, event, logging, and schema code used by both backend and runner.
 - `src/frontend/` — visual editor/client UI for nodes, typed sockets, workflow editing, and job monitoring.
-- `examples/workflows/` — example graph JSON and smoke workflow notes.
+- `workflows/` — example graph JSON definitions used as smoke workflows.
 
 ## Technology Stack
 
@@ -73,11 +73,12 @@ This project is a ComfyUI-style workflow system for typed, batched, concurrent p
 ## Development workflow
 
 - Before changing behavior, find the relevant example or smoke workflow and run it before and after the change when practical.
-- Start the local NATS JetStream, backend, and one runner with `sudo nix develop --command runflow-dev`. prefer to start full stack not only backend so i can see in real time changes on ui. RUN IT AS USER NOT ROOT.
-- Use the project virtual environment at `/workspace2/styletts_studio_v2/.venv`; do not use or mutate a system Python environment.
-- Add or change Python dependencies in `pyproject.toml`, then update the lock with the existing `uv` workflow; do not install packages with `pip install` into the environment.
-- For backend or frontend changes, use the package manager and commands already present in that subproject. Do not introduce a new toolchain unless requested.
-- When adding a new node type, update the registry/schema export path so the frontend can discover its ports and parameters.
+- Run project commands through Nix: `nix develop --command <command>`. Do not run backend, runner, CLI, Python, pytest, uv, npm, or node commands directly from the host shell; use the Nix dev shell so shared libraries and environment variables are correct.
+- Manage the local NATS JetStream, backend, and runner through the single shared Zellij session: `nix develop --command runflow-dev-session`. This attaches to the existing `runflow-dev` session or creates it and starts the stack once. Check it with `nix develop --command runflow-dev-status`; stop it with `nix develop --command runflow-dev-stop`. Never start a second stack or run `runflow-dev` directly when the shared session exists. RUN IT AS USER NOT ROOT; do not use `sudo`.
+- The project virtual environment is at `/workspace/styletts_studio_v2/.venv`, but access it only through `nix develop --command ...`; do not invoke `.venv/bin/python`, `python`, or other venv binaries directly from the host shell.
+- Add or change Python dependencies in `pyproject.toml`, then update the lock with the existing `uv` workflow through `nix develop --command ...`; do not install packages with `pip install` into the environment.
+- For backend or frontend changes, use the package manager and commands already present in that subproject, but invoke them through `nix develop --command ...`. Do not introduce a new toolchain unless requested.
+- Always test nodes by running them through a real graph, never by importing the node class and calling `execute()` by hand. Direct calls skip registration, port typing, `setup`/`teardown`, batching, resource leasing, and routing, so "works in my script" does not mean "works from the UI". Build a small graph (reuse the `Testing*` input feeders in `src/runner/nodes/testing/`), submit it via `POST /graphs/runs` (the exact path the UI uses — runs on the same local or remote runner), then inspect results with the `src/cli` tool through Nix: `nix develop --command python -m cli runs`, `nix develop --command python -m cli logs <run_id>` for aggregated logs, `nix develop --command python -m cli node-log <run_id> <node>`, and `nix develop --command python -m cli failed <run_id>` to pull a failed node's error and traceback. See `src/cli/README.md`. A node that runs clean here runs clean in the UI.
 - Do not keep committed tests in the repo unless explicitly requested. Temporary throwaway tests/scripts are allowed and preferable for validating behavior, but remove them before finishing.
 
 ## Change discipline

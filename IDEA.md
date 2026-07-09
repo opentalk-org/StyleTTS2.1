@@ -266,4 +266,36 @@ i need:
 - text -> normalized text model
 - "break/p/s" detection/handling/formatting
 - text -> voice model
-- 
+
+
+Data Pipeline
+
+sources:
+- yt (all langs)
+- audiobooki
+- synth (all langs)
+- dataset'y gotowe (to co pobralem + english versions)
+
+models to add:
+- test other cleaning models
+- test other diarization models
+- global voice embedding and aggregation???
+
+pipelines:
+- yt pipeline
+- audiobooki pipeline
+- synth pipeline
+- datasety gotowe
+- datasety english
+
+- mos score training
+- mos score classifier usage
+- silence processing (model? forced alignment) -> break/p/s
+- audio effects tags classifier usage
+- audio effect + style/emotions train
+- style/emotions tags
+- voice and style prompts
+- text -> voice model
+
+- normalization model for text
+- normalization model training

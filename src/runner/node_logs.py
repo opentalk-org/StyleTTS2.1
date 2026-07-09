@@ -1,11 +1,13 @@
 import logging
 import re
+import threading
 from pathlib import Path
 
 from nats.aio.msg import Msg
 from nats.js.client import JetStreamContext
 
 from runflow.core.node import Node
+from runflow.runtime.log_capture import current_output_logger
 from shared.jetstream import EVENT_STREAM, decode_json, encode_model, node_log_response_subject
 from shared.schemas import NodeLogRequestCommand, NodeLogResponseMessage
 
@@ -43,6 +45,37 @@ class CappedNodeLogHandler(logging.Handler):
         self.path.write_bytes(data)
 
 
+class ContextForwardHandler(logging.Handler):
+    """Forward records from arbitrary module loggers (``logging.getLogger(__name__)``) into the log
+    of whichever node is currently executing. Node execution runs inside ``route_output_to_logger``,
+    so ``current_output_logger`` names that node; a helper module needs no special wiring to have its
+    logs land in the right node log. Records already owned by the node logger are left to the node
+    logger's own handler to avoid duplicates."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        target = current_output_logger()
+        if target is None or record.name == target.name:
+            return
+        for handler in target.handlers:
+            if record.levelno >= handler.level:
+                handler.handle(record)
+
+
+_forwarding_lock = threading.Lock()
+_forwarding_installed = False
+
+
+def ensure_context_forwarding() -> None:
+    """Install the single process-wide forwarder on the root logger. Idempotent: a second call is a
+    no-op, so concurrent runs cannot forward the same record twice."""
+    global _forwarding_installed
+    with _forwarding_lock:
+        if _forwarding_installed:
+            return
+        logging.getLogger().addHandler(ContextForwardHandler())
+        _forwarding_installed = True
+
+
 class NodeLogManager:
     def __init__(self, work_dir: Path, run_id: str) -> None:
         self.work_dir = work_dir
@@ -50,6 +83,7 @@ class NodeLogManager:
         self._handlers: list[tuple[logging.Logger, CappedNodeLogHandler]] = []
 
     def attach(self, nodes: list[Node]) -> None:
+        ensure_context_forwarding()
         for node in nodes:
             path = node_log_path(self.work_dir, self.run_id, node.id)
             handler = CappedNodeLogHandler(path)

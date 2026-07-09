@@ -299,8 +299,16 @@ def segment_response(segment: dict[str, Any]) -> AudioSegmentRead:
         phon=str(segment["phon"]) if "phon" in segment else "",
         speaker=_segment_speaker(segment),
         type_=_segment_type(segment),
+        confidence=_segment_confidence(segment),
         alignment=_segment_alignment(segment),
     )
+
+
+def _segment_confidence(segment: dict[str, Any]) -> float | None:
+    value = segment.get("confidence")
+    if value is None:
+        return None
+    return float(value)
 
 
 def _segment_alignment(segment: dict[str, Any]) -> list[WordAlignment] | None:

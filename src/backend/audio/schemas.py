@@ -22,6 +22,7 @@ class AudioSegmentRead(BaseModel):
     phon: str
     speaker: str
     type_: str = "manual"
+    confidence: float | None = None
     alignment: list[WordAlignment] | None = None
 
 
@@ -33,6 +34,7 @@ class AudioSegmentWrite(BaseModel):
     phon: str
     speaker: str
     type_: str = "manual"
+    confidence: float | None = None
     alignment: list[WordAlignment] | None = None
 
 

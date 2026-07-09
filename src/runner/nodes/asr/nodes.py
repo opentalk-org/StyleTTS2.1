@@ -25,7 +25,6 @@ from runner.nodes.asr.whisper import load_whisper_model, transcribe_wav_to_segme
 from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AudioPort, CheckpointRefPort
 from runner.nodes.models import Audio, AudioSegment, CheckpointRef, stable_id, typed_checkpoint
-from shared.log_streams import route_output_to_logger
 
 
 class TranscribeSettings(StrictSettings):
@@ -108,10 +107,7 @@ class TranscribeNode(Node):
         for index, inputs in enumerate(batch, start=1):
             audio = inputs["audio"]
             await context.report_progress(self.id, index, len(batch), f"{self.MODEL_NAME} transcribed {index}/{len(batch)}")
-            # route_output_to_logger wraps a synchronous call only (no await inside) so tqdm from
-            # transcription reaches the node log without capturing other coroutines' output.
-            with route_output_to_logger(self.logger):
-                transcribed = self._transcribe_audio(audio)
+            transcribed = self._transcribe_audio(audio)
             outputs.append({"audio": transcribed})
         return outputs
 
@@ -123,8 +119,7 @@ class TranscribeNode(Node):
 
     def _load_model_logged(self, checkpoint_dir: Path) -> Any:
         self.logger.info("loading %s model from checkpoint", self.MODEL_NAME)
-        with route_output_to_logger(self.logger):
-            return self._load_model(checkpoint_dir)
+        return self._load_model(checkpoint_dir)
 
     def _load_model(self, checkpoint_dir: Path) -> Any:
         raise NotImplementedError
@@ -138,7 +133,7 @@ class TranscribeNode(Node):
             path.unlink(missing_ok=True)
         return _audio_with_transcript_segments(self.MODEL_NAME, audio, spans, self._transcript_language())
 
-    def _transcribe_full_path(self, path: Path, duration_sec: float) -> list[tuple[float, float, str]]:
+    def _transcribe_full_path(self, path: Path, duration_sec: float) -> list[tuple[float, float, str, float | None]]:
         raise NotImplementedError
 
     def _transcript_language(self) -> str:
@@ -153,7 +148,7 @@ class WhisperTranscribeNode(TranscribeNode):
     def _load_model(self, checkpoint_dir: Path) -> Any:
         return load_whisper_model(checkpoint_dir)
 
-    def _transcribe_full_path(self, path: Path, duration_sec: float) -> list[tuple[float, float, str]]:
+    def _transcribe_full_path(self, path: Path, duration_sec: float) -> list[tuple[float, float, str, float | None]]:
         return transcribe_wav_to_segments(self._model, path, duration_sec, self.settings.language)
 
 
@@ -165,7 +160,7 @@ class ParakeetTranscribeNode(TranscribeNode):
     def _load_model(self, checkpoint_dir: Path) -> Any:
         return load_parakeet_model(checkpoint_dir)
 
-    def _transcribe_full_path(self, path: Path, duration_sec: float) -> list[tuple[float, float, str]]:
+    def _transcribe_full_path(self, path: Path, duration_sec: float) -> list[tuple[float, float, str, float | None]]:
         batches = parakeet_transcribe_wavs(self._model, [path], [duration_sec], batch_size=self.settings.batch_size)
         return batches[0] if batches else []
 
@@ -179,8 +174,8 @@ class ParakeetTranscribeNode(TranscribeNode):
         finally:
             path.unlink(missing_ok=True)
         aligned = batches[0] if batches else []
-        spans = [(start, end, text) for start, end, text, _words in aligned]
-        alignments = [words for _start, _end, _text, words in aligned]
+        spans = [(start, end, text, confidence) for start, end, text, confidence, _words in aligned]
+        alignments = [words for _start, _end, _text, _confidence, words in aligned]
         return _audio_with_transcript_segments(self.MODEL_NAME, audio, spans, self._transcript_language(), alignments=alignments)
 
 
@@ -192,7 +187,7 @@ class CanaryTranscribeNode(TranscribeNode):
     def _load_model(self, checkpoint_dir: Path) -> Any:
         return load_canary_model(checkpoint_dir)
 
-    def _transcribe_full_path(self, path: Path, duration_sec: float) -> list[tuple[float, float, str]]:
+    def _transcribe_full_path(self, path: Path, duration_sec: float) -> list[tuple[float, float, str, float | None]]:
         prompt = self._prompt_settings()
         batches = canary_transcribe_wavs(self._model, [path], [duration_sec], **prompt)
         return batches[0] if batches else []
@@ -213,16 +208,16 @@ class CanaryTranscribeNode(TranscribeNode):
 def _audio_with_transcript_segments(
     model_name: str,
     audio: Audio,
-    spans: list[tuple[float, float, str]],
+    spans: list[tuple[float, float, str, float | None]],
     language: str,
     alignments: list[list[dict[str, Any]] | None] | None = None,
 ) -> Audio:
     filtered = [
-        (audio.start + start, audio.start + end, text, alignments[index] if alignments is not None else None)
-        for index, (start, end, raw_text) in enumerate(spans)
+        (audio.start + start, audio.start + end, text, confidence, alignments[index] if alignments is not None else None)
+        for index, (start, end, raw_text, confidence) in enumerate(spans)
         if (text := _clean_transcript_text(raw_text))
     ]
-    text = _joined_text([(start, end, item_text) for start, end, item_text, _words in filtered])
+    text = _joined_text([(start, end, item_text) for start, end, item_text, _confidence, _words in filtered])
     transcript_id = stable_id("transcript", model_name, audio.audio_file_id, audio.id)
     speaker = _diarized_speaker(audio)
     segments = [
@@ -239,10 +234,11 @@ def _audio_with_transcript_segments(
             lineage_id=stable_id("segment_lineage", audio.lineage_id, transcript_id, index),
             segment_id=stable_id("transcript_segment", transcript_id, index),
             speaker=speaker,
+            confidence=confidence,
             alignment=_offset_alignment(words, audio.start),
             metadata={"transcript_id": transcript_id, "transcript_segment_index": index, "model": model_name, "type_": model_name},
         )
-        for index, (start, end, item_text, words) in enumerate(filtered)
+        for index, (start, end, item_text, confidence, words) in enumerate(filtered)
     ]
     return replace(
         audio,

@@ -17,7 +17,6 @@ from runner.nodes.asr.audio import extract_wav_range, wav_info
 from runner.nodes.assets.model_downloads import single_checkpoint_file
 from runner.nodes.datatypes import AudioPort, CheckpointRefPort
 from runner.nodes.models import Audio, AudioSegment, stable_id, typed_checkpoint
-from shared.log_streams import route_output_to_logger
 
 
 class VadSettings(StrictSettings):
@@ -93,8 +92,7 @@ class SortformerDiarizationNode(Node):
             audio = inputs["audio"]
             assert isinstance(audio, Audio), f"unsupported audio input: {type(audio).__name__}"
             audios.append(audio)
-        with route_output_to_logger(self.logger):
-            diarized = diarize_audio_batch(self._model, audios, self.settings)
+        diarized = diarize_audio_batch(self._model, audios, self.settings)
         return [
             {"audio": speaker_audio_segments(audio, segments, self.settings)}
             for audio, segments in zip(audios, diarized, strict=True)
@@ -102,8 +100,7 @@ class SortformerDiarizationNode(Node):
 
     def _load_model(self, checkpoint_dir: Path):
         self.logger.info("loading sortformer model from checkpoint")
-        with route_output_to_logger(self.logger):
-            return load_sortformer_model(checkpoint_dir, self.settings)
+        return load_sortformer_model(checkpoint_dir, self.settings)
 
 
 class CutAudioBySegmentsNode(Node):

@@ -13,7 +13,6 @@ from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import CheckpointRefPort, JsonPort
 from runner.nodes.models import CheckpointRef
-from shared.log_streams import route_output_to_logger
 
 
 class CatalogKey(str, Enum):
@@ -74,8 +73,7 @@ class CatalogDownloadNode(Node):
         return [output]
 
     def _run_task(self) -> tuple[dict[str, Any], CheckpointRef | None]:
-        with route_output_to_logger(self.logger):
-            result = run_catalog_task(self.settings.catalog_key.value, self.settings.item, logger=self.logger)
+        result = run_catalog_task(self.settings.catalog_key.value, self.settings.item, logger=self.logger)
         return result, _single_checkpoint_ref(result)
 
 

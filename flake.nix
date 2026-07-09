@@ -121,6 +121,68 @@
             ] ++ pythonTools;
             text = (pythonEnvExports pythonRuntime) + builtins.readFile ./nix/runflow-dev.sh;
           };
+          runflowDevSession = pkgs.writeShellApplication {
+            name = "runflow-dev-session";
+            runtimeInputs = [
+              pkgs.bash
+              pkgs.coreutils
+              pkgs.gnugrep
+              pkgs.zellij
+              runflowDev
+            ];
+            text = ''
+              set -euo pipefail
+
+              session_name="runflow-dev"
+              if zellij list-sessions --short --no-formatting | grep -Fxq "$session_name"; then
+                echo "attaching to existing $session_name session"
+              else
+                echo "creating $session_name session and starting runflow-dev"
+                zellij attach --create-background "$session_name"
+                zellij --session "$session_name" run --name runflow-dev -- runflow-dev
+              fi
+
+              exec zellij attach --create "$session_name"
+            '';
+          };
+          runflowDevStatus = pkgs.writeShellApplication {
+            name = "runflow-dev-status";
+            runtimeInputs = [
+              pkgs.coreutils
+              pkgs.gnugrep
+              pkgs.zellij
+            ];
+            text = ''
+              set -euo pipefail
+
+              session_name="runflow-dev"
+              if zellij list-sessions --short --no-formatting | grep -Fxq "$session_name"; then
+                echo "$session_name session is running"
+                zellij list-sessions --no-formatting | grep -F "$session_name"
+              else
+                echo "$session_name session is not running"
+              fi
+            '';
+          };
+          runflowDevStop = pkgs.writeShellApplication {
+            name = "runflow-dev-stop";
+            runtimeInputs = [
+              pkgs.coreutils
+              pkgs.gnugrep
+              pkgs.zellij
+            ];
+            text = ''
+              set -euo pipefail
+
+              session_name="runflow-dev"
+              if zellij list-sessions --short --no-formatting | grep -Fxq "$session_name"; then
+                zellij kill-session "$session_name"
+                echo "stopped $session_name session"
+              else
+                echo "$session_name session is not running"
+              fi
+            '';
+          };
           frontendDev = pkgs.writeShellApplication {
             name = "runflow-frontend-dev";
             runtimeInputs = [
@@ -138,6 +200,9 @@
           packages = [
             pkgs.awscli2
             runflowDev
+            runflowDevSession
+            runflowDevStatus
+            runflowDevStop
             frontendDev
             runnerLaunch
             pkgs.nats-server
@@ -145,6 +210,7 @@
             pkgs.pgbouncer
             pkgs.postgresql_16
             pkgs.uv
+            pkgs.zellij
             pythonRuntime.python
             rustfs
           ] ++ pythonRuntime.runtimeExecutableDeps ++ pythonRuntime.runtimeLibs;
