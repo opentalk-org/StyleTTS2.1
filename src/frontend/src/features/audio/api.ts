@@ -26,6 +26,7 @@ export type AudioFile = {
   speaker: string;
   duration: number;
   score: number | null;
+  language: string | null;
   sample_rate: number | null;
   byte_length: number;
   size_mb: string;
@@ -121,6 +122,14 @@ export function updateAudioScore(id: string, score: number | null): Promise<Audi
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ score }),
+  });
+}
+
+export function updateAudioLanguage(id: string, language: string | null): Promise<AudioFile> {
+  return backendRequest<AudioFile>(`/audio-files/${encodeURIComponent(id)}/language`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ language }),
   });
 }
 

@@ -48,6 +48,7 @@ class SaveAudioRecordNode(Node):
                     wav_bytes=audio.data,
                     duration=audio.duration,
                     score=_audio_score(audio),
+                    language=_audio_language(audio),
                     segments=[],
                     metadata=_audio_metadata(audio),
                     virtual=self.settings.virtual,
@@ -84,6 +85,7 @@ class UpdateAudioRecordBytesNode(Node):
                     wav_bytes=audio.data,
                     duration=audio.duration,
                     score=_audio_score(audio, fallback=item.score),
+                    language=_audio_language(audio, fallback=item.language),
                     segments=item.segments,
                     metadata=_audio_metadata(audio),
                     virtual=item.virtual,
@@ -169,6 +171,13 @@ def _audio_score(audio: Audio, fallback: float | None = None) -> float | None:
             continue
         return float(value)
     return fallback
+
+
+def _audio_language(audio: Audio, fallback: str | None = None) -> str | None:
+    value = audio.metadata.get("language")
+    if value is None or value == "":
+        return fallback
+    return str(value)
 
 
 def _audio_writeback_output(item: AudioFile, source: Audio, action: str) -> dict[str, Audio | SaveResult]:

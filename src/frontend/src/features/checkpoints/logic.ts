@@ -2,6 +2,12 @@ import type { Tone } from "@/shared/ui/Badge";
 import type { Checkpoint } from "./api";
 
 export const TYPE_TONE: Record<string, Tone> = {
+  kokoro: "red",
+  chatterbox: "red",
+  f5_tts: "red",
+  orpheus: "red",
+  dia: "red",
+  fish_speech: "red",
   styletts2: "blue",
   asr: "emerald",
   f0: "amber",
@@ -73,13 +79,14 @@ export function groupCheckpoints(items: Checkpoint[], query: string, type: strin
 export type CatalogItem = {
   name: string;
   file: string;
-  group: "StyleTTS2" | "Training assets" | "Transcription" | "Diarization";
+  group: "TTS" | "StyleTTS2" | "Training assets" | "Transcription" | "Diarization";
   catalogKey: string;
   item: string;
 };
 
 export function groupCatalogItems(items: CatalogItem[]): Record<CatalogItem["group"], CatalogItem[]> {
   const groups: Record<CatalogItem["group"], CatalogItem[]> = {
+    TTS: [],
     StyleTTS2: [],
     "Training assets": [],
     Transcription: [],
@@ -90,6 +97,48 @@ export function groupCatalogItems(items: CatalogItem[]): Record<CatalogItem["gro
 }
 
 export const CATALOG: CatalogItem[] = [
+  {
+    name: "Kokoro · 82M (8 langs, 54 voices)",
+    file: "hexgrad/Kokoro-82M",
+    group: "TTS",
+    catalogKey: "tts_models",
+    item: "kokoro",
+  },
+  {
+    name: "Chatterbox · multilingual (~23 langs, clone)",
+    file: "ResembleAI/chatterbox",
+    group: "TTS",
+    catalogKey: "tts_models",
+    item: "chatterbox",
+  },
+  {
+    name: "F5-TTS · v1 base (EN/ZH, clone)",
+    file: "SWivid/F5-TTS",
+    group: "TTS",
+    catalogKey: "tts_models",
+    item: "f5_tts",
+  },
+  {
+    name: "Orpheus · 3B (EN, 8 voices)",
+    file: "unsloth/orpheus-3b-0.1-ft",
+    group: "TTS",
+    catalogKey: "tts_models",
+    item: "orpheus",
+  },
+  {
+    name: "Dia · 1.6B (EN dialogue, clone)",
+    file: "nari-labs/Dia-1.6B-0626",
+    group: "TTS",
+    catalogKey: "tts_models",
+    item: "dia",
+  },
+  {
+    name: "Fish S2-Pro · dual-AR (80+ langs, clone)",
+    file: "fishaudio/s2-pro",
+    group: "TTS",
+    catalogKey: "tts_models",
+    item: "fish_speech",
+  },
   {
     name: "StyleTTS2 · LibriTTS",
     file: "epochs_2nd_00020.pth",

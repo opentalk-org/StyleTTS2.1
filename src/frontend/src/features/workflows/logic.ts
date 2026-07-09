@@ -114,41 +114,191 @@ export function moveNodes(graph: WorkflowGraph, nodeIds: string[], dx: number, d
   };
 }
 
+const LAYOUT_ORDERING_SWEEPS = 8;
+const LAYOUT_COORD_SWEEPS = 10;
+
+// Reserved vertical "lane" height for a routing dummy of a long edge.
+const LAYOUT_DUMMY_HEIGHT = 24;
+
+/** Layered (Sugiyama-style) auto layout: columns by longest-path depth, node order
+ * within each column chosen to minimise edge crossings (median heuristic sweeps over a
+ * graph where multi-column edges are split by routing dummies so their crossings are
+ * counted too), then vertical positions pulled toward connected neighbours to
+ * straighten chains. */
 export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph): WorkflowGraph {
+  if (graph.nodes.length === 0) return graph;
+
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
   const order = topologicalNodeOrder(graph);
   const orderIndex = new Map(order.map((nodeId, index) => [nodeId, index]));
-  const ranks = new Map(graph.nodes.map((node) => [node.id, 0]));
+
+  // Keep only forward edges (drop self-loops, dangling and back edges from cycles) so
+  // the layout is a clean DAG; back edges are still drawn, just not used for placement.
+  const edges = graph.edges.filter(
+    (edge) =>
+      nodeById.has(edge.source_node) &&
+      nodeById.has(edge.target_node) &&
+      edge.source_node !== edge.target_node &&
+      (orderIndex.get(edge.source_node) ?? 0) < (orderIndex.get(edge.target_node) ?? 0),
+  );
+
+  // 1. Layering — longest path from a source; the layer is the node's column.
+  const layerOf = new Map(graph.nodes.map((node) => [node.id, 0]));
   for (const nodeId of order) {
-    const rank = ranks.get(nodeId) ?? 0;
-    for (const edge of graph.edges) {
+    const base = layerOf.get(nodeId) ?? 0;
+    for (const edge of edges) {
       if (edge.source_node !== nodeId) continue;
-      if (!ranks.has(edge.target_node)) continue;
-      if ((orderIndex.get(edge.source_node) ?? 0) >= (orderIndex.get(edge.target_node) ?? 0)) continue;
-      ranks.set(edge.target_node, Math.max(ranks.get(edge.target_node) ?? 0, rank + 1));
+      layerOf.set(edge.target_node, Math.max(layerOf.get(edge.target_node) ?? 0, base + 1));
+    }
+  }
+  const layerCount = Math.max(0, ...[...layerOf.values()]) + 1;
+
+  // Build "items" per layer = real nodes plus routing dummies. An edge spanning several
+  // columns becomes a chain source -> dummy -> ... -> target with one dummy per skipped
+  // column, so every segment is between adjacent layers and its crossings are counted.
+  const layers: string[][] = Array.from({ length: layerCount }, () => []);
+  const itemLayer = new Map<string, number>();
+  const isDummy = new Set<string>();
+  for (const nodeId of order) {
+    const layer = layerOf.get(nodeId) ?? 0;
+    layers[layer]!.push(nodeId);
+    itemLayer.set(nodeId, layer);
+  }
+  const succs = new Map<string, string[]>();
+  const preds = new Map<string, string[]>();
+  const linkItems = (source: string, target: string): void => {
+    (succs.get(source) ?? succs.set(source, []).get(source)!).push(target);
+    (preds.get(target) ?? preds.set(target, []).get(target)!).push(source);
+  };
+  let dummyCount = 0;
+  for (const edge of edges) {
+    const start = layerOf.get(edge.source_node) ?? 0;
+    const finish = layerOf.get(edge.target_node) ?? 0;
+    let previous = edge.source_node;
+    for (let layer = start + 1; layer < finish; layer += 1) {
+      const dummy = `__layout_dummy_${dummyCount++}`;
+      isDummy.add(dummy);
+      itemLayer.set(dummy, layer);
+      layers[layer]!.push(dummy);
+      linkItems(previous, dummy);
+      previous = dummy;
+    }
+    linkItems(previous, edge.target_node);
+  }
+  const segments: Array<[string, string]> = [];
+  for (const [source, targets] of succs) for (const target of targets) segments.push([source, target]);
+
+  const positionInLayer = (): Map<string, number> => {
+    const pos = new Map<string, number>();
+    for (const layer of layers) layer.forEach((id, index) => pos.set(id, index));
+    return pos;
+  };
+
+  // Count crossings between every adjacent pair of layers (over real + dummy segments).
+  const crossings = (): number => {
+    const pos = positionInLayer();
+    let total = 0;
+    for (let rank = 0; rank + 1 < layerCount; rank += 1) {
+      const spans = segments
+        .filter(([source]) => itemLayer.get(source) === rank)
+        .map(([source, target]) => [pos.get(source) ?? 0, pos.get(target) ?? 0] as const)
+        .sort((left, right) => left[0] - right[0] || left[1] - right[1]);
+      for (let i = 0; i < spans.length; i += 1) {
+        for (let j = i + 1; j < spans.length; j += 1) {
+          if (spans[i]![1] > spans[j]![1]) total += 1;
+        }
+      }
+    }
+    return total;
+  };
+
+  // 2. Crossing reduction — alternate down/up sweeps ordering each layer by the median
+  // position of its neighbours in the adjacent, already-fixed layer. Keep the best.
+  let bestLayers = layers.map((layer) => [...layer]);
+  let bestCrossings = crossings();
+  for (let sweep = 0; sweep < LAYOUT_ORDERING_SWEEPS; sweep += 1) {
+    const downward = sweep % 2 === 0;
+    const neighboursOf = downward ? preds : succs;
+    const from = downward ? 1 : layerCount - 2;
+    const to = downward ? layerCount : -1;
+    const step = downward ? 1 : -1;
+    const pos = positionInLayer();
+    for (let rank = from; rank !== to; rank += step) {
+      const ranked = layers[rank]!.map((id, index) => {
+        const neighbours = (neighboursOf.get(id) ?? []).map((n) => pos.get(n) ?? 0).sort((a, b) => a - b);
+        return { id, index, key: neighbours.length ? medianOf(neighbours) : index };
+      });
+      ranked.sort((left, right) => left.key - right.key || left.index - right.index);
+      layers[rank] = ranked.map((entry) => entry.id);
+      layers[rank]!.forEach((id, index) => pos.set(id, index));
+    }
+    const current = crossings();
+    if (current < bestCrossings) {
+      bestCrossings = current;
+      bestLayers = layers.map((layer) => [...layer]);
+    }
+  }
+  for (let rank = 0; rank < layerCount; rank += 1) layers[rank] = bestLayers[rank]!;
+
+  // 3. Vertical coordinates — stack in order, then pull each item toward the median of
+  // its neighbours' centres (straightening chains, including long-edge dummy lanes).
+  // Packing alternates top-down and bottom-up each sweep so an item can move up as well
+  // as down to reach its neighbour; a purely top-down pack would only push nodes down
+  // (e.g. a single-input sink stranded below the source it should line up with).
+  const heightOf = (id: string): number => (isDummy.has(id) ? LAYOUT_DUMMY_HEIGHT : estimatedNodeHeight(schema, nodeById.get(id)!));
+  const top = new Map<string, number>();
+  for (const layer of layers) {
+    let y = LAYOUT_Y;
+    for (const id of layer) {
+      top.set(id, y);
+      y += heightOf(id) + LAYOUT_ROW_GAP;
+    }
+  }
+  const centreOf = (id: string): number => (top.get(id) ?? LAYOUT_Y) + heightOf(id) / 2;
+  const desiredTopOf = (id: string): number => {
+    const neighbours = [...(preds.get(id) ?? []), ...(succs.get(id) ?? [])].map(centreOf).sort((a, b) => a - b);
+    return neighbours.length ? medianOf(neighbours) - heightOf(id) / 2 : top.get(id) ?? LAYOUT_Y;
+  };
+  for (let sweep = 0; sweep < LAYOUT_COORD_SWEEPS; sweep += 1) {
+    for (let rank = 0; rank < layerCount; rank += 1) {
+      const layer = layers[rank]!;
+      if (sweep % 2 === 0) {
+        // top-down: never overlap the node above.
+        let floor = LAYOUT_Y;
+        for (const id of layer) {
+          const y = Math.max(desiredTopOf(id), floor);
+          top.set(id, y);
+          floor = y + heightOf(id) + LAYOUT_ROW_GAP;
+        }
+      } else {
+        // bottom-up: never overlap the node below.
+        let ceiling = Number.POSITIVE_INFINITY;
+        for (let i = layer.length - 1; i >= 0; i -= 1) {
+          const id = layer[i]!;
+          const height = heightOf(id);
+          const y = Math.min(desiredTopOf(id), ceiling - height);
+          top.set(id, y);
+          ceiling = y - LAYOUT_ROW_GAP;
+        }
+      }
     }
   }
 
-  const layers = new Map<number, WorkflowNode[]>();
-  const originalIndex = new Map(graph.nodes.map((node, index) => [node.id, index]));
-  for (const node of graph.nodes) {
-    const rank = ranks.get(node.id) ?? 0;
-    layers.set(rank, [...(layers.get(rank) ?? []), node]);
-  }
-  for (const layer of layers.values()) {
-    layer.sort((left, right) => left.y - right.y || left.x - right.x || (originalIndex.get(left.id) ?? 0) - (originalIndex.get(right.id) ?? 0));
+  // Bottom-up packing can push nodes above the top margin; shift everything back down.
+  const minTop = Math.min(LAYOUT_Y, ...[...top.values()]);
+  if (minTop < LAYOUT_Y) {
+    for (const [id, y] of top) top.set(id, y + (LAYOUT_Y - minTop));
   }
 
-  const positioned = new Map<string, WorkflowNode>();
   let maxBottom = LAYOUT_Y;
-  for (const rank of [...layers.keys()].sort((left, right) => left - right)) {
-    const layer = layers.get(rank) ?? [];
-    let y = LAYOUT_Y;
-    for (const node of layer) {
-      const height = estimatedNodeHeight(schema, node);
-      const next = { ...node, x: LAYOUT_X + rank * LAYOUT_COLUMN_GAP, y };
-      positioned.set(node.id, next);
-      maxBottom = Math.max(maxBottom, y + height);
-      y += height + LAYOUT_ROW_GAP;
+  const positioned = new Map<string, WorkflowNode>();
+  for (let rank = 0; rank < layerCount; rank += 1) {
+    for (const id of layers[rank]!) {
+      if (isDummy.has(id)) continue; // routing dummies reserve space but are not rendered
+      const node = nodeById.get(id)!;
+      const y = top.get(id) ?? LAYOUT_Y;
+      positioned.set(id, { ...node, x: LAYOUT_X + rank * LAYOUT_COLUMN_GAP, y });
+      maxBottom = Math.max(maxBottom, y + heightOf(id));
     }
   }
 
@@ -163,6 +313,14 @@ export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph): W
     nodes: graph.nodes.map((node) => positioned.get(node.id) ?? node),
     panels,
   };
+}
+
+/** Median of a pre-sorted numeric list (average of the two middle values when even). */
+function medianOf(sorted: number[]): number {
+  const count = sorted.length;
+  if (count === 0) return 0;
+  const mid = Math.floor(count / 2);
+  return count % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
 export function graphPoint(viewport: Viewport, clientX: number, clientY: number, left: number, top: number) {

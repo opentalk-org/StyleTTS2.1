@@ -29,6 +29,12 @@ export function CheckpointsScreen() {
           onChange={setType}
           options={[
             { value: "all", label: "All types" },
+            { value: "kokoro", label: "Kokoro" },
+            { value: "chatterbox", label: "Chatterbox" },
+            { value: "f5_tts", label: "F5-TTS" },
+            { value: "orpheus", label: "Orpheus" },
+            { value: "dia", label: "Dia" },
+            { value: "fish_speech", label: "Fish S2-Pro" },
             { value: "styletts2", label: "StyleTTS2" },
             { value: "asr", label: "ASR aligner" },
             { value: "f0", label: "F0" },
@@ -78,7 +84,7 @@ export function CheckpointsScreen() {
           {Object.entries(catalogGroups).map(([group, items]) => items.length ? (
             <section key={group} className="grid gap-2.5">
               <div className="flex items-center gap-2 text-xs font-semibold text-txt-dim">
-                <Icon name={group === "Transcription" ? "mic" : group === "StyleTTS2" ? "volume" : group === "Diarization" ? "audio-lines" : "box"} size={14} strokeWidth={2} className="text-txt-mute" />
+                <Icon name={group === "Transcription" ? "mic" : group === "StyleTTS2" || group === "TTS" ? "volume" : group === "Diarization" ? "audio-lines" : "box"} size={14} strokeWidth={2} className="text-txt-mute" />
                 <span>{group}</span>
                 <span className="font-mono text-[10px] text-txt-mute">{items.length}</span>
               </div>

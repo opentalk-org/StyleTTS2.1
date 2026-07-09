@@ -212,7 +212,16 @@ class BackendManager:
         return list(self._record(run_id).event_store.errors)
 
     async def snapshot(self, run_id: str) -> RunSnapshot:
-        return self._record(run_id).event_store.snapshot(run_id)
+        record = self._runs.get(run_id)
+        if record is not None:
+            return record.event_store.snapshot(run_id)
+        # Not live in memory (e.g. reopened from history or after a backend restart):
+        # serve the per-node snapshot persisted on the job so the failed node still shows.
+        with database_session() as session:
+            job = jobs_crud.get_job(session, run_id)
+        if job.snapshot is not None:
+            return RunSnapshot.model_validate(job.snapshot)
+        return RunEventStore().snapshot(run_id)
 
     async def record_event(self, event: RunEventResponse) -> None:
         if event.run_id in self._deleted:

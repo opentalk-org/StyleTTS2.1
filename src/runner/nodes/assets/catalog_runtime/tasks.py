@@ -21,7 +21,7 @@ _TTS_DEFAULT_REPOS = {
     "f5_tts": "SWivid/F5-TTS",
     "orpheus": "unsloth/orpheus-3b-0.1-ft",
     "dia": "nari-labs/Dia-1.6B-0626",
-    "fish_speech": "fishaudio/openaudio-s1-mini",
+    "fish_speech": "fishaudio/s2-pro",
     "raon_opentts": "KRAFTON/Raon-OpenTTS-1B",
 }
 

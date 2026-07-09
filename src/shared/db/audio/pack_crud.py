@@ -127,6 +127,7 @@ def _create_item_from_write(writer: AudioPackWriter, payload: AudioCreate) -> Au
         byte_length=write.byte_length,
         duration=payload.duration,
         score=payload.score,
+        language=payload.language,
         segments=payload.segments,
         metadata_=payload.metadata,
         virtual=payload.virtual,

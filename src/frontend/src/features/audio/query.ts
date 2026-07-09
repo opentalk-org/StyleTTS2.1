@@ -14,6 +14,7 @@ import {
   fetchAudioFiles,
   fetchWaveform,
   renameAudioFile,
+  updateAudioLanguage,
   updateAudioScore,
 } from "./api";
 import { DATASETS_KEY } from "@/features/datasets/query";
@@ -79,6 +80,14 @@ export function useUpdateAudioScoreMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, score }: { id: string; score: number | null }) => updateAudioScore(id, score),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [AUDIO_FILES_KEY] }),
+  });
+}
+
+export function useUpdateAudioLanguageMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, language }: { id: string; language: string | null }) => updateAudioLanguage(id, language),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [AUDIO_FILES_KEY] }),
   });
 }

@@ -44,6 +44,10 @@ class AudioScorePayload(BaseModel):
     score: float | None = None
 
 
+class AudioLanguagePayload(BaseModel):
+    language: str | None = None
+
+
 class AddToDatasetRequest(BaseModel):
     dataset_id: str
     mode: Literal["ids", "filter"]
@@ -58,6 +62,7 @@ class AudioFileListItem(BaseModel):
     speaker: str
     duration: float
     score: float | None
+    language: str | None
     sample_rate: int | None
     byte_length: int
     size_mb: str

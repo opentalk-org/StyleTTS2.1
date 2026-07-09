@@ -277,6 +277,8 @@ def _update_audio_metadata(item: AudioFile, payload: AudioUpdate) -> None:
     item.duration = payload.duration
     if "score" in payload.model_fields_set:
         item.score = payload.score
+    if "language" in payload.model_fields_set:
+        item.language = payload.language
     item.segments = payload.segments
     item.metadata_ = payload.metadata
     item.virtual = payload.virtual

@@ -1,0 +1,272 @@
+{
+  "name": "TTS dataset (Polish) — deepseek-v4-flash → Chatterbox/FishS2Pro",
+  "hidden": false,
+  "data": {
+    "nodes": [
+      {
+        "id": "gen",
+        "type": "OpenRouterGenerateTexts",
+        "x": 0,
+        "y": 0,
+        "params": {
+          "model": "deepseek/deepseek-v4-flash",
+          "count": 16,
+          "language": "pl",
+          "batch_size": 8,
+          "temperature": 1.0,
+          "seed": 0,
+          "length_mode": "gaussian",
+          "length_mean_words": 12.0,
+          "length_std_words": 5.0,
+          "length_min_words": 5,
+          "length_max_words": 22,
+          "keywords_per_text": 2,
+          "seed_sentences": [
+            "Poranne światło delikatnie rozlało się po cichym stole w kuchni.",
+            "Zastanawiała się, czy pociąg przyjedzie przed nadejściem burzy.",
+            "Policzył monety dwa razy, a potem schował je do kieszeni płaszcza.",
+            "Dzieci zbudowały fort z koców i kuchennych krzeseł.",
+            "Każdego wieczoru latarnia morska mrugała spokojnie nad zatoką.",
+            "Delikatny wiatr niósł zapach świeżego chleba wąską uliczką.",
+            "Wciąż pamiętam, jak brzmiała rzeka o świcie.",
+            "Pamiętaj, proszę, podlać kwiaty, kiedy nas nie będzie.",
+            "Śnieg osiadał na dachach jak powolna, cierpliwa kołdra.",
+            "Umówiliśmy się pod zegarem o wpół do ósmej.",
+            "Stary pies przeciągnął się, ziewnął i wrócił w słońce.",
+            "Na targu stragany rozświetlały się lampionami, gdy zapadał zmrok.",
+            "Czytał przepis na głos, a ona odmierzała przyprawy.",
+            "Deszcz stukał w okno jak stary, dobry przyjaciel.",
+            "Zasadziliśmy pomidory wzdłuż płotu wczesną wiosną."
+          ],
+          "keywords": [
+            "przystań",
+            "latarnia",
+            "sad",
+            "kolej",
+            "łąka",
+            "kompas",
+            "żniwa",
+            "warsztat",
+            "rower",
+            "zeszyt",
+            "parasol",
+            "chata",
+            "festiwal",
+            "most",
+            "teleskop",
+            "ognisko",
+            "ogród",
+            "targ",
+            "list",
+            "podróż",
+            "góra",
+            "rzeka",
+            "piekarnia",
+            "biblioteka",
+            "wybrzeże"
+          ],
+          "topics": [
+            "codzienne czynności",
+            "podróże i miejsca",
+            "rodzina i przyjaciele",
+            "przyroda i pory roku",
+            "jedzenie i gotowanie",
+            "praca i rzemiosło",
+            "muzyka i sztuka",
+            "pogoda",
+            "wspomnienia z dzieciństwa",
+            "małe przygody",
+            "okolica",
+            "hobby",
+            "nauka czegoś nowego",
+            "morze",
+            "życie w mieście",
+            "wieś"
+          ]
+        },
+        "runtime": {}
+      },
+      {
+        "id": "ref_src",
+        "type": "AudioSource",
+        "x": 0,
+        "y": 200,
+        "params": {
+          "source": "selected",
+          "audio_file_ids": [
+            "5614cec6-aa55-4218-a4f5-093344e769c7"
+          ],
+          "dataset_id": null,
+          "include_virtual": false,
+          "limit": null
+        },
+        "runtime": {}
+      },
+      {
+        "id": "ref_load",
+        "type": "LoadAudio",
+        "x": 240,
+        "y": 200,
+        "params": {
+          "sample_rate": 24000,
+          "channels": 1
+        },
+        "runtime": {}
+      },
+      {
+        "id": "ckpt_chatterbox",
+        "type": "CatalogDownload",
+        "x": 0,
+        "y": 420,
+        "params": {
+          "catalog_key": "tts_models",
+          "item": "chatterbox"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "synth_chatterbox",
+        "type": "ChatterboxSynthesis",
+        "x": 560,
+        "y": 420,
+        "params": {
+          "language": "pl",
+          "output_name": "chatterbox_pl.wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_chatterbox",
+        "type": "SaveAudioArtifact",
+        "x": 820,
+        "y": 420,
+        "params": {
+          "output_subdir": "pl_chatterbox",
+          "extension": "wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "clone_chatterbox",
+        "type": "ChatterboxCloneVoice",
+        "x": 280,
+        "y": 420,
+        "params": {
+          "default_transcript": "The morning light spilled gently across the quiet kitchen table."
+        },
+        "runtime": {}
+      },
+      {
+        "id": "ckpt_fish_speech",
+        "type": "CatalogDownload",
+        "x": 0,
+        "y": 620,
+        "params": {
+          "catalog_key": "tts_models",
+          "item": "fish_speech"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "synth_fish_speech",
+        "type": "FishSpeechSynthesis",
+        "x": 560,
+        "y": 620,
+        "params": {
+          "language": "pl",
+          "output_name": "fish_speech_pl.wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_fish_speech",
+        "type": "SaveAudioArtifact",
+        "x": 820,
+        "y": 620,
+        "params": {
+          "output_subdir": "pl_fish_speech",
+          "extension": "wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "clone_fish_speech",
+        "type": "FishSpeechCloneVoice",
+        "x": 280,
+        "y": 620,
+        "params": {
+          "default_transcript": "The morning light spilled gently across the quiet kitchen table."
+        },
+        "runtime": {}
+      }
+    ],
+    "edges": [
+      {
+        "source_node": "ref_src",
+        "source_port": "audio",
+        "target_node": "ref_load",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "ckpt_chatterbox",
+        "source_port": "checkpoint",
+        "target_node": "synth_chatterbox",
+        "target_port": "checkpoint"
+      },
+      {
+        "source_node": "gen",
+        "source_port": "text",
+        "target_node": "synth_chatterbox",
+        "target_port": "text"
+      },
+      {
+        "source_node": "synth_chatterbox",
+        "source_port": "audio",
+        "target_node": "save_chatterbox",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "ref_load",
+        "source_port": "audio",
+        "target_node": "clone_chatterbox",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "clone_chatterbox",
+        "source_port": "voice",
+        "target_node": "synth_chatterbox",
+        "target_port": "voice"
+      },
+      {
+        "source_node": "ckpt_fish_speech",
+        "source_port": "checkpoint",
+        "target_node": "synth_fish_speech",
+        "target_port": "checkpoint"
+      },
+      {
+        "source_node": "gen",
+        "source_port": "text",
+        "target_node": "synth_fish_speech",
+        "target_port": "text"
+      },
+      {
+        "source_node": "synth_fish_speech",
+        "source_port": "audio",
+        "target_node": "save_fish_speech",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "ref_load",
+        "source_port": "audio",
+        "target_node": "clone_fish_speech",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "clone_fish_speech",
+        "source_port": "voice",
+        "target_node": "synth_fish_speech",
+        "target_port": "voice"
+      }
+    ]
+  }
+}

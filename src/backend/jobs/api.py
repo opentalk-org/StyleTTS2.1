@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from shared.db import database_session
 from shared.db.jobs import crud as jobs_crud
-from shared.db.jobs.schemas import JobPage, JobRead
+from shared.db.jobs.schemas import JobPage, JobRead, JobSummary
 from shared.schemas import InlineGraphRunRequest
 
 # Job removal is handled by the backend manager (`DELETE /jobs/{run_id}` in
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 async def list_jobs(limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0)) -> JobPage:
     with database_session() as session:
         rows, total = jobs_crud.list_jobs(session, limit, offset)
-        return JobPage(rows=[JobRead.model_validate(item) for item in rows], total=total)
+        return JobPage(rows=[JobSummary.model_validate(item) for item in rows], total=total)
 
 
 @router.get("/{run_id}", response_model=JobRead)

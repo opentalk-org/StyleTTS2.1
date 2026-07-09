@@ -1,0 +1,71 @@
+{
+  "name": "Import YouTube audio",
+  "hidden": false,
+  "data": {
+    "nodes": [
+      {
+        "id": "youtube_source",
+        "type": "YouTubeAudioSource",
+        "x": -180,
+        "y": 140,
+        "params": {
+          "urls": [
+            "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+          ],
+          "proxies": [],
+          "name_prefix": "youtube",
+          "max_parallel": 4,
+          "stagger_seconds": 0.5,
+          "download_retries": 3,
+          "create_voices": true
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_audio_record",
+        "type": "SaveAudioRecord",
+        "x": 220,
+        "y": 140,
+        "params": {
+          "virtual": false,
+          "bulk_import_packs": true
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_audio_segments",
+        "type": "SaveAudioSegments",
+        "x": 600,
+        "y": 140,
+        "params": {
+          "mode": "replace"
+        },
+        "runtime": {}
+      }
+    ],
+    "edges": [
+      {
+        "source_node": "youtube_source",
+        "source_port": "audio",
+        "target_node": "save_audio_record",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "save_audio_record",
+        "source_port": "audio",
+        "target_node": "save_audio_segments",
+        "target_port": "audio"
+      }
+    ],
+    "context": {
+      "work_dir": "work",
+      "cache_dir": "cache",
+      "output_dir": "outputs",
+      "device": "cuda",
+      "config": {},
+      "input_items": []
+    },
+    "launch_source": null,
+    "panels": []
+  }
+}

@@ -92,12 +92,27 @@ def download_whisper_model_files(version: str, folder: Path) -> None:
     whisper.load_model(version, download_root=str(folder))
 
 
+def _disable_hf_progress_bars() -> None:
+    """Turn off huggingface_hub's threaded tqdm progress bars.
+
+    snapshot_download parallelises file fetches with tqdm.contrib.concurrent.thread_map.
+    Inside the long-running runner (with stdout teed into per-node logs) that tqdm can
+    crash on teardown with ``type object 'tqdm' has no attribute '_lock'`` — the class-level
+    ``_lock`` gets lost across the process's many tqdm users. Disabling the bars removes the
+    threaded tqdm entirely; download progress is already logged at start/finish.
+    """
+    from huggingface_hub.utils import disable_progress_bars
+
+    disable_progress_bars()
+
+
 def download_hf_snapshot(model_id: str, folder: Path) -> None:
     """Download a full HuggingFace model snapshot (e.g. a wav2vec2 aligner) into ``folder``."""
     try:
         from huggingface_hub import snapshot_download
     except ImportError as exc:
         raise RuntimeError("huggingface_hub_not_installed") from exc
+    _disable_hf_progress_bars()
     snapshot_download(repo_id=model_id, local_dir=str(folder), token=huggingface_token())
 
 
@@ -107,6 +122,7 @@ def download_nemo_snapshot(model_id: str, folder: Path) -> None:
         from huggingface_hub import snapshot_download
     except ImportError as exc:
         raise RuntimeError("huggingface_hub_not_installed") from exc
+    _disable_hf_progress_bars()
     with TemporaryDirectory(prefix="runflow-hf-") as raw:
         raw_dir = Path(raw)
         snapshot_download(repo_id=model_id, local_dir=str(raw_dir), allow_patterns=["*.nemo"], token=huggingface_token())

@@ -5,7 +5,6 @@ export type Job = {
   run_id: string;
   name: string;
   state: "queued" | "running" | "stopping" | "stopped" | "succeeded" | "failed";
-  graph_request: WorkflowPayload;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;

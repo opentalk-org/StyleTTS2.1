@@ -20,6 +20,7 @@ class AudioFile(Base):
     byte_length: Mapped[int] = mapped_column(BigInteger, nullable=False)
     duration: Mapped[float] = mapped_column(Float, nullable=False)
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    language: Mapped[str | None] = mapped_column(Text, nullable=True)
     segments: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False)
     virtual: Mapped[bool] = mapped_column(Boolean, nullable=False)

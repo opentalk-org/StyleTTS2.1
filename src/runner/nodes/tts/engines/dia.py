@@ -31,11 +31,16 @@ class DiaRuntime(EngineRuntime):
         prompt = text if text.lstrip().startswith("[S") else f"[S1] {text}"
         processor_kwargs: dict[str, Any] = {"text": [prompt], "return_tensors": "pt", "padding": True}
         if voice.clone is not None:
+            import librosa
+
             reference, ref_rate = samples_from_wav_bytes(voice.clone.wav_bytes)
+            # Dia's feature extractor is fixed to 44.1 kHz; resample the reference to match.
+            if ref_rate != DIA_SAMPLE_RATE:
+                reference = librosa.resample(reference, orig_sr=ref_rate, target_sr=DIA_SAMPLE_RATE)
             prompt = f"[S1] {voice.clone.transcript} {text}"
             processor_kwargs["text"] = [prompt]
             processor_kwargs["audio"] = [reference]
-            processor_kwargs["sampling_rate"] = ref_rate
+            processor_kwargs["sampling_rate"] = DIA_SAMPLE_RATE
         inputs = self._processor(**processor_kwargs).to(self._device)
         outputs = self._model.generate(**inputs, max_new_tokens=3072, guidance_scale=3.0)
         decoded = self._processor.batch_decode(outputs)

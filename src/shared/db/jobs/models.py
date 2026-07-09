@@ -20,6 +20,9 @@ class Job(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Last per-node run snapshot (statuses/errors/counters), so a run reopened after a
+    # restart still shows which node failed rather than a blank graph.
+    snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
 
 

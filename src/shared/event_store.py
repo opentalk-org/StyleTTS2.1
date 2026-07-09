@@ -125,7 +125,11 @@ class RunEventStore:
         if event.kind == "run_stopped":
             self._finish_active_nodes("stopped", event.message)
         elif event.kind == "run_failed":
-            self._finish_active_nodes("failed", event.message)
+            # Only the node that raised gets `failed` + its own error via the earlier
+            # `node_failed` event. Other nodes that were merely in flight when the run
+            # aborted are marked `stopped` here -- stamping every one of them with this
+            # failure's message is what made the same error show up across many nodes.
+            self._finish_active_nodes("stopped", "Aborted: the run failed in another node")
         elif event.kind == "run_completed":
             self._finish_active_nodes("idle", event.message)
 

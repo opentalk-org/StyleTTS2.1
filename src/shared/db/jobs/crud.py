@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy import delete, desc, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from shared.db.jobs.models import Job, NodeLog
 from shared.db.jobs.schemas import JobUpsert, NodeLogUpsert
@@ -17,7 +17,15 @@ class ActiveJobError(ValueError):
 
 
 def list_jobs(session: Session, limit: int, offset: int) -> tuple[Sequence[Job], int]:
-    rows = session.execute(select(Job).order_by(desc(Job.updated_at)).limit(limit).offset(offset)).scalars().all()
+    # Defer the heavy JSONB columns; the list only needs summary fields, and the graph /
+    # snapshot are fetched per run on demand.
+    rows = session.execute(
+        select(Job)
+        .options(defer(Job.graph_request), defer(Job.snapshot))
+        .order_by(desc(Job.updated_at))
+        .limit(limit)
+        .offset(offset)
+    ).scalars().all()
     total = session.execute(select(func.count()).select_from(Job)).scalar_one()
     return rows, total
 

@@ -72,8 +72,12 @@
             TRITON_LIBCUDA_PATH = "/usr/local/nvidia/lib";
             # torchcodec (pulled by f5-tts / used by torchaudio 2.11 for decoding) dlopens
             # libavutil/libavcodec at import; expose ffmpeg-7's shared libs so core7 loads.
-            LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib:${pkgs.ffmpeg-headless.lib}/lib:${nvidiaDriverPath}";
-            LIBRARY_PATH = nvidiaDriverPath;
+            # portaudio is added so fish-speech's pyaudio dep builds (Linux source-only) and loads.
+            LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib:${pkgs.ffmpeg-headless.lib}/lib:${pkgs.portaudio}/lib:${nvidiaDriverPath}";
+            LIBRARY_PATH = "${pkgs.portaudio}/lib:${nvidiaDriverPath}";
+            # The shellHook unsets NIX_CFLAGS_COMPILE, so pass portaudio's headers via CPATH
+            # for the pyaudio C extension build.
+            CPATH = "${pkgs.portaudio}/include";
           };
         };
 
@@ -88,6 +92,7 @@
         unset NIX_CFLAGS_COMPILE CFLAGS CXXFLAGS
         export LD_LIBRARY_PATH="${pythonRuntime.env.LD_LIBRARY_PATH}"
         export LIBRARY_PATH="${pythonRuntime.env.LIBRARY_PATH}"
+        export CPATH="${pythonRuntime.env.CPATH}"
         export UV_PYTHON="${pythonRuntime.python}/bin/python${pythonRuntime.python.pythonVersion}"
         export UV_PYTHON_PREFERENCE="only-system"
         export UV_PYTHON_DOWNLOADS="never"

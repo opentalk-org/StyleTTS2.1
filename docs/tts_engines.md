@@ -21,7 +21,7 @@ raises a clear `*_not_installed` error instead of breaking node discovery.
 | Dia | ✅ available (no extra pkg) | `DiaForConditionalGeneration` imports | transformers 4.57.6 ≥ 4.53; only the model download is needed |
 | F5-TTS | ✅ installed (`f5-tts`) | real audio (cloning), 24 kHz | needs `torchcodec==0.11.1` (torch-2.11 ABI) + ffmpeg-7 libs on `LD_LIBRARY_PATH` (added in `flake.nix`) |
 | Orpheus | ✅ installed (`orpheus-speech`+vLLM) | real audio, 24 kHz (voice "tara") | vLLM 0.21 **cu129** wheel (pinned in `[tool.uv.sources]`) links `libcudart.so.12` → runs on cu128 torch. Runtime drives vLLM's offline `LLM` API directly + SNAC decode. Uses the ungated `unsloth/orpheus-3b-0.1-ft` mirror; runs the engine in-process (`VLLM_ENABLE_V1_MULTIPROCESSING=0`) with `VLLM_USE_FLASHINFER_SAMPLER=0` + FLASH_ATTN (flashinfer's JIT kernel links libcudart.so.13) |
-| Fish Speech | ❌ not force-installable | — | PyPI `fish-speech` 0.1.0 pins `datasets==2.18.0`, whose `fsspec` conflicts with nemo-toolkit>=2.7; forcing it would break the ASR stack |
+| Fish Speech (S2-Pro) | ✅ installed (fish-speech 2.0 git source) | real audio (cloning), 44.1 kHz | pivoted to the newest **`fishaudio/s2-pro`** (dual-AR, 80+ langs, **ungated**). The `fish_qwen3_omni` config maps to fish's `dual_ar` model so the same `TTSInferenceEngine` runs it. Source-installed by forcing `pydantic 2.13`/`protobuf 5.29`/`fsspec 2024.12` up + building pyaudio against portaudio (in `flake.nix`) |
 | Raon-OpenTTS | ❌ no wheel | — | git-only F5 fork (`pip install -e .`); shares F5's torchcodec limitation |
 
 Kokoro, Chatterbox, F5-TTS are in `pyproject.toml` base dependencies. Orpheus, Fish
@@ -38,7 +38,7 @@ importable and raise `*_not_installed` until installed some other way.
 | F5-TTS | `SWivid/F5-TTS` | 0 (zero-shot) | EN + ZH (community FTs add more) | **YES** — ref audio + transcript | `f5-tts` | `from f5_tts.api import F5TTS` | code MIT / weights CC-BY-NC-4.0 | 24 kHz |
 | Orpheus | `canopylabs/orpheus-3b-0.1-ft` | 8 (tara, leah, jess, leo, dan, mia, zac, zoe) | EN (+7-lang preview) | **YES** — prompt example pairs (zero-shot) | `orpheus-speech` (vLLM) | `from orpheus_tts import OrpheusModel` | Apache-2.0 | 24 kHz |
 | Dia / Dia2 | `nari-labs/Dia-1.6B-0626` (+ `Dia2-1B`/`-2B`) | 0 (no fixed speaker) | EN only | **YES** — audio prompt + transcript | HF Transformers (`DiaForConditionalGeneration`) | `transformers` ≥4.53 | Apache-2.0 | Dia1 44.1 kHz; Dia2 ~24 kHz |
-| Fish Speech / OpenAudio S1 | `fishaudio/openaudio-s1-mini`, `fishaudio/fish-speech-1.5` | 0 (clone-based) | 13 | **YES** — ref audio + transcript | `fish-speech` (source) | CLI `text2semantic` / HTTP API | CC-BY-NC-SA-4.0 | 44.1 kHz |
+| Fish Speech (S2-Pro) | `fishaudio/s2-pro` (newest; also s1-mini/1.5) | 0 (clone-based) | **80+** (S2-Pro); 13 for S1/1.5 | **YES** — ref audio + transcript, inline `[tag]` control | `fish-speech` 2.0 (git source) | `TTSInferenceEngine` | Fish Audio Research License (S2); CC-BY-NC-SA-4.0 (S1) | 44.1 kHz |
 | Raon-OpenTTS | `KRAFTON/Raon-OpenTTS-0.3B`/`-1B` | 0 (zero-shot) | EN only | **YES** — ref audio + transcript | `-e .` (F5-TTS fork) | `from f5_tts.infer.utils_infer import infer_process` | Apache-2.0 (repo) vs CC-BY-NC-4.0 (weights) | 16 kHz |
 
 ## Which nodes exist (derived from the table)

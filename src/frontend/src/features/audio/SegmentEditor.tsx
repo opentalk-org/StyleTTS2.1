@@ -16,9 +16,14 @@ import { saveAudioSegments } from "./api";
 import { SegmentRow } from "./SegmentRow";
 import { SegmentTimeline } from "./SegmentTimeline";
 import { useEditor } from "./editorStore";
-import { AUDIO_FILES_KEY, useAudioFileQuery, useRenameAudioFileMutation, useUpdateAudioScoreMutation, useWaveformQuery, useWaveformStatusQuery } from "./query";
+import { AUDIO_FILES_KEY, useAudioFileQuery, useRenameAudioFileMutation, useUpdateAudioLanguageMutation, useUpdateAudioScoreMutation, useWaveformQuery, useWaveformStatusQuery } from "./query";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+/** Show an audio score with 3 decimals (empty string for no score). */
+function fmtScore(score: number | null): string {
+  return score === null ? "" : score.toFixed(3);
+}
 
 /** Order-independent fingerprint of a segment list, to detect backend-side changes. */
 function segsSignature(segs: { id: string; start: number; end: number; text: string; phon: string; speaker: string; alignment?: { start: number }[] | null }[]): string {
@@ -49,14 +54,17 @@ export function SegmentEditor() {
   const audio = useAudioFileQuery(activeAudioFileId);
   const renameAudio = useRenameAudioFileMutation();
   const updateScore = useUpdateAudioScoreMutation();
+  const updateLanguage = useUpdateAudioLanguageMutation();
   const queryClient = useQueryClient();
   const audioRef = useRef<HTMLAudioElement>(null);
   const skipNameBlur = useRef(false);
   const skipScoreBlur = useRef(false);
+  const skipLanguageBlur = useRef(false);
   const [copied, setCopied] = useState(false);
   const [metadataCopied, setMetadataCopied] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [scoreDraft, setScoreDraft] = useState("");
+  const [languageDraft, setLanguageDraft] = useState("");
   const [showMetadata, setShowMetadata] = useState(false);
   const ed = useEditor();
   const {
@@ -85,8 +93,12 @@ export function SegmentEditor() {
   }, [audio.data?.id, audio.data?.name]);
 
   useEffect(() => {
-    if (audio.data) setScoreDraft(audio.data.score === null ? "" : String(audio.data.score));
+    if (audio.data) setScoreDraft(fmtScore(audio.data.score));
   }, [audio.data?.id, audio.data?.score]);
+
+  useEffect(() => {
+    if (audio.data) setLanguageDraft(audio.data.language ?? "");
+  }, [audio.data?.id, audio.data?.language]);
 
   useEffect(() => {
     const element = audioRef.current;
@@ -187,16 +199,32 @@ export function SegmentEditor() {
     const score = raw === "" ? null : Number(raw);
     if (raw !== "" && !Number.isFinite(score)) {
       showToast("Score must be a number", undefined, "error");
-      setScoreDraft(file.score === null ? "" : String(file.score));
+      setScoreDraft(fmtScore(file.score));
       return;
     }
     if (score === file.score) return;
+    // The field shows the value rounded to 3 decimals, so a plain focus/blur of an
+    // unchanged score must not trigger a rounding write.
+    if (score !== null && file.score !== null && Number(file.score.toFixed(3)) === score) return;
     try {
       await updateScore.mutateAsync({ id: activeAudioFileId, score });
       showToast("Score saved");
     } catch {
-      setScoreDraft(file.score === null ? "" : String(file.score));
+      setScoreDraft(fmtScore(file.score));
       showToast("Could not save score", undefined, "error");
+    }
+  };
+
+  const commitLanguage = async () => {
+    const trimmed = languageDraft.trim();
+    const language = trimmed === "" ? null : trimmed;
+    if (language === (file.language ?? null)) return;
+    try {
+      await updateLanguage.mutateAsync({ id: activeAudioFileId, language });
+      showToast("Language saved");
+    } catch {
+      setLanguageDraft(file.language ?? "");
+      showToast("Could not save language", undefined, "error");
     }
   };
 
@@ -217,40 +245,53 @@ export function SegmentEditor() {
           if (useEditor.getState().playing) useEditor.getState().togglePlay();
         }}
       />
-      <div className="mb-4 grid gap-3 rounded-[10px] border border-line bg-panel px-4 py-3 lg:grid-cols-[1fr_auto]">
-        <div className="min-w-0">
-          <div className="mb-2 flex items-center gap-2">
-            <Button variant="secondary" size="sm" icon="arrow-left" onClick={() => useNav.getState().go("audio")}>
-              Audio Files
-            </Button>
-            <input
-              value={nameDraft}
-              disabled={renameAudio.isPending}
-              title="Rename audio"
-              onChange={(event) => setNameDraft(event.target.value)}
-              onBlur={() => {
-                if (skipNameBlur.current) {
-                  skipNameBlur.current = false;
-                  return;
-                }
-                void commitName();
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  event.currentTarget.blur();
-                } else if (event.key === "Escape") {
-                  event.preventDefault();
-                  skipNameBlur.current = true;
-                  setNameDraft(file.name);
-                  event.currentTarget.blur();
-                }
-              }}
-              className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-[17px] font-bold text-txt outline-none hover:border-line focus:border-blue-400 focus:bg-bg"
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs tabular-nums text-txt-mute">
-            <span className="max-w-[260px] truncate rounded-full bg-panel-2 px-2 py-0.5 text-[11px] font-semibold text-txt-dim" title={file.speaker}>
+      <div className="mb-4 rounded-[10px] border border-line bg-panel">
+        {/* Row 1 — identity + save */}
+        <div className="flex items-center gap-2 px-3 py-2.5">
+          <Button variant="secondary" size="sm" icon="arrow-left" onClick={() => useNav.getState().go("audio")}>
+            Back
+          </Button>
+          <input
+            value={nameDraft}
+            disabled={renameAudio.isPending}
+            title="Rename audio"
+            onChange={(event) => setNameDraft(event.target.value)}
+            onBlur={() => {
+              if (skipNameBlur.current) {
+                skipNameBlur.current = false;
+                return;
+              }
+              void commitName();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                event.currentTarget.blur();
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                skipNameBlur.current = true;
+                setNameDraft(file.name);
+                event.currentTarget.blur();
+              }
+            }}
+            className="h-8 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 font-mono text-[15px] font-bold text-txt outline-none hover:border-line-2 focus:border-blue-400 focus:bg-bg"
+          />
+          <span className={cn("flex h-8 flex-shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold", dirty ? "bg-amber-50 text-amber-700" : "bg-panel-2 text-txt-mute")}>
+            {dirty ? (
+              <span className="h-[7px] w-[7px] rounded-full bg-amber-500" />
+            ) : (
+              <Icon name="check" size={14} strokeWidth={2.5} className="text-emerald-600" />
+            )}
+            {dirty ? "Unsaved" : "Saved"}
+          </span>
+          <Button variant={dirty ? "primary" : "ghost"} size="sm" disabled={!dirty} onClick={() => { void saveSegments(); }}>
+            Save
+          </Button>
+        </div>
+        {/* Row 2 — metadata chips + editable fields */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-3 py-2.5">
+          <div className="flex min-w-0 flex-1 basis-[280px] flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] tabular-nums text-txt-mute">
+            <span className="max-w-[220px] truncate rounded-full bg-panel-2 px-2 py-0.5 font-semibold text-txt-dim" title={file.speaker}>
               {file.speaker}
             </span>
             <span>{fmtDur(dur)}</span>
@@ -266,7 +307,7 @@ export function SegmentEditor() {
                 window.setTimeout(() => setCopied(false), 1200);
               }}
               className={cn(
-                "inline-flex min-w-0 max-w-full items-center gap-1 font-mono transition-all active:scale-95",
+                "inline-flex min-w-0 max-w-[200px] items-center gap-1 font-mono transition-all active:scale-95",
                 copied ? "text-emerald-600" : "text-txt-dim hover:text-txt",
               )}
             >
@@ -274,57 +315,72 @@ export function SegmentEditor() {
               <span className="truncate">{copied ? "Copied" : activeAudioFileId}</span>
             </button>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
-          <label className="flex h-12 min-w-[176px] items-center gap-2 rounded-md border border-line bg-bg px-3">
-            <span className="text-[11px] font-bold uppercase text-txt-mute">Score</span>
-            <input
-              value={scoreDraft}
-              disabled={updateScore.isPending}
-              type="number"
-              step="0.01"
-              placeholder="none"
-              title="Audio score"
-              onChange={(event) => setScoreDraft(event.target.value)}
-              onBlur={() => {
-                if (skipScoreBlur.current) {
-                  skipScoreBlur.current = false;
-                  return;
-                }
-                void commitScore();
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  event.currentTarget.blur();
-                } else if (event.key === "Escape") {
-                  event.preventDefault();
-                  skipScoreBlur.current = true;
-                  setScoreDraft(file.score === null ? "" : String(file.score));
-                  event.currentTarget.blur();
-                }
-              }}
-              className="h-9 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 text-right font-mono text-[15px] font-bold tabular-nums text-txt outline-none focus:border-blue-400 disabled:opacity-60"
-            />
-          </label>
-          <Button variant={showMetadata ? "secondary" : "ghost"} icon="file-audio" onClick={() => setShowMetadata((value) => !value)}>
-            Metadata
-          </Button>
-          <span className={cn("flex h-9 items-center gap-1.5 rounded-md px-2 text-xs font-semibold", dirty ? "bg-amber-50 text-amber-700" : "bg-panel-2 text-txt-mute")}>
-            {dirty ? (
-              <span className="h-[7px] w-[7px] rounded-full bg-amber-500" />
-            ) : (
-              <Icon name="check" size={14} strokeWidth={2.5} className="text-emerald-600" />
-            )}
-            {dirty ? "Unsaved changes" : "Saved"}
-          </span>
-          <Button
-            variant={dirty ? "primary" : "ghost"}
-            disabled={!dirty}
-            onClick={() => { void saveSegments(); }}
-          >
-            Save
-          </Button>
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <label className="flex h-8 items-center rounded-md border border-line-2 bg-bg pl-2.5 pr-1 focus-within:border-blue-400">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-txt-mute">Score</span>
+              <input
+                value={scoreDraft}
+                disabled={updateScore.isPending}
+                type="number"
+                step="0.01"
+                placeholder="—"
+                title="Audio score"
+                onChange={(event) => setScoreDraft(event.target.value)}
+                onBlur={() => {
+                  if (skipScoreBlur.current) {
+                    skipScoreBlur.current = false;
+                    return;
+                  }
+                  void commitScore();
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    skipScoreBlur.current = true;
+                    setScoreDraft(fmtScore(file.score));
+                    event.currentTarget.blur();
+                  }
+                }}
+                className="h-6 w-24 min-w-0 rounded bg-transparent px-1 text-right font-mono text-[13px] font-semibold tabular-nums text-txt outline-none placeholder:text-txt-mute disabled:opacity-60"
+              />
+            </label>
+            <label className="flex h-8 items-center rounded-md border border-line-2 bg-bg pl-2.5 pr-1 focus-within:border-blue-400">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-txt-mute">Lang</span>
+              <input
+                value={languageDraft}
+                disabled={updateLanguage.isPending}
+                type="text"
+                placeholder="—"
+                title="Audio language"
+                onChange={(event) => setLanguageDraft(event.target.value)}
+                onBlur={() => {
+                  if (skipLanguageBlur.current) {
+                    skipLanguageBlur.current = false;
+                    return;
+                  }
+                  void commitLanguage();
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    skipLanguageBlur.current = true;
+                    setLanguageDraft(file.language ?? "");
+                    event.currentTarget.blur();
+                  }
+                }}
+                className="h-6 w-20 min-w-0 rounded bg-transparent px-1 font-mono text-[13px] font-semibold text-txt outline-none placeholder:text-txt-mute disabled:opacity-60"
+              />
+            </label>
+            <Button variant={showMetadata ? "secondary" : "ghost"} size="sm" icon="file-audio" onClick={() => setShowMetadata((value) => !value)}>
+              Metadata
+            </Button>
+          </div>
         </div>
       </div>
       {showMetadata ? (

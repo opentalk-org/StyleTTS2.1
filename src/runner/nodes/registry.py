@@ -40,6 +40,7 @@ from runner.nodes.assets.training_assets import ResolveTrainingAssetsNode
 from runner.nodes.dataset_writeback import AddAudioToDatasetNode, AssignVoiceNode, DeleteAudioRecordsNode, RemoveAudioFromDatasetNode
 from runner.nodes.datatypes import register_runner_types
 from runner.nodes.hetzner import HetznerDsV1ParquetAudioSourceNode, HetznerDsV2ParquetAudioSourceNode
+from runner.nodes.youtube_source import YouTubeAudioSourceNode
 from runner.nodes.text_generation import OpenRouterGenerateTextsNode
 from runner.nodes.text_processing import PhonemizeSegmentsNode
 from runner.nodes.tts import TTS_NODES
@@ -68,6 +69,7 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         AudioSourceNode,
         HetznerDsV1ParquetAudioSourceNode,
         HetznerDsV2ParquetAudioSourceNode,
+        YouTubeAudioSourceNode,
         LoadAudioNode,
         SaveAudioRecordNode,
         UpdateAudioRecordBytesNode,

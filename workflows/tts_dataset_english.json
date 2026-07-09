@@ -1,0 +1,496 @@
+{
+  "name": "TTS dataset (English) — deepseek-v4-flash → Kokoro/Chatterbox/F5/Orpheus/Dia/FishS2Pro",
+  "hidden": false,
+  "data": {
+    "nodes": [
+      {
+        "id": "gen",
+        "type": "OpenRouterGenerateTexts",
+        "x": 0,
+        "y": 0,
+        "params": {
+          "model": "deepseek/deepseek-v4-flash",
+          "count": 16,
+          "language": "en",
+          "batch_size": 8,
+          "temperature": 1.0,
+          "seed": 0,
+          "length_mode": "gaussian",
+          "length_mean_words": 12.0,
+          "length_std_words": 5.0,
+          "length_min_words": 5,
+          "length_max_words": 22,
+          "keywords_per_text": 2
+        },
+        "runtime": {}
+      },
+      {
+        "id": "ref_src",
+        "type": "AudioSource",
+        "x": 0,
+        "y": 200,
+        "params": {
+          "source": "selected",
+          "audio_file_ids": [
+            "5614cec6-aa55-4218-a4f5-093344e769c7"
+          ],
+          "dataset_id": null,
+          "include_virtual": false,
+          "limit": null
+        },
+        "runtime": {}
+      },
+      {
+        "id": "ref_load",
+        "type": "LoadAudio",
+        "x": 240,
+        "y": 200,
+        "params": {
+          "sample_rate": 24000,
+          "channels": 1
+        },
+        "runtime": {}
+      },
+      {
+        "id": "ckpt_kokoro",
+        "type": "CatalogDownload",
+        "x": 0,
+        "y": 420,
+        "params": {
+          "catalog_key": "tts_models",
+          "item": "kokoro"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "synth_kokoro",
+        "type": "KokoroSynthesis",
+        "x": 560,
+        "y": 420,
+        "params": {
+          "language": "en",
+          "output_name": "kokoro_en.wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_kokoro",
+        "type": "SaveAudioArtifact",
+        "x": 820,
+        "y": 420,
+        "params": {
+          "output_subdir": "en_kokoro",
+          "extension": "wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "voice_kokoro",
+        "type": "TtsRandomVoices",
+        "x": 280,
+        "y": 420,
+        "params": {
+          "engine": "kokoro",
+          "count": 3,
+          "samples_per_voice": 1,
+          "seed": 0
+        },
+        "runtime": {}
+      },
+      {
+        "id": "ckpt_chatterbox",
+        "type": "CatalogDownload",
+        "x": 0,
+        "y": 620,
+        "params": {
+          "catalog_key": "tts_models",
+          "item": "chatterbox"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "synth_chatterbox",
+        "type": "ChatterboxSynthesis",
+        "x": 560,
+        "y": 620,
+        "params": {
+          "language": "en",
+          "output_name": "chatterbox_en.wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_chatterbox",
+        "type": "SaveAudioArtifact",
+        "x": 820,
+        "y": 620,
+        "params": {
+          "output_subdir": "en_chatterbox",
+          "extension": "wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "clone_chatterbox",
+        "type": "ChatterboxCloneVoice",
+        "x": 280,
+        "y": 620,
+        "params": {
+          "default_transcript": "The morning light spilled gently across the quiet kitchen table."
+        },
+        "runtime": {}
+      },
+      {
+        "id": "ckpt_f5_tts",
+        "type": "CatalogDownload",
+        "x": 0,
+        "y": 820,
+        "params": {
+          "catalog_key": "tts_models",
+          "item": "f5_tts"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "synth_f5_tts",
+        "type": "F5TtsSynthesis",
+        "x": 560,
+        "y": 820,
+        "params": {
+          "language": "en",
+          "output_name": "f5_tts_en.wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_f5_tts",
+        "type": "SaveAudioArtifact",
+        "x": 820,
+        "y": 820,
+        "params": {
+          "output_subdir": "en_f5_tts",
+          "extension": "wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "clone_f5_tts",
+        "type": "F5TtsCloneVoice",
+        "x": 280,
+        "y": 820,
+        "params": {
+          "default_transcript": "The morning light spilled gently across the quiet kitchen table."
+        },
+        "runtime": {}
+      },
+      {
+        "id": "ckpt_orpheus",
+        "type": "CatalogDownload",
+        "x": 0,
+        "y": 1020,
+        "params": {
+          "catalog_key": "tts_models",
+          "item": "orpheus"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "synth_orpheus",
+        "type": "OrpheusSynthesis",
+        "x": 560,
+        "y": 1020,
+        "params": {
+          "language": "en",
+          "output_name": "orpheus_en.wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_orpheus",
+        "type": "SaveAudioArtifact",
+        "x": 820,
+        "y": 1020,
+        "params": {
+          "output_subdir": "en_orpheus",
+          "extension": "wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "voice_orpheus",
+        "type": "TtsRandomVoices",
+        "x": 280,
+        "y": 1020,
+        "params": {
+          "engine": "orpheus",
+          "count": 3,
+          "samples_per_voice": 1,
+          "seed": 0
+        },
+        "runtime": {}
+      },
+      {
+        "id": "ckpt_dia",
+        "type": "CatalogDownload",
+        "x": 0,
+        "y": 1220,
+        "params": {
+          "catalog_key": "tts_models",
+          "item": "dia"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "synth_dia",
+        "type": "DiaSynthesis",
+        "x": 560,
+        "y": 1220,
+        "params": {
+          "language": "en",
+          "output_name": "dia_en.wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_dia",
+        "type": "SaveAudioArtifact",
+        "x": 820,
+        "y": 1220,
+        "params": {
+          "output_subdir": "en_dia",
+          "extension": "wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "clone_dia",
+        "type": "DiaCloneVoice",
+        "x": 280,
+        "y": 1220,
+        "params": {
+          "default_transcript": "The morning light spilled gently across the quiet kitchen table."
+        },
+        "runtime": {}
+      },
+      {
+        "id": "ckpt_fish_speech",
+        "type": "CatalogDownload",
+        "x": 0,
+        "y": 1420,
+        "params": {
+          "catalog_key": "tts_models",
+          "item": "fish_speech"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "synth_fish_speech",
+        "type": "FishSpeechSynthesis",
+        "x": 560,
+        "y": 1420,
+        "params": {
+          "language": "en",
+          "output_name": "fish_speech_en.wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_fish_speech",
+        "type": "SaveAudioArtifact",
+        "x": 820,
+        "y": 1420,
+        "params": {
+          "output_subdir": "en_fish_speech",
+          "extension": "wav"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "clone_fish_speech",
+        "type": "FishSpeechCloneVoice",
+        "x": 280,
+        "y": 1420,
+        "params": {
+          "default_transcript": "The morning light spilled gently across the quiet kitchen table."
+        },
+        "runtime": {}
+      }
+    ],
+    "edges": [
+      {
+        "source_node": "ref_src",
+        "source_port": "audio",
+        "target_node": "ref_load",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "ckpt_kokoro",
+        "source_port": "checkpoint",
+        "target_node": "synth_kokoro",
+        "target_port": "checkpoint"
+      },
+      {
+        "source_node": "gen",
+        "source_port": "text",
+        "target_node": "synth_kokoro",
+        "target_port": "text"
+      },
+      {
+        "source_node": "synth_kokoro",
+        "source_port": "audio",
+        "target_node": "save_kokoro",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "voice_kokoro",
+        "source_port": "voice",
+        "target_node": "synth_kokoro",
+        "target_port": "voice"
+      },
+      {
+        "source_node": "ckpt_chatterbox",
+        "source_port": "checkpoint",
+        "target_node": "synth_chatterbox",
+        "target_port": "checkpoint"
+      },
+      {
+        "source_node": "gen",
+        "source_port": "text",
+        "target_node": "synth_chatterbox",
+        "target_port": "text"
+      },
+      {
+        "source_node": "synth_chatterbox",
+        "source_port": "audio",
+        "target_node": "save_chatterbox",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "ref_load",
+        "source_port": "audio",
+        "target_node": "clone_chatterbox",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "clone_chatterbox",
+        "source_port": "voice",
+        "target_node": "synth_chatterbox",
+        "target_port": "voice"
+      },
+      {
+        "source_node": "ckpt_f5_tts",
+        "source_port": "checkpoint",
+        "target_node": "synth_f5_tts",
+        "target_port": "checkpoint"
+      },
+      {
+        "source_node": "gen",
+        "source_port": "text",
+        "target_node": "synth_f5_tts",
+        "target_port": "text"
+      },
+      {
+        "source_node": "synth_f5_tts",
+        "source_port": "audio",
+        "target_node": "save_f5_tts",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "ref_load",
+        "source_port": "audio",
+        "target_node": "clone_f5_tts",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "clone_f5_tts",
+        "source_port": "voice",
+        "target_node": "synth_f5_tts",
+        "target_port": "voice"
+      },
+      {
+        "source_node": "ckpt_orpheus",
+        "source_port": "checkpoint",
+        "target_node": "synth_orpheus",
+        "target_port": "checkpoint"
+      },
+      {
+        "source_node": "gen",
+        "source_port": "text",
+        "target_node": "synth_orpheus",
+        "target_port": "text"
+      },
+      {
+        "source_node": "synth_orpheus",
+        "source_port": "audio",
+        "target_node": "save_orpheus",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "voice_orpheus",
+        "source_port": "voice",
+        "target_node": "synth_orpheus",
+        "target_port": "voice"
+      },
+      {
+        "source_node": "ckpt_dia",
+        "source_port": "checkpoint",
+        "target_node": "synth_dia",
+        "target_port": "checkpoint"
+      },
+      {
+        "source_node": "gen",
+        "source_port": "text",
+        "target_node": "synth_dia",
+        "target_port": "text"
+      },
+      {
+        "source_node": "synth_dia",
+        "source_port": "audio",
+        "target_node": "save_dia",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "ref_load",
+        "source_port": "audio",
+        "target_node": "clone_dia",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "clone_dia",
+        "source_port": "voice",
+        "target_node": "synth_dia",
+        "target_port": "voice"
+      },
+      {
+        "source_node": "ckpt_fish_speech",
+        "source_port": "checkpoint",
+        "target_node": "synth_fish_speech",
+        "target_port": "checkpoint"
+      },
+      {
+        "source_node": "gen",
+        "source_port": "text",
+        "target_node": "synth_fish_speech",
+        "target_port": "text"
+      },
+      {
+        "source_node": "synth_fish_speech",
+        "source_port": "audio",
+        "target_node": "save_fish_speech",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "ref_load",
+        "source_port": "audio",
+        "target_node": "clone_fish_speech",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "clone_fish_speech",
+        "source_port": "voice",
+        "target_node": "synth_fish_speech",
+        "target_port": "voice"
+      }
+    ]
+  }
+}

@@ -75,6 +75,7 @@ class PersistSplitAudioRecordsNode(Node):
                     wav_bytes=audio.data,
                     duration=audio.duration,
                     score=_target_audio_score(audio),
+                    language=_target_audio_language(audio),
                     segments=[],
                     metadata=_target_audio_metadata(audio),
                     virtual=self.settings.virtual,
@@ -247,6 +248,13 @@ def _target_audio_score(audio: Audio) -> float | None:
             continue
         return float(value)
     return None
+
+
+def _target_audio_language(audio: Audio) -> str | None:
+    value = audio.metadata.get("language")
+    if value is None or value == "":
+        return None
+    return str(value)
 
 
 def _attach_datasets(session, audio_file_id: UUID, settings: PersistSplitAudioRecordsSettings) -> None:

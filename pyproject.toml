@@ -22,6 +22,7 @@ dependencies = [
     "chatterbox-tts",
     "f5-tts",
     "orpheus-speech",
+    "fish-speech",
     # Kokoro's English G2P (misaki) needs this spaCy model; ship it so it is never
     # fetched at runtime (a runtime `spacy download` shells out to pip and fails in the
     # immutable nix store interpreter).
@@ -49,6 +50,7 @@ dependencies = [
     "transformers>=4.45",
     "uvicorn[standard]>=0.30",
     "whisperx>=3.1",
+    "yt-dlp>=2024.8",
 ]
 
 # DeepFilterNet's wheel metadata pins numpy<2, but the rest of the stack (nemo,
@@ -76,6 +78,13 @@ override-dependencies = [
     "torchcodec==0.11.1",
     "vllm>=0.20,<0.24",
     "packaging>=24.2",
+    # fish-speech pins datasets==2.18.0 (old fsspec) which clashes with nemo's fsspec==2024.12.0.
+    # Force nemo's fsspec so both resolve (fsspec is backward compatible enough for inference).
+    "fsspec==2024.12.0",
+    # fish-speech pins pydantic==2.9.2 but vLLM needs >=2.12; force up (pydantic v2 schemas compatible).
+    "pydantic>=2.12.0",
+    # descript-audiotools (via fish's descript-audio-codec) caps protobuf<3.20; nemo needs 5.29.x. Force up.
+    "protobuf>=5.29.5,<5.30",
 ]
 
 [tool.uv.sources]
@@ -84,6 +93,8 @@ en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/dow
 # wheel instead: it is CUDA major-12 (links libcudart.so.12), which the cu128 torch stack
 # already provides — so Orpheus/vLLM run without migrating the stack off CUDA 12.8.
 vllm = [{ url = "https://wheels.vllm.ai/ad7125a431e176d4161099480a66f0169609a690/vllm-0.21.0%2Bcu129-cp38-abi3-manylinux_2_34_x86_64.whl", marker = "sys_platform == 'linux'" }]
+# Real Fish Speech / OpenAudio engine (source install; the PyPI `fish-speech` 0.1.0 is a stub).
+fish-speech = { git = "https://github.com/fishaudio/fish-speech", rev = "e5e292632cb11e7a27b2b7487f58f612bc101e13" }
 torch = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux'" }]
 torchaudio = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux'" }]
 torchvision = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux'" }]

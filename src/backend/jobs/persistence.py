@@ -7,6 +7,9 @@ from shared.schemas import NodeLogResponseMessage
 def persist_job(record) -> None:
     if record.graph_request is None:
         return
+    snapshot = None
+    if record.event_store.total_event_count > 0:
+        snapshot = record.event_store.snapshot(record.run_id).model_dump(mode="json")
     payload = JobUpsert(
         run_id=record.run_id,
         name=record.name,
@@ -16,6 +19,7 @@ def persist_job(record) -> None:
         started_at=record.started_at,
         finished_at=record.finished_at,
         error=record.error,
+        snapshot=snapshot,
     )
     with database_session() as session:
         jobs_crud.upsert_job(session, payload)
