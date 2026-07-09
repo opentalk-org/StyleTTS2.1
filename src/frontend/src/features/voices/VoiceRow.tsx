@@ -1,14 +1,29 @@
 import { askConfirm } from "@/shared/feedback/ConfirmDialog";
 import { Icon } from "@/shared/icons";
+import { cn } from "@/shared/ui/cn";
 import { IconButton } from "@/shared/ui/IconButton";
 import type { Voice } from "./api";
 import { useVoiceActions } from "./query";
 import { useVoiceFilters } from "./store";
 
+function Checkbox({ on }: { on: boolean }) {
+  return (
+    <span
+      className={cn(
+        "flex h-[18px] w-[18px] flex-none items-center justify-center rounded",
+        on ? "bg-blue-500" : "border-2 border-line-2 bg-panel",
+      )}
+    >
+      {on ? <Icon name="check" size={12} strokeWidth={3} className="text-white" /> : null}
+    </span>
+  );
+}
+
 export function VoiceRow({ voice }: { voice: Voice }) {
-  const { editId, set } = useVoiceFilters();
+  const { editId, set, selection, selectAllMatching, toggleSelect } = useVoiceFilters();
   const { rename, remove } = useVoiceActions();
   const editing = editId === voice.id;
+  const selected = selectAllMatching || !!selection[voice.id];
 
   const del = () =>
     askConfirm({
@@ -21,7 +36,15 @@ export function VoiceRow({ voice }: { voice: Voice }) {
 
   return (
     <div className="py-1">
-      <div className="flex h-[58px] items-center gap-3 rounded-[9px] border border-line bg-panel px-3.5">
+      <div
+        className={cn(
+          "flex h-[58px] items-center gap-3 rounded-[9px] border px-3.5",
+          selected ? "border-blue-300 bg-blue-50" : "border-line bg-panel",
+        )}
+      >
+        <button onClick={() => toggleSelect(voice.id)} className="flex" title="Select voice">
+          <Checkbox on={selected} />
+        </button>
         <div className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
           <Icon name="mic" size={16} strokeWidth={2.2} />
         </div>

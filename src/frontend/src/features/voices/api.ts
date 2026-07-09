@@ -22,6 +22,10 @@ type VoicePayload = {
   name: string;
 };
 
+export type VoiceDeleteRequest =
+  | { mode: "ids"; ids: string[] }
+  | { mode: "filter"; query: string };
+
 export function fetchVoices(params: VoiceQuery): Promise<VoicePage> {
   const search = new URLSearchParams({
     query: params.query,
@@ -51,6 +55,18 @@ export function renameVoice(id: string, name: string): Promise<Voice> {
 
 export async function deleteVoice(id: string): Promise<void> {
   const response = await backendFetch(`/voices/${id}`, { method: "DELETE" });
+  if (!response.ok) {
+    throw new Error(`Backend request failed: ${response.status}`);
+  }
+}
+
+export async function deleteVoices(ids: string[]): Promise<void> {
+  await Promise.all(ids.map((id) => deleteVoice(id)));
+}
+
+export async function deleteMatchingVoices(query: string): Promise<void> {
+  const search = new URLSearchParams({ query });
+  const response = await backendFetch(`/voices?${search}`, { method: "DELETE" });
   if (!response.ok) {
     throw new Error(`Backend request failed: ${response.status}`);
   }

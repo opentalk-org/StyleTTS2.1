@@ -30,6 +30,11 @@ def search_voices(session: Session, query: str, limit: int, offset: int) -> tupl
     return rows, total
 
 
+def search_voice_ids(session: Session, query: str) -> list[uuid.UUID]:
+    name_filter = Voice.name.ilike(f"%{query}%")
+    return list(session.execute(select(Voice.id).where(name_filter)).scalars().all())
+
+
 def rename_voice(session: Session, voice_id: uuid.UUID, name: str) -> Voice:
     item = one(session, Voice, voice_id)
     item.name = name
@@ -42,4 +47,11 @@ def delete_voice(session: Session, voice_id: uuid.UUID) -> None:
     result = session.execute(delete(Voice).where(Voice.id == voice_id))
     if result.rowcount != 1:
         raise KeyError(f"Voice not found: {voice_id}")
+    session.commit()
+
+
+def bulk_delete_voices(session: Session, voice_ids: Sequence[uuid.UUID]) -> None:
+    if not voice_ids:
+        return
+    session.execute(delete(Voice).where(Voice.id.in_(voice_ids)))
     session.commit()

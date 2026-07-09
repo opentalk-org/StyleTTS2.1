@@ -252,6 +252,13 @@ async def rename_voice(voice_id: str, request: VoiceCreate) -> VoiceRead:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
 
+@app.delete("/voices", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_matching_voices(query: str = Query("", min_length=0)) -> None:
+    with database_session() as session:
+        ids = voice_crud.search_voice_ids(session, query)
+        voice_crud.bulk_delete_voices(session, ids)
+
+
 @app.delete("/voices/{voice_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_voice(voice_id: str) -> None:
     try:

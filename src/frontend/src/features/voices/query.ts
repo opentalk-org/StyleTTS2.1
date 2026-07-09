@@ -1,7 +1,16 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { showToast } from "@/shared/feedback/Toast";
-import { type VoiceQuery, createVoice, deleteVoice, fetchVoices, renameVoice } from "./api";
+import {
+  type VoiceDeleteRequest,
+  type VoiceQuery,
+  createVoice,
+  deleteMatchingVoices,
+  deleteVoice,
+  deleteVoices,
+  fetchVoices,
+  renameVoice,
+} from "./api";
 
 const KEY = "voices";
 
@@ -47,4 +56,16 @@ export function useVoiceActions() {
     rename: (id: string, name: string) => rename.mutate({ id, name }),
     remove: (id: string) => remove.mutate(id),
   };
+}
+
+/** Bulk delete by explicit ids or by "all matching the current filter". */
+export function useDeleteVoicesMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (request: VoiceDeleteRequest) => {
+      if (request.mode === "filter") return deleteMatchingVoices(request.query);
+      return deleteVoices(request.ids);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+  });
 }

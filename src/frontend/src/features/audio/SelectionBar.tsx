@@ -8,19 +8,13 @@ import { cn } from "@/shared/ui/cn";
 import {
   addDatasetAction,
   assignVoiceAction,
-  calculateStatisticsAction,
-  denoiseAction,
-  normalizeAction,
-  phonemizeAction,
   removeDatasetAction,
   removeSegmentsAction,
-  splitAction,
-  transcribeAction,
 } from "./actions";
-import { useDeleteAudioFilesMutation } from "./query";
+import { useAddToDatasetMutation, useDeleteAudioFilesMutation } from "./query";
 import { useAudio } from "./store";
 
-type MenuName = "process" | "dataset";
+type MenuName = "dataset";
 
 type Item =
   | { header: string }
@@ -75,6 +69,7 @@ export function SelectionBar({ total }: { total: number }) {
   const { query, dataset, selection, selectAllMatching, selectAllFiltered, clearSelection } = useAudio();
   const { data: datasets = [] } = useDatasetsQuery();
   const deleteAudioFiles = useDeleteAudioFilesMutation();
+  const addToDataset = useAddToDatasetMutation();
   const [menu, setMenu] = useState<MenuName | null>(null);
   const ids = Object.keys(selection);
   const selCount = selectAllMatching ? total : ids.length;
@@ -96,20 +91,26 @@ export function SelectionBar({ total }: { total: number }) {
       });
     },
   });
+  const addSelectedToDataset = () => addDatasetAction(datasets, (datasetId) => {
+    if (!datasetId) {
+      showToast("Select a dataset first", undefined, "error");
+      return;
+    }
+    const request = selectAllMatching
+      ? { dataset_id: datasetId, mode: "filter" as const, query, dataset }
+      : { dataset_id: datasetId, mode: "ids" as const, audio_file_ids: ids };
+    addToDataset.mutate(request, {
+      onSuccess: () => {
+        clearSelection();
+        showToast(`Added ${label} to dataset`);
+      },
+      onError: (error) => showToast(error instanceof Error ? error.message : "Failed to add to dataset", undefined, "error"),
+    });
+  });
 
-  const processItems: Item[] = [
-    { header: "Processing jobs" },
-    { label: "Split into segments", icon: "scissors", onClick: () => splitAction(count, datasets) },
-    { label: "Transcribe", icon: "file-audio", onClick: () => transcribeAction(count) },
-    { label: "Phonemize", icon: "sliders", onClick: () => phonemizeAction(count) },
-    { label: "Normalize loudness", icon: "audio-lines", onClick: () => normalizeAction(count) },
-    { label: "Denoise", icon: "wand", onClick: () => denoiseAction(count) },
-    { divider: true },
-    { label: "Calculate statistics", icon: "bar-chart", onClick: () => calculateStatisticsAction(count) },
-  ];
   const datasetItems: Item[] = [
     { header: "Files & datasets" },
-    { label: "Add to dataset", icon: "database", onClick: () => addDatasetAction(count, datasets) },
+    { label: "Add to dataset", icon: "database", onClick: addSelectedToDataset },
     { label: "Remove from dataset", icon: "database", onClick: () => removeDatasetAction(count, datasets) },
     { label: "Assign voice to segments", icon: "mic", onClick: () => assignVoiceAction(count) },
     { divider: true },
@@ -127,10 +128,6 @@ export function SelectionBar({ total }: { total: number }) {
         </button>
       ) : null}
       <div className="flex-1" />
-      <div className="relative">
-        <DarkButton label="Process" icon="bolt" open={menu === "process"} onClick={() => toggle("process")} />
-        {menu === "process" ? <Menu items={processItems} onPick={() => setMenu(null)} /> : null}
-      </div>
       <div className="relative">
         <DarkButton label="Dataset & voice" icon="database" open={menu === "dataset"} onClick={() => toggle("dataset")} />
         {menu === "dataset" ? <Menu items={datasetItems} onPick={() => setMenu(null)} /> : null}

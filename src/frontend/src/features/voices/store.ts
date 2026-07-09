@@ -8,18 +8,55 @@ export type VoiceFilters = {
 };
 
 type VoiceFiltersStore = VoiceFilters & {
+  selection: Record<string, true>;
+  selectAllMatching: boolean;
+  visibleIds: string[];
   set: (patch: Partial<VoiceFilters>) => void;
+  setVisibleIds: (ids: string[]) => void;
+  toggleSelect: (id: string) => void;
+  selectVisible: () => void;
+  clearSelection: () => void;
+  selectAllFiltered: () => void;
 };
 
 /**
- * View state for the Voices screen (filter inputs + inline-rename target).
- * The filter values are sent to the server query — they are NOT used to filter
- * a client-side array. See api.ts.
+ * View state for the Voices screen (filter inputs + inline-rename target +
+ * multi-selection). The filter values are sent to the server query — they are
+ * NOT used to filter a client-side array. See api.ts.
+ *
+ * Selection mirrors the audio tab: an explicit id map, plus a `selectAllMatching`
+ * flag for "select every voice matching the current filter, across pages".
+ * Changing the search query clears `selectAllMatching` since the matching set moved.
  */
 export const useVoiceFilters = create<VoiceFiltersStore>((set) => ({
   query: "",
   limit: 100,
   offset: 0,
   editId: null,
-  set: (patch) => set(patch),
+  selection: {},
+  selectAllMatching: false,
+  visibleIds: [],
+  set: (patch) =>
+    set((s) => ({ ...patch, selectAllMatching: "query" in patch ? false : s.selectAllMatching })),
+  setVisibleIds: (ids) => set({ visibleIds: ids }),
+  toggleSelect: (id) =>
+    set((s) => {
+      if (s.selectAllMatching) {
+        const selection: Record<string, true> = {};
+        for (const visibleId of s.visibleIds) if (visibleId !== id) selection[visibleId] = true;
+        return { selection, selectAllMatching: false };
+      }
+      const selection = { ...s.selection };
+      if (selection[id]) delete selection[id];
+      else selection[id] = true;
+      return { selection };
+    }),
+  selectVisible: () =>
+    set((s) => {
+      const selection: Record<string, true> = {};
+      for (const id of s.visibleIds) selection[id] = true;
+      return { selection, selectAllMatching: false };
+    }),
+  clearSelection: () => set({ selection: {}, selectAllMatching: false }),
+  selectAllFiltered: () => set({ selectAllMatching: true }),
 }));

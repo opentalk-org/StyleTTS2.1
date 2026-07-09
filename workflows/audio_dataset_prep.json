@@ -1,5 +1,6 @@
 {
   "name": "Audio dataset prep — VAD → DeepFilterNet → Normalize → parakeet → diarize/split → whisper/canary",
+  "hidden": false,
   "data": {
     "nodes": [
       {
