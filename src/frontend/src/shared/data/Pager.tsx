@@ -1,7 +1,6 @@
 import { Icon } from "../icons";
 import { cn } from "../ui/cn";
 
-/** Page-number pager with first/last anchors and ellipses. */
 export function Pager({
   page,
   pages,

@@ -92,6 +92,15 @@ def download_whisper_model_files(version: str, folder: Path) -> None:
     whisper.load_model(version, download_root=str(folder))
 
 
+def download_hf_snapshot(model_id: str, folder: Path) -> None:
+    """Download a full HuggingFace model snapshot (e.g. a wav2vec2 aligner) into ``folder``."""
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError as exc:
+        raise RuntimeError("huggingface_hub_not_installed") from exc
+    snapshot_download(repo_id=model_id, local_dir=str(folder), token=huggingface_token())
+
+
 def download_nemo_snapshot(model_id: str, folder: Path) -> None:
     """Download a NeMo model's ``.nemo`` file(s) from HuggingFace into ``folder``."""
     try:

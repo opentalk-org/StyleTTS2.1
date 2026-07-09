@@ -15,10 +15,10 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from runflow.core.node import Node
-from runflow.core.ports import Port, PortMode
+from runflow.core.ports import PortMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import AUDIO
+from runner.nodes.datatypes import AudioPort
 from runner.nodes.models import Audio, AudioSegment, stable_id
 from shared.db import database_session
 from shared.db.voices.models import Voice
@@ -79,7 +79,7 @@ class HetznerDsV2ParquetAudioSourceNode(Node):
     SETTINGS = HetznerDsV2ParquetAudioSourceSettings
     IS_INPUT = True
     INPUTS = {}
-    OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}
+    OUTPUTS = {"audio": AudioPort(mode=PortMode.STREAM)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     def __init__(self, node_id: str | None = None, **params: Any):

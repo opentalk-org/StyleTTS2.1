@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 
 import { Card } from "@/shared/ui/Card";
 
-/** Titled form section with a small uppercase eyebrow tag above the title. */
 export function FormSection({
   title,
   tag,

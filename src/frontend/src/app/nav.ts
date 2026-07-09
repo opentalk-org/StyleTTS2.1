@@ -3,7 +3,6 @@ import type { Screen } from "./navStore";
 
 export type NavItem = { id: Screen; label: string; icon: IconName };
 
-/** Primary navigation. Order and labels mirror the source design. */
 export const NAV_ITEMS: NavItem[] = [
   { id: "datasets", label: "Datasets", icon: "database" },
   { id: "voices", label: "Voices", icon: "mic" },

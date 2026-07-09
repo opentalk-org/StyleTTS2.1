@@ -1,6 +1,5 @@
 import { cn } from "../cn";
 
-/** Pill switch. */
 export function Toggle({
   checked,
   onChange,

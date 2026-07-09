@@ -6,10 +6,9 @@ from typing import Any, Literal
 from uuid import UUID
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
-from runner.nodes.datatypes import AUDIO, SAVE_RESULT
+from runner.nodes.datatypes import AudioPort, SaveResultPort
 from runner.nodes.models import Audio, AudioRecordRef, AudioSegment, SaveResult, SegmentGroup, stable_id
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
@@ -30,8 +29,8 @@ class SaveAudioRecordNode(Node):
     NODE_TYPE = "SaveAudioRecord"
     CATEGORY = "Audio"
     SETTINGS = SaveAudioRecordSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO), "save_result": Port("save_result", SAVE_RESULT)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"audio": AudioPort(), "save_result": SaveResultPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=256)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
@@ -67,8 +66,8 @@ class SaveAudioRecordNode(Node):
 class UpdateAudioRecordBytesNode(Node):
     NODE_TYPE = "UpdateAudioRecordBytes"
     CATEGORY = "Audio"
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO), "save_result": Port("save_result", SAVE_RESULT)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"audio": AudioPort(), "save_result": SaveResultPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=256)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
@@ -98,8 +97,8 @@ class UpdateAudioRecordBytesNode(Node):
 class LoadAudioSegmentsNode(Node):
     NODE_TYPE = "LoadAudioSegments"
     CATEGORY = "Audio"
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"audio": AudioPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=256)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
@@ -120,8 +119,8 @@ class SaveAudioSegmentsNode(Node):
     NODE_TYPE = "SaveAudioSegments"
     CATEGORY = "Audio"
     SETTINGS = SaveAudioSegmentsSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO), "save_result": Port("save_result", SAVE_RESULT)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"audio": AudioPort(), "save_result": SaveResultPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=256)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
@@ -220,6 +219,7 @@ def _audio_segment_from_dict(ref: AudioRecordRef, segment: dict[str, Any]) -> Au
         speaker=speaker,
         voice_id=_optional_uuid(segment["voice_id"]) if "voice_id" in segment else None,
         metadata=metadata,
+        alignment=segment["alignment"] if isinstance(segment.get("alignment"), list) else None,
     )
 
 
@@ -235,6 +235,7 @@ def _segment_dict(segment: AudioSegment) -> dict[str, Any]:
         "voice_id": str(segment.voice_id) if segment.voice_id is not None else None,
         "type_": type_,
         "metadata": {**segment.metadata, "type_": type_},
+        "alignment": segment.alignment,
     }
 
 

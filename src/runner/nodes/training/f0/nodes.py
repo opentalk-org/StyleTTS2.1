@@ -5,11 +5,11 @@ from typing import Any
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import JoinMode, Port
+from runflow.core.ports import JoinMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
-from runner.nodes.datatypes import CHECKPOINT_REF, TRAINING_MANIFEST, TRAINING_RESULT
+from runner.nodes.datatypes import CheckpointRefPort, TrainingManifestPort, TrainingResultPort
 from runner.nodes.models import TrainingManifest
 from runner.nodes.training.common.results import (
     NoopAimRun,
@@ -39,10 +39,10 @@ class F0ModelTrainingNode(Node):
     CATEGORY = "Training"
     SETTINGS = F0TrainingSettings
     INPUTS = {
-        "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
-        "training_manifest": Port("training_manifest", TRAINING_MANIFEST),
+        "checkpoint": CheckpointRefPort(join_mode=JoinMode.BROADCAST),
+        "training_manifest": TrainingManifestPort(),
     }
-    OUTPUTS = {"training_result": Port("training_result", TRAINING_RESULT)}
+    OUTPUTS = {"training_result": TrainingResultPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 6}, exclusive_group="accelerator")
 
     async def teardown(self, context) -> None:

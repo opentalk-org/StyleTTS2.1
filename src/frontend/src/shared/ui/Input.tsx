@@ -2,10 +2,6 @@ import type { InputHTMLAttributes } from "react";
 
 import { cn } from "./cn";
 
-/**
- * Text input. `filled` uses the muted in-form treatment (panel-2, transparent
- * border, blue focus ring); the default uses the bordered toolbar treatment.
- */
 export function Input({
   filled = false,
   className,

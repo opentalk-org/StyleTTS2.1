@@ -8,6 +8,12 @@ from pydantic import BaseModel
 AudioSort = Literal["updated", "name", "duration", "speaker", "segments"]
 
 
+class WordAlignment(BaseModel):
+    word: str
+    start: float
+    end: float
+
+
 class AudioSegmentRead(BaseModel):
     id: str
     start: float
@@ -16,6 +22,7 @@ class AudioSegmentRead(BaseModel):
     phon: str
     speaker: str
     type_: str = "manual"
+    alignment: list[WordAlignment] | None = None
 
 
 class AudioSegmentWrite(BaseModel):
@@ -26,6 +33,7 @@ class AudioSegmentWrite(BaseModel):
     phon: str
     speaker: str
     type_: str = "manual"
+    alignment: list[WordAlignment] | None = None
 
 
 class AudioRenamePayload(BaseModel):

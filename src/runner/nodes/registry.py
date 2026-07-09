@@ -6,6 +6,7 @@ from runner.nodes.asr import (
     CanaryTranscribeNode,
     ParakeetTranscribeNode,
     WhisperTranscribeNode,
+    WhisperXAlignNode,
 )
 from runner.nodes.audio_io import LoadAudioNode, SaveAudioArtifactNode
 from runner.nodes.audio_processing import (
@@ -24,6 +25,7 @@ from runner.nodes.audio_enhancement.normalize import NormalizeLoudnessNode
 from runner.nodes.audio_segments.extract import ExtractSegmentGroupAudioNode, PersistSplitAudioRecordsNode
 from runner.nodes.audio_segments.dedup_overlap import DeduplicateOverlappingSegmentsNode
 from runner.nodes.audio_segments.grouping import PlanSegmentGroupsNode
+from runner.nodes.audio_segments.merge_alignment import MergeAlignmentNode
 from runner.nodes.audio_segments.speaker_split import DiarizeSplitSpeakersNode
 from runner.nodes.audio_segments.writeback import (
     LoadAudioSegmentsNode,
@@ -73,6 +75,7 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         WhisperTranscribeNode,
         ParakeetTranscribeNode,
         CanaryTranscribeNode,
+        WhisperXAlignNode,
         PhonemizeSegmentsNode,
         VadDetectNode,
         CutAudioBySegmentsNode,
@@ -85,6 +88,7 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         SaveStatisticsEntryNode,
         PlanSegmentGroupsNode,
         DeduplicateOverlappingSegmentsNode,
+        MergeAlignmentNode,
         DiarizeSplitSpeakersNode,
         ExtractSegmentGroupAudioNode,
         PersistSplitAudioRecordsNode,

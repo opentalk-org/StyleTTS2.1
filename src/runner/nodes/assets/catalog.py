@@ -9,10 +9,9 @@ from pydantic import Field
 from runner.nodes.assets.catalog_runtime.tasks import run_catalog_task
 from runner.nodes.assets.checkpoints import resolve_checkpoint_ref
 from runflow.core.node import Node
-from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import CHECKPOINT_REF, JSON
+from runner.nodes.datatypes import CheckpointRefPort, JsonPort
 from runner.nodes.models import CheckpointRef
 from shared.log_streams import route_output_to_logger
 
@@ -37,8 +36,8 @@ class CatalogDownloadNode(Node):
     IS_INPUT = True
     INPUTS = {}
     OUTPUTS = {
-        "checkpoint": Port("checkpoint", CHECKPOINT_REF, optional=True),
-        "catalog_item": Port("catalog_item", JSON),
+        "checkpoint": CheckpointRefPort(optional=True),
+        "catalog_item": JsonPort(),
     }
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 

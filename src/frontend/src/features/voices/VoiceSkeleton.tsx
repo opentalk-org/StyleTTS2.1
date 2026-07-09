@@ -1,4 +1,3 @@
-/** Shimmering placeholder cards for the loading preview state. */
 export function VoiceSkeleton() {
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3.5 p-3.5">

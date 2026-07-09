@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 import { defaultBackendUrl } from "./backendConfig";
 
@@ -23,7 +24,6 @@ type NavStore = {
   navCollapsed: boolean;
   connected: boolean;
   backendUrl: string;
-  /** Set when opening the segment editor from the Audio Files table. */
   activeAudioFileId: string | null;
   go: (screen: Screen) => void;
   toggleNav: () => void;
@@ -32,15 +32,31 @@ type NavStore = {
   openEditor: (audioFileId: string) => void;
 };
 
-export const useNav = create<NavStore>((set) => ({
-  screen: "training",
-  navCollapsed: false,
-  connected: false,
-  backendUrl: defaultBackendUrl(),
-  activeAudioFileId: null,
-  go: (screen) => set({ screen }),
-  toggleNav: () => set((s) => ({ navCollapsed: !s.navCollapsed })),
-  setBackendUrl: (backendUrl) => set({ backendUrl }),
-  connect: () => set({ connected: true }),
-  openEditor: (activeAudioFileId) => set({ screen: "editor", activeAudioFileId }),
-}));
+export const useNav = create<NavStore>()(
+  persist(
+    (set) => ({
+      screen: "training",
+      navCollapsed: false,
+      connected: false,
+      backendUrl: defaultBackendUrl(),
+      activeAudioFileId: null,
+      go: (screen) => set({ screen }),
+      toggleNav: () => set((s) => ({ navCollapsed: !s.navCollapsed })),
+      setBackendUrl: (backendUrl) => set({ backendUrl }),
+      connect: () => set({ connected: true }),
+      openEditor: (activeAudioFileId) => set({ screen: "editor", activeAudioFileId }),
+    }),
+    {
+      // Restore the last-open page and backend on reload instead of dropping back
+      // to the Connect screen.
+      name: "styletts-nav",
+      partialize: (s) => ({
+        screen: s.screen,
+        navCollapsed: s.navCollapsed,
+        connected: s.connected,
+        backendUrl: s.backendUrl,
+        activeAudioFileId: s.activeAudioFileId,
+      }),
+    },
+  ),
+);

@@ -10,14 +10,11 @@ const LAYOUT_PANEL_WIDTH = 280;
 const LAYOUT_PANEL_GAP_X = 32;
 
 export function typeAccepts(schema: WorkflowSchema, targetType: string, sourceType: string): boolean {
-  const target = schema.types[targetType];
-  const source = schema.types[sourceType];
-  if (!target || !source) throw new Error(`Unknown port type: ${targetType} or ${sourceType}`);
-  if (target.members.length) {
-    if (source.members.length) return source.members.every((member) => target.members.includes(member));
-    return target.members.includes(sourceType);
+  // A port's type is its backend class; only identical types connect (no
+  // subtyping / unions), mirroring `type(src) is type(dst)` in graph.connect.
+  if (!schema.types[targetType] || !schema.types[sourceType]) {
+    throw new Error(`Unknown port type: ${targetType} or ${sourceType}`);
   }
-  if (source.members.length) return source.members.every((member) => typeAccepts(schema, targetType, member));
   return targetType === sourceType;
 }
 

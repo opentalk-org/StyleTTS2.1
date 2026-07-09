@@ -11,7 +11,6 @@ import { checkpointOptions, checkpointSymbolCount, datasetOptions, trainingNode,
 import { useCreateTrainingConfigMutation, useTrainingConfigsQuery } from "./query";
 import { SettingField } from "./SettingsField";
 
-/** Compact finetune form for the F0 pitch extractor and ASR aligner models. */
 export function SmallModelForm({
   variant,
   schema,

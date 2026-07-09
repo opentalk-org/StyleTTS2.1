@@ -21,7 +21,6 @@ const TOGGLE_ROWS = [
   { key: "checkpoint_discriminator_gradients", sub: "Uses less VRAM; reduces training speed." },
 ];
 
-/** The full StyleTTS finetune configuration form. */
 export function StyleTtsForm({
   schema,
   graph,

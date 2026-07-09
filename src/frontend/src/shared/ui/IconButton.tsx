@@ -3,7 +3,6 @@ import type { ButtonHTMLAttributes } from "react";
 import { Icon, type IconName } from "../icons";
 import { cn } from "./cn";
 
-/** Square icon-only button used across tables and toolbars. */
 export function IconButton({
   icon,
   size = 30,

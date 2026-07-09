@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-/** A single labeled setting with its control on the right. */
 export function SettingsRow({
   title,
   desc,

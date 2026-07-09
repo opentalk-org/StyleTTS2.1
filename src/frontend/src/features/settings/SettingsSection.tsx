@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-/** Titled card grouping a set of settings rows. */
 export function SettingsSection({
   title,
   children,

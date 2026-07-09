@@ -27,7 +27,6 @@ export function useVoicesQuery(params: VoiceQuery) {
   });
 }
 
-/** Mutations invalidate the voices cache so the filtered page refetches. */
 export function useVoiceActions() {
   const qc = useQueryClient();
   const invalidate = () => qc.invalidateQueries({ queryKey: [KEY] });
@@ -58,7 +57,6 @@ export function useVoiceActions() {
   };
 }
 
-/** Bulk delete by explicit ids or by "all matching the current filter". */
 export function useDeleteVoicesMutation() {
   const qc = useQueryClient();
   return useMutation({

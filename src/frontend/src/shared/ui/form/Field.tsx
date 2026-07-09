@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-/** Labeled form control with an optional hint line. */
 export function Field({
   label,
   hint,

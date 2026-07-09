@@ -10,6 +10,10 @@ export function fetchSavedWorkflows(): Promise<SavedWorkflow[]> {
   return backendRequest<SavedWorkflow[]>("/workflows");
 }
 
+export function fetchExampleWorkflows(): Promise<SavedWorkflow[]> {
+  return backendRequest<SavedWorkflow[]>("/workflows/examples");
+}
+
 export function saveWorkflow(payload: SaveWorkflowPayload): Promise<SavedWorkflow> {
   return backendRequest<SavedWorkflow>("/workflows", {
     method: "POST",

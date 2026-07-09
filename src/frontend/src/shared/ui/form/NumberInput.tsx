@@ -1,6 +1,5 @@
 import { Icon } from "../../icons";
 
-/** Number field with stepper buttons, clamped to [min, max]. */
 export function NumberInput({
   value,
   onChange,

@@ -30,11 +30,12 @@ export function WorkflowInspector() {
   const node = graph.nodes.find((item) => item.id === selectedNodeIds[0]);
   const activeRun = activeRunId ? runs.find((run) => run.run_id === activeRunId) : undefined;
   const lifecycleActive = activeRun?.state === "running";
+  const nodeId = node?.id;
   useEffect(() => {
     setLog(null);
-    if (!activeRunId || !node || inspectorTab !== "logs") return;
-    fetchNodeLog(activeRunId, node.id).then(setLog).catch((error) => setLog({ content: "", truncated: false, error: error.message }));
-  }, [activeRunId, inspectorTab, node]);
+    if (!activeRunId || !nodeId || inspectorTab !== "logs") return;
+    fetchNodeLog(activeRunId, nodeId).then(setLog).catch((error) => setLog({ content: "", truncated: false, error: error.message }));
+  }, [activeRunId, inspectorTab, nodeId]);
   if (!schema || !inspectorOpen) return null;
   if (selectedNodeIds.length > 1) {
     return (

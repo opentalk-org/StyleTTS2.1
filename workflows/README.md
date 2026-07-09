@@ -1,14 +1,23 @@
 # Workflows
 
 Every workflow definition (JSON) across StyleTTS2 Studio lives here. Each file is a
-`WorkflowCreate` payload (`name`, `hidden`, `data`) that the backend stores as a
-saved workflow — it then appears in the UI workflow list.
+`WorkflowCreate` payload (`name`, `hidden`, `data`).
 
-## Seeding the backend
+## Examples tab (folder-driven, live)
 
-Run the seeder to save every definition in this folder into the backend. It is
-idempotent — a workflow whose `name` already exists is skipped, so it is safe to
-re-run against an existing backend:
+The **Examples** tab of the workflow library is served straight from this folder
+by `GET /workflows/examples`, which re-reads the `*.json` files on every request.
+Add, edit, or remove a file here and it shows up the next time the library is
+opened — no backend or database restart, and no seeding step. Malformed files are
+skipped rather than breaking the listing. Set `RUNFLOW_WORKFLOWS_DIR` to point the
+endpoint at a different folder.
+
+## Seeding the backend (Saved tab)
+
+Examples are ephemeral (they are never written to the DB). To keep an editable
+copy under the **Saved** tab, run the seeder to store every definition in this
+folder as a saved workflow. It is idempotent — a workflow whose `name` already
+exists is skipped, so it is safe to re-run against an existing backend:
 
 ```bash
 python workflows/save_workflows.py
@@ -51,6 +60,23 @@ then added to a dataset — ready for StyleTTS2 finetuning.
 over more inputs. The `AudioSource` params and the `to_dataset` / checkpoint node
 ids are environment-specific — repoint them at your own audio, dataset, and
 catalog checkpoints before running elsewhere.
+
+### `whisperx_merge_alignment.json`
+
+```
+                              ┌─ WhisperXAlign (ck A) ─┐
+AudioSource → LoadAudio → LoadAudioSegments            MergeAlignment → SaveAudioSegments (replace)
+                              └─ WhisperXAlign (ck B) ─┘
+```
+
+Loads an audio that already has segments, force-aligns each segment's words with
+two different WhisperX checkpoints, merges the two per-word alignments into the
+best combined set (de-duplicating same-word/near-time collisions, keeping the
+higher-scored timing), and replaces the stored alignment. Both align branches read
+the same `LoadAudioSegments` output, so their audios share a lineage and pair up in
+`MergeAlignment`. Repoint the `AudioSource` / `launch_source` `audio_file_ids` and
+the two `ResolveCheckpoint` `checkpoint_id`s (whisperx aligner checkpoints from the
+catalog) before running.
 
 ### `deduplicate_overlapping_segments.json`
 

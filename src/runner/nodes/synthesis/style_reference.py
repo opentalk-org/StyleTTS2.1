@@ -9,10 +9,9 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import JSON
+from runner.nodes.datatypes import JsonPort
 from runner.nodes.models import stable_id
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
@@ -39,7 +38,7 @@ class ResolveStyleReferenceNode(Node):
     SETTINGS = ResolveStyleReferenceSettings
     IS_INPUT = True
     INPUTS = {}
-    OUTPUTS = {"style_reference": Port("style_reference", JSON)}
+    OUTPUTS = {"style_reference": JsonPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     def __init__(self, node_id: str | None = None, **params):

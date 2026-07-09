@@ -1,7 +1,6 @@
 import { Icon } from "@/shared/icons";
 import { useNav } from "./navStore";
 
-/** Entry screen: capture a backend URL, then enter the workbench. */
 export function ConnectScreen() {
   const { backendUrl, setBackendUrl, connect } = useNav();
 

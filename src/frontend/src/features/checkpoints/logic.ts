@@ -9,6 +9,7 @@ export const TYPE_TONE: Record<string, Tone> = {
   whisper: "emerald",
   parakeet: "emerald",
   canary: "emerald",
+  whisperx: "blue",
   sortformer: "amber",
 };
 
@@ -24,7 +25,6 @@ export function checkpointSymbolCount(checkpoint: Checkpoint | undefined): numbe
   return Number.isFinite(count) && count > 0 ? count : null;
 }
 
-/** The actual symbol tokens (phoneme alphabet) when the checkpoint stores them as a list. */
 export function checkpointSymbols(checkpoint: Checkpoint | undefined): string[] {
   if (!checkpoint) return [];
   const raw = checkpoint.metadata.symbols;
@@ -278,5 +278,19 @@ export const CATALOG: CatalogItem[] = [
     group: "Diarization",
     catalogKey: "asr_models",
     item: "sortformer:nvidia/diar_sortformer_4spk-v1",
+  },
+  {
+    name: "WhisperX align · English",
+    file: "wav2vec2-base-960h",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "whisperx:facebook/wav2vec2-base-960h",
+  },
+  {
+    name: "WhisperX align · Polish",
+    file: "wav2vec2-large-xlsr-53-polish",
+    group: "Transcription",
+    catalogKey: "asr_models",
+    item: "whisperx:jonatasgrosman/wav2vec2-large-xlsr-53-polish",
   },
 ];

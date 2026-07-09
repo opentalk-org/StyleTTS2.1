@@ -44,12 +44,6 @@ function ticks(start: number, end: number): number[] {
   return out;
 }
 
-/**
- * Windowed waveform timeline. Only the slice [viewStart, viewEnd] is drawn and
- * only the segments overlapping it render. Segment blocks can be dragged to move
- * them and their edges dragged to resize start/end. The minimap navigates the
- * whole file.
- */
 export function SegmentTimeline({
   segs,
   dur,
@@ -94,6 +88,15 @@ export function SegmentTimeline({
   const laneH = bodyH / lanes;
   const pct = (t: number) => ((t - viewStart) / span) * 100;
 
+  // Per-word alignment marks for segments in view: a thin tick at each word start,
+  // and a highlight band for the word the playhead currently sits in.
+  const wordMarks = tooDense
+    ? []
+    : inView
+        .flatMap((g) => g.alignment ?? [])
+        .filter((w) => w.end > viewStart && w.start < viewEnd);
+  const currentWord = wordMarks.find((w) => playPos >= w.start && playPos <= w.end) ?? null;
+
   const panTo = (e: PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
     const center = ((e.clientX - r.left) / r.width) * dur;
@@ -104,7 +107,6 @@ export function SegmentTimeline({
     onSeek(viewStart + ((e.clientX - r.left) / r.width) * span);
   };
 
-  // --- segment drag (move / resize) ---
   const onBlockDown = (e: PointerEvent<HTMLDivElement>, seg: Segment) => {
     e.stopPropagation();
     const width = bodyRef.current?.getBoundingClientRect().width ?? 1;
@@ -136,7 +138,6 @@ export function SegmentTimeline({
 
   return (
     <div>
-      {/* minimap: whole file, draggable window */}
       <div
         className="relative mb-2 h-9 cursor-pointer overflow-hidden rounded-md bg-panel-2"
         onPointerDown={(e) => { panning.current = true; e.currentTarget.setPointerCapture(e.pointerId); panTo(e); }}
@@ -155,7 +156,6 @@ export function SegmentTimeline({
       </div>
 
       <div className="overflow-hidden rounded-lg bg-panel-2">
-        {/* ruler */}
         <div className="relative h-5 border-b border-line">
           {ticks(viewStart, viewEnd).map((t) => (
             <div key={t} className="absolute top-0 bottom-0 border-l border-line" style={{ left: `${pct(t)}%` }}>
@@ -166,7 +166,6 @@ export function SegmentTimeline({
           ))}
         </div>
 
-        {/* body: waveform + in-view segment lanes */}
         <div ref={bodyRef} className="relative cursor-text" style={{ height: bodyH }} onPointerDown={seekAt}>
           <div className="pointer-events-none absolute inset-0 px-px text-blue-500 opacity-60">
             {viewPeaks?.length ? <WaveformPeaks peaks={viewPeaks} height={bodyH} /> : <WaveformBars seed={seed + Math.floor(viewStart)} bars={120} height={bodyH} />}
@@ -196,6 +195,21 @@ export function SegmentTimeline({
             );
           })}
 
+          {currentWord ? (
+            <div
+              className="pointer-events-none absolute top-0 bottom-0 bg-amber-400/20"
+              style={{ left: `${pct(currentWord.start)}%`, width: `max(2px, ${pct(currentWord.end) - pct(currentWord.start)}%)` }}
+            />
+          ) : null}
+
+          {wordMarks.map((w, i) => (
+            <div
+              key={`${w.start}-${i}`}
+              className={cn("pointer-events-none absolute top-0 bottom-0 w-px", w === currentWord ? "bg-amber-500/80" : "bg-blue-700/40")}
+              style={{ left: `${pct(w.start)}%` }}
+            />
+          ))}
+
           {tooDense ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <span className="rounded-full bg-panel/80 px-3 py-1 text-[11px] font-semibold text-txt-dim">
@@ -204,7 +218,6 @@ export function SegmentTimeline({
             </div>
           ) : null}
 
-          {/* playhead */}
           {playPos >= viewStart && playPos <= viewEnd ? (
             <div className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-gray-900" style={{ left: `${pct(playPos)}%` }}>
               <div className="absolute -left-[3px] top-0 h-2.5 w-2.5 rounded-full bg-gray-900" />

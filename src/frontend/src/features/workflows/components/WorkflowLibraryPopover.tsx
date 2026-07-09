@@ -10,9 +10,8 @@ import { IconButton } from "@/shared/ui/IconButton";
 import { Input } from "@/shared/ui/Input";
 import { fetchRunSnapshot } from "../api";
 import { runtimeConfigForGraph, workflowDefinition } from "../logic";
-import { useDeleteWorkflowMutation, useSaveWorkflowMutation, useSavedWorkflowsQuery } from "../query";
+import { useDeleteWorkflowMutation, useExampleWorkflowsQuery, useSaveWorkflowMutation, useSavedWorkflowsQuery } from "../query";
 import { useWorkflowStore } from "../store";
-import { WORKFLOW_TEMPLATES } from "../templates";
 import type { WorkflowGraph } from "../types";
 
 type LibraryTab = "examples" | "saved" | "runs";
@@ -38,6 +37,7 @@ const STATE_CLASS: Record<Job["state"], string> = {
 export function WorkflowLibraryPopover({ onClose }: { onClose: () => void }) {
   const { schema, graph, runtimeConfig, setGraph, setRuntimeConfig, setActiveRunId, applyRunSnapshot } = useWorkflowStore();
   const workflows = useSavedWorkflowsQuery();
+  const examples = useExampleWorkflowsQuery();
   const jobs = useJobsQuery({ limit: 100, offset: 0 });
   const saveWorkflow = useSaveWorkflowMutation();
   const deleteWorkflow = useDeleteWorkflowMutation();
@@ -120,7 +120,7 @@ export function WorkflowLibraryPopover({ onClose }: { onClose: () => void }) {
 
         <div className="grid gap-3 border-b border-line px-5 py-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div className="flex min-w-0 gap-1 rounded-md bg-panel-2 p-1">
-            <TabButton active={tab === "examples"} label="Examples" count={WORKFLOW_TEMPLATES.length} onClick={() => setTab("examples")} />
+            <TabButton active={tab === "examples"} label="Examples" count={examples.data?.length ?? 0} onClick={() => setTab("examples")} />
             <TabButton active={tab === "saved"} label="Saved" count={workflows.data?.length ?? 0} onClick={() => setTab("saved")} />
             <TabButton active={tab === "runs"} label="Runs" count={jobs.data?.total ?? jobRows.length} onClick={() => setTab("runs")} />
           </div>
@@ -140,18 +140,22 @@ export function WorkflowLibraryPopover({ onClose }: { onClose: () => void }) {
 
         <div className="min-h-0 overflow-y-auto p-5">
           {tab === "examples" ? (
-            <div className="grid gap-2 md:grid-cols-2">
-              {WORKFLOW_TEMPLATES.map((template) => (
-                <WorkflowRow
-                  key={template.id}
-                  title={template.name}
-                  detail={template.description}
-                  meta="example"
-                  icon="sparkles"
-                  onClick={() => loadGraph(template.build(schema))}
-                />
-              ))}
-            </div>
+            examples.data?.length ? (
+              <div className="grid gap-2 md:grid-cols-2">
+                {examples.data.map((example) => (
+                  <WorkflowRow
+                    key={example.id}
+                    title={example.name}
+                    detail={`${example.data.nodes.length} nodes / ${example.data.edges.length} edges`}
+                    meta="example"
+                    icon="sparkles"
+                    onClick={() => loadGraph(example.data, example.data.context.config)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyLibraryState text={examples.isLoading ? "Loading examples..." : "No example workflows found."} />
+            )
           ) : null}
 
           {tab === "saved" ? (

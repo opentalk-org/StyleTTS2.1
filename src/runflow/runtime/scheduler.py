@@ -269,7 +269,7 @@ class WindowedScheduler:
                     packet = Packet(
                         node_id=node.id,
                         port=port_name,
-                        dtype=port.dtype.name,
+                        dtype=port.TYPE_NAME,
                         value=item,
                         lineage_id=lineage_from_value(item, inherited=task.lineage_id),
                         metadata={**task.metadata, **metadata_from_value(item)},

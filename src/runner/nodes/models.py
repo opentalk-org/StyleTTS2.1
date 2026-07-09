@@ -82,6 +82,9 @@ class AudioSegment:
     voice_id: UUID | None = None
     confidence: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Optional per-word timings in absolute audio-file time (same frame as start/end).
+    # Each entry: {"word": str, "start": float, "end": float, "score": float | None}.
+    alignment: list[dict[str, Any]] | None = None
 
     @property
     def duration(self) -> float:

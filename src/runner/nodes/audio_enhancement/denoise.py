@@ -7,11 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
-from runner.nodes.datatypes import AUDIO
+from runner.nodes.datatypes import AudioPort
 from runner.nodes.models import Audio, stable_id
 
 _PATCHED_TORCH: Any | None = None
@@ -34,8 +33,8 @@ class DeepFilterNetDenoiseNode(Node):
     NODE_TYPE = "DeepFilterNetDenoise"
     CATEGORY = "Audio"
     SETTINGS = DeepFilterNetSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"audio": AudioPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 4})
 
     def __init__(self, node_id: str | None = None, **params: Any):

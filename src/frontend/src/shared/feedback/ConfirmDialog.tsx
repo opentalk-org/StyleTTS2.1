@@ -25,7 +25,6 @@ export const useConfirm = create<ConfirmStore>((set) => ({
   close: () => set({ config: null }),
 }));
 
-/** Imperative helper: the one confirm pattern for every destructive action. */
 export function askConfirm(config: ConfirmConfig) {
   useConfirm.getState().ask(config);
 }

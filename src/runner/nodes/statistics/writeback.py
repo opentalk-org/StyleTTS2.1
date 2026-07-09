@@ -6,10 +6,9 @@ from uuid import UUID
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import JSON
+from runner.nodes.datatypes import JsonPort
 from shared.db import database_session
 from shared.db.statistics import StatisticsEntryCreate, StatisticsEntryRead
 from shared.db.statistics import crud as statistics_crud
@@ -25,8 +24,8 @@ class SaveStatisticsEntryNode(Node):
     NODE_TYPE = "SaveStatisticsEntry"
     CATEGORY = "Audio"
     SETTINGS = SaveStatisticsEntrySettings
-    INPUTS = {"statistics": Port("statistics", JSON)}
-    OUTPUTS = {"statistics_entry": Port("statistics_entry", JSON)}
+    INPUTS = {"statistics": JsonPort()}
+    OUTPUTS = {"statistics_entry": JsonPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1})
 
     async def execute(self, batch, context):

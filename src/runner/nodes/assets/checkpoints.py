@@ -5,10 +5,9 @@ from uuid import UUID
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import CHECKPOINT_REF
+from runner.nodes.datatypes import CheckpointRefPort
 from runner.nodes.models import CheckpointRef, stable_id
 from shared.db import database_session
 from shared.db.assets import crud as asset_crud
@@ -50,7 +49,7 @@ class ResolveCheckpointNode(Node):
     SETTINGS = ResolveCheckpointSettings
     IS_INPUT = True
     INPUTS = {}
-    OUTPUTS = {"checkpoint": Port("checkpoint", CHECKPOINT_REF)}
+    OUTPUTS = {"checkpoint": CheckpointRefPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     def __init__(self, node_id: str | None = None, **params):

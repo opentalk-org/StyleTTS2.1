@@ -55,7 +55,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-/** Design icon name -> Lucide component. Names mirror the source mockup's ICONS map. */
 const ICONS = {
   sliders: SlidersHorizontal,
   database: Database,

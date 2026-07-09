@@ -8,7 +8,6 @@ const FILL: Record<ProgressTone, string> = {
   red: "bg-red-500",
 };
 
-/** Thin track + fill. `value` is a percentage (0–100). */
 export function ProgressBar({
   value,
   tone = "blue",

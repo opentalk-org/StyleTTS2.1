@@ -8,10 +8,9 @@ from typing import Any, Literal
 from uuid import UUID
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
-from runner.nodes.datatypes import AUDIO, SAVE_RESULT
+from runner.nodes.datatypes import AudioPort, SaveResultPort
 from runner.nodes.models import Audio, AudioRecordRef, AudioSegment, SaveResult, SegmentGroup, stable_id
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
@@ -33,8 +32,8 @@ class PersistSplitAudioRecordsSettings(StrictSettings):
 class ExtractSegmentGroupAudioNode(Node):
     NODE_TYPE = "ExtractSegmentGroupAudio"
     CATEGORY = "Audio"
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"audio": AudioPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
@@ -56,10 +55,10 @@ class PersistSplitAudioRecordsNode(Node):
     NODE_TYPE = "PersistSplitAudioRecords"
     CATEGORY = "Audio"
     SETTINGS = PersistSplitAudioRecordsSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
+    INPUTS = {"audio": AudioPort()}
     OUTPUTS = {
-        "audio": Port("audio", AUDIO),
-        "save_result": Port("save_result", SAVE_RESULT),
+        "audio": AudioPort(),
+        "save_result": SaveResultPort(),
     }
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)

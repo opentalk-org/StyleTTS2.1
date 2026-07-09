@@ -2,10 +2,6 @@ import type { ReactNode } from "react";
 
 import { Card } from "@/shared/ui/Card";
 
-/**
- * A titled panel wrapping a single chart. `unit` renders as a small uppercase
- * caption; `span` makes the card span a full grid row.
- */
 export function ChartCard({
   title,
   unit,

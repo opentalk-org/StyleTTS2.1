@@ -1,10 +1,5 @@
 import { BAR_CLASS, type HBarItem, type Tone } from "../logic";
 
-/**
- * Horizontal labeled bars: a fixed label column, a proportional bar, and a
- * right-aligned value. Shared by per-speaker duration/length and 1-gram
- * frequency charts.
- */
 export function HBars({ items, tone = "emerald" }: { items: HBarItem[]; tone?: Tone }) {
   const max = Math.max(...items.map((it) => it.value), 0.001);
   return (

@@ -3,7 +3,7 @@ from typing import Any
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Response, UploadFile, status
 
-from backend.audio.schemas import AddToDatasetRequest, AudioFileListItem, AudioFilePage, AudioRenamePayload, AudioScorePayload, AudioSegmentRead, AudioSegmentWrite, AudioSort, WaveformStatusRead
+from backend.audio.schemas import AddToDatasetRequest, AudioFileListItem, AudioFilePage, AudioRenamePayload, AudioScorePayload, AudioSegmentRead, AudioSegmentWrite, AudioSort, WaveformStatusRead, WordAlignment
 from backend.audio.waveform_service import WaveformService
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
@@ -275,7 +275,20 @@ def segment_response(segment: dict[str, Any]) -> AudioSegmentRead:
         phon=str(segment["phon"]) if "phon" in segment else "",
         speaker=_segment_speaker(segment),
         type_=_segment_type(segment),
+        alignment=_segment_alignment(segment),
     )
+
+
+def _segment_alignment(segment: dict[str, Any]) -> list[WordAlignment] | None:
+    raw = segment.get("alignment")
+    if not isinstance(raw, list):
+        return None
+    words = [
+        WordAlignment(word=str(item["word"]), start=float(item["start"]), end=float(item["end"]))
+        for item in raw
+        if isinstance(item, dict) and "word" in item and "start" in item and "end" in item
+    ]
+    return words or None
 
 
 def _speaker(metadata: dict[str, Any]) -> str:

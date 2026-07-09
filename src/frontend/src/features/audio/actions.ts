@@ -3,7 +3,6 @@ import { SPEAKER_NAMES } from "@/features/voices/constants";
 import { showToast } from "@/shared/feedback/Toast";
 import { openParamModal } from "@/shared/feedback/ParamModal";
 
-/** How many files an action targets, for job/toast labelling. */
 function scope(count: number | undefined): string {
   return count ? `${count} file${count === 1 ? "" : "s"}` : "selection";
 }

@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 
 import { Icon, type IconName } from "../icons";
 
-/** Centered placeholder for empty / not-found collections. */
 export function EmptyState({
   icon,
   title,

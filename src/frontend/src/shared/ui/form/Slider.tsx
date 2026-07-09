@@ -1,4 +1,3 @@
-/** Range slider with a tabular value readout. */
 export function Slider({
   value,
   onChange,

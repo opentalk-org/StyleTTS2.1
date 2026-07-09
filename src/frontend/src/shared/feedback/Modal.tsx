@@ -3,10 +3,6 @@ import type { ReactNode } from "react";
 import { Icon, type IconName } from "../icons";
 import { cn } from "../ui/cn";
 
-/**
- * Presentational modal shell: dimmed overlay, header (icon + title + desc),
- * close button, body, and a footer. Feature modals compose this.
- */
 export function Modal({
   icon,
   title,

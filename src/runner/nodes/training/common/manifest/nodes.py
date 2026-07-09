@@ -6,10 +6,10 @@ from uuid import UUID
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import JoinMode, Port
+from runflow.core.ports import JoinMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import ASSET_BUNDLE, CHECKPOINT_REF, JSON, TRAINING_MANIFEST
+from runner.nodes.datatypes import AssetBundlePort, CheckpointRefPort, JsonPort, TrainingManifestPort
 from runner.nodes.models import AssetBundleRef, AudioSegment, CheckpointRef, TrainingManifest, stable_id, typed_assets, typed_checkpoint
 from runner.nodes.training.common.manifest.build import (
     audio_file_selection,
@@ -46,12 +46,12 @@ class BuildTrainingManifestNode(Node):
     CATEGORY = "Training"
     SETTINGS = BuildTrainingManifestSettings
     INPUTS = {
-        "audio_file_ids": Port("audio_file_ids", JSON),
-        "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
-        "assets": Port("assets", ASSET_BUNDLE, join_mode=JoinMode.BROADCAST, optional=True, default=None),
-        "phoneme_alphabet": Port("phoneme_alphabet", JSON, join_mode=JoinMode.BROADCAST, optional=True, default={}),
+        "audio_file_ids": JsonPort(),
+        "checkpoint": CheckpointRefPort(join_mode=JoinMode.BROADCAST),
+        "assets": AssetBundlePort(join_mode=JoinMode.BROADCAST, optional=True, default=None),
+        "phoneme_alphabet": JsonPort(join_mode=JoinMode.BROADCAST, optional=True, default={}),
     }
-    OUTPUTS = {"training_manifest": Port("training_manifest", TRAINING_MANIFEST)}
+    OUTPUTS = {"training_manifest": TrainingManifestPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):

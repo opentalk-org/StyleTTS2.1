@@ -6,10 +6,10 @@ import yaml
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import JoinMode, Port
+from runflow.core.ports import JoinMode
 from runflow.policies import ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
-from runner.nodes.datatypes import CHECKPOINT_REF, JSON, TRAINING_MANIFEST, TRAINING_RESULT
+from runner.nodes.datatypes import CheckpointRefPort, JsonPort, TrainingManifestPort, TrainingResultPort
 from runner.nodes.models import TrainingManifest
 from runner.nodes.training.common.results import (
     NoopAimRun,
@@ -31,11 +31,11 @@ class AsrModelTrainingNode(Node):
     CATEGORY = "Training"
     SETTINGS = AsrTrainingSettings
     INPUTS = {
-        "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
-        "phoneme_alphabet": Port("phoneme_alphabet", JSON, join_mode=JoinMode.BROADCAST),
-        "training_manifest": Port("training_manifest", TRAINING_MANIFEST),
+        "checkpoint": CheckpointRefPort(join_mode=JoinMode.BROADCAST),
+        "phoneme_alphabet": JsonPort(join_mode=JoinMode.BROADCAST),
+        "training_manifest": TrainingManifestPort(),
     }
-    OUTPUTS = {"training_result": Port("training_result", TRAINING_RESULT)}
+    OUTPUTS = {"training_result": TrainingResultPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, exclusive_group="accelerator")
 
     async def teardown(self, context) -> None:

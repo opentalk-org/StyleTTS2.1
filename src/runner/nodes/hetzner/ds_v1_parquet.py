@@ -13,10 +13,10 @@ from uuid import NAMESPACE_URL, uuid5
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port, PortMode
+from runflow.core.ports import PortMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import AUDIO
+from runner.nodes.datatypes import AudioPort
 from runner.nodes.models import Audio, stable_id
 
 
@@ -46,7 +46,7 @@ class HetznerDsV1ParquetAudioSourceNode(Node):
     SETTINGS = HetznerDsV1ParquetAudioSourceSettings
     IS_INPUT = True
     INPUTS = {}
-    OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}
+    OUTPUTS = {"audio": AudioPort(mode=PortMode.STREAM)}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     def __init__(self, node_id: str | None = None, **params: Any):

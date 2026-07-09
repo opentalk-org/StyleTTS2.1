@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from runflow.core.node import Node
-from runflow.core.types import dtype_accepts
 
 
 @dataclass(frozen=True)
@@ -45,10 +44,13 @@ class Graph:
 
         src = source_ports[source_port]
         dst = target_ports[target_port]
-        if not dtype_accepts(dst.dtype, src.dtype):
+        # A port's class *is* its type: only identical types connect (no
+        # subtyping, no unions), so a wiring that passes here cannot fail the
+        # runtime value check.
+        if type(src) is not type(dst):
             raise TypeError(
-                f"Cannot connect {source_node}.{source_port} ({src.dtype.name}) "
-                f"to {target_node}.{target_port} ({dst.dtype.name})"
+                f"Cannot connect {source_node}.{source_port} ({src.TYPE_NAME}) "
+                f"to {target_node}.{target_port} ({dst.TYPE_NAME})"
             )
 
         self.edges.append(Edge(Endpoint(source_node, source_port), Endpoint(target_node, target_port)))

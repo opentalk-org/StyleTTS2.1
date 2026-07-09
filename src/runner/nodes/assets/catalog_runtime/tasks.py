@@ -8,7 +8,7 @@ from runner.nodes.assets.catalog_runtime.persistence import checkpoint_payload, 
 from runner.nodes.assets.catalog_runtime.specs import official_styletts_specs, papercup_plbert_spec, styletts2_utils_specs, vokan_styletts_spec
 from runner.nodes.assets.catalog_runtime.types import CatalogTask
 from runner.nodes.assets.catalog_runtime.validation import styletts_checkpoint_metadata
-from runner.nodes.assets.model_downloads import download_nemo_snapshot, download_whisper_model_files, ensure_model_checkpoint
+from runner.nodes.assets.model_downloads import download_hf_snapshot, download_nemo_snapshot, download_whisper_model_files, ensure_model_checkpoint
 
 
 _NEMO_ASR_KINDS = {"parakeet", "canary", "sortformer"}
@@ -81,6 +81,8 @@ def bootstrap_asr_model(item: str = "", *, logger: logging.Logger | None = None)
         download = lambda folder: download_whisper_model_files(model_id, folder)
     elif kind in _NEMO_ASR_KINDS:
         download = lambda folder: download_nemo_snapshot(model_id, folder)
+    elif kind == "whisperx":
+        download = lambda folder: download_hf_snapshot(model_id, folder)
     else:
         raise ValueError(f"catalog_item_unknown:{item}")
     log.info("asr model download starting kind=%s model=%s", kind, model_id)

@@ -5,10 +5,9 @@ from uuid import UUID
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import JSON
+from runner.nodes.datatypes import JsonPort
 from runner.nodes.synthesis.style_reference import audio_file_style_reference
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
@@ -38,7 +37,7 @@ class TestingRunInputNode(Node):
     CATEGORY = "Testing"
     IS_INPUT = True
     INPUTS = {}
-    OUTPUTS = {"run": Port("run", JSON)}
+    OUTPUTS = {"run": JsonPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     def __init__(self, node_id: str | None = None, **params):
@@ -56,7 +55,7 @@ class TestingRunInputNode(Node):
 
 class TestingInputPayloadNode(Node):
     CATEGORY = "Testing"
-    INPUTS = {"run": Port("run", JSON)}
+    INPUTS = {"run": JsonPort()}
     OUTPUT_FIELD = "input"
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
@@ -69,14 +68,14 @@ class TestingTextPromptNode(TestingInputPayloadNode):
     NODE_TYPE = "TestingTextPrompt"
     SETTINGS = TestingTextPromptSettings
     OUTPUT_FIELD = "prompt_text"
-    OUTPUTS = {"prompt_text": Port("prompt_text", JSON)}
+    OUTPUTS = {"prompt_text": JsonPort()}
 
 
 class SelectStyleReferenceNode(TestingInputPayloadNode):
     NODE_TYPE = "SelectStyleReference"
     SETTINGS = SelectStyleReferenceSettings
     OUTPUT_FIELD = "style_reference"
-    OUTPUTS = {"style_reference": Port("style_reference", JSON)}
+    OUTPUTS = {"style_reference": JsonPort()}
 
     async def execute(self, batch, context):
         if not self.settings.reference_id:
@@ -93,7 +92,7 @@ class StyleReferenceSweepNode(TestingInputPayloadNode):
     NODE_TYPE = "StyleReferenceSweep"
     SETTINGS = StyleReferenceSweepSettings
     OUTPUT_FIELD = "style_reference"
-    OUTPUTS = {"style_reference": Port("style_reference", JSON)}
+    OUTPUTS = {"style_reference": JsonPort()}
 
     async def execute(self, batch, context):
         if not self.settings.voices:

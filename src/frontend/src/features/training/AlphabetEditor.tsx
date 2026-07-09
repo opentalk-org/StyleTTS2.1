@@ -10,7 +10,6 @@ import { FormSection } from "./FormSection";
 import type { SchemaValues } from "@/shared/schema-form/types";
 import type { TrainingConfig } from "./api";
 
-/** Phoneme alphabet editor: preset picker, live symbol count, and a base-count advisory. */
 export function AlphabetEditor({
   values,
   presets,

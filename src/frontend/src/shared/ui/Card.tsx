@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 
 import { cn } from "./cn";
 
-/** White panel with the standard 1px line border and rounded corners. */
 export function Card({
   className,
   children,

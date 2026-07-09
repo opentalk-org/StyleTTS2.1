@@ -6,10 +6,9 @@ from uuid import UUID
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
-from runner.nodes.datatypes import AUDIO, JSON
+from runner.nodes.datatypes import AudioPort, JsonPort
 from runner.nodes.models import Audio
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
@@ -30,8 +29,8 @@ class AddAudioToDatasetNode(Node):
     NODE_TYPE = "AddAudioToDataset"
     CATEGORY = "Dataset"
     SETTINGS = DatasetWritebackSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"writeback_result": Port("writeback_result", JSON)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"writeback_result": JsonPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=128, max_size=512)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
@@ -48,8 +47,8 @@ class RemoveAudioFromDatasetNode(Node):
     NODE_TYPE = "RemoveAudioFromDataset"
     CATEGORY = "Dataset"
     SETTINGS = DatasetWritebackSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"writeback_result": Port("writeback_result", JSON)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"writeback_result": JsonPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=128, max_size=512)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
@@ -65,8 +64,8 @@ class AssignVoiceNode(Node):
     NODE_TYPE = "AssignVoice"
     CATEGORY = "Dataset"
     SETTINGS = AssignVoiceSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO), "writeback_result": Port("writeback_result", JSON)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"audio": AudioPort(), "writeback_result": JsonPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=256)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
@@ -113,8 +112,8 @@ class AssignVoiceNode(Node):
 class DeleteAudioRecordsNode(Node):
     NODE_TYPE = "DeleteAudioRecords"
     CATEGORY = "Dataset"
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"writeback_result": Port("writeback_result", JSON)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"writeback_result": JsonPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=256)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 

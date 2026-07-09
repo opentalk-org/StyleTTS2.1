@@ -13,11 +13,11 @@ from shared.logging_setup import get_logger
 logger = get_logger(__name__)
 
 from runflow.core.node import Node
-from runflow.core.ports import JoinMode, Port
+from runflow.core.ports import JoinMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
-from runner.nodes.datatypes import ASSET_BUNDLE, CHECKPOINT_REF, TRAINING_MANIFEST, TRAINING_RESULT
+from runner.nodes.datatypes import AssetBundlePort, CheckpointRefPort, TrainingManifestPort, TrainingResultPort
 from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingManifest, TrainingResult, stable_id, typed_assets, typed_checkpoint
 from runner.nodes.training.common.manifest.cleanup import remove_run_dir
 from runner.nodes.training.common.results import NoopAimRun
@@ -67,11 +67,11 @@ class StyleTtsFinetuneNode(Node):
     CATEGORY = "Training"
     SETTINGS = StyleTtsFinetuneSettings
     INPUTS = {
-        "training_manifest": Port("training_manifest", TRAINING_MANIFEST),
-        "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
-        "assets": Port("assets", ASSET_BUNDLE, join_mode=JoinMode.BROADCAST),
+        "training_manifest": TrainingManifestPort(),
+        "checkpoint": CheckpointRefPort(join_mode=JoinMode.BROADCAST),
+        "assets": AssetBundlePort(join_mode=JoinMode.BROADCAST),
     }
-    OUTPUTS = {"training_result": Port("training_result", TRAINING_RESULT)}
+    OUTPUTS = {"training_result": TrainingResultPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.DISABLED)
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 12}, exclusive_group="accelerator")
 

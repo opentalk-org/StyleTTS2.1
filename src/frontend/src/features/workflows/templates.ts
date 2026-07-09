@@ -1,11 +1,8 @@
 import type { WorkflowGraph, WorkflowSchema } from "./types";
 
-export type WorkflowTemplate = {
-  id: string;
-  name: string;
-  description: string;
-  build: (schema: WorkflowSchema) => WorkflowGraph;
-};
+// The workflow library's Examples tab is sourced from the backend
+// `GET /workflows/examples` endpoint (the `workflows/*.json` folder), not from
+// this file. This module only provides the default graph the canvas opens with.
 
 type WorkflowEdge = WorkflowGraph["edges"][number];
 
@@ -67,12 +64,3 @@ function diarizedAsrComparison(schema: WorkflowSchema): WorkflowGraph {
     ],
   };
 }
-
-export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
-  {
-    id: "sortformer_asr_comparison",
-    name: "Sortformer ASR comparison",
-    description: "Diarize audio with Sortformer, transcribe each speaker chunk with Whisper, Parakeet, and Canary, then save all three transcription sets.",
-    build: diarizedAsrComparison,
-  },
-];

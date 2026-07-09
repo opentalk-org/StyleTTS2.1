@@ -6,10 +6,9 @@ from dataclasses import replace
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
-from runner.nodes.datatypes import AUDIO, SAVE_RESULT
+from runner.nodes.datatypes import AudioPort, SaveResultPort
 from runner.nodes.models import Audio, SaveResult, stable_id
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
@@ -29,8 +28,8 @@ class LoadAudioNode(Node):
     NODE_TYPE = "LoadAudio"
     CATEGORY = "Audio"
     SETTINGS = LoadAudioSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"audio": AudioPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
@@ -56,8 +55,8 @@ class SaveAudioArtifactNode(Node):
     NODE_TYPE = "SaveAudioArtifact"
     CATEGORY = "Audio"
     SETTINGS = SaveAudioArtifactSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"save_result": Port("save_result", SAVE_RESULT)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"save_result": SaveResultPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):

@@ -5,7 +5,7 @@ import { cn } from "@/shared/ui/cn";
 import type { Segment } from "./api";
 import { useEditor } from "./editorStore";
 
-const ROW_COLS = "30px 92px 126px 1fr auto";
+const ROW_COLS = "22px 30px 92px 126px 1fr auto";
 
 function IconBtn({ icon, title, danger, onClick }: { icon: "play" | "merge" | "trash"; title: string; danger?: boolean; onClick: () => void }) {
   return (
@@ -23,19 +23,32 @@ function IconBtn({ icon, title, danger, onClick }: { icon: "play" | "merge" | "t
 }
 
 export function SegmentRow({ seg, index, isLast }: { seg: Segment; index: number; isLast: boolean }) {
-  const { segSel, select, seek, playing, togglePlay, setSegText, setSegPhon, setSegVoice, deleteSeg, mergeNext } = useEditor();
+  const { segSel, segChecked, playPos, select, toggleCheck, seek, playing, togglePlay, setSegText, setSegPhon, setSegVoice, deleteSeg, mergeNext } = useEditor();
   const sel = seg.id === segSel;
+  const checked = segChecked.includes(seg.id);
 
   return (
     <div className="px-0.5 py-1.5">
       <div
-        onClick={() => { select(seg.id); seek(seg.start); }}
         className={cn(
-          "grid cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-1.5",
+          "overflow-hidden rounded-lg border",
           sel ? "border-blue-200 bg-blue-50" : "border-line bg-panel",
         )}
+      >
+      <div
+        onClick={() => { select(seg.id); seek(seg.start); }}
+        className="grid cursor-pointer items-center gap-2.5 px-2.5 py-1.5"
         style={{ gridTemplateColumns: ROW_COLS }}
       >
+        <div onClick={(e) => e.stopPropagation()} className="flex items-center justify-center">
+          <input
+            type="checkbox"
+            title="Select for bulk actions"
+            checked={checked}
+            onChange={() => toggleCheck(seg.id)}
+            className="h-3.5 w-3.5 cursor-pointer accent-blue-500"
+          />
+        </div>
         <div className={cn("text-[11px] font-bold tabular-nums", sel ? "text-blue-600" : "text-txt-mute")}>
           {String(index + 1).padStart(3, "0")}
         </div>
@@ -84,6 +97,28 @@ export function SegmentRow({ seg, index, isLast }: { seg: Segment; index: number
           {!isLast ? <IconBtn icon="merge" title="Merge with next" onClick={() => mergeNext(seg.id)} /> : null}
           <IconBtn icon="trash" title="Delete" danger onClick={() => deleteSeg(seg.id)} />
         </div>
+      </div>
+      {seg.alignment?.length ? (
+        <div onClick={(e) => e.stopPropagation()} className="flex flex-wrap items-center gap-1 border-t border-line bg-panel-2/40 px-2.5 py-1.5">
+          <span className="mr-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-txt-mute">Words</span>
+          {seg.alignment.map((word, i) => {
+            const current = playPos >= word.start && playPos <= word.end;
+            return (
+              <button
+                key={`${word.start}-${i}`}
+                onClick={() => seek(word.start)}
+                title={`${fmtClock(word.start)} – ${fmtClock(word.end)}`}
+                className={cn(
+                  "rounded px-1.5 py-0.5 font-mono text-[10.5px]",
+                  current ? "bg-blue-500 text-white" : "bg-panel-2 text-txt-dim hover:bg-blue-100 hover:text-blue-600",
+                )}
+              >
+                {word.word}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
       </div>
     </div>
   );

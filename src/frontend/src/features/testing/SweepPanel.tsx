@@ -39,7 +39,6 @@ function VoiceChip({ name, on, onClick }: { name: string; on: boolean; onClick: 
   );
 }
 
-/** Sweep config form + a grid of per-voice result cards. */
 export function SweepPanel({
   schema,
   graph,

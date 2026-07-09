@@ -5,10 +5,9 @@ from dataclasses import replace
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy
-from runner.nodes.datatypes import AUDIO
+from runner.nodes.datatypes import AudioPort
 from runner.nodes.models import Audio
 from runner.nodes.statistics.segments import DEFAULT_MIN_OVERLAP_RATIO, deduplicate_overlapping_segments
 
@@ -21,8 +20,8 @@ class DeduplicateOverlappingSegmentsNode(Node):
     NODE_TYPE = "DeduplicateOverlappingSegments"
     CATEGORY = "Audio"
     SETTINGS = DeduplicateOverlappingSegmentsSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"audio": AudioPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=256)
 
     async def execute(self, batch, context):

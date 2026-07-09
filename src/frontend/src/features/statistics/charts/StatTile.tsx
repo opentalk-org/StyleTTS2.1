@@ -1,7 +1,6 @@
 import { TILE_TEXT_CLASS, type Tone } from "../logic";
 import { Card } from "@/shared/ui/Card";
 
-/** Small metric tile: a large toned value over a label and optional sub-line. */
 export function StatTile({
   label,
   value,

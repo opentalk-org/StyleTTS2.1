@@ -55,6 +55,60 @@ def transcribe_wavs_to_segments(
     return [_segments_from_hypothesis(output, durations_sec[index]) for index, output in enumerate(outputs)]
 
 
+def transcribe_wavs_to_aligned_segments(
+    model: Any,
+    wav_paths: list[Path],
+    durations_sec: list[float],
+    *,
+    batch_size: int,
+) -> list[list[tuple[float, float, str, list[dict[str, Any]] | None]]]:
+    """Like :func:`transcribe_wavs_to_segments`, but also attach per-word timings.
+
+    Each returned span is ``(start, end, text, words)`` where ``words`` is the list
+    of Parakeet word timestamps whose midpoint falls inside the segment (or ``None``
+    when the model emitted no word-level timestamps for it).
+    """
+    import torch
+
+    with torch.no_grad():
+        outputs = model.transcribe([str(path) for path in wav_paths], batch_size=batch_size, timestamps=True, num_workers=0)
+    aligned = []
+    for index, output in enumerate(outputs):
+        duration = durations_sec[index]
+        words = _words_from_hypothesis(output, duration)
+        segments = [
+            (start, end, text, _words_in_span(words, start, end))
+            for start, end, text in _segments_from_hypothesis(output, duration)
+        ]
+        aligned.append(segments)
+    return aligned
+
+
+def _words_from_hypothesis(output: Any, duration_sec: float) -> list[dict[str, Any]]:
+    timestamp = getattr(output, "timestamp", None)
+    if not (isinstance(timestamp, dict) and isinstance(timestamp.get("word"), list)):
+        return []
+    words = []
+    for item in timestamp["word"]:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("word", "")).strip()
+        if not text:
+            continue
+        start = max(0.0, float(item.get("start", 0.0)))
+        end = max(start, float(item.get("end", start)))
+        if duration_sec > 0:
+            start = min(start, duration_sec)
+            end = min(max(start, end), duration_sec)
+        words.append({"word": text, "start": start, "end": end, "score": None})
+    return words
+
+
+def _words_in_span(words: list[dict[str, Any]], start: float, end: float) -> list[dict[str, Any]] | None:
+    inside = [word for word in words if start <= (word["start"] + word["end"]) / 2 <= end]
+    return inside or None
+
+
 def _segments_from_hypothesis(output: Any, duration_sec: float) -> list[tuple[float, float, str]]:
     timestamp = getattr(output, "timestamp", None)
     if isinstance(timestamp, dict) and isinstance(timestamp.get("segment"), list):

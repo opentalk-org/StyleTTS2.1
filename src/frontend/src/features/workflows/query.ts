@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { showToast } from "@/shared/feedback/Toast";
-import { deleteWorkflow, fetchRunGraph, fetchRuns, fetchRunSnapshot, fetchSavedWorkflows, fetchWorkflowSchema, loadRunNode, saveWorkflow, startGraph, stopRun, unloadRunNode } from "./api";
+import { deleteWorkflow, fetchExampleWorkflows, fetchRunGraph, fetchRuns, fetchRunSnapshot, fetchSavedWorkflows, fetchWorkflowSchema, loadRunNode, saveWorkflow, startGraph, stopRun, unloadRunNode } from "./api";
 
 const STATUS_STALE_MS = 10_000;
 
@@ -20,6 +20,12 @@ export function useRunsQuery() {
 
 export function useSavedWorkflowsQuery() {
   return useQuery({ queryKey: ["workflows"], queryFn: fetchSavedWorkflows });
+}
+
+// staleTime 0 (default): the folder is re-read every time the library opens, so
+// example edits show up without a backend restart.
+export function useExampleWorkflowsQuery() {
+  return useQuery({ queryKey: ["workflow-examples"], queryFn: fetchExampleWorkflows });
 }
 
 export function useSaveWorkflowMutation() {

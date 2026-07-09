@@ -8,7 +8,6 @@ const BASE_SYMBOLS = 178;
 
 type ValidationRow = { ok: boolean; label: string };
 
-/** Sticky right rail: draft state, validation checklist, and the queue action. */
 export function QueueCard({
   schema,
   graph,

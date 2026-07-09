@@ -108,6 +108,32 @@ fi
 # shellcheck disable=SC1091
 . .venv/bin/activate
 
+# Kill any stale process still listening on a port we're about to bind. Prior dev
+# runs can leave app-tier services orphaned (e.g. an Aim UI double-forked past the
+# shutdown trap); a fresh run then fails to bind, exits, and the wait -n below tears
+# the whole stack down. Only used for services that have no "reuse existing" guard
+# (backend/frontend/aim) -- Postgres/PgBouncer/NATS/RustFS are detected and reused.
+free_port() {
+  local port="$1" label="${2:-port}" pids
+  # `|| true` inside the substitution: when the port is free, grep matches nothing
+  # and exits non-zero, which under `set -o pipefail`/`set -e` would otherwise abort
+  # the whole script on a standalone assignment.
+  pids="$(ss -tlnpH 2>/dev/null \
+    | awk -v p=":$port\$" '$4 ~ p' \
+    | grep -oE 'pid=[0-9]+' | grep -oE '[0-9]+' | sort -u || true)"
+  [ -n "$pids" ] || return 0
+  echo "Freeing $label port $port from stale process(es): $(echo "$pids" | tr '\n' ' ')"
+  # shellcheck disable=SC2086
+  kill $pids 2>/dev/null || true
+  for _ in 1 2 3 4 5; do
+    ss -tlnpH 2>/dev/null | awk -v p=":$port\$" '$4 ~ p' | grep -q . || return 0
+    sleep 1
+  done
+  # shellcheck disable=SC2046
+  kill -9 $(ss -tlnpH 2>/dev/null | awk -v p=":$port\$" '$4 ~ p' \
+    | grep -oE 'pid=[0-9]+' | grep -oE '[0-9]+' | sort -u) 2>/dev/null || true
+}
+
 pid_postgres=""
 pid_pgbouncer=""
 pid_nats=""
@@ -253,7 +279,15 @@ fi
 
 echo "Legacy static UI is available at http://$BACKEND_HOST:$BACKEND_PORT/ui-old"
 echo "Starting backend API at http://$BACKEND_HOST:$BACKEND_PORT"
-uvicorn backend.api:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" &
+# Auto-reload backend + runner on source changes so node edits (and the node schema
+# the UI reads) take effect without a manual restart. Disable with RUNFLOW_RELOAD=0.
+export RUNFLOW_RELOAD="${RUNFLOW_RELOAD:-1}"
+backend_reload_args=()
+if [ "$RUNFLOW_RELOAD" = "1" ]; then
+  backend_reload_args=(--reload --reload-dir src)
+fi
+free_port "$BACKEND_PORT" backend
+uvicorn backend.api:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" "${backend_reload_args[@]}" &
 pid_backend=$!
 
 until python -c "from urllib.request import urlopen; urlopen('http://127.0.0.1:$BACKEND_PORT/health', timeout=1).read()" >/dev/null 2>&1; do
@@ -269,10 +303,12 @@ if [ ! -d "$AIM_REPO/.aim" ]; then
   aim init --repo "$AIM_REPO" || echo "aim init failed; continuing without Aim UI"
 fi
 echo "Starting Aim UI at http://$AIM_HOST:$AIM_PORT"
+free_port "$AIM_PORT" aim
 aim up --repo "$AIM_REPO" --host "$AIM_HOST" --port "$AIM_PORT" > .data/aim.log 2>&1 &
 pid_aim=$!
 
 echo "Starting frontend at http://$FRONTEND_HOST:$FRONTEND_PORT"
+free_port "$FRONTEND_PORT" frontend
 (
   cd src/frontend
   if [ ! -d node_modules ]; then

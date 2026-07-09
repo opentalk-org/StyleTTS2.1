@@ -232,7 +232,7 @@
       },
       {
         "source_node": "ck_parakeet",
-        "source_port": "checkpoint_ref",
+        "source_port": "checkpoint",
         "target_node": "parakeet",
         "target_port": "checkpoint"
       },
@@ -250,7 +250,7 @@
       },
       {
         "source_node": "ck_sortformer",
-        "source_port": "checkpoint_ref",
+        "source_port": "checkpoint",
         "target_node": "split",
         "target_port": "checkpoint"
       },
@@ -274,7 +274,7 @@
       },
       {
         "source_node": "ck_whisper",
-        "source_port": "checkpoint_ref",
+        "source_port": "checkpoint",
         "target_node": "whisper",
         "target_port": "checkpoint"
       },
@@ -298,7 +298,7 @@
       },
       {
         "source_node": "ck_canary",
-        "source_port": "checkpoint_ref",
+        "source_port": "checkpoint",
         "target_node": "canary",
         "target_port": "checkpoint"
       },

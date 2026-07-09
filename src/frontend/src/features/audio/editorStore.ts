@@ -2,7 +2,6 @@ import { create } from "zustand";
 
 import type { Segment } from "./api";
 
-/** Smallest visible timeline window, in seconds (deepest zoom). */
 const MIN_SPAN = 2;
 /** Default window span on load — start zoomed in so long files stay light. */
 const DEFAULT_SPAN = 45;
@@ -12,7 +11,6 @@ function sortSegs(segs: Segment[]): Segment[] {
   return [...segs].sort((a, b) => a.start - b.start || a.end - b.end);
 }
 
-/** Clamp a [start, end] window into [0, dur] while preserving a valid span. */
 function clampView(start: number, end: number, dur: number): { viewStart: number; viewEnd: number } {
   const span = Math.min(dur, Math.max(MIN_SPAN, end - start));
   const viewStart = Math.max(0, Math.min(start, dur - span));
@@ -34,6 +32,8 @@ type EditorStore = {
   viewEnd: number;
   dirty: boolean;
   segSel: string | null;
+  /** Segment ids ticked for bulk actions (delete). Independent of `segSel`. */
+  segChecked: string[];
   segQuery: string;
   load: (fileId: string, dur: number, segs: Segment[]) => void;
   seek: (playPos: number) => void;
@@ -47,7 +47,9 @@ type EditorStore = {
   followPlayhead: () => void;
   setQuery: (segQuery: string) => void;
   select: (segSel: string) => void;
-  /** Move/resize a segment on the timeline (drag). Clamped to [0, dur] with a min length. */
+  toggleCheck: (id: string) => void;
+  setChecked: (ids: string[]) => void;
+  deleteChecked: () => void;
   setSegTime: (id: string, start: number, end: number) => void;
   setSegText: (id: string, text: string) => void;
   setSegPhon: (id: string, phon: string) => void;
@@ -79,11 +81,12 @@ export const useEditor = create<EditorStore>((set) => ({
   viewEnd: 0,
   dirty: false,
   segSel: null,
+  segChecked: [],
   segQuery: "",
   load: (fileId, dur, segs) =>
     set({
       fileId, dur, segs: sortSegs(segs), playPos: 0, playing: false, dirty: false,
-      segSel: null, segQuery: "", loop: false,
+      segSel: null, segChecked: [], segQuery: "", loop: false,
       viewStart: 0, viewEnd: Math.min(dur, DEFAULT_SPAN),
     }),
   seek: (playPos) => set((s) => ({ playPos: Math.max(0, Math.min(s.dur, playPos)) })),
@@ -102,6 +105,17 @@ export const useEditor = create<EditorStore>((set) => ({
     }),
   setQuery: (segQuery) => set({ segQuery }),
   select: (segSel) => set({ segSel }),
+  toggleCheck: (id) =>
+    set((s) => ({
+      segChecked: s.segChecked.includes(id) ? s.segChecked.filter((x) => x !== id) : [...s.segChecked, id],
+    })),
+  setChecked: (ids) => set({ segChecked: ids }),
+  deleteChecked: () =>
+    set((s) => {
+      if (!s.segChecked.length) return s;
+      const drop = new Set(s.segChecked);
+      return { segs: s.segs.filter((g) => !drop.has(g.id)), segChecked: [], dirty: true };
+    }),
   setSegTime: (id, start, end) =>
     set((s) => {
       if (end - start < 0.1) return s;
@@ -110,19 +124,22 @@ export const useEditor = create<EditorStore>((set) => ({
       return { segs: s.segs.map((g) => (g.id === id ? { ...g, start: ns, end: ne } : g)), dirty: true };
     }),
   setSegText: (id, text) =>
-    set((s) => ({ segs: s.segs.map((g) => (g.id === id ? { ...g, text } : g)), dirty: true })),
+    // Editing the text invalidates the word alignment produced for the old text.
+    set((s) => ({ segs: s.segs.map((g) => (g.id === id ? { ...g, text, alignment: null } : g)), dirty: true })),
   setSegPhon: (id, phon) =>
     set((s) => ({ segs: s.segs.map((g) => (g.id === id ? { ...g, phon } : g)), dirty: true })),
   setSegVoice: (id, speaker) =>
     set((s) => ({ segs: s.segs.map((g) => (g.id === id ? { ...g, speaker } : g)), dirty: true })),
-  deleteSeg: (id) => set((s) => ({ segs: s.segs.filter((g) => g.id !== id), dirty: true })),
+  deleteSeg: (id) =>
+    set((s) => ({ segs: s.segs.filter((g) => g.id !== id), segChecked: s.segChecked.filter((x) => x !== id), dirty: true })),
   mergeNext: (id) =>
     set((s) => {
       const i = s.segs.findIndex((g) => g.id === id);
       if (i < 0 || i >= s.segs.length - 1) return s;
       const cur = s.segs[i]!;
       const next = s.segs[i + 1]!;
-      const merged: Segment = { ...cur, end: next.end, text: `${cur.text} ${next.text}`.trim(), phon: `${cur.phon} ${next.phon}`.trim() };
+      const mergedAlignment = cur.alignment || next.alignment ? [...(cur.alignment ?? []), ...(next.alignment ?? [])] : null;
+      const merged: Segment = { ...cur, end: next.end, text: `${cur.text} ${next.text}`.trim(), phon: `${cur.phon} ${next.phon}`.trim(), alignment: mergedAlignment };
       const segs = [...s.segs];
       segs.splice(i, 2, merged);
       return { segs, dirty: true, segSel: merged.id };

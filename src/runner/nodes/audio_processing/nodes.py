@@ -9,13 +9,13 @@ from typing import Any, Literal
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import JoinMode, Port, PortMode
+from runflow.core.ports import JoinMode, PortMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.asr.audio import extract_wav_range, wav_info
 from runner.nodes.assets.model_downloads import single_checkpoint_file
-from runner.nodes.datatypes import AUDIO, CHECKPOINT_REF
+from runner.nodes.datatypes import AudioPort, CheckpointRefPort
 from runner.nodes.models import Audio, AudioSegment, stable_id, typed_checkpoint
 from shared.log_streams import route_output_to_logger
 
@@ -51,8 +51,8 @@ class VadDetectNode(Node):
     NODE_TYPE = "VadDetect"
     CATEGORY = "Audio"
     SETTINGS = VadSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"audio": AudioPort(mode=PortMode.STREAM)}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
 
     async def execute(self, batch, context):
@@ -68,8 +68,8 @@ class SortformerDiarizationNode(Node):
     NODE_TYPE = "SortformerDiarization"
     CATEGORY = "Audio"
     SETTINGS = SortformerSettings
-    INPUTS = {"audio": Port("audio", AUDIO), "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST)}
-    OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}
+    INPUTS = {"audio": AudioPort(), "checkpoint": CheckpointRefPort(join_mode=JoinMode.BROADCAST)}
+    OUTPUTS = {"audio": AudioPort(mode=PortMode.STREAM)}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=16, max_size=16)
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, keep_loaded=True, exclusive_group="accelerator")
 
@@ -109,8 +109,8 @@ class SortformerDiarizationNode(Node):
 class CutAudioBySegmentsNode(Node):
     NODE_TYPE = "CutAudioBySegments"
     CATEGORY = "Audio"
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"audio": AudioPort(mode=PortMode.STREAM)}
 
     async def execute(self, batch, context):
         outputs = []

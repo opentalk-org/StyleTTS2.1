@@ -88,7 +88,6 @@ function SingleMode({
   );
 }
 
-/** Synthesis audition: single-synthesis config or a multi-voice sweep. */
 export function TestingScreen() {
   const mode = useTesting((s) => s.testMode);
   const setMode = useTesting((s) => s.setMode);

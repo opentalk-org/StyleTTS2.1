@@ -1,9 +1,5 @@
 import { BAR_CLASS, type RankItem, type Tone } from "../logic";
 
-/**
- * Ranked rows: index, monospaced token chip, proportional bar, and count.
- * Used for the top / bottom trigram lists.
- */
 export function RankList({ items, tone = "blue" }: { items: RankItem[]; tone?: Tone }) {
   const max = Math.max(...items.map((it) => it.value), 0.001);
   return (

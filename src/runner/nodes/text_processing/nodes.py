@@ -6,9 +6,8 @@ from typing import Literal
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
-from runner.nodes.datatypes import AUDIO
+from runner.nodes.datatypes import AudioPort
 from runner.nodes.models import Audio, AudioSegment
 from runner.nodes.text.runtime.phonemize import DEFAULT_PUNCTUATION_MARKS, phonemize_texts
 
@@ -29,8 +28,8 @@ class PhonemizeSegmentsNode(Node):
     NODE_TYPE = "PhonemizeSegments"
     CATEGORY = "Text"
     SETTINGS = PhonemizeSegmentsSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"audio": AudioPort()}
 
     async def execute(self, batch, context):
         outputs = []

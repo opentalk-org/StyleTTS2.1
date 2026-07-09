@@ -1,28 +1,27 @@
 from __future__ import annotations
 
-from runflow.core.types import DataType, UnionDataType
+from runflow.core.ports import Port
 
 
 class TypeRegistry:
     def __init__(self) -> None:
-        self.types: dict[str, DataType | UnionDataType] = {}
+        self.types: dict[str, type[Port]] = {}
 
-    def register(self, dtype: DataType | UnionDataType) -> DataType | UnionDataType:
-        if dtype.name in self.types:
-            raise ValueError(f"datatype already registered: {dtype.name}")
-        self.types[dtype.name] = dtype
-        return dtype
+    def register(self, port_cls: type[Port]) -> type[Port]:
+        if port_cls.TYPE_NAME in self.types:
+            raise ValueError(f"port type already registered: {port_cls.TYPE_NAME}")
+        self.types[port_cls.TYPE_NAME] = port_cls
+        return port_cls
 
-    def get(self, name: str) -> DataType | UnionDataType:
+    def get(self, name: str) -> type[Port]:
         return self.types[name]
 
     def to_schema(self) -> dict:
         return {
             name: {
-                "name": dtype.name,
-                "description": getattr(dtype, "description", ""),
-                "color": getattr(dtype, "color", "#999999"),
-                "members": [m.name for m in getattr(dtype, "members", ())],
+                "name": port_cls.TYPE_NAME,
+                "description": port_cls.description,
+                "color": port_cls.color,
             }
-            for name, dtype in self.types.items()
+            for name, port_cls in self.types.items()
         }

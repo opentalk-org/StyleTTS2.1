@@ -6,10 +6,9 @@ from typing import Any
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy
-from runner.nodes.datatypes import AUDIO, JSON
+from runner.nodes.datatypes import AudioPort, JsonPort
 from runner.nodes.models import Audio
 from runner.nodes.statistics.segments import speech_segment_records
 
@@ -26,8 +25,8 @@ class AnalyzeAudioFeaturesNode(Node):
     NODE_TYPE = "AnalyzeAudioFeatures"
     CATEGORY = "Audio"
     SETTINGS = AudioFeatureSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"feature_records": Port("feature_records", JSON)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"feature_records": JsonPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
 
     async def execute(self, batch, context):

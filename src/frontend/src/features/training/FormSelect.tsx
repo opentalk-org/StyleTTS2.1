@@ -21,7 +21,6 @@ export function FormSelect({
   return <Select value={value ?? localValue} onChange={onChange ?? setLocalValue} options={options} />;
 }
 
-/** Build select options from a mix of plain strings and explicit {value,label}. */
 export function opts(items: (string | Option)[]): Option[] {
   return items.map((o) =>
     typeof o === "string" ? { value: o, label: o } : o,

@@ -1,0 +1,180 @@
+{
+  "name": "WhisperX + Parakeet align → merge → replace alignment",
+  "hidden": false,
+  "data": {
+    "nodes": [
+      {
+        "id": "src",
+        "type": "AudioSource",
+        "x": 0,
+        "y": 200,
+        "params": {
+          "source": "selected",
+          "audio_file_ids": [
+            "51d732dd-079a-47f4-8edf-e17217e0fd16"
+          ]
+        },
+        "runtime": {}
+      },
+      {
+        "id": "load",
+        "type": "LoadAudio",
+        "x": 240,
+        "y": 200,
+        "params": {
+          "sample_rate": 24000,
+          "channels": 1
+        },
+        "runtime": {}
+      },
+      {
+        "id": "load_segments",
+        "type": "LoadAudioSegments",
+        "x": 480,
+        "y": 200,
+        "params": {},
+        "runtime": {}
+      },
+      {
+        "id": "ck_wx_a",
+        "type": "ResolveCheckpoint",
+        "x": 720,
+        "y": 40,
+        "params": {
+          "checkpoint_id": "00000000-0000-0000-0000-000000000000"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "align_a",
+        "type": "WhisperXAlign",
+        "x": 720,
+        "y": 120,
+        "params": {
+          "language": "en"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "parakeet_model",
+        "type": "CatalogDownload",
+        "x": 720,
+        "y": 280,
+        "params": {
+          "catalog_key": "asr_models",
+          "item": "parakeet:nvidia/parakeet-tdt-0.6b-v3"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "align_b",
+        "type": "ParakeetTranscribe",
+        "x": 720,
+        "y": 360,
+        "params": {
+          "batch_size": 16,
+          "output_alignment": true
+        },
+        "runtime": {}
+      },
+      {
+        "id": "merge",
+        "type": "MergeAlignment",
+        "x": 1000,
+        "y": 200,
+        "params": {
+          "dedupe_window_sec": 0.2
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_seg",
+        "type": "SaveAudioSegments",
+        "x": 1240,
+        "y": 200,
+        "params": {
+          "mode": "replace"
+        },
+        "runtime": {}
+      }
+    ],
+    "edges": [
+      {
+        "source_node": "src",
+        "source_port": "audio",
+        "target_node": "load",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "load",
+        "source_port": "audio",
+        "target_node": "load_segments",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "ck_wx_a",
+        "source_port": "checkpoint",
+        "target_node": "align_a",
+        "target_port": "checkpoint"
+      },
+      {
+        "source_node": "load_segments",
+        "source_port": "audio",
+        "target_node": "align_a",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "parakeet_model",
+        "source_port": "checkpoint",
+        "target_node": "align_b",
+        "target_port": "checkpoint"
+      },
+      {
+        "source_node": "load_segments",
+        "source_port": "audio",
+        "target_node": "align_b",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "align_a",
+        "source_port": "audio",
+        "target_node": "merge",
+        "target_port": "audio_a"
+      },
+      {
+        "source_node": "align_b",
+        "source_port": "audio",
+        "target_node": "merge",
+        "target_port": "audio_b"
+      },
+      {
+        "source_node": "merge",
+        "source_port": "audio",
+        "target_node": "save_seg",
+        "target_port": "audio"
+      }
+    ],
+    "context": {
+      "work_dir": "work",
+      "cache_dir": "cache",
+      "output_dir": "outputs",
+      "device": "cuda",
+      "config": {
+        "resources": {
+          "io": 2,
+          "cpu_workers": 2,
+          "accelerator": 1,
+          "vram_gb": 8
+        }
+      },
+      "input_items": []
+    },
+    "launch_source": {
+      "kind": "selected_audio",
+      "audio_file_ids": [
+        "51d732dd-079a-47f4-8edf-e17217e0fd16"
+      ],
+      "include_virtual": false
+    }
+  }
+}

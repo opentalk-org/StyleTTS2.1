@@ -20,6 +20,14 @@ import { AUDIO_FILES_KEY, useAudioFileQuery, useRenameAudioFileMutation, useUpda
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
+/** Order-independent fingerprint of a segment list, to detect backend-side changes. */
+function segsSignature(segs: { id: string; start: number; end: number; text: string; phon: string; speaker: string; alignment?: { start: number }[] | null }[]): string {
+  return segs
+    .map((g) => `${g.id}:${g.start}:${g.end}:${g.text}:${g.phon}:${g.speaker}:${g.alignment?.length ?? 0}`)
+    .sort()
+    .join("|");
+}
+
 function TBtn({ icon, title, big, flip, onClick }: { icon: IconName; title: string; big?: boolean; flip?: boolean; onClick: () => void }) {
   return (
     <button
@@ -52,8 +60,9 @@ export function SegmentEditor() {
   const [showMetadata, setShowMetadata] = useState(false);
   const ed = useEditor();
   const {
-    fileId, dur, segs, playPos, playing, speed, volume, loop, viewStart, viewEnd, dirty, segSel, segQuery,
+    fileId, dur, segs, playPos, playing, speed, volume, loop, viewStart, viewEnd, dirty, segSel, segChecked, segQuery,
     load, seek, togglePlay, setSpeed, setVolume, toggleLoop, setView, zoomIn, zoomOut, select, setSegTime, setQuery, addSeg,
+    setChecked, deleteChecked,
   } = ed;
   const waveformStatus = useWaveformStatusQuery(activeAudioFileId);
   const waveformReady = waveformStatus.data?.status === "ready";
@@ -62,9 +71,14 @@ export function SegmentEditor() {
   const viewWaveform = useWaveformQuery(activeAudioFileId, viewStart, viewEnd, 1400, waveformReady);
 
   useEffect(() => {
-    if (!audio.data || audio.data.id === fileId) return;
+    if (!audio.data) return;
+    // Reload when a different file opens, or when the same file's segments changed
+    // on the backend (e.g. a workflow run just rewrote them) — but never clobber
+    // unsaved local edits.
+    const changedFile = audio.data.id !== fileId;
+    if (!changedFile && (dirty || segsSignature(audio.data.segment_preview) === segsSignature(segs))) return;
     load(audio.data.id, audio.data.duration, audio.data.segment_preview);
-  }, [audio.data, fileId, load]);
+  }, [audio.data, fileId, dirty, segs, load]);
 
   useEffect(() => {
     if (audio.data) setNameDraft(audio.data.name);
@@ -93,6 +107,16 @@ export function SegmentEditor() {
     if (playing) void element.play().catch(() => useEditor.getState().togglePlay());
     else element.pause();
   }, [playing]);
+
+  // Follow the playhead: auto-select the segment the cursor sits in. Keep the
+  // current selection if it still contains the cursor (so overlapping segments
+  // don't flip-flop), otherwise pick the first one that does.
+  useEffect(() => {
+    const current = segs.find((seg) => seg.id === segSel);
+    if (current && playPos >= current.start && playPos <= current.end) return;
+    const at = segs.find((seg) => playPos >= seg.start && playPos < seg.end) ?? segs.find((seg) => playPos >= seg.start && playPos <= seg.end);
+    if (at && at.id !== segSel) select(at.id);
+  }, [playPos, segs, segSel, select]);
 
   // Smooth playhead: while playing, sample the media clock every animation frame
   // (~60fps) rather than leaning on the audio element's `timeupdate` event, which
@@ -128,6 +152,7 @@ export function SegmentEditor() {
   const file = audio.data;
   const q = segQuery.trim().toLowerCase();
   const vis = q ? segs.filter((g) => g.text.toLowerCase().includes(q) || g.phon.toLowerCase().includes(q)) : segs;
+  const allVisChecked = vis.length > 0 && vis.every((g) => segChecked.includes(g.id));
   const contentUrl = backendResourceUrl(`/audio-files/${encodeURIComponent(activeAudioFileId)}/content`);
   const seed = hashSeed(activeAudioFileId);
   const selectedSegment = segs.find((seg) => seg.id === segSel);
@@ -192,7 +217,6 @@ export function SegmentEditor() {
           if (useEditor.getState().playing) useEditor.getState().togglePlay();
         }}
       />
-      {/* header */}
       <div className="mb-4 grid gap-3 rounded-[10px] border border-line bg-panel px-4 py-3 lg:grid-cols-[1fr_auto]">
         <div className="min-w-0">
           <div className="mb-2 flex items-center gap-2">
@@ -327,7 +351,6 @@ export function SegmentEditor() {
         </div>
       ) : null}
 
-      {/* player */}
       <div className="mb-4 rounded-[10px] border border-line bg-panel p-4">
         {waveformPending ? (
           <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-txt-mute">
@@ -335,7 +358,6 @@ export function SegmentEditor() {
             Generating waveform…
           </div>
         ) : null}
-        {/* ponytail: click-to-seek + zoom timeline with lane-stacked segments; drag-to-resize of blocks is deferred. */}
         <SegmentTimeline
           segs={segs}
           dur={dur}
@@ -412,14 +434,27 @@ export function SegmentEditor() {
         </div>
       </div>
 
-      {/* segments */}
       <div className="flex min-h-0 flex-1 flex-col rounded-[10px] border border-line bg-panel p-4">
         <div className="mb-3 flex items-center gap-3">
-          <div className="text-[15px] font-bold">
-            Segments <span className="font-semibold text-txt-mute">{q ? `(${vis.length} of ${segs.length})` : `(${segs.length})`}</span>
-          </div>
+          <label className="flex items-center gap-2" title={allVisChecked ? "Clear selection" : "Select all shown"}>
+            <input
+              type="checkbox"
+              checked={allVisChecked}
+              disabled={!vis.length}
+              onChange={() => setChecked(allVisChecked ? [] : vis.map((g) => g.id))}
+              className="h-3.5 w-3.5 cursor-pointer accent-blue-500 disabled:opacity-40"
+            />
+            <span className="text-[15px] font-bold">
+              Segments <span className="font-semibold text-txt-mute">{q ? `(${vis.length} of ${segs.length})` : `(${segs.length})`}</span>
+            </span>
+          </label>
           <SearchInput value={segQuery} onChange={setQuery} placeholder="Search transcripts / phonemes…" />
           <div className="flex-1" />
+          {segChecked.length ? (
+            <Button variant="secondary" icon="trash" onClick={deleteChecked}>
+              Delete {segChecked.length} selected
+            </Button>
+          ) : null}
           <Button variant="ghost" icon="plus" onClick={addSeg}>
             Add segment
           </Button>

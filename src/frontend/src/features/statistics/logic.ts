@@ -1,15 +1,11 @@
 import type { Histogram, Pair, StatisticsPayload } from "./api";
 
-/** Chart accent, mapped to Tailwind classes by the chart components. */
 export type Tone = "blue" | "emerald" | "amber" | "red";
 
-/** A horizontal bar row (per-speaker totals, 1-gram frequency). */
 export type HBarItem = { label: string; value: number; display: string };
 
-/** A ranked-list row (trigrams). Rendered with an index + value bar. */
 export type RankItem = { label: string; value: number };
 
-/** One of the audio distribution histograms. */
 export type HistogramConfig = {
   title: string;
   unit: string;
@@ -79,7 +75,6 @@ function ranks(pairs: Pair[]): RankItem[] {
   return pairs.map(([label, value]) => ({ label, value }));
 }
 
-/** The audio-signal distributions shown in the Audio section. */
 export function audioHistograms(p: StatisticsPayload): HistogramConfig[] {
   return [
     histConfig("Duration per file", "seconds", p.duration_seconds_histogram, "blue", fmtSeconds),
@@ -96,7 +91,6 @@ export function audioHistograms(p: StatisticsPayload): HistogramConfig[] {
 
 export type StatTileData = { label: string; value: string; sub?: string; tone: Tone };
 
-/** Headline scalar tiles for the Audio section. */
 export function audioTiles(p: StatisticsPayload): StatTileData[] {
   const clippedPct = p.file_count ? ((p.clipped_audio_file_count / p.file_count) * 100).toFixed(1) : "0.0";
   const avg = p.file_count ? p.total_duration_seconds / p.file_count : 0;
@@ -118,12 +112,10 @@ export function audioTiles(p: StatisticsPayload): StatTileData[] {
   ];
 }
 
-/** Per-speaker duration bars (hours), most-talkative first, capped. */
 export function speakerDuration(p: StatisticsPayload): HBarItem[] {
   return hbars(p.speaker_duration_seconds, (v) => fmtDuration(v), 15);
 }
 
-/** Files outside the trainable text-length range (for the warning banner). */
 export function textWarnings(p: StatisticsPayload): { file: string; why: string; detail: string }[] {
   const reasons: Record<string, string> = {
     "empty transcript": "Empty transcript",
@@ -157,7 +149,6 @@ export type CorpusData = {
   trigramsBottom: RankItem[];
 };
 
-/** Text-corpus charts derived from the active tab (raw transcript vs. IPA). */
 export function corpusData(p: StatisticsPayload, tab: CorpusTab): CorpusData {
   const isIpa = tab === "ipa";
   const lengthHist = isIpa ? p.phoneme_count_per_file_histogram : p.char_count_per_file_histogram;

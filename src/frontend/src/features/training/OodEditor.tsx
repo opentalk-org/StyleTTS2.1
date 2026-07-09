@@ -9,7 +9,6 @@ import { Select } from "@/shared/ui/Select";
 import { FormSection } from "./FormSection";
 import type { OodSetValue } from "./logic";
 
-/** Out-of-domain reference text sets: select bucket files or upload a new one. */
 export function OodEditor({
   selectedIds,
   availableSets,

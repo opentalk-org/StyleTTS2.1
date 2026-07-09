@@ -1,10 +1,6 @@
 import type { Option } from "./Select";
 import { cn } from "./cn";
 
-/**
- * Pill switcher: a segmented control where the active tab is a solid blue block.
- * Used for Training form modes, Testing modes, Statistics corpus tabs.
- */
 export function Tabs({
   value,
   onChange,

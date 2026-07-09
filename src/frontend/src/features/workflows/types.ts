@@ -26,7 +26,6 @@ export type WorkflowTypeSchema = {
   name: string;
   description: string;
   color: string;
-  members: string[];
 };
 
 export type WorkflowSchema = {

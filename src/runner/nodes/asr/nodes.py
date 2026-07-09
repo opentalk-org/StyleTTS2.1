@@ -11,15 +11,19 @@ from uuid import UUID
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import JoinMode, Port
+from runflow.core.ports import JoinMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.asr.audio import write_temp_wav
 from runner.nodes.asr.canary import load_canary_model, transcribe_wavs_to_segments as canary_transcribe_wavs
-from runner.nodes.asr.parakeet import load_parakeet_model, transcribe_wavs_to_segments as parakeet_transcribe_wavs
+from runner.nodes.asr.parakeet import (
+    load_parakeet_model,
+    transcribe_wavs_to_aligned_segments as parakeet_transcribe_aligned_wavs,
+    transcribe_wavs_to_segments as parakeet_transcribe_wavs,
+)
 from runner.nodes.asr.whisper import load_whisper_model, transcribe_wav_to_segments
 from runner.nodes.accelerator_memory import release_accelerator_memory
-from runner.nodes.datatypes import AUDIO, CHECKPOINT_REF
+from runner.nodes.datatypes import AudioPort, CheckpointRefPort
 from runner.nodes.models import Audio, AudioSegment, CheckpointRef, stable_id, typed_checkpoint
 from shared.log_streams import route_output_to_logger
 
@@ -35,6 +39,11 @@ class WhisperTranscribeSettings(StrictSettings):
 
 class ParakeetTranscribeSettings(StrictSettings):
     batch_size: int = Field(default=16, ge=1, le=128)
+    output_alignment: bool = Field(
+        default=False,
+        title="Output word alignment",
+        description="Populate each segment's per-word alignment from Parakeet's word timestamps.",
+    )
 
 
 class CanaryLanguage(str, Enum):
@@ -77,8 +86,8 @@ class TranscribeNode(Node):
     CATEGORY = "ASR"
     MODEL_NAME = "asr"
     SETTINGS = TranscribeSettings
-    INPUTS = {"checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST), "audio": Port("audio", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO)}
+    INPUTS = {"checkpoint": CheckpointRefPort(join_mode=JoinMode.BROADCAST), "audio": AudioPort()}
+    OUTPUTS = {"audio": AudioPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64, sort_by="duration")
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, keep_loaded=True, exclusive_group="accelerator")
 
@@ -160,6 +169,20 @@ class ParakeetTranscribeNode(TranscribeNode):
         batches = parakeet_transcribe_wavs(self._model, [path], [duration_sec], batch_size=self.settings.batch_size)
         return batches[0] if batches else []
 
+    def _transcribe_audio(self, audio: Audio) -> Audio:
+        if not self.settings.output_alignment:
+            return super()._transcribe_audio(audio)
+        assert audio.data is not None, f"audio bytes are required for transcription: {audio.id}"
+        path = write_temp_wav(audio.data)
+        try:
+            batches = parakeet_transcribe_aligned_wavs(self._model, [path], [audio.duration], batch_size=self.settings.batch_size)
+        finally:
+            path.unlink(missing_ok=True)
+        aligned = batches[0] if batches else []
+        spans = [(start, end, text) for start, end, text, _words in aligned]
+        alignments = [words for _start, _end, _text, words in aligned]
+        return _audio_with_transcript_segments(self.MODEL_NAME, audio, spans, self._transcript_language(), alignments=alignments)
+
 
 class CanaryTranscribeNode(TranscribeNode):
     NODE_TYPE = "CanaryTranscribe"
@@ -192,13 +215,14 @@ def _audio_with_transcript_segments(
     audio: Audio,
     spans: list[tuple[float, float, str]],
     language: str,
+    alignments: list[list[dict[str, Any]] | None] | None = None,
 ) -> Audio:
     filtered = [
-        (audio.start + start, audio.start + end, text)
-        for start, end, raw_text in spans
+        (audio.start + start, audio.start + end, text, alignments[index] if alignments is not None else None)
+        for index, (start, end, raw_text) in enumerate(spans)
         if (text := _clean_transcript_text(raw_text))
     ]
-    text = _joined_text(filtered)
+    text = _joined_text([(start, end, item_text) for start, end, item_text, _words in filtered])
     transcript_id = stable_id("transcript", model_name, audio.audio_file_id, audio.id)
     speaker = _diarized_speaker(audio)
     segments = [
@@ -215,9 +239,10 @@ def _audio_with_transcript_segments(
             lineage_id=stable_id("segment_lineage", audio.lineage_id, transcript_id, index),
             segment_id=stable_id("transcript_segment", transcript_id, index),
             speaker=speaker,
+            alignment=_offset_alignment(words, audio.start),
             metadata={"transcript_id": transcript_id, "transcript_segment_index": index, "model": model_name, "type_": model_name},
         )
-        for index, (start, end, item_text) in enumerate(filtered)
+        for index, (start, end, item_text, words) in enumerate(filtered)
     ]
     return replace(
         audio,
@@ -242,6 +267,15 @@ def _clean_transcript_text(text: str) -> str:
 
 def _joined_text(spans: list[tuple[float, float, str]]) -> str:
     return " ".join(text.strip() for _start, _end, text in spans if text.strip()).strip()
+
+
+def _offset_alignment(words: list[dict[str, Any]] | None, offset: float) -> list[dict[str, Any]] | None:
+    if not words:
+        return None
+    return [
+        {"word": word["word"], "start": word["start"] + offset, "end": word["end"] + offset, "score": word.get("score")}
+        for word in words
+    ]
 
 
 def _diarized_speaker(audio: Audio) -> str | None:

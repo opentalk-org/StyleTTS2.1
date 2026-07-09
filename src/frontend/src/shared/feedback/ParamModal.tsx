@@ -36,12 +36,10 @@ export const useParamModal = create<ParamStore>((set) => ({
   close: () => set({ schema: null }),
 }));
 
-/** Imperative helper to open the shared parameter modal from a mock action. */
 export function openParamModal(schema: ParamSchema) {
   useParamModal.getState().open(schema);
 }
 
-/** Mounts the active parameter modal, remounting per schema to reset field state. */
 export function ParamModalHost() {
   const { schema, close } = useParamModal();
   if (!schema) return null;

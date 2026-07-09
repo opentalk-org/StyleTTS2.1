@@ -15,10 +15,10 @@ def output_values(node: Node, port_name: str, port: Port, value: Any) -> list[An
         values = [value]
 
     for item in values:
-        if not port.dtype.validate(item):
+        if not port.validate(item):
             raise TypeError(
                 f"{node.id} returned invalid value for output port {port_name}: "
-                f"expected {port.dtype.name}, got {type(item).__name__}"
+                f"expected {port.TYPE_NAME}, got {type(item).__name__}"
             )
     return values
 

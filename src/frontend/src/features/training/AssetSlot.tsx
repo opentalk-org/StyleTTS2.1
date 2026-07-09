@@ -1,7 +1,6 @@
 import { Icon } from "@/shared/icons";
 import { Select, type Option } from "@/shared/ui/Select";
 
-/** Muted card for selecting an optional pretrained file asset. */
 export function AssetSlot({
   label,
   value,

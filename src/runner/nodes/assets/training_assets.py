@@ -8,10 +8,9 @@ from uuid import UUID
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.datatypes import ASSET_BUNDLE
+from runner.nodes.datatypes import AssetBundlePort
 from runner.nodes.models import AssetBundleRef, stable_id
 from shared.db import database_session
 from shared.db.assets import crud as asset_crud
@@ -157,7 +156,7 @@ class ResolveTrainingAssetsNode(Node):
     SETTINGS = ResolveTrainingAssetsSettings
     IS_INPUT = True
     INPUTS = {}
-    OUTPUTS = {"assets": Port("assets", ASSET_BUNDLE)}
+    OUTPUTS = {"assets": AssetBundlePort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     def __init__(self, node_id: str | None = None, **params):

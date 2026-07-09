@@ -9,7 +9,6 @@ import { RadioGroup } from "../ui/form/RadioGroup";
 import { Toggle } from "../ui/form/Toggle";
 import type { ParamField, ParamValues } from "./ParamModal";
 
-/** Renders one field of the parameter modal based on its declared type. */
 export function ParamFieldRenderer({
   field,
   values,

@@ -8,7 +8,6 @@ import type { Checkpoint } from "./api";
 import { checkpointDecoderType, checkpointSpeakerMode, checkpointSymbolCount, checkpointSymbols, checkpointTone } from "./logic";
 import { useCheckpointActions } from "./query";
 
-/** Column template shared by the grouped checkpoint tables. */
 export const CHECKPOINT_COLS = "minmax(180px,1.4fr) 116px 1fr 120px";
 
 export function CheckpointRow({ checkpoint: c }: { checkpoint: Checkpoint }) {

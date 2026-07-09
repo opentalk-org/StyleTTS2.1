@@ -1,10 +1,5 @@
 import { BAR_CLASS, type Tone } from "../logic";
 
-/**
- * Vertical bar histogram over pre-binned values. The x-axis shows a row of
- * evenly-spaced tick labels (derived from the real bin edges) plus the unit,
- * so the distribution can be read against an actual scale.
- */
 export function Histogram({
   bins,
   ticks,

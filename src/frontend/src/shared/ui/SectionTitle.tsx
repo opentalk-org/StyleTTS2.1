@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 
 import { cn } from "./cn";
 
-/** Uppercase muted section label. */
 export function SectionTitle({
   children,
   className,

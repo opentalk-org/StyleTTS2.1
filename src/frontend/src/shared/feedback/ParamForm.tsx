@@ -26,7 +26,6 @@ function initialValues(fields: ParamField[]): ParamValues {
   return out;
 }
 
-/** Stateful body of the parameter modal: holds field values and submits them. */
 export function ParamForm({
   schema,
   onClose,

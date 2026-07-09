@@ -3,10 +3,6 @@ import { cn } from "./cn";
 
 export type Option = { value: string; label: string };
 
-/**
- * Native select with a custom chevron. `mini` is the bordered toolbar filter
- * treatment; `filled` is the muted in-form treatment.
- */
 export function Select({
   value,
   onChange,

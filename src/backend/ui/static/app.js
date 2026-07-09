@@ -77,17 +77,9 @@ function portType(nodeId, portName, kind) {
   return port ? port.type : null;
 }
 
-// Mirror of runflow.core.types.dtype_accepts: a union input accepts a source
-// only if every source member is one of its members; a union source fans out
-// to every member. Types here carry `members` (empty for concrete types).
+// A port's type is its backend class; only identical types connect (no
+// subtyping / unions), mirroring `type(src) is type(dst)` in graph.connect.
 function typeAccepts(targetType, sourceType) {
-  const target = state.schema.types[targetType];
-  const source = state.schema.types[sourceType];
-  if (target.members.length) {
-    if (source.members.length) return source.members.every((member) => target.members.includes(member));
-    return target.members.includes(sourceType);
-  }
-  if (source.members.length) return source.members.every((member) => typeAccepts(targetType, member));
   return targetType === sourceType;
 }
 

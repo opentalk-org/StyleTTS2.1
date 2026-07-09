@@ -5,7 +5,6 @@ export function defaultBackendUrl(): string {
   return window.location.origin;
 }
 
-/** URL of the Aim experiment tracker UI (served on port 43800 alongside the stack). */
 export function defaultAimUrl(): string {
   const configuredUrl = import.meta.env.VITE_AIM_URL;
   if (configuredUrl) return configuredUrl;

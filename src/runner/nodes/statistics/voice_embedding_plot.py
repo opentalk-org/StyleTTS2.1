@@ -13,11 +13,10 @@ import yaml
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
-from runner.nodes.datatypes import AUDIO, SAVE_RESULT
+from runner.nodes.datatypes import AudioPort, SaveResultPort
 from runner.nodes.models import Audio, SaveResult, stable_id
 from runner.nodes.statistics.voice_embedding_html import PlotPoint, render_voice_plot_html
 from runner.nodes.synthesis.styletts_runtime.checkpoints import latest_weight, resolve_slot_checkpoint
@@ -59,8 +58,8 @@ class EmbedVoicesPcaPlotNode(Node):
     NODE_TYPE = "EmbedVoicesPcaPlot"
     CATEGORY = "Statistics"
     SETTINGS = VoiceEmbeddingPlotSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"artifact": Port("artifact", SAVE_RESULT)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"artifact": SaveResultPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.DISABLED)
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, exclusive_group="accelerator", keep_loaded=True)
 

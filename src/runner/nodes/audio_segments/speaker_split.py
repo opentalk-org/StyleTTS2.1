@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import JoinMode, Port, PortMode
+from runflow.core.ports import JoinMode, PortMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
@@ -17,7 +17,7 @@ from runner.nodes.audio_processing.nodes import (
     diarize_audio_batch,
     load_sortformer_model,
 )
-from runner.nodes.datatypes import AUDIO, CHECKPOINT_REF
+from runner.nodes.datatypes import AudioPort, CheckpointRefPort
 from runner.nodes.models import Audio, AudioSegment, stable_id, typed_checkpoint
 from shared.db import database_session
 from shared.db.voices import crud as voice_crud
@@ -50,10 +50,10 @@ class DiarizeSplitSpeakersNode(Node):
     CATEGORY = "Audio"
     SETTINGS = DiarizeSplitSpeakersSettings
     INPUTS = {
-        "audio": Port("audio", AUDIO),
-        "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
+        "audio": AudioPort(),
+        "checkpoint": CheckpointRefPort(join_mode=JoinMode.BROADCAST),
     }
-    OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}
+    OUTPUTS = {"audio": AudioPort(mode=PortMode.STREAM)}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=2, max_size=8)
     RESOURCE_POLICY = ResourcePolicy(
         resources={"accelerator": 1, "vram_gb": 8}, keep_loaded=True, exclusive_group="accelerator"

@@ -28,7 +28,6 @@ export const useToast = create<ToastStore>((set) => ({
   },
 }));
 
-/** Imperative helper so non-component mock actions can raise a toast. */
 export function showToast(message: string, sub?: string, tone?: ToastTone) {
   useToast.getState().show(message, sub, tone);
 }

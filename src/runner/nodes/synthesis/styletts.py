@@ -11,11 +11,11 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import JoinMode, Port
+from runflow.core.ports import JoinMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
-from runner.nodes.datatypes import AUDIO, CHECKPOINT_REF, JSON, SYNTHESIS_RESULT
+from runner.nodes.datatypes import AudioPort, CheckpointRefPort, JsonPort, SynthesisResultPort
 from runner.nodes.models import Audio, SynthesisResult, stable_id, typed_checkpoint
 from runner.nodes.synthesis.styletts_runtime.actions import (
     StyleTtsRequestSettings,
@@ -46,11 +46,11 @@ class StyleTtsSynthesisNode(Node):
     CATEGORY = "Synthesis"
     SETTINGS = StyleTtsSynthesisSettings
     INPUTS = {
-        "checkpoint": Port("checkpoint", CHECKPOINT_REF, join_mode=JoinMode.BROADCAST),
-        "prompt_text": Port("prompt_text", JSON),
-        "style_reference": Port("style_reference", JSON),
+        "checkpoint": CheckpointRefPort(join_mode=JoinMode.BROADCAST),
+        "prompt_text": JsonPort(),
+        "style_reference": JsonPort(),
     }
-    OUTPUTS = {"synthesis_result": Port("synthesis_result", SYNTHESIS_RESULT), "audio": Port("audio", AUDIO)}
+    OUTPUTS = {"synthesis_result": SynthesisResultPort(), "audio": AudioPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, exclusive_group="accelerator")
 
     async def teardown(self, context) -> None:

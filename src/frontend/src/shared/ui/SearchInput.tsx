@@ -2,7 +2,6 @@ import { Icon } from "../icons";
 import { Input } from "./Input";
 import { cn } from "./cn";
 
-/** Search field with a leading magnifier, matching the toolbar treatment. */
 export function SearchInput({
   value,
   onChange,

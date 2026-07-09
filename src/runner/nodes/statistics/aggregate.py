@@ -8,10 +8,10 @@ from typing import Any
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port, PortMode
+from runflow.core.ports import PortMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy
-from runner.nodes.datatypes import JSON
+from runner.nodes.datatypes import JsonPort
 
 
 class AggregateStatisticsSettings(StrictSettings):
@@ -27,9 +27,9 @@ class AggregateDatasetStatisticsNode(Node):
     CATEGORY = "Audio"
     SETTINGS = AggregateStatisticsSettings
     INPUTS = {
-        "feature_records": Port("feature_records", JSON, mode=PortMode.LIST),
+        "feature_records": JsonPort(mode=PortMode.LIST),
     }
-    OUTPUTS = {"statistics": Port("statistics", JSON)}
+    OUTPUTS = {"statistics": JsonPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.DISABLED)
 
     def __init__(self, node_id: str | None = None, **params: Any):

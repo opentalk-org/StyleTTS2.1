@@ -20,7 +20,6 @@ function GroupTitle({ children }: { children: string }) {
   );
 }
 
-/** Auto-fit grid of form fields; each cell can shrink below content width. */
 function FieldGrid({ children }: { children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-x-5 gap-y-4 [&>*]:min-w-0">
@@ -29,7 +28,6 @@ function FieldGrid({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Single-synthesis config: Text & inference / Model / Style reference. */
 export function ConfigCard({
   schema,
   graph,

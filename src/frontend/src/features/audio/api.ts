@@ -1,6 +1,12 @@
 import { backendFetch, backendRequest, backendResourceUrl } from "@/app/backend";
 import type { AudioSort } from "./store";
 
+export type WordAlignment = {
+  word: string;
+  start: number;
+  end: number;
+};
+
 export type AudioSegment = {
   id: string;
   start: number;
@@ -9,6 +15,7 @@ export type AudioSegment = {
   phon: string;
   speaker: string;
   type_: string;
+  alignment?: WordAlignment[] | null;
 };
 
 export type Segment = AudioSegment;

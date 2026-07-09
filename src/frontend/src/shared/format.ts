@@ -1,11 +1,9 @@
-/** m:ss from seconds. */
 export function fmtDur(s: number): string {
   const m = Math.floor(s / 60);
   const ss = Math.round(s % 60);
   return `${m}:${String(ss).padStart(2, "0")}`;
 }
 
-/** m:ss.cs clock from seconds. */
 export function fmtClock(s: number): string {
   const m = Math.floor(s / 60);
   const ss = Math.floor(s % 60);
@@ -13,7 +11,6 @@ export function fmtClock(s: number): string {
   return `${m}:${String(ss).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
 }
 
-/** Relative "3m ago" from an epoch-ms timestamp. */
 export function fmtAgo(ts: number): string {
   const sec = Math.round((Date.now() - ts) / 1000);
   if (sec < 60) return "just now";

@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from backend.service import BackendManager, DuplicateRunError
 from backend.workflows.schemas import WorkflowCompileRequest, WorkflowCompileResponse, WorkflowSaveRequest, WorkflowStartResponse
-from backend.workflows.service import compile_workflow_definition
+from backend.workflows.service import compile_workflow_definition, load_example_workflows
 from shared.db import database_session
 from shared.db.workflows import crud
 from shared.db.workflows.schemas import WorkflowRead
@@ -22,6 +22,11 @@ def workflow_router(manager: BackendManager) -> APIRouter:
     async def create_workflow(payload: WorkflowSaveRequest) -> WorkflowRead:
         with database_session() as session:
             return WorkflowRead.model_validate(crud.create_workflow(session, payload))
+
+    # Declared before "/{workflow_id}" so "examples" is not parsed as a UUID.
+    @router.get("/examples", response_model=list[WorkflowRead])
+    async def list_example_workflows() -> list[WorkflowRead]:
+        return load_example_workflows()
 
     @router.get("/{workflow_id}", response_model=WorkflowRead)
     async def get_workflow(workflow_id: UUID) -> WorkflowRead:

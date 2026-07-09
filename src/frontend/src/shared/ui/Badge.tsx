@@ -12,10 +12,6 @@ const TONES: Record<Tone, string> = {
   gray: "bg-panel-2 text-txt-mute",
 };
 
-/**
- * Soft label. `chip` is the small uppercase square status tag; `pill` is the
- * rounded badge used for counts and states.
- */
 export function Badge({
   tone = "gray",
   shape = "chip",

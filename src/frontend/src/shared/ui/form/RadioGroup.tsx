@@ -1,7 +1,6 @@
 import type { Option } from "../Select";
 import { cn } from "../cn";
 
-/** Segmented radio control (single choice). */
 export function RadioGroup({
   value,
   onChange,

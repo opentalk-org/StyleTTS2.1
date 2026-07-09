@@ -6,12 +6,11 @@ from uuid import UUID
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.assets.checkpoints import resolve_checkpoint_ref
 from runner.nodes.assets.training_assets import resolve_training_asset_bundle
-from runner.nodes.datatypes import ASSET_BUNDLE, CHECKPOINT_REF, JSON
+from runner.nodes.datatypes import AssetBundlePort, CheckpointRefPort, JsonPort
 from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
 from shared.db import database_session
 from shared.db.common import one
@@ -70,7 +69,7 @@ class TrainingRunInputNode(Node):
     CATEGORY = "Training"
     IS_INPUT = True
     INPUTS = {}
-    OUTPUTS = {"run": Port("run", JSON)}
+    OUTPUTS = {"run": JsonPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     def __init__(self, node_id: str | None = None, **params):
@@ -90,8 +89,8 @@ class SelectTrainingDatasetNode(Node):
     NODE_TYPE = "SelectTrainingDataset"
     CATEGORY = "Training"
     SETTINGS = SelectTrainingDatasetSettings
-    INPUTS = {"run": Port("run", JSON)}
-    OUTPUTS = {"dataset_ref": Port("dataset_ref", JSON)}
+    INPUTS = {"run": JsonPort()}
+    OUTPUTS = {"dataset_ref": JsonPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
@@ -115,8 +114,8 @@ class SelectCheckpointNode(Node):
     NODE_TYPE = "SelectCheckpoint"
     CATEGORY = "Inputs"
     SETTINGS = SelectCheckpointSettings
-    INPUTS = {"run": Port("run", JSON)}
-    OUTPUTS = {"checkpoint": Port("checkpoint", CHECKPOINT_REF)}
+    INPUTS = {"run": JsonPort()}
+    OUTPUTS = {"checkpoint": CheckpointRefPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
@@ -129,8 +128,8 @@ class SelectTrainingAssetsNode(Node):
     NODE_TYPE = "SelectTrainingAssets"
     CATEGORY = "Training"
     SETTINGS = SelectTrainingAssetsSettings
-    INPUTS = {"run": Port("run", JSON)}
-    OUTPUTS = {"assets": Port("assets", ASSET_BUNDLE)}
+    INPUTS = {"run": JsonPort()}
+    OUTPUTS = {"assets": AssetBundlePort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
@@ -151,8 +150,8 @@ class PhonemeAlphabetNode(Node):
     NODE_TYPE = "PhonemeAlphabet"
     CATEGORY = "Inputs"
     SETTINGS = PhonemeAlphabetSettings
-    INPUTS = {"run": Port("run", JSON)}
-    OUTPUTS = {"phoneme_alphabet": Port("phoneme_alphabet", JSON)}
+    INPUTS = {"run": JsonPort()}
+    OUTPUTS = {"phoneme_alphabet": JsonPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
@@ -175,8 +174,8 @@ class ListDatasetAudioIdsNode(Node):
     NODE_TYPE = "ListDatasetAudioIds"
     CATEGORY = "Training"
     SETTINGS = ListDatasetAudioIdsSettings
-    INPUTS = {"dataset_ref": Port("dataset_ref", JSON)}
-    OUTPUTS = {"audio_file_ids": Port("audio_file_ids", JSON)}
+    INPUTS = {"dataset_ref": JsonPort()}
+    OUTPUTS = {"audio_file_ids": JsonPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):

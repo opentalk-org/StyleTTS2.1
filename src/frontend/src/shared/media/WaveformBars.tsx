@@ -1,6 +1,5 @@
 import { cn } from "../ui/cn";
 
-/** Deterministic pseudo-waveform heights (0–1) from a seed. */
 export function waveBars(seed: number, n: number): number[] {
   const a: number[] = [];
   for (let i = 0; i < n; i++) {
@@ -13,9 +12,6 @@ export function waveBars(seed: number, n: number): number[] {
   return a;
 }
 
-/**
- * Bar-style waveform. Bars up to `progress` (0–1) render in the active color.
- */
 export function WaveformBars({
   seed,
   bars = 48,

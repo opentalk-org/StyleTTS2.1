@@ -8,10 +8,10 @@ from typing import Literal
 from pydantic import Field
 
 from runflow.core.node import Node
-from runflow.core.ports import Port, PortMode
+from runflow.core.ports import PortMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy
-from runner.nodes.datatypes import AUDIO
+from runner.nodes.datatypes import AudioPort
 from runner.nodes.models import Audio, AudioSegment, stable_id
 
 Mode = Literal["create_new", "replace_all"]
@@ -32,8 +32,8 @@ class PlanSegmentGroupsNode(Node):
     NODE_TYPE = "PlanSegmentGroups"
     CATEGORY = "Audio"
     SETTINGS = PlanSegmentGroupsSettings
-    INPUTS = {"audio": Port("audio", AUDIO)}
-    OUTPUTS = {"audio": Port("audio", AUDIO, mode=PortMode.STREAM)}
+    INPUTS = {"audio": AudioPort()}
+    OUTPUTS = {"audio": AudioPort(mode=PortMode.STREAM)}
     BATCH_POLICY = BatchPolicy(BatchMode.DISABLED)
 
     async def execute(self, batch, context):
