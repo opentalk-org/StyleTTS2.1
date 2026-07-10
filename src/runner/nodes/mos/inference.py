@@ -105,12 +105,7 @@ class PredictMosScoreNode(Node):
     def _predict(self, audios: list[Audio]) -> list[float]:
         assert self._bundle is not None, "MOS model bundle is not loaded"
         assert self._device is not None, "MOS inference device is not set"
-        audio_bytes = []
-        for audio in audios:
-            if audio.data is None:
-                raise ValueError(f"PredictMosScore requires loaded audio bytes: {audio.audio_file_id}")
-            audio_bytes.append(audio.data)
-        inputs = prepare_audio_batch(self._bundle.feature_extractor, audio_bytes).to(self._device)
+        inputs = prepare_audio_batch(self._bundle.feature_extractor, load_audio_bytes(audios)).to(self._device)
         amp_enabled = self._device.type == "cuda"
         with torch.no_grad(), torch.autocast(
             device_type=self._device.type,
@@ -121,3 +116,12 @@ class PredictMosScoreNode(Node):
         if not torch.isfinite(predictions).all():
             raise RuntimeError("MOS model produced non-finite scores")
         return [float(score) for score in predictions.float().cpu().tolist()]
+
+
+def load_audio_bytes(audios: list[Audio]) -> list[bytes]:
+    missing_ids = [audio.audio_file_id for audio in audios if audio.data is None]
+    stored: dict[UUID, bytes] = {}
+    if missing_ids:
+        with database_session() as session:
+            stored = audio_crud.bulk_read_audio_files(session, missing_ids)
+    return [audio.data if audio.data is not None else stored[audio.audio_file_id] for audio in audios]

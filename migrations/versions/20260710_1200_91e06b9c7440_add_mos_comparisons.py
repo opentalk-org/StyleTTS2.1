@@ -28,8 +28,6 @@ def upgrade() -> None:
         sa.Column("preferred_audio_id", sa.UUID(), nullable=False),
         sa.Column("score_a", sa.Float(), nullable=False),
         sa.Column("score_b", sa.Float(), nullable=False),
-        sa.Column("previous_score_a", sa.Float(), nullable=True),
-        sa.Column("previous_score_b", sa.Float(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("audio_a_id <> audio_b_id", name="ck_mos_comparisons_distinct_audio"),
         sa.CheckConstraint(
