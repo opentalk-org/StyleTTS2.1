@@ -8,7 +8,8 @@ import { EmptyState } from "@/shared/ui/EmptyState";
 import { SectionTitle } from "@/shared/ui/SectionTitle";
 import { MosAudioCard } from "./MosAudioCard";
 import { MosDatasetPicker } from "./MosDatasetPicker";
-import { canSubmitMosRating, mosRatingRequest, pairScoreDraft } from "./logic";
+import { MosHistoryList } from "./MosHistoryList";
+import { hasCompleteMosScores, mosRatingRequest, pairScoreDraft } from "./logic";
 import { useMosPairQuery, useSaveMosRatingMutation } from "./query";
 import { useMos } from "./store";
 
@@ -18,24 +19,22 @@ export function MosScreen() {
     selectedDatasetIds,
     scoreA,
     scoreB,
-    preferredAudioId,
     toggleDataset,
     setScoreA,
     setScoreB,
-    setPreferredAudioId,
     resetPair,
   } = useMos();
   const pairQuery = useMosPairQuery(selectedDatasetIds);
   const saveRating = useSaveMosRatingMutation();
   const pair = pairQuery.data;
-  const canSubmit = pair ? canSubmitMosRating(pair, scoreA, scoreB, preferredAudioId) : false;
+  const canSubmit = hasCompleteMosScores(scoreA, scoreB);
 
   useEffect(() => {
     if (!pair) return;
     resetPair(pairScoreDraft(pair.audio_a.score), pairScoreDraft(pair.audio_b.score));
   }, [pairQuery.dataUpdatedAt, pair, resetPair]);
 
-  const submit = async () => {
+  const submit = async (preferredAudioId: string) => {
     if (!pair) return;
     try {
       await saveRating.mutateAsync(mosRatingRequest(pair, scoreA, scoreB, preferredAudioId));
@@ -83,31 +82,25 @@ export function MosScreen() {
                   label="A"
                   audio={pair.audio_a}
                   score={scoreA}
-                  preferred={preferredAudioId === pair.audio_a.id}
-                  disabled={saveRating.isPending}
+                  disabled={saveRating.isPending || !canSubmit}
                   onScore={setScoreA}
-                  onPreferred={() => setPreferredAudioId(pair.audio_a.id)}
+                  onChoose={() => void submit(pair.audio_a.id)}
                 />
                 <MosAudioCard
                   label="B"
                   audio={pair.audio_b}
                   score={scoreB}
-                  preferred={preferredAudioId === pair.audio_b.id}
-                  disabled={saveRating.isPending}
+                  disabled={saveRating.isPending || !canSubmit}
                   onScore={setScoreB}
-                  onPreferred={() => setPreferredAudioId(pair.audio_b.id)}
+                  onChoose={() => void submit(pair.audio_b.id)}
                 />
               </div>
-              <div className="flex items-center justify-between rounded-lg border border-line bg-panel px-4 py-3">
-                <span className="text-[12px] text-txt-mute">Scores overwrite the current audio score; the preference is retained for training.</span>
-                <Button variant="primary" size="lg" icon="check" disabled={saveRating.isPending || !canSubmit} onClick={() => void submit()}>
-                  Save and show next pair
-                </Button>
-              </div>
+              <div className="rounded-lg border border-line bg-panel px-4 py-3 text-[12px] text-txt-mute">Enter both scores, then choose the better sample to save and load the next pair.</div>
             </div>
           )}
         </div>
       </div>
+      {selectedDatasetIds.length ? <MosHistoryList datasetIds={selectedDatasetIds} /> : null}
     </div>
   );
 }

@@ -42,6 +42,8 @@ class MosComparison(Base):
     )
     score_a: Mapped[float] = mapped_column(Float, nullable=False)
     score_b: Mapped[float] = mapped_column(Float, nullable=False)
+    previous_score_a: Mapped[float | None] = mapped_column(Float, nullable=True)
+    previous_score_b: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

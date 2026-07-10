@@ -26,4 +26,19 @@ class MosRatingRead(BaseModel):
     preferred_audio_id: UUID
     score_a: float
     score_b: float
+    previous_score_a: float | None
+    previous_score_b: float | None
     created_at: datetime
+
+
+class MosRatingDetailRead(MosRatingRead):
+    audio_a: MosAudioRead
+    audio_b: MosAudioRead
+    can_modify: bool
+
+
+class MosRatingPage(BaseModel):
+    rows: list[MosRatingDetailRead]
+    total: int
+    limit: int
+    offset: int

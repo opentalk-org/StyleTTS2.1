@@ -1,5 +1,5 @@
 import { formatAudioScore, parseAudioScore } from "@/features/audio/AudioScoreInput";
-import type { MosPair, MosRatingRequest } from "./api";
+import type { MosPair, MosRatingRequest, MosRatingUpdateRequest } from "./api";
 
 export function pairScoreDraft(score: number | null): string {
   return formatAudioScore(score);
@@ -27,15 +27,19 @@ export function mosRatingRequest(
   };
 }
 
-export function canSubmitMosRating(
-  pair: MosPair,
+export function hasCompleteMosScores(scoreADraft: string, scoreBDraft: string): boolean {
+  return parseAudioScore(scoreADraft) !== null && parseAudioScore(scoreBDraft) !== null;
+}
+
+export function mosRatingUpdateRequest(
   scoreADraft: string,
   scoreBDraft: string,
-  preferredAudioId: string | null,
-): boolean {
-  return parseAudioScore(scoreADraft) !== null
-    && parseAudioScore(scoreBDraft) !== null
-    && (preferredAudioId === pair.audio_a.id || preferredAudioId === pair.audio_b.id);
+  preferredAudioId: string,
+): MosRatingUpdateRequest {
+  const scoreA = parseAudioScore(scoreADraft);
+  const scoreB = parseAudioScore(scoreBDraft);
+  if (scoreA === null || scoreB === null) throw new Error("Enter a numeric score for both audio files");
+  return { preferred_audio_id: preferredAudioId, score_a: scoreA, score_b: scoreB };
 }
 
 export function audioSeed(audioId: string): number {

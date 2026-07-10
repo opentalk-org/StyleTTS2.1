@@ -2,7 +2,6 @@ import { backendResourceUrl } from "@/app/backend";
 import { AudioScoreInput } from "@/features/audio/AudioScoreInput";
 import { WaveformPlayer } from "@/shared/media/WaveformPlayer";
 import { Card } from "@/shared/ui/Card";
-import { cn } from "@/shared/ui/cn";
 import type { MosAudio } from "./api";
 import { audioSeed, pairScoreDraft } from "./logic";
 
@@ -10,22 +9,20 @@ export function MosAudioCard({
   label,
   audio,
   score,
-  preferred,
   disabled,
   onScore,
-  onPreferred,
+  onChoose,
 }: {
   label: string;
   audio: MosAudio;
   score: string;
-  preferred: boolean;
   disabled: boolean;
   onScore: (value: string) => void;
-  onPreferred: () => void;
+  onChoose: () => void;
 }) {
   const contentUrl = backendResourceUrl(`/audio-files/${encodeURIComponent(audio.id)}/content`);
   return (
-    <Card className={cn("overflow-hidden transition-colors", preferred && "border-blue-500 bg-blue-50")}>
+    <Card className="overflow-hidden">
       <div className="flex items-start justify-between gap-3 border-b border-line px-4 py-3.5">
         <div className="min-w-0">
           <div className="text-[11px] font-bold uppercase tracking-wider text-blue-600">Sample {label}</div>
@@ -46,13 +43,10 @@ export function MosAudioCard({
       <button
         type="button"
         disabled={disabled}
-        onClick={onPreferred}
-        className={cn(
-          "flex h-11 w-full items-center justify-center border-0 text-[13px] font-bold transition-colors",
-          preferred ? "bg-blue-500 text-white" : "bg-panel-2 text-txt-dim hover:bg-panel-3",
-        )}
+        onClick={onChoose}
+        className="flex h-11 w-full items-center justify-center border-0 bg-blue-500 text-[13px] font-bold text-white transition-colors hover:bg-blue-600 disabled:bg-panel-2 disabled:text-txt-mute"
       >
-        {preferred ? "Selected as better" : "Choose as better"}
+        Choose {label} as better and save
       </button>
     </Card>
   );

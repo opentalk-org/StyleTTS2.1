@@ -2,11 +2,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from backend.mos.schemas import MosAudioRead, MosPairRead, MosRatingRead
+from backend.mos.schemas import MosAudioRead, MosPairRead, MosRatingDetailRead, MosRatingPage, MosRatingRead
 from shared.db import database_session
 from shared.db.audio.models import AudioFile
 from shared.db.mos import crud as mos_crud
-from shared.db.mos.schemas import MosComparisonRead, MosRatingCreate
+from shared.db.mos.models import MosComparison
+from shared.db.mos.schemas import MosComparisonRead, MosRatingCreate, MosRatingUpdate
 
 
 router = APIRouter(prefix="/mos", tags=["mos"])
@@ -38,6 +39,47 @@ async def create_mos_rating(payload: MosRatingCreate) -> MosRatingRead:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
 
 
+@router.get("/ratings", response_model=MosRatingPage)
+async def list_mos_ratings(
+    dataset_id: list[UUID] = Query(),
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> MosRatingPage:
+    try:
+        with database_session() as session:
+            rows, total = mos_crud.list_comparisons_page(session, dataset_id, limit, offset)
+            audio_files = mos_crud.comparison_audio_files(session, rows)
+            latest_id = mos_crud.latest_comparison_id(session)
+            return MosRatingPage(
+                rows=[_rating_response(row, audio_files, row.id == latest_id) for row in rows],
+                total=total,
+                limit=limit,
+                offset=offset,
+            )
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
+@router.patch("/ratings/{comparison_id}", response_model=MosRatingDetailRead)
+async def update_mos_rating(comparison_id: UUID, payload: MosRatingUpdate) -> MosRatingDetailRead:
+    try:
+        with database_session() as session:
+            comparison = mos_crud.update_latest_rating(session, comparison_id, payload)
+            audio_files = mos_crud.comparison_audio_files(session, [comparison])
+            return _rating_response(comparison, audio_files, True)
+    except (KeyError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
+@router.delete("/ratings/{comparison_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def undo_mos_rating(comparison_id: UUID) -> None:
+    try:
+        with database_session() as session:
+            mos_crud.undo_latest_rating(session, comparison_id)
+    except (KeyError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
 def _audio_response(item: AudioFile) -> MosAudioRead:
     metadata = item.metadata_
     if "speaker" in metadata:
@@ -52,4 +94,18 @@ def _audio_response(item: AudioFile) -> MosAudioRead:
         duration=item.duration,
         score=item.score,
         speaker=speaker,
+    )
+
+
+def _rating_response(
+    comparison: MosComparison,
+    audio_files: dict[UUID, AudioFile],
+    can_modify: bool,
+) -> MosRatingDetailRead:
+    summary = MosComparisonRead.model_validate(comparison)
+    return MosRatingDetailRead(
+        **summary.model_dump(),
+        audio_a=_audio_response(audio_files[comparison.audio_a_id]),
+        audio_b=_audio_response(audio_files[comparison.audio_b_id]),
+        can_modify=can_modify,
     )

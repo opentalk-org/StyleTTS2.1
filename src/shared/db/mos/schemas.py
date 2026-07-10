@@ -29,8 +29,16 @@ class MosRatingCreate(BaseModel):
 
 class MosComparisonRead(MosRatingCreate):
     id: UUID
+    previous_score_a: float | None
+    previous_score_b: float | None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+class MosRatingUpdate(BaseModel):
+    preferred_audio_id: UUID
+    score_a: float = Field(allow_inf_nan=False)
+    score_b: float = Field(allow_inf_nan=False)
 
 
 @dataclass(frozen=True)
