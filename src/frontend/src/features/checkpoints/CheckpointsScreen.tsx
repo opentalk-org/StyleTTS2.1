@@ -43,6 +43,8 @@ export function CheckpointsScreen() {
             { value: "parakeet", label: "Parakeet" },
             { value: "canary", label: "Canary" },
             { value: "sortformer", label: "Sortformer" },
+            { value: "mos_base", label: "MOS base" },
+            { value: "mos_model", label: "MOS trained" },
           ]}
         />
       </div>

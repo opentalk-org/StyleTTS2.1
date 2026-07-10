@@ -12,6 +12,7 @@ from runner.nodes.assets.model_downloads import download_hf_snapshot, download_n
 
 
 _NEMO_ASR_KINDS = {"parakeet", "canary", "sortformer"}
+_MOS_BASE_MODEL = "facebook/wav2vec2-xls-r-300m"
 
 # Default HuggingFace snapshot per TTS engine. ``item`` may be an engine key (use the
 # default repo) or "engine:repo_id" to pin a specific / language-variant checkpoint.
@@ -158,6 +159,32 @@ def bootstrap_tts_model(item: str = "", *, logger: logging.Logger | None = None)
     }
 
 
+def bootstrap_mos_model(item: str = "", *, logger: logging.Logger | None = None) -> dict[str, Any]:
+    log = logger or _LOGGER
+    model_id = item.strip()
+    if model_id != _MOS_BASE_MODEL:
+        raise ValueError(f"catalog_item_unknown:{item}")
+    log.info("MOS base model download starting model=%s", model_id)
+    ref = ensure_model_checkpoint(
+        "mos_base",
+        model_id,
+        lambda folder: download_hf_snapshot(
+            model_id,
+            folder,
+            ignore_patterns=["*.msgpack", "*.h5", "*.ot"],
+        ),
+    )
+    log.info("MOS base model download resolved model=%s checkpoint=%s", model_id, ref.checkpoint_id)
+    return {
+        "model_checkpoint": {
+            "kind": "mos_base",
+            "model_id": model_id,
+            "checkpoint_id": str(ref.checkpoint_id),
+            "name": ref.name,
+        }
+    }
+
+
 def _parse_tts_item(item: str) -> tuple[str, str]:
     requested = item.strip()
     engine, separator, repo = requested.partition(":")
@@ -216,5 +243,9 @@ CATALOG_DOWNLOAD_TASKS: dict[str, CatalogTask] = {
     "tts_models": CatalogTask(
         key="tts_models",
         run=bootstrap_tts_model,
+    ),
+    "mos_models": CatalogTask(
+        key="mos_models",
+        run=bootstrap_mos_model,
     ),
 }
