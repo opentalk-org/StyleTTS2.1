@@ -7,6 +7,7 @@ import { CheckpointsScreen } from "@/features/checkpoints/CheckpointsScreen";
 import { ClusterScreen } from "@/features/cluster/ClusterScreen";
 import { DatasetsScreen } from "@/features/datasets/DatasetsScreen";
 import { JobsScreen } from "@/features/jobs/JobsScreen";
+import { MosScreen } from "@/features/mos/MosScreen";
 import { RunsScreen } from "@/features/runs/RunsScreen";
 import { SettingsScreen } from "@/features/settings/SettingsScreen";
 import { StatisticsScreen } from "@/features/statistics/StatisticsScreen";
@@ -22,6 +23,7 @@ const SCREENS: Record<Screen, ComponentType> = {
   voices: VoicesScreen,
   audio: AudioScreen,
   editor: SegmentEditor,
+  mos: MosScreen,
   statistics: StatisticsScreen,
   artifacts: ArtifactsScreen,
   workflows: WorkflowsScreen,

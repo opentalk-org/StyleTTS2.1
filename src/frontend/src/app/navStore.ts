@@ -8,6 +8,7 @@ export type Screen =
   | "voices"
   | "audio"
   | "editor"
+  | "mos"
   | "statistics"
   | "artifacts"
   | "workflows"
