@@ -7,6 +7,7 @@ import type { WorkflowGraph } from "../workflows/types";
 import { FormSection } from "./FormSection";
 import { createTrainingGraph, TRAINING_OPTIONS, TRAINING_WORKFLOWS } from "./logic";
 import { QueueCard } from "./QueueCard";
+import { MosModelForm } from "./MosModelForm";
 import { SmallModelForm } from "./SmallModelForm";
 import { StyleTtsForm } from "./StyleTtsForm";
 import { useTraining } from "./store";
@@ -49,6 +50,8 @@ export function TrainingScreen() {
           {schemaQuery.data && graph ? (
             trainTab === "styletts" ? (
               <StyleTtsForm schema={schemaQuery.data} graph={graph} spec={spec} onChange={updateGraph} />
+            ) : trainTab === "mos" ? (
+              <MosModelForm schema={schemaQuery.data} graph={graph} spec={spec} onChange={updateGraph} />
             ) : (
               <SmallModelForm variant={trainTab} schema={schemaQuery.data} graph={graph} spec={spec} onChange={updateGraph} />
             )

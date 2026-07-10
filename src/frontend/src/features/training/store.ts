@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type TrainTab = "styletts" | "f0" | "asr";
+export type TrainTab = "styletts" | "f0" | "asr" | "mos";
 
 type TrainingStore = {
   trainTab: TrainTab;

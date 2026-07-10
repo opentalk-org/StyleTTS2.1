@@ -8,9 +8,11 @@ import type { Dataset } from "../datasets/api";
 import { typeAccepts } from "../workflows/logic";
 import type { WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowSchema } from "../workflows/types";
 import type { TrainTab } from "./store";
+import { TRAINING_WORKFLOWS } from "./workflowSpecs";
+
+export { TRAINING_WORKFLOWS };
 
 export type OodSetValue = { id: string; name: string; line_count: number };
-
 export type TrainingNodeIds = {
   dataset: string;
   checkpoint: string;
@@ -19,7 +21,6 @@ export type TrainingNodeIds = {
   assets?: string;
   alphabet?: string;
 };
-
 export type TrainingSpecNode = {
   id: string;
   type: string;
@@ -27,112 +28,12 @@ export type TrainingSpecNode = {
   y: number;
   params?: Record<string, unknown>;
 };
-
 export type TrainingWorkflowSpec = {
   value: TrainTab;
   label: string;
   nodes: TrainingSpecNode[];
   edges: WorkflowEdge[];
   ids: TrainingNodeIds;
-};
-
-const STYLE_TTS_NODES = [
-  { id: "run", type: "TrainingRunInput", x: -160, y: 620 },
-  { id: "dataset", type: "SelectTrainingDataset", x: 64, y: 220 },
-  { id: "audio_ids", type: "ListDatasetAudioIds", x: 330, y: 220 },
-  { id: "base_checkpoint", type: "SelectCheckpoint", x: 64, y: 420 },
-  { id: "assets", type: "SelectTrainingAssets", x: 64, y: 620 },
-  { id: "alphabet", type: "PhonemeAlphabet", x: 64, y: 820 },
-  { id: "manifest", type: "BuildTrainingManifest", x: 620, y: 380, params: { stream_from_buckets: true } },
-  { id: "styletts", type: "StyleTtsFinetune", x: 860, y: 560 },
-];
-
-const STYLE_TTS_EDGES: WorkflowEdge[] = [
-  { source_node: "run", source_port: "run", target_node: "dataset", target_port: "run" },
-  { source_node: "run", source_port: "run", target_node: "base_checkpoint", target_port: "run" },
-  { source_node: "run", source_port: "run", target_node: "assets", target_port: "run" },
-  { source_node: "run", source_port: "run", target_node: "alphabet", target_port: "run" },
-  { source_node: "dataset", source_port: "dataset_ref", target_node: "audio_ids", target_port: "dataset_ref" },
-  { source_node: "audio_ids", source_port: "audio_file_ids", target_node: "manifest", target_port: "audio_file_ids" },
-  { source_node: "base_checkpoint", source_port: "checkpoint", target_node: "manifest", target_port: "checkpoint" },
-  { source_node: "assets", source_port: "assets", target_node: "manifest", target_port: "assets" },
-  { source_node: "alphabet", source_port: "phoneme_alphabet", target_node: "manifest", target_port: "phoneme_alphabet" },
-  { source_node: "manifest", source_port: "training_manifest", target_node: "styletts", target_port: "training_manifest" },
-  { source_node: "base_checkpoint", source_port: "checkpoint", target_node: "styletts", target_port: "checkpoint" },
-  { source_node: "assets", source_port: "assets", target_node: "styletts", target_port: "assets" },
-];
-
-const F0_NODES = [
-  { id: "run", type: "TrainingRunInput", x: -160, y: 320 },
-  { id: "dataset", type: "SelectTrainingDataset", x: 64, y: 220 },
-  { id: "audio_ids", type: "ListDatasetAudioIds", x: 330, y: 220 },
-  { id: "pretrained", type: "SelectCheckpoint", x: 64, y: 420 },
-  { id: "manifest", type: "BuildTrainingManifest", x: 620, y: 260 },
-  { id: "f0", type: "F0ModelTraining", x: 860, y: 320 },
-];
-
-const F0_EDGES: WorkflowEdge[] = [
-  { source_node: "run", source_port: "run", target_node: "dataset", target_port: "run" },
-  { source_node: "run", source_port: "run", target_node: "pretrained", target_port: "run" },
-  { source_node: "dataset", source_port: "dataset_ref", target_node: "audio_ids", target_port: "dataset_ref" },
-  { source_node: "audio_ids", source_port: "audio_file_ids", target_node: "manifest", target_port: "audio_file_ids" },
-  { source_node: "pretrained", source_port: "checkpoint", target_node: "manifest", target_port: "checkpoint" },
-  { source_node: "pretrained", source_port: "checkpoint", target_node: "f0", target_port: "checkpoint" },
-  { source_node: "manifest", source_port: "training_manifest", target_node: "f0", target_port: "training_manifest" },
-];
-
-const ASR_NODES = [
-  { id: "run", type: "TrainingRunInput", x: -160, y: 420 },
-  { id: "dataset", type: "SelectTrainingDataset", x: 64, y: 220 },
-  { id: "audio_ids", type: "ListDatasetAudioIds", x: 330, y: 220 },
-  { id: "pretrained", type: "SelectCheckpoint", x: 64, y: 420 },
-  { id: "alphabet", type: "PhonemeAlphabet", x: 64, y: 620 },
-  { id: "manifest", type: "BuildTrainingManifest", x: 620, y: 320 },
-  { id: "asr", type: "AsrModelTraining", x: 860, y: 420 },
-];
-
-const ASR_EDGES: WorkflowEdge[] = [
-  { source_node: "run", source_port: "run", target_node: "dataset", target_port: "run" },
-  { source_node: "run", source_port: "run", target_node: "pretrained", target_port: "run" },
-  { source_node: "run", source_port: "run", target_node: "alphabet", target_port: "run" },
-  { source_node: "dataset", source_port: "dataset_ref", target_node: "audio_ids", target_port: "dataset_ref" },
-  { source_node: "audio_ids", source_port: "audio_file_ids", target_node: "manifest", target_port: "audio_file_ids" },
-  { source_node: "pretrained", source_port: "checkpoint", target_node: "manifest", target_port: "checkpoint" },
-  { source_node: "alphabet", source_port: "phoneme_alphabet", target_node: "manifest", target_port: "phoneme_alphabet" },
-  { source_node: "pretrained", source_port: "checkpoint", target_node: "asr", target_port: "checkpoint" },
-  { source_node: "alphabet", source_port: "phoneme_alphabet", target_node: "asr", target_port: "phoneme_alphabet" },
-  { source_node: "manifest", source_port: "training_manifest", target_node: "asr", target_port: "training_manifest" },
-];
-
-export const TRAINING_WORKFLOWS: Record<TrainTab, TrainingWorkflowSpec> = {
-  styletts: {
-    value: "styletts",
-    label: "StyleTTS finetune",
-    nodes: STYLE_TTS_NODES,
-    edges: STYLE_TTS_EDGES,
-    ids: {
-      dataset: "dataset",
-      checkpoint: "base_checkpoint",
-      assets: "assets",
-      alphabet: "alphabet",
-      manifest: "manifest",
-      training: "styletts",
-    },
-  },
-  f0: {
-    value: "f0",
-    label: "F0 model",
-    nodes: F0_NODES,
-    edges: F0_EDGES,
-    ids: { dataset: "dataset", checkpoint: "pretrained", manifest: "manifest", training: "f0" },
-  },
-  asr: {
-    value: "asr",
-    label: "ASR model",
-    nodes: ASR_NODES,
-    edges: ASR_EDGES,
-    ids: { dataset: "dataset", checkpoint: "pretrained", alphabet: "alphabet", manifest: "manifest", training: "asr" },
-  },
 };
 
 export const TRAINING_OPTIONS: Option[] = Object.values(TRAINING_WORKFLOWS).map((workflow) => ({
@@ -184,9 +85,7 @@ export function updateTrainingParams(graph: WorkflowGraph, spec: TrainingWorkflo
 
 export function assertTrainingNodes(schema: WorkflowSchema, spec: TrainingWorkflowSpec) {
   const missing = spec.nodes.map((node) => node.type).filter((type) => !schema.nodes[type]);
-  if (missing.length > 0) {
-    throw new Error(`Training workflow nodes are not registered: ${missing.join(", ")}`);
-  }
+  if (missing.length > 0) throw new Error(`Training workflow nodes are not registered: ${missing.join(", ")}`);
 }
 
 function assertTrainingEdges(schema: WorkflowSchema, spec: TrainingWorkflowSpec) {
@@ -208,10 +107,7 @@ function assertTrainingEdges(schema: WorkflowSchema, spec: TrainingWorkflowSpec)
 export function datasetOptions(datasets: Dataset[]): Option[] {
   return [
     { value: "", label: datasets.length ? "— select training dataset —" : "No datasets available" },
-    ...datasets.map((dataset) => ({
-      value: dataset.id,
-      label: `${dataset.name} (${dataset.files.toLocaleString()} files)`,
-    })),
+    ...datasets.map((dataset) => ({ value: dataset.id, label: `${dataset.name} (${dataset.files.toLocaleString()} files)` })),
   ];
 }
 
@@ -224,10 +120,7 @@ export function checkpointOptions(checkpoints: Checkpoint[], type: string, place
 }
 
 export function fileAssetOptions(assets: FileAsset[], placeholder: string): Option[] {
-  return [
-    { value: "", label: assets.length ? placeholder : "No files available" },
-    ...assets.map((asset) => ({ value: asset.id, label: asset.name })),
-  ];
+  return [{ value: "", label: assets.length ? placeholder : "No files available" }, ...assets.map((asset) => ({ value: asset.id, label: asset.name }))];
 }
 
 export function pretrainedAssetOptions(files: FileAsset[], checkpoints: Checkpoint[], type: string, placeholder: string): Option[] {
@@ -236,18 +129,11 @@ export function pretrainedAssetOptions(files: FileAsset[], checkpoints: Checkpoi
     ...files.map((asset) => ({ value: asset.id, label: asset.name })),
     ...checkpointRows.map((checkpoint) => ({ value: checkpoint.id, label: `${checkpoint.name} · checkpoint` })),
   ];
-  return [
-    { value: "", label: rows.length ? placeholder : "No assets available" },
-    ...rows,
-  ];
+  return [{ value: "", label: rows.length ? placeholder : "No assets available" }, ...rows];
 }
 
 export function oodSetValues(assets: FileAsset[]): OodSetValue[] {
-  return assets.map((asset) => ({
-    id: asset.id,
-    name: asset.name,
-    line_count: lineCount(asset),
-  }));
+  return assets.map((asset) => ({ id: asset.id, name: asset.name, line_count: lineCount(asset) }));
 }
 
 export function checkpointSymbolCount(checkpoint: Checkpoint | undefined): number | null {
@@ -272,14 +158,8 @@ function lineCount(asset: FileAsset): number {
 function checkpointTypeKey(type: string): string {
   const normalized = type.trim().toLowerCase();
   const aliases: Record<string, string> = {
-    styletts2: "styletts2",
-    "styletts2_model": "styletts2",
-    f0: "f0",
-    f0_model: "f0",
-    asr: "asr",
-    asr_bundle: "asr",
-    plbert: "plbert",
-    "pl-bert": "plbert",
+    styletts2: "styletts2", "styletts2_model": "styletts2", f0: "f0", f0_model: "f0",
+    asr: "asr", asr_bundle: "asr", plbert: "plbert", "pl-bert": "plbert",
   };
   return aliases[normalized] ?? normalized;
 }

@@ -28,9 +28,10 @@ export function QueueCard({
     { ok: Boolean(training?.params.display_name), label: "Display name set" },
     { ok: Boolean(dataset?.params.dataset_id), label: "Training dataset selected" },
     { ok: Boolean(checkpoint?.params.checkpoint_id), label: "Base checkpoint required" },
-    { ok: alphabetValid, label: "Phoneme alphabet valid" },
-    { ok: hasOodSet(assets), label: "OOD reference set added" },
   ];
+  if (alphabet) rows.push({ ok: alphabetValid, label: "Phoneme alphabet valid" });
+  if (assets) rows.push({ ok: hasOodSet(assets), label: "OOD reference set added" });
+  const ready = rows.every((row) => row.ok);
 
   const queue = () => {
     if (!schema || !graph) return;
@@ -70,7 +71,7 @@ export function QueueCard({
 
       <button
         onClick={queue}
-        disabled={!schema || !graph || start.isPending}
+        disabled={!schema || !graph || start.isPending || !ready}
         className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border-0 bg-blue-500 text-sm font-semibold text-white cursor-pointer transition-colors hover:bg-blue-600 disabled:cursor-default disabled:opacity-50"
       >
         <Icon name="bolt" size={17} strokeWidth={2.2} />
