@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import secrets
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
@@ -72,6 +72,25 @@ def list_comparisons(session: Session, dataset_id: uuid.UUID) -> list[MosCompari
         .order_by(MosComparison.created_at.asc(), MosComparison.id.asc())
     )
     return list(session.execute(statement).scalars().all())
+
+
+def count_comparisons(session: Session, dataset_id: uuid.UUID) -> int:
+    statement = (
+        select(func.count())
+        .select_from(MosComparison)
+        .where(MosComparison.dataset_id == dataset_id)
+    )
+    return session.execute(statement).scalar_one()
+
+
+def iter_comparisons(session: Session, dataset_id: uuid.UUID) -> Iterator[MosComparison]:
+    statement = (
+        select(MosComparison)
+        .where(MosComparison.dataset_id == dataset_id)
+        .order_by(MosComparison.created_at.asc(), MosComparison.id.asc())
+        .execution_options(yield_per=1_000)
+    )
+    yield from session.execute(statement).scalars()
 
 
 def list_comparisons_page(

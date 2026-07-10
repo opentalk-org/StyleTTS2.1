@@ -1,5 +1,7 @@
 from shared.db.mos.crud import (
     create_rating,
+    count_comparisons,
+    iter_comparisons,
     list_comparisons,
     list_comparisons_page,
     sample_pair,
@@ -14,6 +16,8 @@ __all__ = [
     "MosRatingCreate",
     "MosRatingUpdate",
     "create_rating",
+    "count_comparisons",
+    "iter_comparisons",
     "list_comparisons",
     "list_comparisons_page",
     "sample_pair",
