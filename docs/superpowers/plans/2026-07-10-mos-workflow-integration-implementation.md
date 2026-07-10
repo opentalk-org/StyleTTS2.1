@@ -36,7 +36,7 @@ def test_mos_nodes_use_generic_ports():
     assert MosModelTrainingNode.INPUTS["checkpoint"].TYPE_NAME == "CHECKPOINT_REF"
 ```
 
-Run: `nix develop --command pytest .tmp_mos_tests/test_mos_training.py -q`
+Run: `nix develop --command python .tmp_mos_tests/test_mos_training.py`
 Expected: FAIL because nodes do not exist.
 
 - [ ] **Step 2: Implement deterministic JSONL manifests and lazy paired batches**
@@ -53,7 +53,7 @@ Train encoder/head in batches, validate each epoch, report progress, save interv
 
 - [ ] **Step 4: Register nodes and verify GREEN/schema export**
 
-Run: `nix develop --command pytest .tmp_mos_tests/test_mos_training.py -q`
+Run: `nix develop --command python .tmp_mos_tests/test_mos_training.py`
 Run: `nix develop --command python -c 'from runner.nodes.registry import create_node_registry; r=create_node_registry(); print(r.nodes["MosModelTraining"])'`
 Expected: PASS and registered node output.
 
@@ -80,7 +80,7 @@ def test_predict_node_preserves_audio_shape():
     assert PredictMosScoreNode.BATCH_POLICY.max_size > 1
 ```
 
-Run: `nix develop --command pytest .tmp_mos_tests/test_mos_inference.py -q`
+Run: `nix develop --command python .tmp_mos_tests/test_mos_inference.py`
 Expected: FAIL because the node is missing.
 
 - [ ] **Step 2: Implement lifecycle loading, batched prediction, and bulk score writeback**
@@ -89,7 +89,7 @@ Validate type `mos_model`, load once per checkpoint ID, require loaded bytes, ch
 
 - [ ] **Step 3: Verify GREEN and commit**
 
-Run: `nix develop --command pytest .tmp_mos_tests/test_mos_inference.py -q`
+Run: `nix develop --command python .tmp_mos_tests/test_mos_inference.py`
 Expected: PASS.
 
 ```bash
@@ -138,7 +138,7 @@ git commit --only src/frontend/src/features/training -m "feat: add MOS training 
 
 - [ ] **Step 1: Run focused and static verification**
 
-Run: `nix develop --command pytest .tmp_mos_tests -q`
+Run: `nix develop --command python -m unittest discover -s .tmp_mos_tests -p 'test_*.py'`
 Run: `nix develop --command python -m compileall -q src`
 Run: `nix develop --command bash -lc 'cd src/frontend && npm run build'`
 Expected: all exit 0.

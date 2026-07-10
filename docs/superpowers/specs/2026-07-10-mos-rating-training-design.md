@@ -22,6 +22,7 @@ Create a `mos_comparisons` table with:
 - `audio_a_id` and `audio_b_id` referencing two distinct audio files.
 - `preferred_audio_id`, which must equal one of the two audio IDs.
 - `score_a` and `score_b` as finite floating-point values.
+- `previous_score_a` and `previous_score_b`, preserving the scalar scores that existed immediately before submission.
 - A timezone-aware creation timestamp.
 
 Audio and dataset deletion cascades to affected comparison rows. Indexes support dataset-scoped chronological reads used to build manifests. A new Alembic migration creates the table, and the model module is imported by the shared database connection so Alembic sees it.
@@ -34,6 +35,9 @@ Add a backend `/mos` router with two operations:
 
 - `GET /mos/pair?dataset_id=<uuid>&dataset_id=<uuid>` selects one eligible dataset from the requested set, then returns two distinct, non-virtual audio files from that same dataset. Sampling within one dataset ensures every saved comparison can later be selected by a single training dataset. Dataset membership is validated and datasets with fewer than two eligible files are excluded.
 - `POST /mos/ratings` accepts the sampled dataset ID, two audio IDs, two finite scores, and the preferred audio ID. It rejects identical audio IDs, a preferred ID outside the pair, or files that are not both members of the supplied dataset. On success it atomically saves the comparison and overwrites both current audio scores.
+- `GET /mos/ratings` returns newest-first, dataset-filtered comparison history through offset pagination, including compact audio details and whether the row can be modified.
+- `PATCH /mos/ratings/{id}` changes the two scores and preference for the newest comparison and overwrites both current audio scores.
+- `DELETE /mos/ratings/{id}` undoes the newest comparison, restores its two `previous_score` values, and deletes the comparison atomically. Restricting edit/undo to the newest row makes restoration deterministic.
 
 The pair response contains only annotation fields: ID, name, duration, current score, and speaker. Audio playback continues through the existing `/audio-files/{id}/content` endpoint.
 
@@ -48,10 +52,10 @@ The screen provides:
 - A dataset multi-selection control populated through the existing dataset query.
 - Two side-by-side rating cards using the shared `WaveformPlayer` with the existing audio content URL.
 - The same score semantics as the segment editor: finite numeric values with two decimal entry precision and three-decimal display formatting. Each draft is initialized from the current score when present, but both values are required for submission.
-- A clear preferred-sample choice for A or B; ties are not part of this workflow.
-- A submit action enabled only when two scores and one preferred sample are present.
+- One action on each card—`Choose A/B as better and save`—enabled only when both scores are finite. Clicking it records that card as preferred and submits immediately; ties are not part of this workflow.
+- A server-paginated, virtualized comparison history. All rows are viewable; the newest row exposes inline change and undo actions.
 
-Submitting saves the rating, invalidates audio score queries, and fetches another random pair. Playback or request failures surface through the existing toast feedback. Score parsing/formatting and the score input presentation are extracted into reusable audio UI helpers shared by the segment editor and MOS cards.
+Submitting saves the rating, invalidates audio score/history queries, and fetches another random pair. Editing or undoing the newest row refreshes the same caches. Playback or request failures surface through the existing toast feedback. Score parsing/formatting and the score input presentation are extracted into reusable audio UI helpers shared by the segment editor and MOS cards.
 
 ## Base checkpoint catalog
 
@@ -105,6 +109,7 @@ Failures are explicit and actionable:
 
 - Pair requests fail when no selected dataset contains two eligible audio files.
 - Rating submission fails when membership, distinctness, finite-score, or preference invariants are violated.
+- Change or undo fails when the target is not the newest comparison.
 - Manifest creation fails when the selected dataset has fewer than two valid comparisons.
 - Training fails when checkpoint files or required manifest fields are missing.
 - Inference fails when given a checkpoint other than `mos_model` or audio without loaded bytes.
@@ -117,6 +122,7 @@ Behavior is developed test-first with temporary repository-local tests, which ar
 
 - Migration/model metadata and MOS CRUD invariants.
 - Pair API sampling and atomic score/comparison persistence.
+- Paginated history plus newest-comparison change and score-restoring undo.
 - Manifest split and loss calculation behavior.
 - Catalog and node schema registration.
 - Frontend type checking and production build.
@@ -125,4 +131,4 @@ Behavior is developed test-first with temporary repository-local tests, which ar
 
 ## Scope boundaries
 
-This feature does not add tie ratings, rater accounts, score aggregation policies, active-learning pair selection, or MOS concepts to `runflow`. Each rating intentionally overwrites the current scalar score while retaining comparison history for training.
+This feature does not add tie ratings, rater accounts, score aggregation policies, active-learning pair selection, or MOS concepts to `runflow`. Each rating intentionally overwrites the current scalar score while retaining comparison history for training. Only the newest comparison can be changed or undone; older history is immutable.

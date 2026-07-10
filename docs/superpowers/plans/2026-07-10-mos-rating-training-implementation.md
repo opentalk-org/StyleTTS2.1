@@ -30,7 +30,7 @@
 - Modify: `src/shared/db/connection.py`, `src/backend/api.py`
 - Test: `.tmp_mos_tests/test_mos_persistence.py`
 
-**Interfaces:** `sample_pair(Session, list[UUID]) -> MosPair`; `create_rating(Session, MosRatingCreate) -> MosComparison`; `GET /mos/pair`; `POST /mos/ratings`.
+**Interfaces:** `sample_pair(Session, list[UUID]) -> MosPair`; `create_rating(Session, MosRatingCreate) -> MosComparison`; pair/create plus paginated list, latest update, and latest undo endpoints under `/mos`.
 
 - [ ] **Step 1: Write the failing persistence contract**
 
@@ -47,7 +47,7 @@ def test_rating_accepts_distinct_pair_and_member_preference():
 
 - [ ] **Step 2: Verify RED**
 
-Run: `nix develop --command pytest .tmp_mos_tests/test_mos_persistence.py -q`
+Run: `nix develop --command python .tmp_mos_tests/test_mos_persistence.py`
 Expected: FAIL because `shared.db.mos` does not exist.
 
 - [ ] **Step 3: Implement model, CRUD, migration, and router**
@@ -65,11 +65,11 @@ class MosComparison(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 ```
 
-Use Pydantic validators for finite scores/distinct IDs, SQL check constraints for pair invariants, indexed UUID-threshold sampling, membership checks against `dataset_audio_files`, and one CRUD-owned commit that updates both `AudioFile.score` values and inserts the comparison.
+Use Pydantic validators for finite scores/distinct IDs, SQL check constraints for pair invariants, indexed UUID-threshold sampling, membership checks against `dataset_audio_files`, and one CRUD-owned commit that updates both `AudioFile.score` values and inserts the comparison. Persist both previous scores so the newest comparison can be undone deterministically.
 
 - [ ] **Step 4: Verify GREEN and migration head**
 
-Run: `nix develop --command pytest .tmp_mos_tests/test_mos_persistence.py -q`
+Run: `nix develop --command python .tmp_mos_tests/test_mos_persistence.py`
 Run: `nix develop --command alembic heads`
 Expected: PASS; one head at `91e06b9c7440`.
 
@@ -126,6 +126,51 @@ Expected: TypeScript and Vite exit 0.
 git commit --only src/frontend/src/features/mos src/frontend/src/features/audio/AudioScoreInput.tsx src/frontend/src/features/audio/SegmentEditor.tsx src/frontend/src/app/nav.ts src/frontend/src/app/navStore.ts src/frontend/src/app/ScreenRouter.tsx -m "feat: add MOS comparison screen"
 ```
 
+### Task 2b: Comparison history, change/undo, and combined choice submission
+
+**Files:**
+- Modify: `src/shared/db/mos/{models,schemas,crud}.py`, `src/backend/mos/{schemas,api}.py`, `migrations/versions/20260710_1200_91e06b9c7440_add_mos_comparisons.py`
+- Create: `src/frontend/src/features/mos/{MosHistoryList,MosHistoryRow}.tsx`
+- Modify: `src/frontend/src/features/mos/{api,query,store,logic,MosAudioCard,MosScreen}.ts{x,}`
+- Test: `.tmp_mos_tests/test_mos_history.py`, `src/frontend/src/mos-history-contract.ts` (temporary)
+
+**Interfaces:** `list_comparisons_page`; `update_latest_rating`; `undo_latest_rating`; `GET/PATCH/DELETE /mos/ratings`; infinite history query.
+
+- [ ] **Step 1: Write failing latest-mutation and frontend contracts**
+
+```python
+def test_history_schema_preserves_previous_scores():
+    assert "previous_score_a" in MosComparison.__table__.columns
+    assert "previous_score_b" in MosComparison.__table__.columns
+```
+
+```ts
+import { fetchMosRatings, updateMosRating, undoMosRating } from "@/features/mos/api";
+void [fetchMosRatings, updateMosRating, undoMosRating];
+```
+
+- [ ] **Step 2: Verify RED, then implement paginated history and latest-only mutations**
+
+Run: `nix develop --command python .tmp_mos_tests/test_mos_history.py`
+Run: `nix develop --command bash -lc 'cd src/frontend && npm run build'`
+Expected: missing columns/functions. Update stores previous scores on create; PATCH rewrites newest labels/scores; DELETE restores previous scores and removes newest row.
+
+- [ ] **Step 3: Implement virtual history and choose-and-save card actions**
+
+Use `useInfiniteQuery` plus `useVirtualizer`. Older rows are read-only; the newest row owns inline score/preference editing and undo. Replace the separate preference/save flow with one submit action per audio card.
+
+- [ ] **Step 4: Remove frontend contract and verify GREEN**
+
+Run: `nix develop --command python .tmp_mos_tests/test_mos_history.py`
+Run: `nix develop --command bash -lc 'cd src/frontend && npm run build'`
+Expected: both exit 0; all feature files stay below 300 lines.
+
+- [ ] **Step 5: Commit Task 2b paths**
+
+```bash
+git commit --only src/shared/db/mos src/backend/mos migrations/versions/20260710_1200_91e06b9c7440_add_mos_comparisons.py src/frontend/src/features/mos -m "feat: manage MOS comparison history"
+```
+
 ### Task 3: Wav2Vec2 MOS base catalog
 
 **Files:**
@@ -145,7 +190,7 @@ def test_mos_catalog_is_registered():
 
 - [ ] **Step 2: Verify RED, implement download task, then verify GREEN**
 
-Run: `nix develop --command pytest .tmp_mos_tests/test_mos_catalog.py -q`
+Run: `nix develop --command python .tmp_mos_tests/test_mos_catalog.py`
 Expected RED: missing key. Implement `ensure_model_checkpoint("mos_base", item, lambda p: download_hf_snapshot(item, p, ignore_patterns=["*.msgpack", "*.h5"]))`; reject any model ID except the specified Facebook repository. Re-run and expect PASS.
 
 - [ ] **Step 3: Add the catalog card and checkpoint filters**
@@ -185,7 +230,7 @@ def test_pair_loss_rewards_the_preferred_order():
     assert correct < reversed_
 ```
 
-Run: `nix develop --command pytest .tmp_mos_tests/test_mos_model.py -q`
+Run: `nix develop --command python .tmp_mos_tests/test_mos_model.py`
 Expected: FAIL because the module is missing.
 
 - [ ] **Step 2: Implement the stable loss and pooled regressor**
@@ -200,7 +245,7 @@ Use attention-mask-aware mean pooling, a linear head, 16 kHz mono decoding/resam
 
 - [ ] **Step 3: Verify GREEN and commit**
 
-Run: `nix develop --command pytest .tmp_mos_tests/test_mos_model.py -q`
+Run: `nix develop --command python .tmp_mos_tests/test_mos_model.py`
 Expected: PASS.
 
 ```bash
