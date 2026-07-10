@@ -24,8 +24,6 @@ from runner.nodes.models import Audio, stable_id
 from shared.db import database_session
 from shared.db.voices.models import Voice
 
-# yt-dlp info fields carried verbatim into the audio metadata (JSON-serializable
-# scalars/lists only), similar in spirit to the ds_v2 parquet column passthrough.
 _INFO_FIELDS = (
     "id",
     "title",

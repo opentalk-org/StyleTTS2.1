@@ -141,18 +141,28 @@ audio -small model> diffusion
 llm prompt explaining voice:
 - age
 - gender
-- pitch
-- tone/timbre
-- speaking rate
-- energy
-- emotion
-- accent
-- language
+- pitch and timbre
+- accent/dialect
 - formality
-
-Warm alto female voice, late 30s, soft British accent, calm confidence, gentle pacing, subtle smile, clear diction, low breathiness, empathetic podcast-host tone.
+- resonance
+- breathiness
+- vocal range
+- roughness
+- articulation character
 
 ### Style prompt
+emotion and intensity
+speaking rate
+loudness
+tone
+pitch movement
+energy
+rhythm
+pause behavior
+formality
+conversational versus narrative delivery, audiobook, podcast
+whispering, shouting, laughing, crying
+
 #### Basic
 neutral
 happy
@@ -287,6 +297,8 @@ pipelines:
 - synth pipeline
 - datasety gotowe
 - datasety english
+- elevenlabs ds
+na
 
 - mos score training
 - mos score classifier usage
@@ -299,3 +311,13 @@ pipelines:
 
 - normalization model for text
 - normalization model training
+
+models:
+- mos classifier
+- tags classifier (style/emotions + tags)
+- text -> voice model
+- text -> style model
+
+
+trick:
+- language agnostic -> language classifier on voice with negative gradient

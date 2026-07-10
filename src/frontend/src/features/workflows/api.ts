@@ -1,6 +1,6 @@
 import { backendFetch, backendRequest } from "@/app/backend";
 
-import type { NodeRunSnapshot, RunSnapshot, RunStatus, RunnerStatus, SaveWorkflowPayload, SavedWorkflow, WorkflowPayload, WorkflowSchema } from "./types";
+import type { NodeRunSnapshot, RunErrorEvent, RunSnapshot, RunStatus, RunnerStatus, SaveWorkflowPayload, SavedWorkflow, WorkflowPayload, WorkflowSchema } from "./types";
 
 export function fetchWorkflowSchema(): Promise<WorkflowSchema> {
   return backendRequest<WorkflowSchema>("/schema");
@@ -45,6 +45,10 @@ export function fetchRun(runId: string): Promise<RunStatus> {
 
 export function fetchRunSnapshot(runId: string): Promise<RunSnapshot> {
   return backendRequest<RunSnapshot>(`/runs/${encodeURIComponent(runId)}/snapshot`);
+}
+
+export function fetchRunErrors(runId: string): Promise<RunErrorEvent[]> {
+  return backendRequest<RunErrorEvent[]>(`/runs/${encodeURIComponent(runId)}/errors`);
 }
 
 export function fetchRunGraph(runId: string): Promise<WorkflowPayload> {

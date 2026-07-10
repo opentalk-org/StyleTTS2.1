@@ -3,8 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 import { copyText } from "@/shared/clipboard";
 import { showToast } from "@/shared/feedback/Toast";
 import { Button } from "@/shared/ui/Button";
-import { fetchNodeLog } from "../api";
+import { fetchNodeLog, fetchRun, fetchRunErrors } from "../api";
 import { useWorkflowStore } from "../store";
+import type { RunErrorEvent, RunStatus } from "../types";
 
 type LogEntry = { nodeId: string; content: string; truncated: boolean; error: string | null };
 type LogRecord = { ts: number | null; seq: number; nodeId: string; text: string };
@@ -43,6 +44,34 @@ function nodeColor(index: number): string {
   return `hsl(${(index * 67) % 360} 70% 45%)`;
 }
 
+function runFailureEntry(status: RunStatus, errors: RunErrorEvent[]): LogEntry | null {
+  const failure = [...errors].reverse().find((event) => event.kind === "run_failed");
+  const message = failure ? failure.message : status.error;
+  if (message === null) return null;
+  const traceback = failure && typeof failure.detail.traceback === "string" ? failure.detail.traceback.trim() : "";
+  const timestamp = failure?.created_at ?? status.finished_at ?? status.created_at;
+  return {
+    nodeId: "run",
+    content: `${timestamp} ERROR [run] ${message}${traceback ? `\n${traceback}` : ""}`,
+    truncated: false,
+    error: null,
+  };
+}
+
+function nodeFailureEntries(errors: RunErrorEvent[], loggedNodeIds: Set<string>): LogEntry[] {
+  return errors
+    .filter((event) => event.kind === "node_failed" && event.node_id !== null && !loggedNodeIds.has(event.node_id))
+    .map((event) => {
+      const traceback = typeof event.detail.traceback === "string" ? event.detail.traceback.trim() : "";
+      return {
+        nodeId: event.node_id!,
+        content: `${event.created_at} ERROR [node] ${event.message}${traceback ? `\n${traceback}` : ""}`,
+        truncated: false,
+        error: null,
+      };
+    });
+}
+
 /** Fan out to every node's log endpoint for the active run and merge the lines into one
  * timestamp-ordered stream, each line tagged with the node it came from. */
 export function AllLogsPopover({ onClose }: { onClose: () => void }) {
@@ -65,14 +94,26 @@ export function AllLogsPopover({ onClose }: { onClose: () => void }) {
     let cancelled = false;
     setLoadError(null);
     setLoading(true);
-    Promise.all(
-      nodes.map((node) =>
-        fetchNodeLog(activeRunId, node.id)
-          .then((log) => ({ nodeId: node.id, content: log.content, truncated: log.truncated, error: log.error })),
+    Promise.all([
+      fetchRun(activeRunId),
+      fetchRunErrors(activeRunId).catch(() => []),
+      Promise.allSettled(
+        nodes.map((node) =>
+          fetchNodeLog(activeRunId, node.id)
+            .then((log) => ({ nodeId: node.id, content: log.content, truncated: log.truncated, error: log.error })),
+        ),
       ),
-    )
-      .then((results) => {
-        if (!cancelled) setEntries(results);
+    ])
+      .then(([status, errors, results]) => {
+        if (cancelled) return;
+        const nodeEntries = results
+          .filter((result): result is PromiseFulfilledResult<LogEntry> => result.status === "fulfilled")
+          .map((result) => result.value);
+        const loggedNodeIds = new Set(nodeEntries.filter((entry) => entry.content || entry.error).map((entry) => entry.nodeId));
+        const nodeErrors = nodeFailureEntries(errors, loggedNodeIds);
+        const hasNodeFailure = errors.some((event) => event.kind === "node_failed" && event.node_id !== null);
+        const runEntry = hasNodeFailure ? null : runFailureEntry(status, errors);
+        setEntries([...(runEntry ? [runEntry] : []), ...nodeErrors, ...nodeEntries]);
       })
       .catch((error) => {
         if (!cancelled) {

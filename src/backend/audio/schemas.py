@@ -50,6 +50,14 @@ class AudioLanguagePayload(BaseModel):
     language: str | None = None
 
 
+class AudioStylePromptPayload(BaseModel):
+    style_prompt: str | None = None
+
+
+class AudioVoicePromptPayload(BaseModel):
+    voice_prompt: str | None = None
+
+
 class AddToDatasetRequest(BaseModel):
     dataset_id: str
     mode: Literal["ids", "filter"]
@@ -65,6 +73,8 @@ class AudioFileListItem(BaseModel):
     duration: float
     score: float | None
     language: str | None
+    style_prompt: str | None
+    voice_prompt: str | None
     sample_rate: int | None
     byte_length: int
     size_mb: str

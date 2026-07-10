@@ -81,6 +81,8 @@ class AudioSourceNode(Node):
             metadata=item.metadata_,
             byte_length=item.byte_length,
             virtual=item.virtual,
+            style_prompt=item.style_prompt,
+            voice_prompt=item.voice_prompt,
         )
 
     def _visible(self, item: AudioFile) -> bool:

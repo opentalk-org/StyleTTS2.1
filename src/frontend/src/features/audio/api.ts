@@ -27,6 +27,8 @@ export type AudioFile = {
   duration: number;
   score: number | null;
   language: string | null;
+  style_prompt: string | null;
+  voice_prompt: string | null;
   sample_rate: number | null;
   byte_length: number;
   size_mb: string;
@@ -130,6 +132,22 @@ export function updateAudioLanguage(id: string, language: string | null): Promis
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ language }),
+  });
+}
+
+export function updateAudioStylePrompt(id: string, style_prompt: string | null): Promise<AudioFile> {
+  return backendRequest<AudioFile>(`/audio-files/${encodeURIComponent(id)}/style-prompt`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ style_prompt }),
+  });
+}
+
+export function updateAudioVoicePrompt(id: string, voice_prompt: string | null): Promise<AudioFile> {
+  return backendRequest<AudioFile>(`/audio-files/${encodeURIComponent(id)}/voice-prompt`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ voice_prompt }),
   });
 }
 

@@ -36,6 +36,8 @@ class AudioFileCreate(BaseModel):
     duration: float
     score: float | None = None
     language: str | None = None
+    style_prompt: str | None = None
+    voice_prompt: str | None = None
     segments: list[dict[str, Any]]
     metadata: dict[str, Any]
     virtual: bool
@@ -48,6 +50,8 @@ class AudioFileUpdate(BaseModel):
     duration: float
     score: float | None = None
     language: str | None = None
+    style_prompt: str | None = None
+    voice_prompt: str | None = None
     segments: list[dict[str, Any]]
     metadata: dict[str, Any]
     virtual: bool
@@ -59,6 +63,8 @@ class AudioCreate(BaseModel):
     duration: float
     score: float | None = None
     language: str | None = None
+    style_prompt: str | None = None
+    voice_prompt: str | None = None
     segments: list[dict[str, Any]]
     metadata: dict[str, Any]
     virtual: bool
@@ -71,6 +77,8 @@ class AudioUpdate(BaseModel):
     duration: float
     score: float | None = None
     language: str | None = None
+    style_prompt: str | None = None
+    voice_prompt: str | None = None
     segments: list[dict[str, Any]]
     metadata: dict[str, Any]
     virtual: bool

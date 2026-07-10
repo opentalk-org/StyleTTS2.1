@@ -76,6 +76,8 @@ class PersistSplitAudioRecordsNode(Node):
                     duration=audio.duration,
                     score=_target_audio_score(audio),
                     language=_target_audio_language(audio),
+                    style_prompt=audio.style_prompt,
+                    voice_prompt=audio.voice_prompt,
                     segments=[],
                     metadata=_target_audio_metadata(audio),
                     virtual=self.settings.virtual,

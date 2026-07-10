@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# Fifty short, TTS-friendly example sentences. Each generated sentence samples one of
-# these as a style anchor so outputs stay natural and speakable.
 DEFAULT_SEED_SENTENCES: list[str] = [
     "The morning light spilled gently across the quiet kitchen table.",
     "She wondered whether the train would arrive before the storm did.",

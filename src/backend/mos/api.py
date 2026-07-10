@@ -49,9 +49,8 @@ async def list_mos_ratings(
         with database_session() as session:
             rows, total = mos_crud.list_comparisons_page(session, dataset_id, limit, offset)
             audio_files = mos_crud.comparison_audio_files(session, rows)
-            latest_id = mos_crud.latest_comparison_id(session)
             return MosRatingPage(
-                rows=[_rating_response(row, audio_files, row.id == latest_id) for row in rows],
+                rows=[_rating_response(row, audio_files, True) for row in rows],
                 total=total,
                 limit=limit,
                 offset=offset,
@@ -72,7 +71,7 @@ async def update_mos_rating(comparison_id: UUID, payload: MosRatingUpdate) -> Mo
 
 
 @router.delete("/ratings/{comparison_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def undo_mos_rating(comparison_id: UUID) -> None:
+async def delete_mos_rating(comparison_id: UUID) -> None:
     try:
         with database_session() as session:
             mos_crud.undo_latest_rating(session, comparison_id)

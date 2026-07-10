@@ -19,13 +19,13 @@ SAFE_NODE_ID = re.compile(r"[^A-Za-z0-9_.-]+")
 
 def node_log_path(work_dir: Path, run_id: str, node_id: str) -> Path:
     safe_node_id = SAFE_NODE_ID.sub("_", node_id)
-    return work_dir / run_id / "logs" / f"{safe_node_id}.log"
+    return (work_dir / run_id / "logs" / f"{safe_node_id}.log").resolve()
 
 
 class CappedNodeLogHandler(logging.Handler):
     def __init__(self, path: Path) -> None:
         super().__init__()
-        self.path = path
+        self.path = path.resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.setFormatter(logging.Formatter(LOG_FORMAT))
 

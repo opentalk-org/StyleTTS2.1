@@ -85,6 +85,38 @@ class RunEventResponse(BaseModel):
     detail: dict[str, Any]
 
 
+class BatchPerformanceSnapshot(BaseModel):
+    batch_index: int
+    batch_size: int
+    queue_wait_ms: float
+    resource_wait_ms: float
+    load_ms: float
+    execute_ms: float
+    unload_ms: float
+    route_ms: float
+    total_ms: float
+
+
+class NodePerformanceSnapshot(BaseModel):
+    batches: int
+    items: int
+    max_queue_size: int
+    total_queue_wait_ms: float
+    total_resource_wait_ms: float
+    total_load_ms: float
+    total_execute_ms: float
+    total_unload_ms: float
+    total_route_ms: float
+    average_batch_ms: float
+    p95_batch_ms: float
+    max_batch_ms: float
+    average_batch_size: float
+    items_per_second: float
+    current_batch_started_at: datetime | None
+    current_queue_wait_ms: float
+    recent_batches: list[BatchPerformanceSnapshot]
+
+
 class NodeRunSnapshot(BaseModel):
     node_id: str
     status: str
@@ -96,6 +128,7 @@ class NodeRunSnapshot(BaseModel):
     latest_message: str
     error: str | None
     counters: dict[str, int]
+    performance: NodePerformanceSnapshot
 
 
 class RunSnapshot(BaseModel):

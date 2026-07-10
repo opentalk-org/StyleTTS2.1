@@ -14,7 +14,7 @@ from nats.js.errors import FetchTimeoutError
 from runflow.core.context import ExecutionContext
 from runflow.core.events import RunEvent
 from runflow.runtime.scheduler import WindowedScheduler
-from runner.graphs import build_inline_graph
+from runner.graphs import GraphNodeBuildError, build_inline_graph
 from runner.hardware import apply_detected_resources
 from runner.heartbeat import RunnerHeartbeatPublisher
 from runner.node_logs import NodeLogManager, publish_node_log_response
@@ -191,6 +191,18 @@ class RunnerWorker:
         except asyncio.CancelledError:
             self.logger.info("run stopped run_id=%s", run_id)
             await self._publish_custom_event(run_id, "run_stopped", "run stopped", {"runner_id": self.runner_id})
+        except GraphNodeBuildError as error:
+            cause = error.__cause__ if error.__cause__ is not None else error
+            message = f"{type(cause).__name__}: {cause}"
+            detail = {
+                "runner_id": self.runner_id,
+                "node_type": error.node_type,
+                "stage": "graph_build",
+                "traceback": "".join(traceback.format_exception(error)),
+            }
+            self.logger.exception("run failed during node construction run_id=%s node_id=%s", run_id, error.node_id)
+            await self._publish_custom_event(run_id, "node_failed", message, detail, error.node_id)
+            await self._publish_custom_event(run_id, "run_failed", message, detail)
         except Exception as error:
             message = f"{type(error).__name__}: {error}"
             self.logger.exception("run failed run_id=%s", run_id)

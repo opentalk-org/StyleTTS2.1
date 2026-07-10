@@ -18,7 +18,6 @@ function typeColor(typeName) {
   return type ? type.color : "var(--accent)";
 }
 
-/* ---- selection ------------------------------------------------------ */
 function setSelection(ids) {
   state.selection = new Set(ids);
 }
@@ -32,7 +31,6 @@ function selectedId() {
   return state.selection.size === 1 ? [...state.selection][0] : null;
 }
 
-/* ---- graph mutations ------------------------------------------------ */
 function addNode(type, x = 130, y = 120) {
   const info = nodeInfo(type);
   const node = {
@@ -151,7 +149,6 @@ function templateNode(id, type, x, y, params, runtime = {}) {
   };
 }
 
-/* ---- rails ---------------------------------------------------------- */
 function renderPalette() {
   const groups = new Map();
   for (const item of Object.values(state.schema.nodes)) {
@@ -181,7 +178,6 @@ function renderLegend() {
     .join("");
 }
 
-/* ---- canvas render -------------------------------------------------- */
 function render() {
   renderNodes();
   renderEdges();

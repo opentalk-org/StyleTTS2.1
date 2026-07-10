@@ -33,6 +33,7 @@ const DEFAULT_STORAGE_FORM: StorageSettingsPayload = {
 const DEFAULT_INTEGRATION_FORM: IntegrationSettingsPayload = {
   hf_token: "",
   openrouter_token: "",
+  aim_url: "http://localhost:43800",
 };
 
 function createSettingsForm(backendUrl: string): SettingsForm {
@@ -51,7 +52,7 @@ function storageFormFromSettings(settings: StorageSettings): StorageSettingsPayl
 }
 
 function integrationFormFromSettings(settings: IntegrationSettings): IntegrationSettingsPayload {
-  return { hf_token: settings.hf_token, openrouter_token: settings.openrouter_token };
+  return { hf_token: settings.hf_token, openrouter_token: settings.openrouter_token, aim_url: settings.aim_url };
 }
 
 function storageFormsMatch(first: StorageSettingsPayload, second: StorageSettingsPayload): boolean {
@@ -64,7 +65,9 @@ function storageFormsMatch(first: StorageSettingsPayload, second: StorageSetting
 }
 
 function integrationFormsMatch(first: IntegrationSettingsPayload, second: IntegrationSettingsPayload): boolean {
-  return first.hf_token === second.hf_token && first.openrouter_token === second.openrouter_token;
+  return first.hf_token === second.hf_token
+    && first.openrouter_token === second.openrouter_token
+    && first.aim_url === second.aim_url;
 }
 
 function settingsFormsMatch(first: SettingsForm, second: SettingsForm): boolean {
@@ -210,6 +213,17 @@ export function SettingsScreen() {
             className="h-9 w-[260px] font-mono"
             value={form.integration.openrouter_token}
             onChange={(e) => setIntegration("openrouter_token", e.target.value)}
+          />
+        </SettingsRow>
+      </SettingsSection>
+      <SettingsSection title="Aim">
+        <SettingsRow title="URL" desc="Address of the Aim experiment tracker shown on the Runs page. Leave blank to use the deployment default.">
+          <Input
+            filled
+            placeholder="http://localhost:43800"
+            className="h-9 w-[260px] font-mono"
+            value={form.integration.aim_url}
+            onChange={(e) => setIntegration("aim_url", e.target.value)}
           />
         </SettingsRow>
       </SettingsSection>

@@ -20,6 +20,7 @@ class StorageSettingsRead(StorageSettingsPayload):
 class IntegrationSettingsPayload(BaseModel):
     hf_token: str = ""
     openrouter_token: str = ""
+    aim_url: str = "http://localhost:43800"
 
 
 class IntegrationSettingsRead(IntegrationSettingsPayload):

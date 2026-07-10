@@ -4,6 +4,7 @@ import { useNav } from "@/app/navStore";
 import { fetchRunSnapshot, fetchWorkflowSchema } from "@/features/workflows/api";
 import { useWorkflowStore } from "@/features/workflows/store";
 import { Pager } from "@/shared/data/Pager";
+import { VirtualTable } from "@/shared/data/VirtualTable";
 import { askConfirm } from "@/shared/feedback/ConfirmDialog";
 import { fmtAgo } from "@/shared/format";
 import { Icon } from "@/shared/icons";
@@ -96,7 +97,7 @@ export function JobsScreen() {
           <EmptyState icon="alert" title="Couldn't reach the backend" description="The jobs service didn't respond." />
         </Card>
       ) : (
-        <>
+        <div className="flex min-h-0 flex-1 flex-col">
           {selectedIds.length ? (
             <div className="mb-3 flex items-center gap-2.5 rounded-[9px] bg-gray-900 py-2.5 pl-4 pr-3">
               <span className="text-[13px] font-bold text-white">{selectedIds.length.toLocaleString()} selected</span>
@@ -123,26 +124,34 @@ export function JobsScreen() {
             <Pager page={page} pages={pages} onChange={(next) => setOffset(next * limit)} />
           </div>
           {rows.length ? (
-            <Card className="overflow-hidden">
-              <div className="grid h-10 items-center gap-3 border-b border-line px-4" style={{ gridTemplateColumns: JOB_COLS }}>
-                <button onClick={() => (allSel ? clearSelection() : selectMany(rows.map((job) => job.run_id)))} className="flex">
-                  <Checkbox on={allSel} />
-                </button>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-txt-mute">State</span>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-txt-mute">Job</span>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-txt-mute">Updated</span>
-                <span />
-              </div>
-              {rows.map((job) => (
-                <JobRow key={job.run_id} job={job} selected={!!selection[job.run_id]} onToggle={() => toggleSelect(job.run_id)} />
-              ))}
+            <Card className="min-h-0 flex-1 overflow-hidden">
+              <VirtualTable
+                count={rows.length}
+                estimateRowHeight={64}
+                className="h-full"
+                header={
+                  <div className="grid h-10 flex-none items-center gap-3 border-b border-line px-4" style={{ gridTemplateColumns: JOB_COLS }}>
+                    <button onClick={() => (allSel ? clearSelection() : selectMany(rows.map((job) => job.run_id)))} className="flex">
+                      <Checkbox on={allSel} />
+                    </button>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-txt-mute">State</span>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-txt-mute">Job</span>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-txt-mute">Updated</span>
+                    <span />
+                  </div>
+                }
+                renderRow={(index) => {
+                  const job = rows[index]!;
+                  return <JobRow job={job} selected={!!selection[job.run_id]} onToggle={() => toggleSelect(job.run_id)} />;
+                }}
+              />
             </Card>
           ) : (
             <Card>
               <EmptyState icon="list-checks" title="No workflow jobs have run yet." />
             </Card>
           )}
-        </>
+        </div>
       )}
     </div>
   );

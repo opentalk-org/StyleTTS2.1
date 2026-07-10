@@ -31,6 +31,8 @@ export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
   const left = snapshot?.remaining_items ?? "-";
   const loaded = snapshot?.loaded ? "loaded" : "unloaded";
   const status = nodeStatusTone(snapshot?.status);
+  const performance = snapshot?.performance;
+  const waiting = queued > 0 && status === "running";
 
   return (
     <article
@@ -52,7 +54,7 @@ export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
         setDrag({ x: event.clientX, y: event.clientY });
       }}
       onPointerUp={() => setDrag(null)}
-      className={`group pointer-events-auto absolute w-max min-w-[220px] max-w-[420px] cursor-pointer select-none rounded-[9px] border bg-panel text-left shadow-[0_12px_34px_rgba(17,24,39,0.14)] ${active ? "border-amber-500 ring-1 ring-amber-500" : status === "failed" ? "border-red-500" : status === "stopped" ? "border-amber-400" : "border-line-2"} ${status === "running" ? "shadow-[0_0_0_2px_rgba(79,209,197,0.45),0_16px_40px_rgba(17,24,39,0.18)]" : ""} ${status === "failed" ? "shadow-[0_0_0_2px_rgba(231,111,81,0.9),0_16px_40px_rgba(17,24,39,0.22)]" : ""}`}
+      className={`group pointer-events-auto absolute w-max min-w-[220px] max-w-[420px] cursor-pointer select-none rounded-[9px] border bg-panel text-left shadow-[0_12px_34px_rgba(17,24,39,0.14)] ${active ? "border-amber-500 ring-1 ring-amber-500" : status === "failed" ? "border-red-500" : waiting ? "border-amber-500" : status === "stopped" ? "border-amber-400" : "border-line-2"} ${status === "running" ? "shadow-[0_0_0_2px_rgba(79,209,197,0.45),0_16px_40px_rgba(17,24,39,0.18)]" : ""} ${status === "failed" ? "shadow-[0_0_0_2px_rgba(231,111,81,0.9),0_16px_40px_rgba(17,24,39,0.22)]" : ""}`}
       style={{ left: node.x, top: node.y }}
     >
       <div data-node-title className="flex cursor-grab items-center gap-2 border-b border-line px-2.5 py-2 pr-7 active:cursor-grabbing">
@@ -76,6 +78,23 @@ export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
           &times;
         </button>
       </div>
+      {performance && (performance.batches > 0 || performance.current_batch_started_at) ? (
+        <div className="grid grid-cols-3 border-b border-line bg-panel px-2.5 py-1.5 font-mono">
+          <PerformanceMetric label="items/s" value={formatRate(performance.items_per_second)} />
+          <PerformanceMetric
+            label={performance.current_batch_started_at ? "current" : "p95 batch"}
+            value={formatDuration(performance.current_batch_started_at ? Date.now() - Date.parse(performance.current_batch_started_at) : performance.p95_batch_ms)}
+          />
+          <PerformanceMetric
+            label="avg wait"
+            value={formatDuration(
+              (performance.total_queue_wait_ms + performance.total_resource_wait_ms + performance.current_queue_wait_ms)
+                / (performance.batches + (performance.current_batch_started_at ? 1 : 0)),
+            )}
+            warning={waiting}
+          />
+        </div>
+      ) : null}
       <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(92px,auto)_auto] gap-1.5 border-b border-line bg-panel-2/50 px-2.5 py-2">
         <Metric label={info.is_input ? "left" : "queued"} value={info.is_input ? left : queued} tone={status} role={info.is_input ? "items" : "queue"} />
         <Metric label="done" value={completed} tone={status} role="state" />
@@ -136,6 +155,24 @@ export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
       ) : null}
     </article>
   );
+}
+
+function PerformanceMetric({ label, value, warning = false }: { label: string; value: string; warning?: boolean }) {
+  return (
+    <div className="min-w-0 text-center">
+      <strong className={`block truncate text-[11px] ${warning ? "text-amber-700" : "text-txt"}`}>{value}</strong>
+      <span className="block truncate text-[8px] uppercase text-txt-mute">{label}</span>
+    </div>
+  );
+}
+
+function formatDuration(milliseconds: number): string {
+  if (milliseconds < 1000) return `${milliseconds.toFixed(0)}ms`;
+  return `${(milliseconds / 1000).toFixed(1)}s`;
+}
+
+function formatRate(rate: number): string {
+  return rate < 10 ? rate.toFixed(1) : rate.toFixed(0);
 }
 
 function nodeStatusTone(status: string | undefined): NodeStatusTone {

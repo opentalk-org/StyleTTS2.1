@@ -11,12 +11,12 @@ export function MosHistoryRow({
   item,
   pending,
   onUpdate,
-  onUndo,
+  onDelete,
 }: {
   item: MosHistoryItem;
   pending: boolean;
   onUpdate: (id: string, payload: MosRatingUpdateRequest) => Promise<void>;
-  onUndo: (id: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [scoreA, setScoreA] = useState(formatAudioScore(item.score_a));
@@ -34,13 +34,12 @@ export function MosHistoryRow({
     }
   };
 
-  const undo = async () => {
-    if (!window.confirm("Undo the newest MOS comparison and restore its previous scores?")) return;
+  const deleteComparison = async () => {
     try {
-      await onUndo(item.id);
-      showToast("MOS comparison undone");
+      await onDelete(item.id);
+      showToast("MOS comparison deleted");
     } catch (error) {
-      showToast("Could not undo MOS comparison", error instanceof Error ? error.message : undefined, "error");
+      showToast("Could not delete MOS comparison", error instanceof Error ? error.message : undefined, "error");
     }
   };
 
@@ -60,7 +59,7 @@ export function MosHistoryRow({
         <div className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700">Better: {preferred}</div>
         <div className="w-16 text-right text-[11px] text-txt-mute">{fmtAgo(Date.parse(item.created_at))}</div>
         {item.can_modify && !editing ? <Button size="sm" icon="edit" onClick={() => setEditing(true)}>Change</Button> : null}
-        {item.can_modify ? <Button size="sm" variant="danger" icon="rewind" disabled={pending} onClick={() => void undo()}>Undo</Button> : null}
+        {item.can_modify ? <Button size="sm" variant="danger" disabled={pending} onClick={() => void deleteComparison()}>Delete</Button> : null}
       </div>
       {editing ? (
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">

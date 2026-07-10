@@ -3,7 +3,7 @@ from typing import Any
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Response, UploadFile, status
 
-from backend.audio.schemas import AddToDatasetRequest, AudioFileListItem, AudioFilePage, AudioLanguagePayload, AudioRenamePayload, AudioScorePayload, AudioSegmentRead, AudioSegmentWrite, AudioSort, WaveformStatusRead, WordAlignment
+from backend.audio.schemas import AddToDatasetRequest, AudioFileListItem, AudioFilePage, AudioLanguagePayload, AudioRenamePayload, AudioScorePayload, AudioSegmentRead, AudioSegmentWrite, AudioSort, AudioStylePromptPayload, AudioVoicePromptPayload, WaveformStatusRead, WordAlignment
 from backend.audio.waveform_service import WaveformService
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
@@ -251,6 +251,52 @@ async def update_audio_language(audio_file_id: uuid.UUID, payload: AudioLanguage
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
 
+@router.patch("/{audio_file_id}/style-prompt", response_model=AudioFileListItem)
+async def update_audio_style_prompt(audio_file_id: uuid.UUID, payload: AudioStylePromptPayload) -> AudioFileListItem:
+    try:
+        with database_session() as session:
+            item = audio_crud.get_audio_file(session, audio_file_id)
+            updated = audio_crud.update_audio_file(
+                session,
+                audio_file_id,
+                AudioUpdate(
+                    name=item.name,
+                    wav_bytes=None,
+                    duration=item.duration,
+                    style_prompt=payload.style_prompt,
+                    segments=item.segments,
+                    metadata=item.metadata_,
+                    virtual=item.virtual,
+                ),
+            )
+            return audio_response(updated, None)
+    except KeyError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
+@router.patch("/{audio_file_id}/voice-prompt", response_model=AudioFileListItem)
+async def update_audio_voice_prompt(audio_file_id: uuid.UUID, payload: AudioVoicePromptPayload) -> AudioFileListItem:
+    try:
+        with database_session() as session:
+            item = audio_crud.get_audio_file(session, audio_file_id)
+            updated = audio_crud.update_audio_file(
+                session,
+                audio_file_id,
+                AudioUpdate(
+                    name=item.name,
+                    wav_bytes=None,
+                    duration=item.duration,
+                    voice_prompt=payload.voice_prompt,
+                    segments=item.segments,
+                    metadata=item.metadata_,
+                    virtual=item.virtual,
+                ),
+            )
+            return audio_response(updated, None)
+    except KeyError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
 def audio_response(item: AudioFile, segment_limit: int | None) -> AudioFileListItem:
     metadata = dict(item.metadata_)
     segments = item.segments if segment_limit is None else item.segments[:segment_limit]
@@ -261,6 +307,8 @@ def audio_response(item: AudioFile, segment_limit: int | None) -> AudioFileListI
         duration=item.duration,
         score=item.score,
         language=item.language,
+        style_prompt=item.style_prompt,
+        voice_prompt=item.voice_prompt,
         sample_rate=_sample_rate(metadata),
         byte_length=item.byte_length,
         size_mb=f"{item.byte_length / 1024 / 1024:.1f}",

@@ -22,7 +22,7 @@ export function QueueCard({
   const alphabet = graph?.nodes.find((node) => node.type === "PhonemeAlphabet");
   const assets = graph?.nodes.find((node) => node.type === "SelectTrainingAssets");
   const alphabetSymbols = String(alphabet?.params.symbols ?? "");
-  const alphabetValid = !alphabet || alphabetSymbols.trim().split(/\s+/).filter(Boolean).length === BASE_SYMBOLS;
+  const alphabetValid = !alphabet || Array.from(alphabetSymbols.replace(/[\n\t]/g, "")).length === BASE_SYMBOLS;
 
   const rows: ValidationRow[] = [
     { ok: Boolean(training?.params.display_name), label: "Display name set" },

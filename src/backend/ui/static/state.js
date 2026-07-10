@@ -60,8 +60,6 @@ function schemaType(prop) {
   return variant ? variant.type : "string";
 }
 
-// Signal color a module emits, used to tint its header bar. Falls back to muted
-// for sink nodes (no outputs) so the accent reads as "this produces nothing".
 function nodeAccent(info) {
   const outputs = Object.values(info.outputs);
   return outputs.length ? typeColor(outputs[0].type) : "#3a4353";

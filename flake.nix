@@ -50,7 +50,7 @@
           ];
         in
         {
-          python = pkgs.python312;
+          python = pkgs.python312Full;
           inherit runtimeLibs;
           runtimeExecutableDeps = [
             pkgs.espeak-ng
@@ -229,8 +229,130 @@
       pkgs = importPkgs imageSystem;
       pythonRuntime = mkPythonRuntime pkgs;
       pythonTools = [ pkgs.uv pythonRuntime.python ] ++ pythonRuntime.runtimeExecutableDeps;
+      # Runtime-only ML deps for the slim runner image: keeps the triton/inductor
+      # JIT toolchain (gcc host compiler + nvcc ptxas) and audio libs, but drops the
+      # build-only compilers (rustc/cargo/patchelf) and uv, since the venv is prebaked.
+      runnerRuntimeDeps = [
+        pkgs.espeak-ng
+        pkgs.ffmpeg-headless
+        pkgs.gcc
+        pkgs.openssl
+        pkgs.cudaPackages.cuda_nvcc
+      ];
       frontendStatic = mkFrontendStatic pkgs;
       rustfs = mkRustfs pkgs;
+
+      # Shared, non-secret defaults baked into BOTH images so the hub and the
+      # remote runners agree on credentials, ports, and bucket names. Secrets
+      # and topology (TAILSCALE_AUTHKEY, TAILSCALE_LOGIN_SERVER, prod passwords)
+      # are injected at runtime via --env-file / Salad env, never baked here.
+      commonEnv = [
+        "POSTGRES_DB=runflow"
+        "POSTGRES_USER=runflow"
+        "POSTGRES_PASSWORD=runflow"
+        "NATS_PORT=4222"
+        "PGBOUNCER_PORT=6432"
+        "RUSTFS_ACCESS_KEY=runflow"
+        "RUSTFS_SECRET_KEY=runflow-secret"
+        "RUSTFS_BUCKET=runflow"
+        "AWS_ACCESS_KEY_ID=runflow"
+        "AWS_SECRET_ACCESS_KEY=runflow-secret"
+        "AWS_REGION=us-east-1"
+      ];
+
+      # Hub-only: local bind addresses/paths for the services it hosts, plus its
+      # tailnet identity. Kernel/TUN tailscale (USERSPACE=0) so its 0.0.0.0
+      # services are reachable by tailnet peers.
+      hubEnv = [
+        "PGDATA=/data/postgres"
+        "PGHOST=/tmp/postgres"
+        "PGPORT=5432"
+        "NATS_DATA=/data/nats"
+        "NATS_URL=nats://127.0.0.1:4222"
+        "RUSTFS_DATA=/data/rustfs"
+        "RUSTFS_VOLUMES=/data/rustfs"
+        "RUSTFS_ADDRESS=0.0.0.0:9000"
+        "RUSTFS_CONSOLE_ENABLE=true"
+        "RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001"
+        "AWS_ENDPOINT_URL=http://127.0.0.1:9000"
+        "BACKEND_PORT=8000"
+        "RUNNER_ID=runner-1"
+        "TAILSCALE_HOSTNAME=runflow-hub"
+        # Vast.ai managed containers have no /dev/net/tun, so the hub uses
+        # userspace tailscale and exposes its services to the tailnet with
+        # `tailscale serve --tcp` (raw TCP passthrough) on these ports.
+        "TAILSCALE_USERSPACE=1"
+        "TAILSCALE_SERVE_PORTS=6432 4222 9000"
+      ];
+
+      # Runner-only: the hub name it dials over the tailnet, plus userspace
+      # tailscale (USERSPACE=1) since Salad containers have no TUN device. The
+      # NATS/DB/S3 URLs are derived from RUNFLOW_HUB_HOST in runner-entrypoint.sh.
+      # NOTE: RUNNER_ID is intentionally NOT baked — it must be unique per Salad
+      # replica (it keys the runner's DB heartbeat row and NATS work routing).
+      # runner-entrypoint.sh derives it from $SALAD_MACHINE_ID at start.
+      runnerEnv = [
+        "RUNFLOW_HUB_HOST=runflow-hub"
+        "TAILSCALE_USERSPACE=1"
+        # Root has no home in the minimal image; give torch/HF/etc a writable
+        # cache on the /data volume (getpass.getuser needs fakeNss, added below).
+        "HOME=/data"
+        "XDG_CACHE_HOME=/data/cache"
+        "HF_HOME=/data/huggingface"
+        "TORCHINDUCTOR_CACHE_DIR=/data/torchinductor"
+      ];
+
+      # Fully-baked Python environment (torch/vllm/flashinfer/... ~13GB) built by
+      # Nix so the runner image is self-contained and needs no runtime `uv sync`.
+      # A fixed-output derivation is the one build type allowed network access in
+      # the sandbox (identically on GitHub CI), so uv can fetch the pinned wheels,
+      # custom indexes (pytorch-cu128, the vLLM cu129 wheel), and git sources.
+      # UV_PROJECT_ENVIRONMENT=$out puts the venv at its final store path, so the
+      # venv's script shebangs are correct at runtime (no relocation needed).
+      runnerVenv = pkgs.stdenv.mkDerivation {
+        name = "runflow-runner-venv";
+        # Only the resolver inputs, so venv rebuilds track uv.lock, not app code.
+        src = pkgs.runCommand "runflow-venv-src" { } ''
+          mkdir -p "$out"
+          cp ${./pyproject.toml} "$out/pyproject.toml"
+          cp ${./uv.lock} "$out/uv.lock"
+        '';
+        nativeBuildInputs = [
+          pkgs.uv
+          pythonRuntime.python
+          pkgs.cacert
+          pkgs.git
+        ] ++ pythonRuntime.runtimeExecutableDeps ++ pythonRuntime.runtimeLibs;
+
+        # Impure build: uv needs network for the pinned wheels, the pytorch-cu128
+        # index, the vLLM cu129 wheel, and git sources. A fixed-output hash is not
+        # usable here because source-built extensions (monotonic-align, fish-speech)
+        # embed their build path into the compiled .so, so the output is not
+        # byte-reproducible. __noChroot keeps it a normal (input-addressed, cacheable)
+        # derivation with network access; the builder must allow it (sandbox=relaxed,
+        # set in the flake's nixConfig and the CI workflow).
+        __noChroot = true;
+
+        dontConfigure = true; # no autotools/cmake project here; we drive uv directly
+        dontFixup = true; # keep wheel .so RPATHs intact
+
+        buildPhase = (pythonEnvExports pythonRuntime) + ''
+          export HOME="$TMPDIR"
+          export UV_CACHE_DIR="$TMPDIR/uvcache"
+          export UV_PYTHON="${pythonRuntime.python}/bin/python${pythonRuntime.python.pythonVersion}"
+          export UV_PYTHON_DOWNLOADS=never
+          export UV_NO_BYTECODE=1
+          export UV_LINK_MODE=copy
+          export UV_PROJECT_ENVIRONMENT="$out"
+          uv sync --frozen --no-install-project --no-editable
+        '';
+
+        installPhase = ''
+          # Drop non-deterministic bytecode so the output hash is stable.
+          find "$out" -depth -type d -name '__pycache__' -exec rm -rf {} + || true
+          find "$out" -type f -name '*.pyc' -delete || true
+        '';
+      };
 
       runflowBackend = pkgs.writeShellApplication {
         name = "runflow-backend";
@@ -263,6 +385,20 @@
         text = (pythonEnvExports pythonRuntime) + builtins.readFile ./nix/runner-launch.sh;
       };
 
+      # runner-launch backed by the prebaked venv (no uv, no runtime sync). Puts
+      # the venv on PATH so `python` in runner-launch.sh is the venv interpreter
+      # with torch/vllm/... already installed.
+      runnerLaunchVenv = pkgs.writeShellApplication {
+        name = "runflow-runner-launch";
+        runtimeInputs = [ pkgs.bash pkgs.coreutils ]
+          ++ runnerRuntimeDeps ++ pythonRuntime.runtimeLibs;
+        text = (pythonEnvExports pythonRuntime) + ''
+          export VIRTUAL_ENV="${runnerVenv}"
+          export PATH="${runnerVenv}/bin:$PATH"
+          export PYTHONPATH="${./src}"
+        '' + builtins.readFile ./nix/runner-launch.sh;
+      };
+
       runflowAim = pkgs.writeShellApplication {
         name = "runflow-aim";
         runtimeInputs = pythonTools;
@@ -280,6 +416,22 @@
         '';
       };
 
+      # Shared Headscale/Tailscale bring-up, invoked (not sourced) by both
+      # entrypoints. Backgrounds tailscaled (kernel or userspace per
+      # TAILSCALE_USERSPACE) and runs `tailscale up`; the daemon survives this
+      # command's exit so the parent entrypoint keeps its tailnet + SOCKS proxy.
+      tailscaleUp = pkgs.writeShellApplication {
+        name = "tailscale-up";
+        runtimeInputs = [
+          pkgs.bash
+          pkgs.coreutils
+          pkgs.gnugrep
+          pkgs.iproute2
+          pkgs.tailscale
+        ];
+        text = builtins.readFile ./nix/tailscale-up.sh;
+      };
+
       entrypoint = pkgs.writeShellApplication {
         name = "runflow-entrypoint";
         runtimeInputs = [
@@ -291,6 +443,8 @@
           pkgs.nats-server
           pkgs.pgbouncer
           pkgs.postgresql_16
+          pkgs.tailscale
+          tailscaleUp
           rustfs
           runflowBackend
           runflowRunner
@@ -298,6 +452,23 @@
           runflowAim
         ] ++ pythonTools;
         text = builtins.readFile ./nix/entrypoint.sh;
+      };
+
+      # Slim runner entrypoint: userspace tailscale + proxychains-ng so the
+      # runner's raw-TCP Postgres/NATS clients reach the hub over the tailnet.
+      runnerEntrypoint = pkgs.writeShellApplication {
+        name = "runflow-runner-entrypoint";
+        runtimeInputs = [
+          pkgs.bash
+          pkgs.coreutils
+          pkgs.gnugrep
+          pkgs.iproute2
+          pkgs.proxychains-ng
+          pkgs.tailscale
+          tailscaleUp
+          runnerLaunchVenv
+        ];
+        text = builtins.readFile ./nix/runner-entrypoint.sh;
       };
     in
     {
@@ -319,18 +490,25 @@
         ${imageSystem} = rec {
           frontend-static = frontendStatic;
           inherit rustfs;
+          runner-venv = runnerVenv;
 
           image = pkgs.dockerTools.buildLayeredImage {
             name = "runflow-studio-single-image";
             tag = "latest";
 
+            # Minimal nix images have no /tmp; many things (tailscaled logs,
+            # PostgreSQL, Python tempfile) need it.
+            extraCommands = "mkdir -p tmp && chmod 1777 tmp";
+
             contents = [
               pkgs.bash
               pkgs.cacert
               pkgs.coreutils
+              pkgs.dockerTools.fakeNss
               pkgs.nats-server
               pkgs.pgbouncer
               pkgs.postgresql_16
+              pkgs.tailscale
               rustfs
               frontendStatic
               runflowBackend
@@ -351,31 +529,45 @@
                 "43800/tcp" = {};
               };
 
-              Env = [
-                "PGDATA=/data/postgres"
-                "PGHOST=/tmp/postgres"
-                "PGPORT=5432"
-                "PGBOUNCER_PORT=6432"
-                "POSTGRES_DB=runflow"
-                "POSTGRES_USER=runflow"
-                "POSTGRES_PASSWORD=runflow"
-                "NATS_DATA=/data/nats"
-                "NATS_URL=nats://127.0.0.1:4222"
-                "RUSTFS_DATA=/data/rustfs"
-                "RUSTFS_VOLUMES=/data/rustfs"
-                "RUSTFS_ADDRESS=0.0.0.0:9000"
-                "RUSTFS_CONSOLE_ENABLE=true"
-                "RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001"
-                "RUSTFS_ACCESS_KEY=runflow"
-                "RUSTFS_SECRET_KEY=runflow-secret"
-                "RUSTFS_BUCKET=runflow"
-                "AWS_ACCESS_KEY_ID=runflow"
-                "AWS_SECRET_ACCESS_KEY=runflow-secret"
-                "AWS_REGION=us-east-1"
-                "AWS_ENDPOINT_URL=http://127.0.0.1:9000"
-                "BACKEND_PORT=8000"
-                "RUNNER_ID=runner-1"
-              ];
+              Env = commonEnv ++ hubEnv;
+
+              Volumes = {
+                "/data" = {};
+              };
+            };
+          };
+
+          # Slim runner-only image for remote GPU workers (Salad). Drops every
+          # server binary (postgres/pgbouncer/nats/rustfs/backend/frontend/aim);
+          # keeps the ML runtime + tailscale + proxychains. Reaches the hub's
+          # DB/NATS/S3 as a client over the tailnet.
+          runner-image = pkgs.dockerTools.buildLayeredImage {
+            name = "runflow-studio-runner";
+            tag = "latest";
+
+            # Minimal nix images have no /tmp; tailscaled, proxychains, and
+            # Python tempfile all need it.
+            extraCommands = "mkdir -p tmp && chmod 1777 tmp";
+
+            contents = [
+              pkgs.bash
+              pkgs.cacert
+              pkgs.coreutils
+              pkgs.dockerTools.fakeNss
+              pkgs.gnugrep
+              pkgs.iproute2
+              pkgs.proxychains-ng
+              pkgs.tailscale
+              runnerVenv
+              pythonRuntime.python
+              runnerLaunchVenv
+              runnerEntrypoint
+            ] ++ runnerRuntimeDeps ++ pythonRuntime.runtimeLibs;
+
+            config = {
+              Cmd = [ "${runnerEntrypoint}/bin/runflow-runner-entrypoint" ];
+
+              Env = commonEnv ++ runnerEnv;
 
               Volumes = {
                 "/data" = {};

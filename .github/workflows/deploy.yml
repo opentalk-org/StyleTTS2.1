@@ -1,0 +1,75 @@
+name: Build and push runner image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "flake.nix"
+      - "flake.lock"
+      - "nix/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: build-runner-image
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        # The runner image bakes a ~13 GB CUDA/ML venv; reclaim ~30 GB from the
+        # runner's preinstalled toolchains so the Nix build + push fit on disk.
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          docker-images: false
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+        with:
+          # `sandbox = relaxed` lets the venv derivation (__noChroot) fetch wheels
+          # / git sources / the pytorch+vllm indexes at build time.
+          extra-conf: |
+            sandbox = relaxed
+
+      - name: Nix build cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Resolve image owner
+        id: img
+        run: |
+          owner="${GHCR_OWNER:-${{ github.repository_owner }}}"
+          owner_lc="$(echo "$owner" | tr '[:upper:]' '[:lower:]')"
+          echo "ref=ghcr.io/$owner_lc/runflow-studio-runner" >> "$GITHUB_OUTPUT"
+        env:
+          GHCR_OWNER: ${{ secrets.GHCR_OWNER }}
+
+      - name: Build runner image (Nix)
+        run: nix build .#runner-image --accept-flake-config --option sandbox relaxed --print-build-logs
+
+      - name: Push image to GHCR (skopeo, no Docker daemon)
+        # Stream the Nix-built tarball straight to GHCR — avoids `docker load`
+        # duplicating ~14 GB onto the runner's small disk.
+        run: |
+          ref="${{ steps.img.outputs.ref }}"
+          nix run nixpkgs#skopeo -- --insecure-policy copy \
+            --dest-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+            docker-archive:./result "docker://$ref:${{ github.sha }}"
+          # Retag :latest registry-side (manifest-only; blobs already uploaded).
+          nix run nixpkgs#skopeo -- --insecure-policy copy \
+            --src-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+            --dest-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+            "docker://$ref:${{ github.sha }}" "docker://$ref:latest"

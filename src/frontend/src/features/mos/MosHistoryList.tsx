@@ -16,7 +16,7 @@ export function MosHistoryList({ datasetIds }: { datasetIds: string[] }) {
   const rows = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 92,
+    estimateSize: () => 76,
     overscan: 6,
   });
   const virtualRows = rows.getVirtualItems();
@@ -30,10 +30,10 @@ export function MosHistoryList({ datasetIds }: { datasetIds: string[] }) {
   const update = async (id: string, payload: MosRatingUpdateRequest) => {
     await mutations.update.mutateAsync({ id, payload });
   };
-  const undo = async (id: string) => {
-    await mutations.undo.mutateAsync(id);
+  const remove = async (id: string) => {
+    await mutations.remove.mutateAsync(id);
   };
-  const pending = mutations.update.isPending || mutations.undo.isPending;
+  const pending = mutations.update.isPending || mutations.remove.isPending;
 
   return (
     <div>
@@ -58,7 +58,7 @@ export function MosHistoryList({ datasetIds }: { datasetIds: string[] }) {
                   className="absolute left-0 top-0 w-full pb-2"
                   style={{ transform: `translateY(${row.start}px)` }}
                 >
-                  <MosHistoryRow item={item} pending={pending} onUpdate={update} onUndo={undo} />
+                  <MosHistoryRow item={item} pending={pending} onUpdate={update} onDelete={remove} />
                 </div>
               );
             })}

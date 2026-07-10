@@ -12,3 +12,10 @@ dist/
 */.cache/
 .cache/
 /data/
+
+# Deployment secrets — never commit. Templates (*.env.example) are tracked.
+.env
+*.env
+!*.env.example
+result
+result-*

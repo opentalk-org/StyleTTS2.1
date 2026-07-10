@@ -7,7 +7,6 @@ from runner.nodes.tts.engines import chatterbox, dia, f5_tts, fish_speech, kokor
 from runner.nodes.tts.engines.base import EngineRuntime
 from runner.nodes.tts.voices import TtsEngine
 
-# Each engine module exposes ``load(checkpoint_dir, device) -> EngineRuntime``.
 _LOADERS: dict[TtsEngine, Callable[[Path], EngineRuntime]] = {
     TtsEngine.KOKORO: kokoro.load,
     TtsEngine.CHATTERBOX: chatterbox.load,

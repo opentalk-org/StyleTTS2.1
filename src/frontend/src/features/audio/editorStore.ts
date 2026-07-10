@@ -32,7 +32,6 @@ type EditorStore = {
   viewEnd: number;
   dirty: boolean;
   segSel: string | null;
-  /** Segment ids ticked for bulk actions (delete). Independent of `segSel`. */
   segChecked: string[];
   segQuery: string;
   load: (fileId: string, dur: number, segs: Segment[]) => void;

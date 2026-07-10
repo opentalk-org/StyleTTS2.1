@@ -1,7 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { AUDIO_FILES_KEY } from "@/features/audio/query";
-import { fetchMosPair, fetchMosRatings, saveMosRating, undoMosRating, updateMosRating } from "./api";
+import { deleteMosRating, fetchMosPair, fetchMosRatings, saveMosRating, updateMosRating } from "./api";
 import type { MosRatingUpdateRequest } from "./api";
 
 export const MOS_PAIR_KEY = "mos-pair";
@@ -59,6 +59,6 @@ export function useMosHistoryMutations() {
     mutationFn: ({ id, payload }: { id: string; payload: MosRatingUpdateRequest }) => updateMosRating(id, payload),
     onSuccess: invalidate,
   });
-  const undo = useMutation({ mutationFn: undoMosRating, onSuccess: invalidate });
-  return { update, undo };
+  const remove = useMutation({ mutationFn: deleteMosRating, onSuccess: invalidate });
+  return { update, remove };
 }

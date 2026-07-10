@@ -35,7 +35,6 @@ body {
   min-height: 600px;
 }
 
-/* ---- rails ---------------------------------------------------------- */
 .rail { display: flex; flex-direction: column; gap: 22px; overflow: auto; padding: 16px 14px; background: var(--surface); }
 .rail--left { border-right: 1px solid var(--line); }
 .rail--right { border-left: 1px solid var(--line); }
@@ -66,7 +65,6 @@ body {
 }
 .brand-mark span { color: var(--accent); margin-left: 6px; }
 
-/* status pill with an LED */
 .status {
   display: inline-flex;
   align-items: center;
@@ -91,7 +89,6 @@ body {
 .status--wait { color: var(--accent); }
 .status--off { color: var(--danger); }
 
-/* ---- buttons -------------------------------------------------------- */
 .btn {
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -117,7 +114,6 @@ body {
 .btn-stop:hover { background: var(--danger); color: #1b0b0d; }
 .btn:disabled { cursor: not-allowed; opacity: 0.65; }
 
-/* ---- palette -------------------------------------------------------- */
 .palette { display: flex; flex-direction: column; gap: 10px; }
 .palette-group { display: flex; flex-direction: column; gap: 5px; }
 .palette-cat {
@@ -145,7 +141,6 @@ body {
 .palette-item:hover { border-color: var(--accent); background: #232b39; }
 .dot { width: 9px; height: 9px; border-radius: 999px; flex: none; box-shadow: 0 0 6px currentColor; }
 
-/* ---- legend --------------------------------------------------------- */
 .legend { display: flex; flex-wrap: wrap; gap: 5px 10px; }
 .legend-item {
   display: inline-flex;
@@ -156,7 +151,6 @@ body {
   font-size: 10px;
 }
 
-/* ---- workspace ------------------------------------------------------ */
 .workspace { display: grid; grid-template-rows: 56px 1fr; min-width: 0; background: var(--canvas); }
 .toolbar {
   display: flex;
@@ -218,7 +212,6 @@ body {
   pointer-events: none;
 }
 
-/* ---- nodes ---------------------------------------------------------- */
 .node {
   position: absolute;
   width: max-content;
@@ -282,7 +275,6 @@ body {
 .outputs .socket { margin-right: 4px; }
 .socket:hover { transform: scale(1.4); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2), 0 0 10px var(--sock); }
 
-/* ---- inspector ------------------------------------------------------ */
 .settings { display: flex; flex-direction: column; gap: 10px; }
 .settings .empty, .runs .empty { color: var(--faint); font-family: var(--mono); font-size: 11px; }
 

@@ -18,8 +18,6 @@ class TtsEngine(str, Enum):
     RAON_OPENTTS = "raon_opentts"
 
 
-# Preset voice ids keyed by engine. Only engines shipping fixed voices appear here;
-# clone-only engines (Chatterbox, F5-TTS, Dia, Fish Speech, Raon) have none.
 PRESET_VOICES: dict[TtsEngine, tuple[str, ...]] = {
     TtsEngine.KOKORO: (
         "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica", "af_kore",
@@ -36,7 +34,6 @@ PRESET_VOICES: dict[TtsEngine, tuple[str, ...]] = {
     TtsEngine.ORPHEUS: ("tara", "leah", "jess", "leo", "dan", "mia", "zac", "zoe"),
 }
 
-# Engines whose synthesis is driven by a reference clip rather than a preset id.
 CLONING_ENGINES: frozenset[TtsEngine] = frozenset(
     {TtsEngine.CHATTERBOX, TtsEngine.F5_TTS, TtsEngine.ORPHEUS, TtsEngine.DIA, TtsEngine.FISH_SPEECH, TtsEngine.RAON_OPENTTS}
 )

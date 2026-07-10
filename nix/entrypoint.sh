@@ -31,6 +31,16 @@ export BACKEND_PORT="${BACKEND_PORT:-8000}"
 export DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGBOUNCER_PORT/$POSTGRES_DB"
 export RUNFLOW_PGBOUNCER_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGBOUNCER_PORT/$POSTGRES_DB"
 
+# Join the self-hosted Headscale tailnet as the hub so remote runners can reach
+# this box's PgBouncer/NATS/RustFS. Vast.ai containers have no /dev/net/tun, so
+# use userspace mode and publish the service ports with `tailscale serve --tcp`
+# (raw passthrough). No-ops if TAILSCALE_AUTHKEY is unset, keeping the single-box
+# path working unchanged.
+export TAILSCALE_HOSTNAME="${TAILSCALE_HOSTNAME:-runflow-hub}"
+export TAILSCALE_USERSPACE="${TAILSCALE_USERSPACE:-1}"
+export TAILSCALE_SERVE_PORTS="${TAILSCALE_SERVE_PORTS:-$PGBOUNCER_PORT $NATS_PORT 9000}"
+tailscale-up
+
 pgbouncer_dir=/tmp/pgbouncer
 pgbouncer_config="$pgbouncer_dir/pgbouncer.ini"
 pgbouncer_userlist="$pgbouncer_dir/userlist.txt"

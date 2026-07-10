@@ -16,6 +16,8 @@ import {
   renameAudioFile,
   updateAudioLanguage,
   updateAudioScore,
+  updateAudioStylePrompt,
+  updateAudioVoicePrompt,
 } from "./api";
 import { DATASETS_KEY } from "@/features/datasets/query";
 
@@ -88,6 +90,22 @@ export function useUpdateAudioLanguageMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, language }: { id: string; language: string | null }) => updateAudioLanguage(id, language),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [AUDIO_FILES_KEY] }),
+  });
+}
+
+export function useUpdateAudioStylePromptMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, stylePrompt }: { id: string; stylePrompt: string | null }) => updateAudioStylePrompt(id, stylePrompt),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [AUDIO_FILES_KEY] }),
+  });
+}
+
+export function useUpdateAudioVoicePromptMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, voicePrompt }: { id: string; voicePrompt: string | null }) => updateAudioVoicePrompt(id, voicePrompt),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [AUDIO_FILES_KEY] }),
   });
 }

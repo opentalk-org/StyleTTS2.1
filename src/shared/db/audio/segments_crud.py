@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from shared.db.audio.models import AudioFile
@@ -17,6 +17,24 @@ SegmentPayload = SegmentCreate | dict[str, Any]
 def list_audio_segments(session: Session, audio_file_id: uuid.UUID) -> list[dict[str, Any]]:
     item = one(session, AudioFile, audio_file_id)
     return list(item.segments)
+
+
+def list_audio_segments_bulk(
+    session: Session,
+    audio_file_ids: Sequence[uuid.UUID],
+) -> dict[uuid.UUID, list[dict[str, Any]]]:
+    """Segments for many audio files in one query (avoids N+1 per-id lookups).
+
+    Missing ids are simply absent from the result. Callers that need every id
+    present should fall back to an empty list.
+    """
+    if not audio_file_ids:
+        return {}
+    unique_ids = list(dict.fromkeys(audio_file_ids))
+    rows = session.execute(
+        select(AudioFile.id, AudioFile.segments).where(AudioFile.id.in_(unique_ids))
+    ).all()
+    return {row.id: list(row.segments) for row in rows}
 
 
 def create_segment(session: Session, audio_file_id: uuid.UUID, payload: SegmentCreate) -> dict[str, Any]:

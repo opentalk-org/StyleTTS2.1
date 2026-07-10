@@ -117,7 +117,6 @@ export function moveNodes(graph: WorkflowGraph, nodeIds: string[], dx: number, d
 const LAYOUT_ORDERING_SWEEPS = 8;
 const LAYOUT_COORD_SWEEPS = 10;
 
-// Reserved vertical "lane" height for a routing dummy of a long edge.
 const LAYOUT_DUMMY_HEIGHT = 24;
 
 /** Layered (Sugiyama-style) auto layout: columns by longest-path depth, node order
@@ -142,7 +141,6 @@ export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph): W
       (orderIndex.get(edge.source_node) ?? 0) < (orderIndex.get(edge.target_node) ?? 0),
   );
 
-  // 1. Layering — longest path from a source; the layer is the node's column.
   const layerOf = new Map(graph.nodes.map((node) => [node.id, 0]));
   for (const nodeId of order) {
     const base = layerOf.get(nodeId) ?? 0;
@@ -194,7 +192,6 @@ export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph): W
     return pos;
   };
 
-  // Count crossings between every adjacent pair of layers (over real + dummy segments).
   const crossings = (): number => {
     const pos = positionInLayer();
     let total = 0;
@@ -263,7 +260,6 @@ export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph): W
     for (let rank = 0; rank < layerCount; rank += 1) {
       const layer = layers[rank]!;
       if (sweep % 2 === 0) {
-        // top-down: never overlap the node above.
         let floor = LAYOUT_Y;
         for (const id of layer) {
           const y = Math.max(desiredTopOf(id), floor);
@@ -271,7 +267,6 @@ export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph): W
           floor = y + heightOf(id) + LAYOUT_ROW_GAP;
         }
       } else {
-        // bottom-up: never overlap the node below.
         let ceiling = Number.POSITIVE_INFINITY;
         for (let i = layer.length - 1; i >= 0; i -= 1) {
           const id = layer[i]!;
@@ -315,7 +310,6 @@ export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph): W
   };
 }
 
-/** Median of a pre-sorted numeric list (average of the two middle values when even). */
 function medianOf(sorted: number[]): number {
   const count = sorted.length;
   if (count === 0) return 0;

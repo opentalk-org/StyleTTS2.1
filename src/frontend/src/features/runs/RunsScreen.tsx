@@ -1,5 +1,9 @@
 import { defaultAimUrl } from "@/app/backendConfig";
+import { useIntegrationSettingsQuery } from "@/features/settings/query";
 
 export function RunsScreen() {
-  return <iframe src={defaultAimUrl()} title="Aim experiment tracker" className="block h-full w-full border-0" />;
+  const integration = useIntegrationSettingsQuery();
+  const aimUrl = integration.data?.aim_url || defaultAimUrl();
+
+  return <iframe src={aimUrl} title="Aim experiment tracker" className="block h-full w-full border-0" />;
 }

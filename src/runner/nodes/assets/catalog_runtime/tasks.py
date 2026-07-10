@@ -14,8 +14,6 @@ from runner.nodes.assets.model_downloads import download_hf_snapshot, download_n
 _NEMO_ASR_KINDS = {"parakeet", "canary", "sortformer"}
 _MOS_BASE_MODEL = "facebook/wav2vec2-xls-r-300m"
 
-# Default HuggingFace snapshot per TTS engine. ``item`` may be an engine key (use the
-# default repo) or "engine:repo_id" to pin a specific / language-variant checkpoint.
 _TTS_DEFAULT_REPOS = {
     "kokoro": "hexgrad/Kokoro-82M",
     "chatterbox": "ResembleAI/chatterbox",

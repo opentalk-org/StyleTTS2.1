@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 import importlib
 from contextlib import contextmanager
@@ -18,14 +17,11 @@ MEL: Any | None = None
 
 @contextmanager
 def training_import_context():
-    prev_cwd = os.getcwd()
     prev_path = list(sys.path)
     sys.path.insert(0, str(TRAINING_ROOT.resolve()))
-    os.chdir(str(TRAINING_ROOT.resolve()))
     try:
         yield
     finally:
-        os.chdir(prev_cwd)
         sys.path[:] = prev_path
 
 

@@ -1,45 +1,37 @@
 #coding: utf-8
-import os
-import os.path as osp
-import time
-import random
-import numpy as np
+
+import io
 import random
 from pathlib import Path
 from uuid import UUID
-import soundfile as sf
+
 import librosa
-
+import numpy as np
+import soundfile as sf
 import torch
-from torch import nn
-import torch.nn.functional as F
 import torchaudio
-from torch.utils.data import DataLoader, Sampler
-
-import logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
-import pandas as pd
-
+from torch.utils.data import DataLoader
 
 from runner.nodes.text.runtime.symbols import TextCleaner
-
+from shared.db import database_session
+from shared.db.audio import crud as audio_crud
 
 np.random.seed(1)
 random.seed(1)
+
+
 SPECT_PARAMS = {
     "n_fft": 2048,
     "win_length": 1200,
-    "hop_length": 300
+    "hop_length": 300,
 }
 MEL_PARAMS = {
     "n_mels": 80,
 }
 
-to_mel = torchaudio.transforms.MelSpectrogram(
-    n_mels=80, n_fft=2048, win_length=1200, hop_length=300)
+to_mel = torchaudio.transforms.MelSpectrogram(**SPECT_PARAMS, **MEL_PARAMS)
 mean, std = -4, 4
+
 
 def preprocess(wave):
     wave_tensor = torch.from_numpy(wave).float()
@@ -47,138 +39,82 @@ def preprocess(wave):
     mel_tensor = (torch.log(1e-5 + mel_tensor.unsqueeze(0)) - mean) / std
     return mel_tensor
 
+
 class FilePathDataset(torch.utils.data.Dataset):
-    def __init__(self,
-                 data_list,
-                 root_path,
-                 sr=24000,
-                 data_augmentation=False,
-                 validation=False,
-                 OOD_data="Data/OOD_texts.txt",
-                 min_length=50,
-                 symbols=None,
-                 stream_cache=None,
-                 ):
-
-        spect_params = SPECT_PARAMS
-        mel_params = MEL_PARAMS
-
+    def __init__(
+        self,
+        data_list,
+        root_path,
+        sr=24000,
+        data_augmentation=False,
+        validation=False,
+        OOD_data="Data/OOD_texts.txt",
+        min_length=50,
+        symbols=None,
+        stream_cache=None,
+    ):
         _data_list = [l.strip().split('|') for l in data_list]
         self.data_list = [data if len(data) == 3 else (*data, 0) for data in _data_list]
         self.text_cleaner = TextCleaner(symbols)
         self.sr = sr
 
-        self.stream_cache = stream_cache
-        self.row_by_audio_id = {UUID(Path(row[0]).stem): row for row in self.data_list} if stream_cache is not None else {}
+        self.rows_by_speaker: dict[int, list[list[str]]] = {}
+        for row in self.data_list:
+            self.rows_by_speaker.setdefault(int(row[2]), []).append(row)
 
-        self.df = pd.DataFrame(self.data_list)
-
-        self.to_melspec = torchaudio.transforms.MelSpectrogram(**MEL_PARAMS)
-
-        self.mean, self.std = -4, 4
-        self.data_augmentation = data_augmentation and (not validation)
+        self.min_mel_length = 192
         self.max_mel_length = 192
-        
+        self.data_augmentation = data_augmentation and (not validation)
         self.min_length = min_length
+
         with open(OOD_data, 'r', encoding='utf-8') as f:
-            tl = f.readlines()
-        idx = 1 if '.wav' in tl[0].split('|')[0] else 0
-        self.ptexts = [t.split('|')[idx] for t in tl]
-        
+            lines = f.readlines()
+        idx = 1 if '.wav' in lines[0].split('|')[0] else 0
+        self.ptexts = [line.split('|')[idx] for line in lines]
+
         self.root_path = root_path
 
     def __len__(self):
         return len(self.data_list)
 
-    def __getitem__(self, idx):        
-        data = self.data_list[idx]
-        path = data[0]
-        
-        wave, text_tensor, speaker_id = self._load_tensor(data, advance=True)
+    def __getitem__(self, idx):
+        speaker_id, audio_id, text, ref_audio_id, ref_text, ref_label = self._resolve_row(idx)
+        return speaker_id, audio_id, text, ref_audio_id, ref_text, ref_label
 
-        mel_tensor = preprocess(wave).squeeze()
+    def _reference_data(self, speaker_id: int) -> list[str]:
+        return random.choice(self.rows_by_speaker[speaker_id])
 
-        acoustic_feature = mel_tensor.squeeze()
-        length_feature = acoustic_feature.size(1)
-        acoustic_feature = acoustic_feature[:, :(length_feature - length_feature % 2)]
+    def _audio_id(self, wave_path: str) -> UUID:
+        return UUID(Path(wave_path).stem)
 
-        # get reference sample
-        ref_data = self._reference_data(speaker_id)
-        ref_mel_tensor, ref_label = self._load_data(ref_data[:3])
-        
-        # get OOD text
-        
+    def _text_to_tensor(self, text: str) -> torch.LongTensor:
+        tokens = self.text_cleaner(text)
+        tokens.insert(0, 0)
+        tokens.append(0)
+        return torch.LongTensor(tokens)
+
+    def _resolve_row(self, idx):
+        data_path, text, speaker_id_text = self.data_list[idx]
+        speaker_id = int(speaker_id_text)
+        audio_id = self._audio_id(data_path)
+        reference_row = self._reference_data(speaker_id)
+        ref_audio_id = self._audio_id(reference_row[0])
+        ref_label = int(reference_row[2])
         ps = ""
-        
         while len(ps) < self.min_length:
             rand_idx = np.random.randint(0, len(self.ptexts) - 1)
             ps = self.ptexts[rand_idx]
-            
-            text = self.text_cleaner(ps)
-            text.insert(0, 0)
-            text.append(0)
-
-            ref_text = torch.LongTensor(text)
-        
-        return speaker_id, acoustic_feature, text_tensor, ref_text, ref_mel_tensor, ref_label, path, wave
-
-    def _reference_data(self, speaker_id):
-        """Pick a same-speaker reference row.
-
-        When streaming, draw only from rows whose bucket is currently resident so
-        the reference resolves without dragging an extra bucket onto disk; the
-        speaker-clustered bucket order keeps such candidates available. Falls back
-        to any same-speaker row if none are resident yet."""
-        if self.stream_cache is None:
-            return (self.df[self.df[2] == str(speaker_id)]).sample(n=1).iloc[0].tolist()
-        resident = self.stream_cache.resident_audio_ids()
-        candidates = [self.row_by_audio_id[audio_id] for audio_id in resident if audio_id in self.row_by_audio_id and self.row_by_audio_id[audio_id][2] == str(speaker_id)]
-        if not candidates:
-            candidates = [row for row in self.data_list if row[2] == str(speaker_id)]
-        return list(random.choice(candidates))
-
-    def _resolve_path(self, wave_path, advance):
-        if self.stream_cache is None:
-            return osp.join(self.root_path, wave_path)
-        audio_id = UUID(Path(wave_path).stem)
-        if advance:
-            self.stream_cache.advance(self.stream_cache.bucket_index_of(audio_id))
-        return str(self.stream_cache.ensure(audio_id))
-
-    def _load_tensor(self, data, advance=False):
-        wave_path, text, speaker_id = data
-        speaker_id = int(speaker_id)
-        wave, sr = sf.read(self._resolve_path(wave_path, advance))
-        if wave.shape[-1] == 2:
-            wave = wave[:, 0].squeeze()
-        if sr != 24000:
-            wave = librosa.resample(wave, orig_sr=sr, target_sr=24000)
-            print(wave_path, sr)
-            
-        wave = np.concatenate([np.zeros([5000]), wave, np.zeros([5000])], axis=0)
-        
-        text = self.text_cleaner(text)
-        
-        text.insert(0, 0)
-        text.append(0)
-        
-        text = torch.LongTensor(text)
-
-        return wave, text, speaker_id
-
-    def _load_data(self, data):
-        wave, text_tensor, speaker_id = self._load_tensor(data)
-        mel_tensor = preprocess(wave).squeeze()
-
-        mel_length = mel_tensor.size(1)
-        if mel_length > self.max_mel_length:
-            random_start = np.random.randint(0, mel_length - self.max_mel_length)
-            mel_tensor = mel_tensor[:, random_start:random_start + self.max_mel_length]
-
-        return mel_tensor, speaker_id
+        return (
+            speaker_id,
+            audio_id,
+            self._text_to_tensor(text),
+            ref_audio_id,
+            self._text_to_tensor(ps),
+            ref_label,
+        )
 
 
-class Collater(object):
+class Collater:
     """
     Args:
       adaptive_batch_size (bool): if true, decrease batch size when long data comes.
@@ -189,39 +125,68 @@ class Collater(object):
         self.min_mel_length = 192
         self.max_mel_length = 192
         self.return_wave = return_wave
-        
+
+    def _read_wave(self, wave_bytes: bytes) -> np.ndarray:
+        with io.BytesIO(wave_bytes) as source:
+            wave, sr = sf.read(source)
+        if wave.shape[-1] == 2:
+            wave = wave[:, 0].squeeze()
+        if sr != 24000:
+            wave = librosa.resample(wave, orig_sr=sr, target_sr=24000)
+        return np.concatenate([np.zeros([5000]), wave, np.zeros([5000])], axis=0)
+
+    def _load_mel(self, wave: np.ndarray) -> torch.Tensor:
+        mel_tensor = preprocess(wave).squeeze()
+        length_feature = mel_tensor.size(1)
+        return mel_tensor[:, :(length_feature - length_feature % 2)]
+
+    def _load_ref_mel(self, mel_tensor: torch.Tensor) -> torch.Tensor:
+        mel_length = mel_tensor.size(1)
+        if mel_length > self.max_mel_length:
+            random_start = np.random.randint(0, mel_length - self.max_mel_length)
+            mel_tensor = mel_tensor[:, random_start:random_start + self.max_mel_length]
+        return mel_tensor
+
+    def _load_batch_audio(self, audio_bytes: dict[UUID, bytes]) -> dict[UUID, tuple[np.ndarray, torch.Tensor]]:
+        cached: dict[UUID, tuple[np.ndarray, torch.Tensor]] = {}
+        for audio_id, wave_bytes in audio_bytes.items():
+            wave = self._read_wave(wave_bytes)
+            mel = self._load_mel(wave)
+            cached[audio_id] = (wave, mel)
+        return cached
 
     def __call__(self, batch):
-        # batch[0] = wave, mel, text, f0, speakerid
         batch_size = len(batch)
+        audio_ids = [row[1] for row in batch]
+        ref_audio_ids = [row[3] for row in batch]
+        requested_ids = list(dict.fromkeys(audio_ids + ref_audio_ids))
 
-        # sort by mel length
-        lengths = [b[1].shape[1] for b in batch]
-        batch_indexes = np.argsort(lengths)[::-1]
-        batch = [batch[bid] for bid in batch_indexes]
+        with database_session() as session:
+            audio_bytes = audio_crud.bulk_read_audio_files(session, requested_ids)
+        cache = self._load_batch_audio(audio_bytes)
 
-        nmels = batch[0][1].size(0)
-        max_mel_length = max([b[1].shape[1] for b in batch])
-        max_text_length = max([b[2].shape[0] for b in batch])
-        max_rtext_length = max([b[3].shape[0] for b in batch])
+        max_mel_length = max(cache[audio_id][1].size(1) for audio_id in audio_ids)
+        max_text_length = max(row[2].size(0) for row in batch)
+        max_rtext_length = max(row[4].size(0) for row in batch)
 
         labels = torch.zeros((batch_size)).long()
-        mels = torch.zeros((batch_size, nmels, max_mel_length)).float()
+        mels = torch.zeros((batch_size, 80, max_mel_length)).float()
         texts = torch.zeros((batch_size, max_text_length)).long()
         ref_texts = torch.zeros((batch_size, max_rtext_length)).long()
-
         input_lengths = torch.zeros(batch_size).long()
         ref_lengths = torch.zeros(batch_size).long()
         output_lengths = torch.zeros(batch_size).long()
-        ref_mels = torch.zeros((batch_size, nmels, self.max_mel_length)).float()
-        ref_labels = torch.zeros((batch_size)).long()
-        paths = ['' for _ in range(batch_size)]
+        ref_mels = torch.zeros((batch_size, 80, self.max_mel_length)).float()
         waves = [None for _ in range(batch_size)]
-        
-        for bid, (label, mel, text, ref_text, ref_mel, ref_label, path, wave) in enumerate(batch):
+
+        for bid, (label, audio_id, text, ref_audio_id, ref_text, ref_label) in enumerate(batch):
+            wave, mel = cache[audio_id]
+            _, ref_mel = cache[ref_audio_id]
             mel_size = mel.size(1)
             text_size = text.size(0)
             rtext_size = ref_text.size(0)
+            ref_mel = self._load_ref_mel(ref_mel)
+
             labels[bid] = label
             mels[bid, :, :mel_size] = mel
             texts[bid, :text_size] = text
@@ -229,68 +194,41 @@ class Collater(object):
             input_lengths[bid] = text_size
             ref_lengths[bid] = rtext_size
             output_lengths[bid] = mel_size
-            paths[bid] = path
-            ref_mel_size = ref_mel.size(1)
-            ref_mels[bid, :, :ref_mel_size] = ref_mel
-            
-            ref_labels[bid] = ref_label
+            ref_mels[bid, :, : ref_mel.size(1)] = ref_mel
             waves[bid] = wave
 
         return waves, texts, input_lengths, ref_texts, ref_lengths, mels, output_lengths, ref_mels
 
 
-
-class StreamOrderSampler(Sampler):
-    """Yield sample indices in fixed bucket order and rewind the cache each epoch.
-
-    The manifest already writes rows in bucket-streaming order, so walking them
-    sequentially advances the cache cursor monotonically. Resetting on each new
-    iterator refills the cache from the first bucket."""
-
-    def __init__(self, length, stream_cache):
-        self.length = length
-        self.stream_cache = stream_cache
-
-    def __iter__(self):
-        self.stream_cache.reset()
-        return iter(range(self.length))
-
-    def __len__(self):
-        return self.length
-
-
-def build_dataloader(path_list,
-                     root_path,
-                     validation=False,
-                     OOD_data="Data/OOD_texts.txt",
-                     min_length=50,
-                     batch_size=4,
-                     num_workers=1,
-                     device='cpu',
-                     collate_config={},
-                     dataset_config={},
-                     stream_cache=None):
-
-    dataset = FilePathDataset(path_list, root_path, OOD_data=OOD_data, min_length=min_length, validation=validation, stream_cache=stream_cache, **dataset_config)
+def build_dataloader(
+    path_list,
+    root_path,
+    validation=False,
+    OOD_data="Data/OOD_texts.txt",
+    min_length=50,
+    batch_size=4,
+    num_workers=1,
+    device='cpu',
+    collate_config={},
+    dataset_config={},
+    stream_cache=None,
+):
+    dataset = FilePathDataset(
+        path_list,
+        root_path,
+        OOD_data=OOD_data,
+        min_length=min_length,
+        validation=validation,
+        stream_cache=stream_cache,
+        **dataset_config,
+    )
     collate_fn = Collater(**collate_config)
-    # Streaming keeps a single in-process cache coherent, so the loader must run
-    # in the main process (no worker forks) and preserve the on-disk bucket order.
-    if stream_cache is not None:
-        stream_cache.start()
-        return DataLoader(dataset,
-                          batch_size=batch_size,
-                          sampler=StreamOrderSampler(len(dataset), stream_cache),
-                          num_workers=0,
-                          drop_last=(not validation),
-                          collate_fn=collate_fn,
-                          pin_memory=(device != 'cpu'))
-    data_loader = DataLoader(dataset,
-                             batch_size=batch_size,
-                             shuffle=(not validation),
-                             num_workers=num_workers,
-                             drop_last=(not validation),
-                             collate_fn=collate_fn,
-                             pin_memory=(device != 'cpu'))
-
-    return data_loader
-
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=(not validation),
+        num_workers=num_workers,
+        drop_last=(not validation),
+        collate_fn=collate_fn,
+        pin_memory=(device != 'cpu'),
+    )

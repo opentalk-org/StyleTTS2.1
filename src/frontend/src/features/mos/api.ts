@@ -77,7 +77,7 @@ export function updateMosRating(id: string, payload: MosRatingUpdateRequest): Pr
   });
 }
 
-export async function undoMosRating(id: string): Promise<void> {
+export async function deleteMosRating(id: string): Promise<void> {
   const response = await backendFetch(`/mos/ratings/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!response.ok) throw new Error(`Backend request failed: ${response.status}`);
 }

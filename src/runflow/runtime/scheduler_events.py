@@ -53,7 +53,14 @@ class SchedulerEventEmitter:
             detail={"queue_size": queue_size},
         )
 
-    async def batch_started(self, node: Node, worker_index: int, batch_index: int, batch: list[Task]) -> None:
+    async def batch_started(
+        self,
+        node: Node,
+        worker_index: int,
+        batch_index: int,
+        batch: list[Task],
+        queue_wait_ms: float,
+    ) -> None:
         await self.context.emit_event(
             "batch_started",
             message=f"{node.id} started batch {batch_index} with {len(batch)} item(s)",
@@ -65,10 +72,19 @@ class SchedulerEventEmitter:
                 "node_type": node.NODE_TYPE,
                 "lineage_ids": [task.lineage_id for task in batch],
                 "resources": node.runtime.resource_policy.resources,
+                "queue_wait_ms": queue_wait_ms,
             },
         )
 
-    async def batch_completed(self, node: Node, worker_index: int, batch_index: int, batch: list[Task], outputs: list[dict[str, Any]]) -> None:
+    async def batch_completed(
+        self,
+        node: Node,
+        worker_index: int,
+        batch_index: int,
+        batch: list[Task],
+        outputs: list[dict[str, Any]],
+        timings: dict[str, float],
+    ) -> None:
         await self.context.emit_event(
             "batch_completed",
             message=f"{node.id} completed batch {batch_index}",
@@ -76,7 +92,7 @@ class SchedulerEventEmitter:
             worker_index=worker_index,
             batch_index=batch_index,
             batch_size=len(batch),
-            detail={"input_items": len(batch), "output_items": len(outputs)},
+            detail={"input_items": len(batch), "output_items": len(outputs), **timings},
         )
 
     async def node_failed(self, node: Node, worker_index: int, error: Exception) -> None:

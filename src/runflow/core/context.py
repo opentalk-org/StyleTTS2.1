@@ -25,9 +25,9 @@ class ExecutionContext:
     event_sink: Callable[[RunEvent], Awaitable[None] | None] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
-        self.work_dir = Path(self.work_dir)
-        self.cache_dir = Path(self.cache_dir)
-        self.output_dir = Path(self.output_dir)
+        self.work_dir = Path(self.work_dir).resolve()
+        self.cache_dir = Path(self.cache_dir).resolve()
+        self.output_dir = Path(self.output_dir).resolve()
         if isinstance(self.config, dict):
             self.config = RuntimeConfig.model_validate(self.config)
         self.work_dir.mkdir(parents=True, exist_ok=True)

@@ -47,8 +47,7 @@
         "x": 720,
         "y": 120,
         "params": {
-          "model": "deepfilternet3",
-          "strength": 0.8
+          "model": "deepfilternet3"
         },
         "runtime": {}
       },

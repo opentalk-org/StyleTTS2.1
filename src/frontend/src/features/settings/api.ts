@@ -36,6 +36,7 @@ export type IntegrationSettings = {
   id: string;
   hf_token: string;
   openrouter_token: string;
+  aim_url: string;
 };
 
 export type IntegrationSettingsPayload = Omit<IntegrationSettings, "id">;

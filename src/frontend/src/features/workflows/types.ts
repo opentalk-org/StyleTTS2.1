@@ -147,6 +147,14 @@ export type RunStatus = {
   event_count: number;
 };
 
+export type RunErrorEvent = {
+  kind: string;
+  created_at: string;
+  message: string;
+  node_id: string | null;
+  detail: Record<string, unknown>;
+};
+
 export type RunnerStatus = {
   total_runs: number;
   active_runs: number;
@@ -164,6 +172,39 @@ export type NodeRunSnapshot = {
   latest_message: string;
   error: string | null;
   counters: Record<string, number>;
+  performance: NodePerformanceSnapshot;
+};
+
+export type BatchPerformanceSnapshot = {
+  batch_index: number;
+  batch_size: number;
+  queue_wait_ms: number;
+  resource_wait_ms: number;
+  load_ms: number;
+  execute_ms: number;
+  unload_ms: number;
+  route_ms: number;
+  total_ms: number;
+};
+
+export type NodePerformanceSnapshot = {
+  batches: number;
+  items: number;
+  max_queue_size: number;
+  total_queue_wait_ms: number;
+  total_resource_wait_ms: number;
+  total_load_ms: number;
+  total_execute_ms: number;
+  total_unload_ms: number;
+  total_route_ms: number;
+  average_batch_ms: number;
+  p95_batch_ms: number;
+  max_batch_ms: number;
+  average_batch_size: number;
+  items_per_second: number;
+  current_batch_started_at: string | null;
+  current_queue_wait_ms: number;
+  recent_batches: BatchPerformanceSnapshot[];
 };
 
 export type RunSnapshot = {

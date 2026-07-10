@@ -26,6 +26,7 @@ from shared.db.audio.segments_crud import (
     create_segment,
     delete_segment,
     list_audio_segments,
+    list_audio_segments_bulk,
     replace_audio_segments,
     bulk_replace_audio_segments,
     update_segment,
@@ -280,6 +281,10 @@ def _update_audio_metadata(item: AudioFile, payload: AudioUpdate) -> None:
         item.score = payload.score
     if "language" in payload.model_fields_set:
         item.language = payload.language
+    if "style_prompt" in payload.model_fields_set:
+        item.style_prompt = payload.style_prompt
+    if "voice_prompt" in payload.model_fields_set:
+        item.voice_prompt = payload.voice_prompt
     item.segments = payload.segments
     item.metadata_ = payload.metadata
     item.virtual = payload.virtual

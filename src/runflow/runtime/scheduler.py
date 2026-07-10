@@ -1,22 +1,22 @@
 import asyncio
 import logging
 from collections import defaultdict
+from time import perf_counter
 from typing import Any
 
 from runflow.core.context import ExecutionContext
 from runflow.core.graph import Graph
 from runflow.core.node import Node
-from runflow.core.task import Packet, Task, lineage_from_value, metadata_from_value
+from runflow.core.task import Task
 from runflow.planning.batch_planner import BatchPlanner
 from runflow.planning.graph_validator import GraphValidator
 from runflow.runtime.cancellation import cancellation_scope
 from runflow.runtime.input_progress import remaining_counts
 from runflow.runtime.log_capture import route_output_to_logger
 from runflow.runtime.node_manager import NodeManager
-from runflow.runtime.output_values import output_values
+from runflow.runtime.output_router import OutputRouter
 from runflow.runtime.resource_pool import ResourcePool
 from runflow.runtime.join_builder import NodeJoinBuffers
-from runflow.runtime.routing import add_to_join_buffer, can_create_single_input_task
 from runflow.runtime.scheduler_events import SchedulerEventEmitter
 from runflow.runtime.topology import topological_nodes
 
@@ -34,11 +34,13 @@ class WindowedScheduler:
 
         self.queues: dict[str, asyncio.Queue[Task]] = {}
         self.join_buffers: dict[str, NodeJoinBuffers] = defaultdict(NodeJoinBuffers)
+        self.output_router = OutputRouter(graph, context, self.events, self.join_buffers, self._enqueue)
         self._active_tasks = 0
         self._active_condition: asyncio.Condition | None = None
         self._workers: list[asyncio.Task] = []
         self._worker_errors: list[BaseException] = []
         self._batch_sequence = 0
+        self._enqueued_at: dict[int, float] = {}
 
     def run(self) -> None:
         asyncio.run(self.arun())
@@ -93,6 +95,7 @@ class WindowedScheduler:
         self._workers = []
         self._worker_errors = []
         self._batch_sequence = 0
+        self._enqueued_at = {}
 
         for priority, node in enumerate(topological_nodes(self.graph)):
             self._workers.append(asyncio.create_task(self._worker(node, 0, priority), name=f"{node.id}:0"))
@@ -126,6 +129,7 @@ class WindowedScheduler:
             raise RuntimeError("Scheduler is not running")
         async with self._active_condition:
             self._active_tasks += 1
+        self._enqueued_at[id(task)] = perf_counter()
         await self.queues[node_id].put(task)
         await self.events.task_enqueued(node_id, task, self.queues[node_id].qsize())
 
@@ -168,22 +172,43 @@ class WindowedScheduler:
                 while batches:
                     batch = batches.pop(0)
                     batch_index = self._next_batch_index()
+                    batch_started_at = perf_counter()
+                    queue_wait_ms = sum(batch_started_at - self._enqueued_at[id(task)] for task in batch) * 1000 / len(batch)
+                    await self.events.batch_started(node, worker_index, batch_index, batch, queue_wait_ms)
+                    resource_wait_started_at = perf_counter()
                     async with self.resource_pool.lease(resource_policy, resource_priority):
+                        resource_wait_ms = (perf_counter() - resource_wait_started_at) * 1000
                         self.context.check_cancel()
+                        load_started_at = perf_counter()
                         await self.load_node(node.id)
+                        load_ms = (perf_counter() - load_started_at) * 1000
                         self.context.check_cancel()
                         node.logger.info("batch starting worker=%s batch=%s size=%s", worker_index, batch_index, len(batch))
-                        await self.events.batch_started(node, worker_index, batch_index, batch)
+                        execute_started_at = perf_counter()
                         outputs = await self._execute_node(node, [task.inputs for task in batch])
+                        execute_ms = (perf_counter() - execute_started_at) * 1000
                         self.context.check_cancel()
                         if node.IS_INPUT:
                             await self.events.input_items_remaining(node, node.remaining_items(self.context))
+                        unload_started_at = perf_counter()
                         if resource_policy.unload_after_stage and not resource_policy.keep_loaded:
                             await self.unload_node(node.id)
-                    await self.events.batch_completed(node, worker_index, batch_index, batch, outputs)
+                        unload_ms = (perf_counter() - unload_started_at) * 1000
+                    route_started_at = perf_counter()
+                    await self.output_router.route(node, batch, outputs, batch_index)
+                    route_ms = (perf_counter() - route_started_at) * 1000
+                    timings = {
+                        "queue_wait_ms": queue_wait_ms,
+                        "resource_wait_ms": resource_wait_ms,
+                        "load_ms": load_ms,
+                        "execute_ms": execute_ms,
+                        "unload_ms": unload_ms,
+                        "route_ms": route_ms,
+                        "total_ms": (perf_counter() - batch_started_at) * 1000,
+                    }
+                    await self.events.batch_completed(node, worker_index, batch_index, batch, outputs, timings)
                     node.logger.info("batch completed worker=%s batch=%s input_items=%s output_items=%s", worker_index, batch_index, len(batch), len(outputs))
                     self.context.check_cancel()
-                    await self._route_outputs(node, batch, outputs, batch_index)
                     if node.IS_INPUT and node.remaining_items(self.context) > 0:
                         await self._enqueue_input(node)
             except Exception as error:
@@ -192,7 +217,8 @@ class WindowedScheduler:
                 await self._record_worker_error(error)
                 raise
             finally:
-                for _ in consumed_tasks:
+                for task in consumed_tasks:
+                    self._enqueued_at.pop(id(task))
                     queue.task_done()
                     await self._mark_task_done()
 
@@ -234,73 +260,3 @@ class WindowedScheduler:
                 lineage_id=f"input:{node.id}:{self.context.window_index}",
             ),
         )
-
-    async def _route_outputs(
-        self,
-        node: Node,
-        batch: list[Task],
-        outputs: list[dict[str, Any]],
-        batch_index: int,
-    ) -> None:
-        self.context.check_cancel()
-        if len(outputs) == len(batch):
-            task_for_output = batch
-        elif len(batch) == 1:
-            task_for_output = [batch[0] for _ in outputs]
-        else:
-            raise ValueError(
-                f"{node.id} returned {len(outputs)} output item(s) for batch size {len(batch)}"
-            )
-
-        for task, output_dict in zip(task_for_output, outputs):
-            for port_name, value in output_dict.items():
-                if port_name == "__progress__":
-                    self.context.check_cancel()
-                    await self.events.node_progress(node, value, batch_index)
-                    continue
-                if port_name not in node.OUTPUTS:
-                    raise KeyError(f"{node.id} returned undeclared output port: {port_name}")
-
-                port = node.OUTPUTS[port_name]
-                for item in output_values(node, port_name, port, value):
-                    self.context.check_cancel()
-                    packet = Packet(
-                        node_id=node.id,
-                        port=port_name,
-                        dtype=port.TYPE_NAME,
-                        value=item,
-                        lineage_id=lineage_from_value(item, inherited=task.lineage_id),
-                        metadata={**task.metadata, **metadata_from_value(item)},
-                    )
-                    await self.events.packet_created(packet, batch_index)
-                    await self._deliver_packet(packet)
-
-    async def _deliver_packet(self, packet: Packet) -> None:
-        self.context.check_cancel()
-        for edge in self.graph.outgoing_edges(packet.node_id):
-            if edge.source.port != packet.port:
-                continue
-
-            target_node = self.graph.nodes[edge.target.node_id]
-            target_port = edge.target.port
-            await self.events.packet_delivered(packet, target_node, target_port)
-
-            if can_create_single_input_task(target_node):
-                await self._enqueue(
-                    target_node.id,
-                    Task(
-                        node_id=target_node.id,
-                        inputs={target_port: packet.value},
-                        input_packets={target_port: packet},
-                        lineage_id=packet.lineage_id,
-                        metadata=packet.metadata,
-                    ),
-                )
-                continue
-
-            tasks = add_to_join_buffer(target_node, target_port, packet, self.join_buffers)
-            if not tasks:
-                await self.events.join_waiting(target_node, target_port, packet)
-            for task in tasks:
-                await self.events.join_ready(task)
-                await self._enqueue(target_node.id, task)

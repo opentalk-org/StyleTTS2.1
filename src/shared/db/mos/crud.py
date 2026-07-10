@@ -13,6 +13,8 @@ from shared.db.audio.models import AudioFile
 from shared.db.datasets.models import dataset_audio_files
 from shared.db.mos.models import MosComparison
 from shared.db.mos.schemas import MosPair, MosRatingCreate, MosRatingUpdate
+from shared.db.mos.mutations import delete_rating as delete_rating_mutation
+from shared.db.mos.mutations import update_rating as update_rating_mutation
 
 
 def sample_pair(session: Session, dataset_ids: Sequence[uuid.UUID]) -> MosPair:
@@ -131,63 +133,16 @@ def comparison_audio_files(
     return {item.id: item for item in session.execute(statement).unique().scalars().all()}
 
 
-def latest_comparison_id(session: Session) -> uuid.UUID | None:
-    comparison = _latest_comparison(session)
-    return comparison.id if comparison is not None else None
-
-
 def update_latest_rating(
     session: Session,
     comparison_id: uuid.UUID,
     payload: MosRatingUpdate,
 ) -> MosComparison:
-    comparison = _require_latest_comparison(session, comparison_id)
-    if payload.preferred_audio_id not in (comparison.audio_a_id, comparison.audio_b_id):
-        raise ValueError("MOS preferred audio must be a member of the pair")
-    audio_a = audio_crud.get_audio_file(session, comparison.audio_a_id)
-    audio_b = audio_crud.get_audio_file(session, comparison.audio_b_id)
-    comparison.preferred_audio_id = payload.preferred_audio_id
-    comparison.score_a = payload.score_a
-    comparison.score_b = payload.score_b
-    updated_at = datetime.now(UTC)
-    audio_a.score = payload.score_a
-    audio_a.updated_at = updated_at
-    audio_b.score = payload.score_b
-    audio_b.updated_at = updated_at
-    session.commit()
-    session.refresh(comparison)
-    return comparison
+    return update_rating_mutation(session, comparison_id, payload)
 
 
 def undo_latest_rating(session: Session, comparison_id: uuid.UUID) -> None:
-    comparison = _require_latest_comparison(session, comparison_id)
-    audio_a = audio_crud.get_audio_file(session, comparison.audio_a_id)
-    audio_b = audio_crud.get_audio_file(session, comparison.audio_b_id)
-    updated_at = datetime.now(UTC)
-    audio_a.score = comparison.previous_score_a
-    audio_a.updated_at = updated_at
-    audio_b.score = comparison.previous_score_b
-    audio_b.updated_at = updated_at
-    session.delete(comparison)
-    session.commit()
-
-
-def _require_latest_comparison(session: Session, comparison_id: uuid.UUID) -> MosComparison:
-    comparison = _latest_comparison(session)
-    if comparison is None:
-        raise KeyError("MOS comparison history is empty")
-    if comparison.id != comparison_id:
-        raise ValueError("only the newest MOS comparison can be changed or undone")
-    return comparison
-
-
-def _latest_comparison(session: Session) -> MosComparison | None:
-    statement = (
-        select(MosComparison)
-        .order_by(MosComparison.created_at.desc(), MosComparison.id.desc())
-        .limit(1)
-    )
-    return session.execute(statement).scalar_one_or_none()
+    delete_rating_mutation(session, comparison_id)
 
 
 def _eligible_dataset_ids(session: Session, dataset_ids: list[uuid.UUID]) -> list[uuid.UUID]:

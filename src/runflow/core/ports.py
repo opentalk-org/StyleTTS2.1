@@ -34,7 +34,6 @@ class Port:
     optional: bool = False
     default: Any = None
 
-    # Per-type identity — set on each subclass, never a constructor arg.
     TYPE_NAME: ClassVar[str] = "ANY"
     python_type: ClassVar[type | tuple[type, ...]] = object
     color: ClassVar[str] = "#999999"
