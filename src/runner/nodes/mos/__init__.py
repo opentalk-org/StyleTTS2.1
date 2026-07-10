@@ -1,5 +1,6 @@
 from runner.nodes.mos.audio import MosInputs, decode_audio_bytes, prepare_audio_batch
 from runner.nodes.mos.loss import MosLoss, mos_pair_loss
+from runner.nodes.mos.inference import PredictMosScoreNode
 from runner.nodes.mos.manifest import MosManifestRow, build_mos_training_manifest
 from runner.nodes.mos.model import (
     MosCheckpointConfig,
@@ -17,6 +18,7 @@ __all__ = [
     "MosLoss",
     "MosModelBundle",
     "MosRegressor",
+    "PredictMosScoreNode",
     "MosManifestRow",
     "BuildMosTrainingManifestNode",
     "MosModelTrainingNode",

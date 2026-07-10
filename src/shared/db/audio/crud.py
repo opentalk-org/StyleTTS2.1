@@ -21,6 +21,7 @@ from shared.db.audio.pack_crud import (
 from shared.db.audio.pack_prune import prune_fragmented_audio_packs
 from shared.db.audio.pack_store import AudioPackConfig, ObjectStore
 from shared.db.audio.schemas import AudioBucketLocation, AudioCreate, AudioPartRead, AudioUpdate
+from shared.db.audio.scores_crud import bulk_update_audio_scores
 from shared.db.audio.segments_crud import (
     create_segment,
     delete_segment,
