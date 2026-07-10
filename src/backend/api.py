@@ -14,6 +14,7 @@ from backend.audio import router as audio_router
 from backend.audio.api import waveform_service
 from backend.checkpoints import router as checkpoints_router
 from backend.jobs import router as jobs_router
+from backend.mos import router as mos_router
 from backend.runners import router as runners_router
 from backend.settings import router as settings_router
 from backend.statistics import router as statistics_router
@@ -78,6 +79,7 @@ app.include_router(audio_router)
 app.include_router(artifacts_router)
 app.include_router(checkpoints_router)
 app.include_router(jobs_router)
+app.include_router(mos_router)
 app.include_router(runners_router)
 app.include_router(settings_router)
 app.include_router(statistics_router)

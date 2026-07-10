@@ -16,6 +16,7 @@ from shared.db.audio import models as audio_models
 from shared.db.datasets import models as dataset_models
 from shared.db.initialization import models as initialization_models
 from shared.db.jobs import models as job_models
+from shared.db.mos import models as mos_models
 from shared.db.runners import models as runner_models
 from shared.db.settings import models as settings_models
 from shared.db.statistics import models as statistics_models
