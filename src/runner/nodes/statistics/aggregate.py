@@ -20,10 +20,13 @@ class AggregateStatisticsSettings(StrictSettings):
     text_min_chars: int = Field(default=5, ge=0, le=10_000)
     text_max_chars: int = Field(default=500, ge=1, le=100_000)
     text_warnings_limit: int = Field(default=50, ge=1, le=1000)
+    rate_scatter_points: int = Field(default=800, ge=100, le=5000)
+    inter_word_silence_max_seconds: float = Field(default=1.0, ge=0.1, le=10.0)
 
 
 class AggregateDatasetStatisticsNode(Node):
     NODE_TYPE = "AggregateDatasetStatistics"
+    DESCRIPTION = "Roll up per-file audio feature records (and their speech segments) into a single dataset statistics summary. Produces counts, durations, speaker and voice breakdowns, histograms of loudness, silence and clipping, character and phoneme n-gram distributions, speaking-rate scatter data, and text-length warnings. Wire the feature records from the audio analysis node here to build the payload shown on the statistics dashboard."
     CATEGORY = "Audio"
     SETTINGS = AggregateStatisticsSettings
     INPUTS = {
@@ -74,6 +77,11 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
     speaker_seconds: Counter[str] = Counter()
     speaker_chars: Counter[str] = Counter()
     speaker_phonemes: Counter[str] = Counter()
+    speaker_samples: Counter[str] = Counter()
+    voice_samples: Counter[str] = Counter()
+    words_per_second: list[list[float]] = []
+    chars_per_second: list[list[float]] = []
+    inter_word_silences: list[float] = []
     corpus_text: list[str] = []
     corpus_phon: list[str] = []
     for segment in segment_records:
@@ -81,14 +89,26 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
         text = _string_value(segment, "text")
         phon = _segment_phon(segment)
         speaker = _segment_speaker(segment)
+        voice_id = str(segment.get("voice_id") or "")
         duration = _segment_duration(segment)
         text_by_file.setdefault(audio_id, []).append(text)
         phon_by_file.setdefault(audio_id, []).append(phon)
         corpus_text.append(text)
         corpus_phon.append(phon)
+        inter_word_silences.extend(_inter_word_silences(segment, settings.inter_word_silence_max_seconds))
         speaker_seconds[speaker] += duration
         speaker_chars[speaker] += len(text)
         speaker_phonemes[speaker] += len(phon)
+        speaker_samples[speaker] += 1
+        if voice_id:
+            voice_samples[voice_id] += 1
+        if duration > 0.0:
+            words = int(segment.get("word_count", len(text.split())))
+            chars = len(text)
+            # Each row is [duration, rate, total] so the frontend can plot rate against either
+            # clip duration or the total word/char count from the same sampled points.
+            words_per_second.append([duration, words / duration, float(words)])
+            chars_per_second.append([duration, chars / duration, float(chars)])
     durations = [_float_value(item, "duration") for item in feature_records]
     char_counts = [sum(len(part) for part in text_by_file[audio_id]) for audio_id in file_ids]
     phoneme_counts = [sum(len(part) for part in phon_by_file[audio_id]) for audio_id in file_ids]
@@ -97,12 +117,13 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
     phonemes_available = any(part for parts in phon_by_file.values() for part in parts)
     text_warnings = _text_length_warnings(file_ids, name_by_file, char_counts, settings)
     return {
-        "version": 9,
+        "version": 12,
         "params": {
             "histogram_bins": settings.histogram_bins,
             "silence_threshold_db": settings.silence_threshold_db,
             "text_min_chars": settings.text_min_chars,
             "text_max_chars": settings.text_max_chars,
+            "inter_word_silence_max_seconds": settings.inter_word_silence_max_seconds,
         },
         "audio_file_ids": file_ids,
         "file_count": len(feature_records),
@@ -129,6 +150,11 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
         "speaker_duration_seconds": _counter_pairs(speaker_seconds),
         "speaker_char_count": _counter_pairs(speaker_chars),
         "speaker_phoneme_count": _counter_pairs(speaker_phonemes),
+        "speaker_sample_count": _counter_pairs(speaker_samples),
+        "voice_sample_count": _counter_pairs(voice_samples),
+        "words_per_second_scatter": _downsample_scatter(words_per_second, settings.rate_scatter_points),
+        "chars_per_second_scatter": _downsample_scatter(chars_per_second, settings.rate_scatter_points),
+        "inter_word_silence_seconds_histogram": histogram_counts(inter_word_silences, settings.histogram_bins, (0.0, settings.inter_word_silence_max_seconds)),
         "rms_db_histogram": pooled_histogram(feature_records, "rms_db", settings.histogram_bins, (-100.0, 0.0), clip=True),
         "frame_value_min_histogram": pooled_histogram(feature_records, "frame_value_min", settings.histogram_bins, (-1.0, 1.0)),
         "frame_value_max_histogram": pooled_histogram(feature_records, "frame_value_max", settings.histogram_bins, (-1.0, 1.0)),
@@ -287,6 +313,19 @@ def _segment_speaker(segment: dict[str, Any]) -> str:
     return "-"
 
 
+def _inter_word_silences(segment: dict[str, Any], max_seconds: float) -> list[float]:
+    # Silence between consecutive aligned words within a segment: gap = next.start - current.end.
+    # Overlaps clamp to 0 and long pauses clamp to max_seconds so the histogram's fixed range
+    # captures the whole tail in its final bin instead of dropping it.
+    times = segment.get("word_times") or []
+    ordered = sorted(times, key=lambda pair: float(pair[0]))
+    gaps: list[float] = []
+    for previous, current in zip(ordered, ordered[1:]):
+        gap = float(current[0]) - float(previous[1])
+        gaps.append(min(max(gap, 0.0), max_seconds))
+    return gaps
+
+
 def _segment_duration(segment: dict[str, Any]) -> float:
     if "duration" in segment:
         return max(0.0, float(segment["duration"]))
@@ -297,6 +336,16 @@ def _segment_duration(segment: dict[str, Any]) -> float:
 
 def _counter_pairs(counter: Counter[str]) -> list[list[Any]]:
     return [[key, value] for key, value in sorted(counter.items(), key=lambda item: (-item[1], item[0]))]
+
+
+def _downsample_scatter(points: list[list[float]], target: int) -> list[list[float]]:
+    # Even-stride subsample so the scatter stays readable and payloads stay small on large
+    # datasets. Deterministic (no RNG) so recomputing the same dataset yields the same plot.
+    # Rows are kept whole (any width) so callers can project several axes from one sample.
+    if len(points) <= target:
+        return [[round(value, 4) for value in row] for row in points]
+    stride = len(points) / target
+    return [[round(value, 4) for value in points[int(index * stride)]] for index in range(target)]
 
 
 def _text_length_warnings(

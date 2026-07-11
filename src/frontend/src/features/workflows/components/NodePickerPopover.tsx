@@ -23,7 +23,7 @@ function groupedNodes(schema: WorkflowSchema, query: string): NodeCategoryGroup[
   const normalized = query.trim().toLowerCase();
   const grouped: Record<string, WorkflowNodeSchema[]> = {};
   Object.values(schema.nodes).forEach((node) => {
-    const haystack = `${node.type} ${node.category}`.toLowerCase();
+    const haystack = `${node.type} ${node.category} ${node.description}`.toLowerCase();
     if (normalized && !haystack.includes(normalized)) return;
     const nodes = grouped[node.category] ?? [];
     nodes.push(node);
@@ -169,6 +169,7 @@ function NodeCategory({
           <button
             key={node.type}
             type="button"
+            title={node.description}
             onClick={() => {
               const x = graphPosition?.graphX ?? 80 + graph.nodes.length * 24;
               const y = graphPosition?.graphY ?? 120 + graph.nodes.length * 12;

@@ -59,12 +59,30 @@ export function WorkflowInspector() {
   if (!info) throw new Error(`Unknown node type: ${node.type}`);
   const snapshot = nodeSnapshot(activeRunId ? snapshots[activeRunId] : undefined, node.id);
   const update = (patch: Partial<typeof node>) => patchNode(node.id, patch);
+  const downloadLog = () => {
+    if (!log?.content) return;
+    const blob = new Blob([log.content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${node.id}-${activeRunId ?? "run"}.log`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <InspectorShell title={`${node.id} · ${node.type}`} onClose={closeInspector}>
-      <Tabs value={inspectorTab} onChange={(tab) => setInspectorTab(tab as InspectorTab)} options={INSPECTOR_TABS} />
+      <div className="flex items-center justify-between gap-3">
+        <Tabs value={inspectorTab} onChange={(tab) => setInspectorTab(tab as InspectorTab)} options={INSPECTOR_TABS} />
+        {inspectorTab === "logs" ? (
+          <Button variant="secondary" icon="download" disabled={!log?.content} onClick={downloadLog}>Download logs</Button>
+        ) : null}
+      </div>
       {inspectorTab === "settings" ? (
         <div className="flex min-w-0 flex-col gap-3.5">
+          {info.description ? (
+            <p className="text-[12px] leading-relaxed text-txt-dim">{info.description}</p>
+          ) : null}
           <FormSection title="Node identity" tag="Node">
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3.5">
               <Field label="Node id">

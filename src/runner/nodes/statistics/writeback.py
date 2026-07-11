@@ -22,6 +22,7 @@ class SaveStatisticsEntrySettings(StrictSettings):
 
 class SaveStatisticsEntryNode(Node):
     NODE_TYPE = "SaveStatisticsEntry"
+    DESCRIPTION = "Persist a computed statistics payload to the database as a named statistics entry and pass the saved record on. Give it a name, optionally tag it with a dataset, and attach extra metadata in the settings. Wire the output of the dataset statistics aggregator here so the results are stored and can be browsed later."
     CATEGORY = "Audio"
     SETTINGS = SaveStatisticsEntrySettings
     INPUTS = {"statistics": JsonPort()}

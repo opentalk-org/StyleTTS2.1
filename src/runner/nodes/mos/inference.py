@@ -26,6 +26,7 @@ class PredictMosScoreSettings(StrictSettings):
 
 class PredictMosScoreNode(Node):
     NODE_TYPE = "PredictMosScore"
+    DESCRIPTION = "Predict a MOS (mean opinion score) quality rating for each incoming audio clip using a trained MOS model checkpoint. Takes a MOS-model checkpoint and audio, writes the predicted scores back to each audio file in the database, and passes the audio through unchanged alongside a writeback result carrying the score. Use it to automatically rate the perceived quality of generated or recorded speech."
     CATEGORY = "Audio"
     SETTINGS = PredictMosScoreSettings
     INPUTS = {

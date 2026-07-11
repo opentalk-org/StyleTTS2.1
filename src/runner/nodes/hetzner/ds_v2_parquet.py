@@ -75,6 +75,7 @@ class HetznerDsV2ParquetAudioSourceSettings(StrictSettings):
 
 class HetznerDsV2ParquetAudioSourceNode(Node):
     NODE_TYPE = "HetznerDsV2ParquetAudioSource"
+    DESCRIPTION = "Import pre-chunked audio from a ds_v2 parquet dataset on a Hetzner storage box or a local file, streaming out one audio item per row with its transcript segments. Emits WAV audio plus segments from every available transcript source (src, Whisper, Parakeet, Canary, with word timestamps and MOS scores), and can create voice entries from speaker IDs. Choose the source, rows to import, and preferred transcript column; use it as an input node to feed the ds_v2 corpus into a workflow."
     CATEGORY = "Inputs"
     SETTINGS = HetznerDsV2ParquetAudioSourceSettings
     IS_INPUT = True
@@ -269,6 +270,8 @@ def _transcript_segment(
     column: str,
 ) -> AudioSegment:
     text = _string_or_none(row.get(column)) or ""
+    timestamps = _json_or_text(row.get("text_timestamps")) if column == "text_parakeet" else None
+    alignment = _alignment_from_timestamps(timestamps, duration, _window_start(row))
     return AudioSegment(
         source_audio_id=audio_file_id,
         name=name,
@@ -289,8 +292,9 @@ def _transcript_segment(
             "model": source,
             "text_column": column,
             "preferred_text_column": settings.text_column,
-            "text_timestamps": _json_or_text(row.get("text_timestamps")) if column == "text_parakeet" else None,
+            "text_timestamps": timestamps,
         },
+        alignment=alignment,
     )
 
 
@@ -413,6 +417,58 @@ def _json_or_text(value: Any) -> Any:
         return json.loads(stripped)
     except json.JSONDecodeError:
         return stripped
+
+
+def _window_start(row: dict[str, Any]) -> float:
+    """Offset (seconds) of this row's audio inside its parent chunk.
+
+    ``text_timestamps`` word times are chunk-relative, but the emitted WAV is a single
+    speaker sample cut from that chunk starting at ``sample_start``; the chunk itself
+    starts at ``chunk_start``. Their difference is where the sample begins inside the
+    chunk, which is what rebases the alignment onto the audio we emit. When either offset
+    is absent there is no chunk frame to rebase against, so the timestamps are already
+    audio-local and the offset is zero.
+    """
+    chunk_start = _float_or_none(row.get("chunk_start"))
+    sample_start = _float_or_none(row.get("sample_start"))
+    if chunk_start is None or sample_start is None:
+        return 0.0
+    return sample_start - chunk_start
+
+
+def _alignment_from_timestamps(timestamps: Any, duration: float, window_start: float) -> list[dict[str, Any]] | None:
+    """Convert ds_v2 parakeet ``text_timestamps`` into the canonical word-alignment shape.
+
+    The timestamps align the whole parent chunk, but this row's audio is only the sample
+    span ``[window_start, window_start + duration]`` of that chunk. Each word is shifted by
+    ``window_start`` and any word falling outside the sample is dropped, so the alignment
+    matches the start and end of the audio actually emitted for this row.
+
+    Each entry becomes ``{"word", "start", "end"}`` (no per-word score — segments carry a
+    single mean ``confidence``). Returns ``None`` when there are no usable words.
+    """
+    if isinstance(timestamps, dict):
+        timestamps = timestamps.get("word")
+    if not isinstance(timestamps, list):
+        return None
+    limit = duration if duration and duration > 0 else None
+    alignment: list[dict[str, Any]] = []
+    for item in timestamps:
+        if not isinstance(item, dict):
+            continue
+        word = str(item.get("word", "")).strip()
+        if not word:
+            continue
+        shifted_start = float(item.get("start", 0.0)) - window_start
+        shifted_end = float(item.get("end", item.get("start", 0.0))) - window_start
+        if limit is not None and (shifted_start >= limit or shifted_end <= 0.0):
+            continue
+        start = max(0.0, shifted_start)
+        end = max(start, shifted_end)
+        if limit is not None:
+            end = min(end, limit)
+        alignment.append({"word": word, "start": start, "end": end})
+    return alignment or None
 
 
 def _string_or_none(value: Any) -> str | None:

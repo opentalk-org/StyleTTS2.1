@@ -64,6 +64,7 @@ class StyleTtsFinetuneSettings(StrictSettings):
 
 class StyleTtsFinetuneNode(Node):
     NODE_TYPE = "StyleTtsFinetune"
+    DESCRIPTION = "Finetune a StyleTTS2 voice model on your dataset, running the base, diffusion, and joint training stages and publishing a checkpoint per saved epoch. Consumes a training manifest, a base checkpoint to start from, and an asset bundle (ASR, F0, PL-BERT, and OOD text), and produces a training result pointing at the latest published epoch checkpoint. This is the main text-to-speech training step; tune epochs, batch size, precision, and decoder to trade quality against speed and memory."
     CATEGORY = "Training"
     SETTINGS = StyleTtsFinetuneSettings
     INPUTS = {

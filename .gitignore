@@ -19,3 +19,4 @@ dist/
 !*.env.example
 result
 result-*
+*.wav

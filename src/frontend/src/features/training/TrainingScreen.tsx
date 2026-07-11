@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import { Tabs } from "@/shared/ui/Tabs";
 import { useWorkflowSchemaQuery } from "../workflows/query";
@@ -16,23 +16,18 @@ import type { TrainTab } from "./store";
 export function TrainingScreen() {
   const trainTab = useTraining((s) => s.trainTab);
   const setTrainTab = useTraining((s) => s.setTrainTab);
+  const graph = useTraining((s) => s.graphsByTab[trainTab]);
+  const ensureGraph = useTraining((s) => s.ensureGraph);
+  const setGraph = useTraining((s) => s.setGraph);
   const schemaQuery = useWorkflowSchemaQuery();
-  const [graphsByTab, setGraphsByTab] = useState<Partial<Record<TrainTab, WorkflowGraph>>>({});
   const spec = TRAINING_WORKFLOWS[trainTab];
 
   useEffect(() => {
     if (!schemaQuery.data) return;
-    setGraphsByTab((current) => {
-      if (current[trainTab]) return current;
-      return { ...current, [trainTab]: createTrainingGraph(schemaQuery.data, spec) };
-    });
-  }, [schemaQuery.data, spec, trainTab]);
+    ensureGraph(trainTab, createTrainingGraph(schemaQuery.data, spec));
+  }, [schemaQuery.data, spec, trainTab, ensureGraph]);
 
-  const updateGraph = (graph: WorkflowGraph) => {
-    setGraphsByTab((current) => ({ ...current, [trainTab]: graph }));
-  };
-
-  const graph = graphsByTab[trainTab];
+  const updateGraph = (next: WorkflowGraph) => setGraph(trainTab, next);
 
   return (
     <div className="mx-auto max-w-[1180px] px-7 pt-6 pb-[120px]">

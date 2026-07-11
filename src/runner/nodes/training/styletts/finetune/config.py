@@ -36,7 +36,7 @@ def build_config(
     cache_dir: str,
     bucket_cache_budget_bytes: int,
     ood_texts: str,
-    pretrained_model: Path,
+    pretrained_model: Path | None,
     asr_config: dict[str, Any],
     asr_path: Path | None,
     f0_path: Path | None,
@@ -82,7 +82,7 @@ def build_config(
         "cache_dir": cache_dir,
         "bucket_cache_budget_bytes": int(bucket_cache_budget_bytes),
     }
-    config["pretrained_model"] = str(pretrained_model.resolve())
+    config["pretrained_model"] = _path_str(pretrained_model)
     config["ASR_config"] = asr_config
     config["ASR_path"] = _path_str(asr_path)
     config["F0_path"] = _path_str(f0_path)

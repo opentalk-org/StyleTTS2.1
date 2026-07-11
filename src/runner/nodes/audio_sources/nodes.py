@@ -29,6 +29,7 @@ class AudioSourceSettings(StrictSettings):
 
 class AudioSourceNode(Node):
     NODE_TYPE = "AudioSource"
+    DESCRIPTION = "Load existing audio files from the library and stream them into a workflow. Produces a stream of audio references with no inputs; choose whether to emit a hand-picked selection, everything in a dataset, or all files, optionally including virtual files and capping the count with a limit. Use it as the starting point for pipelines that process stored audio."
     CATEGORY = "Inputs"
     SETTINGS = AudioSourceSettings
     IS_INPUT = True

@@ -8,7 +8,7 @@ from pydantic import Field
 from runflow.core.node import Node
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.assets.checkpoints import resolve_checkpoint_ref
+from runner.nodes.assets.checkpoints import SCRATCH_CHECKPOINT_ID, resolve_checkpoint_ref, scratch_checkpoint_ref
 from runner.nodes.assets.training_assets import resolve_training_asset_bundle
 from runner.nodes.datatypes import AssetBundlePort, CheckpointRefPort, JsonPort
 from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
@@ -66,6 +66,7 @@ class ListDatasetAudioIdsSettings(StrictSettings):
 
 class TrainingRunInputNode(Node):
     NODE_TYPE = "TrainingRunInput"
+    DESCRIPTION = "Start a training workflow by emitting a single run token that downstream training nodes consume. Takes no inputs and outputs one run object that seeds the rest of the graph. Place this as the entry point of any training workflow."
     CATEGORY = "Training"
     IS_INPUT = True
     INPUTS = {}
@@ -87,6 +88,7 @@ class TrainingRunInputNode(Node):
 
 class SelectTrainingDatasetNode(Node):
     NODE_TYPE = "SelectTrainingDataset"
+    DESCRIPTION = "Pick which stored dataset to train on. Consumes a run token and outputs a reference to the chosen dataset for downstream nodes. Set the training dataset in this node's settings; feed its output into the node that lists dataset audio."
     CATEGORY = "Training"
     SETTINGS = SelectTrainingDatasetSettings
     INPUTS = {"run": JsonPort()}
@@ -112,6 +114,7 @@ class SelectTrainingDatasetNode(Node):
 
 class SelectCheckpointNode(Node):
     NODE_TYPE = "SelectCheckpoint"
+    DESCRIPTION = "Pick a stored checkpoint to use as the starting point for training. Consumes a run token and outputs a checkpoint reference. Wire its output into training and manifest nodes that need a base checkpoint to finetune from."
     CATEGORY = "Inputs"
     SETTINGS = SelectCheckpointSettings
     INPUTS = {"run": JsonPort()}
@@ -121,11 +124,14 @@ class SelectCheckpointNode(Node):
     async def execute(self, batch, context):
         if not self.settings.checkpoint_id:
             raise ValueError("SelectCheckpoint requires checkpoint_id")
+        if self.settings.checkpoint_id == SCRATCH_CHECKPOINT_ID:
+            return [{"checkpoint": scratch_checkpoint_ref()} for _inputs in batch]
         return [{"checkpoint": resolve_checkpoint_ref(self.settings.checkpoint_id)} for _inputs in batch]
 
 
 class SelectTrainingAssetsNode(Node):
     NODE_TYPE = "SelectTrainingAssets"
+    DESCRIPTION = "Choose the auxiliary models and text sets required for StyleTTS finetuning: the ASR model, F0 model, PL-BERT model, and out-of-distribution text sets. Consumes a run token and outputs a bundle of these assets. Feed its output into StyleTTS finetuning, which needs all of these to train."
     CATEGORY = "Training"
     SETTINGS = SelectTrainingAssetsSettings
     INPUTS = {"run": JsonPort()}
@@ -148,6 +154,7 @@ class SelectTrainingAssetsNode(Node):
 
 class PhonemeAlphabetNode(Node):
     NODE_TYPE = "PhonemeAlphabet"
+    DESCRIPTION = "Define the phoneme symbol set used for training. Consumes a run token and outputs the resolved list of symbols. Pick a preset (such as IPA or ARPABET) or provide custom symbols; feed the output into manifest building and ASR training so text is tokenized consistently."
     CATEGORY = "Inputs"
     SETTINGS = PhonemeAlphabetSettings
     INPUTS = {"run": JsonPort()}
@@ -172,6 +179,7 @@ class PhonemeAlphabetNode(Node):
 
 class ListDatasetAudioIdsNode(Node):
     NODE_TYPE = "ListDatasetAudioIds"
+    DESCRIPTION = "Expand a selected dataset into the list of audio file ids to train on. Consumes a dataset reference and outputs the audio file ids belonging to that dataset. Optionally include virtual audio files; feed the output into manifest building. Fails if the dataset has no matching audio."
     CATEGORY = "Training"
     SETTINGS = ListDatasetAudioIdsSettings
     INPUTS = {"dataset_ref": JsonPort()}

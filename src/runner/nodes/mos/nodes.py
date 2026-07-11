@@ -46,6 +46,7 @@ class MosModelTrainingSettings(StrictSettings):
 
 class BuildMosTrainingManifestNode(Node):
     NODE_TYPE = "BuildMosTrainingManifest"
+    DESCRIPTION = "Assemble a training manifest for MOS-model training from a dataset reference and a checkpoint. It gathers the labelled audio for the dataset and builds train and validation splits (including a configurable number of validation comparison pairs), writing the manifest to disk. Feed its output into the MOS model training node."
     CATEGORY = "Training"
     SETTINGS = BuildMosTrainingManifestSettings
     INPUTS = {
@@ -76,6 +77,7 @@ class BuildMosTrainingManifestNode(Node):
 
 class MosModelTrainingNode(Node):
     NODE_TYPE = "MosModelTraining"
+    DESCRIPTION = "Fine-tune a MOS quality-prediction model from a base MOS checkpoint and a training manifest, producing a trained MOS-model checkpoint as a training result. Configure epochs, batch size, learning rate, and the comparison-loss weight in the settings, and optionally direct the output checkpoint to an external folder. Use it to train the model consumed by the MOS scoring node."
     CATEGORY = "Training"
     SETTINGS = MosModelTrainingSettings
     INPUTS = {

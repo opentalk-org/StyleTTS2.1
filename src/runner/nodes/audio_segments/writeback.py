@@ -27,6 +27,7 @@ class SaveAudioSegmentsSettings(StrictSettings):
 
 class SaveAudioRecordNode(Node):
     NODE_TYPE = "SaveAudioRecord"
+    DESCRIPTION = "Create a new audio record in the database from incoming audio bytes, storing its duration, score, language, and prompts. Takes audio and outputs the saved audio (now pointing at the stored record) plus a save result. Use it to persist freshly generated or imported clips as fresh records. Enable bulk import packs to batch many records into large storage packs for faster large imports, or mark records virtual."
     CATEGORY = "Audio"
     SETTINGS = SaveAudioRecordSettings
     INPUTS = {"audio": AudioPort()}
@@ -68,6 +69,7 @@ class SaveAudioRecordNode(Node):
 
 class UpdateAudioRecordBytesNode(Node):
     NODE_TYPE = "UpdateAudioRecordBytes"
+    DESCRIPTION = "Overwrite the stored audio of an existing record with new bytes while keeping its name, segments, and other fields. Takes audio referencing an existing record and outputs the updated audio plus a save result. Score, language, and prompts are refreshed from the incoming audio when present and otherwise left as they were. Use it to replace a record's waveform after processing steps like resampling or enhancement, without creating a new record."
     CATEGORY = "Audio"
     INPUTS = {"audio": AudioPort()}
     OUTPUTS = {"audio": AudioPort(), "save_result": SaveResultPort()}
@@ -102,6 +104,7 @@ class UpdateAudioRecordBytesNode(Node):
 
 class LoadAudioSegmentsNode(Node):
     NODE_TYPE = "LoadAudioSegments"
+    DESCRIPTION = "Load the saved segments for each audio record from the database and attach them to the passing audio. Takes audio referencing stored records and outputs the same audio with its segments replaced by whatever is persisted. Use it to bring existing transcripts, timings, and speaker labels back into a pipeline before further processing or splitting."
     CATEGORY = "Audio"
     INPUTS = {"audio": AudioPort()}
     OUTPUTS = {"audio": AudioPort()}
@@ -127,6 +130,7 @@ class LoadAudioSegmentsNode(Node):
 
 class SaveAudioSegmentsNode(Node):
     NODE_TYPE = "SaveAudioSegments"
+    DESCRIPTION = "Persist an audio record's segments (transcript, timings, speaker, and alignment) to the database. Takes audio with segments and outputs the same audio with the saved segments plus a save result. In replace mode the record's segments are overwritten; in append mode the new segments are added alongside existing ones and re-sorted. Use it to store transcription or alignment results back onto a record."
     CATEGORY = "Audio"
     SETTINGS = SaveAudioSegmentsSettings
     INPUTS = {"audio": AudioPort()}

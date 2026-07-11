@@ -42,6 +42,7 @@ class HetznerDsV1ParquetAudioSourceSettings(StrictSettings):
 
 class HetznerDsV1ParquetAudioSourceNode(Node):
     NODE_TYPE = "HetznerDsV1ParquetAudioSource"
+    DESCRIPTION = "Import audio from a ds_v1 parquet dataset (long recordings) stored on a Hetzner storage box or a local file, streaming out one audio item per row. Decodes the row's Opus audio to WAV and attaches all of the row's metadata columns. Choose the source, row offset, and how many rows to import; use it as an input node to feed the ds_v1 corpus into a workflow."
     CATEGORY = "Inputs"
     SETTINGS = HetznerDsV1ParquetAudioSourceSettings
     IS_INPUT = True

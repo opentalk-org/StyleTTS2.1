@@ -23,6 +23,7 @@ class AudioFeatureSettings(StrictSettings):
 
 class AnalyzeAudioFeaturesNode(Node):
     NODE_TYPE = "AnalyzeAudioFeatures"
+    DESCRIPTION = "Analyze each incoming audio clip and emit a per-file feature record covering duration, loudness (RMS in dB), silence ratio and intervals, clipping, and frame value ranges, along with its speech segments. Feed these records into the dataset statistics aggregator to build a corpus overview. Use it to inspect audio quality across a dataset."
     CATEGORY = "Audio"
     SETTINGS = AudioFeatureSettings
     INPUTS = {"audio": AudioPort()}

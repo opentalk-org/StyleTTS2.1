@@ -32,6 +32,7 @@ class CatalogDownloadSettings(StrictSettings):
 
 class CatalogDownloadNode(Node):
     NODE_TYPE = "CatalogDownload"
+    DESCRIPTION = "Download a named asset from a built-in catalog (StyleTTS2 utilities, official checkpoints, PL-BERT, ASR/MOS/TTS models, etc.) so it is available locally. Pick a catalog and type the item you want; it emits the resolved catalog entry as JSON, plus a checkpoint reference when the item is a single checkpoint. Use it as a starting node to pull in pretrained weights and support assets before wiring them into downstream nodes."
     CATEGORY = "Assets"
     SETTINGS = CatalogDownloadSettings
     IS_INPUT = True

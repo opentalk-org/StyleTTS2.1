@@ -26,6 +26,7 @@ class PhonemizeSegmentsSettings(PhonemizeSettings):
 
 class PhonemizeSegmentsNode(Node):
     NODE_TYPE = "PhonemizeSegments"
+    DESCRIPTION = "Convert the text of each audio segment into eSpeak phonemes for the chosen language. Takes annotated audio and outputs the same audio with each segment's phoneme field populated; in fill mode only segments missing phonemes are processed, while replace mode re-phonemizes everything. Use it to prepare phoneme-level supervision for training or phoneme-based synthesis."
     CATEGORY = "Text"
     SETTINGS = PhonemizeSegmentsSettings
     INPUTS = {"audio": AudioPort()}

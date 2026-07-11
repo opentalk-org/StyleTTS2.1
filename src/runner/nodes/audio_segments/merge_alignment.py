@@ -19,15 +19,8 @@ class MergeAlignmentSettings(StrictSettings):
 
 
 class MergeAlignmentNode(Node):
-    """Merge the per-word alignment of two audios of the same recording.
-
-    Segments and text come from ``audio_a``; each segment's word alignment is the
-    best combination of A's own words and B's words falling in that segment. Words
-    are de-duplicated (same word at nearly the same time) keeping the higher-scored
-    one, so overlapping aligners contribute their best timings without doubling up.
-    """
-
     NODE_TYPE = "MergeAlignment"
+    DESCRIPTION = "Merge the per-word alignment of two versions of the same recording. Segments and text come from the first audio input; each segment's word timings are the best combination of its own words and the second input's words that fall within it. Duplicate words (the same word at nearly the same time) are collapsed, keeping the higher-scored one, so two aligners contribute their best timings without doubling up. Use it to combine the outputs of different aligners on one recording; tune the dedupe window to control how close two matching words must be to count as the same word."
     CATEGORY = "Audio"
     SETTINGS = MergeAlignmentSettings
     INPUTS = {"audio_a": AudioPort(), "audio_b": AudioPort()}

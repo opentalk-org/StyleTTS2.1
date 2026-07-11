@@ -46,6 +46,7 @@ class DiarizeSplitSpeakersSettings(StrictSettings):
 
 class DiarizeSplitSpeakersNode(Node):
     NODE_TYPE = "DiarizeSplitSpeakers"
+    DESCRIPTION = "Diarize an already-transcribed recording, assign a random voice per detected speaker, and split it into single-speaker clips. Takes audio with a transcript plus a diarization checkpoint and streams out one clip per run of speech, with clip durations following a normal distribution between the minimum and maximum segment lengths. Splits only happen at transcript boundaries that end on punctuation, so clips are never cut mid-word, and a speaker change always starts a new clip. Optionally creates named voice records for each speaker."
     CATEGORY = "Audio"
     SETTINGS = DiarizeSplitSpeakersSettings
     INPUTS = {

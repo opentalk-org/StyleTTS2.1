@@ -31,6 +31,7 @@ class PersistSplitAudioRecordsSettings(StrictSettings):
 
 class ExtractSegmentGroupAudioNode(Node):
     NODE_TYPE = "ExtractSegmentGroupAudio"
+    DESCRIPTION = "Cut out the slice of the original recording that a planned segment group spans and emit it as a standalone audio clip. Takes planned-group audio (referencing a source recording and a span), reads the source WAV from storage, and outputs a new clip trimmed to the group's start and end with its segment timings shifted to be clip-local. Use it after planning segment groups to turn each group into an independent audio file ready to be saved."
     CATEGORY = "Audio"
     INPUTS = {"audio": AudioPort()}
     OUTPUTS = {"audio": AudioPort()}
@@ -53,6 +54,7 @@ class ExtractSegmentGroupAudioNode(Node):
 
 class PersistSplitAudioRecordsNode(Node):
     NODE_TYPE = "PersistSplitAudioRecords"
+    DESCRIPTION = "Save each split audio clip as a new audio record in the database along with its segments, and optionally attach it to datasets. Takes an extracted clip and outputs the saved audio (now pointing at the stored record) plus a save result. In replace-all mode it can also detach or delete the original source record once all of its groups have been written. Use it as the final step of a split-and-persist pipeline; set the target and source datasets and whether records are virtual."
     CATEGORY = "Audio"
     SETTINGS = PersistSplitAudioRecordsSettings
     INPUTS = {"audio": AudioPort()}

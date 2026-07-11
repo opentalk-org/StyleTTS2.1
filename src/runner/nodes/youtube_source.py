@@ -74,16 +74,8 @@ class YouTubeAudioSourceSettings(StrictSettings):
 
 
 class YouTubeAudioSourceNode(Node):
-    """Download the audio track of one or more YouTube URLs as WAV.
-
-    Emits one Audio per URL with rich metadata sourced from yt-dlp (title, uploader,
-    channel, duration, language, view/like counts, tags, ...). Downloads run in
-    parallel (bounded by ``max_parallel``) with each start staggered by
-    ``stagger_seconds`` to avoid hammering the source; proxies, if given, are rotated
-    round-robin across the downloads.
-    """
-
     NODE_TYPE = "YouTubeAudioSource"
+    DESCRIPTION = "Download the audio track of one or more YouTube URLs as WAV and stream them into a workflow. Emits one audio clip per URL with rich metadata (title, uploader, channel, duration, language, view/like counts, tags), and can create voices from the uploader names. Downloads run in parallel with staggered starts and optional round-robin proxies to avoid hammering the source. Use it as a starting point to bring YouTube audio into a pipeline."
     CATEGORY = "Inputs"
     SETTINGS = YouTubeAudioSourceSettings
     IS_INPUT = True

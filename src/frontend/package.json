@@ -14,8 +14,10 @@
     "@tanstack/react-virtual": "latest",
     "clsx": "latest",
     "lucide-react": "latest",
+    "plotly.js": "^3.7.0",
     "react": "latest",
     "react-dom": "latest",
+    "react-plotly.js": "^4.0.0",
     "zustand": "latest"
   },
   "devDependencies": {
@@ -23,6 +25,7 @@
     "@types/node": "^26.1.0",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "@types/react-plotly.js": "^2.6.4",
     "@vitejs/plugin-react": "latest",
     "tailwindcss": "latest",
     "typescript": "latest",

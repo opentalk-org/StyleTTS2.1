@@ -13,6 +13,7 @@ export type WorkflowPort = {
 export type WorkflowNodeSchema = {
   type: string;
   category: string;
+  description: string;
   is_input: boolean;
   inputs: Record<string, WorkflowPort>;
   outputs: Record<string, WorkflowPort>;

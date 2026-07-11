@@ -12,8 +12,14 @@ type Popup = "library" | "nodes" | "settings" | "logs" | "performance" | null;
 
 export function WorkflowBottomBar() {
   const [popup, setPopup] = useState<Popup>(null);
-  const { addPanel, autoLayout, graph, viewport } = useWorkflowStore();
+  const { addPanel, autoLayout, graph, setGraph, viewport } = useWorkflowStore();
   const toggle = (next: Popup) => setPopup((current) => (current === next ? null : next));
+  const clearGraph = () => {
+    if (graph.nodes.length === 0) return;
+    if (!window.confirm("Remove all nodes from the workflow?")) return;
+    setGraph({ nodes: [], edges: [] });
+    setPopup(null);
+  };
   return (
     <div className="absolute bottom-4 left-4 z-10 flex gap-2 rounded-md border border-line bg-panel p-2 shadow-lg">
       <IconButton icon="folder-open" title="Load or save workflow" onClick={() => toggle("library")} />
@@ -23,6 +29,7 @@ export function WorkflowBottomBar() {
       <IconButton icon="settings" title="Runtime settings" onClick={() => toggle("settings")} />
       <IconButton icon="inbox" title="All node logs" disabled={graph.nodes.length === 0} onClick={() => toggle("logs")} />
       <IconButton icon="bar-chart" title="Node performance" disabled={graph.nodes.length === 0} onClick={() => toggle("performance")} />
+      <IconButton icon="trash" title="Clear workflow" danger disabled={graph.nodes.length === 0} onClick={clearGraph} />
       {popup === "library" ? <WorkflowLibraryPopover onClose={() => setPopup(null)} /> : null}
       {popup === "nodes" ? <NodePickerPopover onClose={() => setPopup(null)} /> : null}
       {popup === "settings" ? <RuntimeSettingsPopover /> : null}

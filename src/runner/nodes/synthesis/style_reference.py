@@ -34,6 +34,7 @@ class ResolveStyleReferenceSettings(StrictSettings):
 
 class ResolveStyleReferenceNode(Node):
     NODE_TYPE = "ResolveStyleReference"
+    DESCRIPTION = "Load a style reference clip and emit it as a style_reference for StyleTTS synthesis. Provide exactly one source: pick an existing audio file by id, or paste an inline WAV as base64. Outputs a single reference describing the voice/style to imitate; wire it into the synthesis node's style_reference input."
     CATEGORY = "Inputs"
     SETTINGS = ResolveStyleReferenceSettings
     IS_INPUT = True

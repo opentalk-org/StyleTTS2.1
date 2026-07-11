@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from uuid import UUID
 
 from pydantic import Field
@@ -11,6 +12,35 @@ from runner.nodes.datatypes import CheckpointRefPort
 from runner.nodes.models import CheckpointRef, stable_id
 from shared.db import database_session
 from shared.db.assets import crud as asset_crud
+
+
+# Sentinel selected in the base-checkpoint dropdown to train from random init
+# instead of resuming from a stored checkpoint. It is not a real UUID, so it must
+# never reach ``resolve_checkpoint_ref``; ``SelectCheckpoint`` maps it to
+# ``scratch_checkpoint_ref`` before any DB lookup.
+SCRATCH_CHECKPOINT_ID = "__scratch__"
+
+
+def is_scratch_checkpoint(ref: CheckpointRef) -> bool:
+    return bool(ref.metadata.get("scratch"))
+
+
+def scratch_checkpoint_ref() -> CheckpointRef:
+    """A checkpoint reference carrying no pretrained weights.
+
+    StyleTTS from-scratch training still relies on the auxiliary ASR/F0/PL-BERT
+    models supplied through the asset bundle; only the main StyleTTS modules start
+    from random init. The all-zero id keeps the ref hashable and stable while
+    ``is_scratch_checkpoint`` gates every path that would dereference weights."""
+    ref_id = stable_id("checkpoint", "scratch")
+    return CheckpointRef(
+        checkpoint_id=UUID(int=0),
+        name="From scratch",
+        path=Path(),
+        id=ref_id,
+        lineage_id=ref_id,
+        metadata={"scratch": True, "type": "styletts2"},
+    )
 
 
 class ResolveCheckpointSettings(StrictSettings):
@@ -45,6 +75,7 @@ def resolve_checkpoint_ref(checkpoint_id: str, expected_type: str = "") -> Check
 
 class ResolveCheckpointNode(Node):
     NODE_TYPE = "ResolveCheckpoint"
+    DESCRIPTION = "Look up a stored checkpoint by its ID and emit a checkpoint reference (name, path, and metadata) that downstream nodes can load. Optionally set an expected type to guard against wiring in the wrong kind of checkpoint. Use it as a source node whenever a later node needs a specific saved model checkpoint."
     CATEGORY = "Assets"
     SETTINGS = ResolveCheckpointSettings
     IS_INPUT = True

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import { showToast } from "@/shared/feedback/Toast";
 import { Icon } from "@/shared/icons";
@@ -91,23 +91,18 @@ function SingleMode({
 export function TestingScreen() {
   const mode = useTesting((s) => s.testMode);
   const setMode = useTesting((s) => s.setMode);
+  const graph = useTesting((s) => s.graphsByMode[mode]);
+  const ensureGraph = useTesting((s) => s.ensureGraph);
+  const setGraph = useTesting((s) => s.setGraph);
   const schemaQuery = useWorkflowSchemaQuery();
-  const [graphsByMode, setGraphsByMode] = useState<Partial<Record<TestingMode, WorkflowGraph>>>({});
   const spec = TESTING_WORKFLOWS[mode];
 
   useEffect(() => {
     if (!schemaQuery.data) return;
-    setGraphsByMode((current) => {
-      if (current[mode]) return current;
-      return { ...current, [mode]: createTestingGraph(schemaQuery.data, spec) };
-    });
-  }, [schemaQuery.data, mode, spec]);
+    ensureGraph(mode, createTestingGraph(schemaQuery.data, spec));
+  }, [schemaQuery.data, mode, spec, ensureGraph]);
 
-  const updateGraph = (graph: WorkflowGraph) => {
-    setGraphsByMode((current) => ({ ...current, [mode]: graph }));
-  };
-
-  const graph = graphsByMode[mode];
+  const updateGraph = (next: WorkflowGraph) => setGraph(mode, next);
 
   return (
     <div className="mx-auto max-w-[1100px] px-7 pb-[70px] pt-[22px]">

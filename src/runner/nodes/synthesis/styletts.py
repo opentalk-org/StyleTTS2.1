@@ -43,6 +43,7 @@ class StyleTtsSynthesisSettings(StrictSettings):
 
 class StyleTtsSynthesisNode(Node):
     NODE_TYPE = "StyleTtsSynthesis"
+    DESCRIPTION = "Synthesize speech with StyleTTS, cloning the voice and style from a reference clip. Takes a StyleTTS checkpoint, prompt text, and a style reference (single or a batch of references), and outputs the generated audio plus a synthesis result. Tune diffusion steps, embedding scale, and the alpha/beta style blend to trade off speed against expressiveness; a reference batch fans out one sample per reference (times samples per reference)."
     CATEGORY = "Synthesis"
     SETTINGS = StyleTtsSynthesisSettings
     INPUTS = {

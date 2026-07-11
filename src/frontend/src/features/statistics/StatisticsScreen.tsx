@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import { askConfirm } from "@/shared/feedback/ConfirmDialog";
 import { fmtAgo } from "@/shared/format";
@@ -9,20 +9,29 @@ import { SectionTitle } from "@/shared/ui/SectionTitle";
 import { Select } from "@/shared/ui/Select";
 import { Tabs } from "@/shared/ui/Tabs";
 
+import { useVoicesQuery } from "../voices/query";
 import type { StatisticsPayload } from "./api";
+import { ComputeStatistics } from "./ComputeStatistics";
 import { ChartCard } from "./charts/ChartCard";
 import { HBars } from "./charts/HBars";
+import { Heatmap } from "./charts/Heatmap";
 import { Histogram } from "./charts/Histogram";
 import { RankList } from "./charts/RankList";
+import { Scatter } from "./charts/Scatter";
 import { StatTile } from "./charts/StatTile";
-import { audioHistograms, audioTiles, corpusData, speakerDuration, textWarnings, type CorpusTab } from "./logic";
+import { audioHistograms, audioTiles, corpusData, rateScatters, speakerDuration, textWarnings, voiceSamples, type CorpusTab } from "./logic";
 import { useStatisticsActions, useStatisticsEntriesQuery, useStatisticsEntryQuery } from "./query";
+import { useStatisticsUi } from "./store";
+
+const VOICE_QUERY = { query: "", limit: 500, offset: 0 };
 
 export function StatisticsScreen() {
   const entriesQuery = useStatisticsEntriesQuery();
   const entries = entriesQuery.data ?? [];
-  const [entryId, setEntryId] = useState<string | null>(null);
-  const [tab, setTab] = useState<CorpusTab>("transcript");
+  const entryId = useStatisticsUi((s) => s.entryId);
+  const setEntryId = useStatisticsUi((s) => s.setEntryId);
+  const tab = useStatisticsUi((s) => s.tab);
+  const setTab = useStatisticsUi((s) => s.setTab);
   const actions = useStatisticsActions();
 
   useEffect(() => {
@@ -58,10 +67,13 @@ export function StatisticsScreen() {
   if (entries.length === 0) {
     return (
       <div className="mx-auto max-w-[1180px] px-7 pt-10">
+        <div className="mb-5 flex justify-center">
+          <ComputeStatistics />
+        </div>
         <EmptyState
           icon="bar-chart"
           title="No statistics yet"
-          description="Run a dataset statistics workflow (AudioSource → LoadAudio → LoadAudioSegments → AnalyzeAudioFeatures → AggregateDatasetStatistics → SaveStatisticsEntry) to compute and save an entry."
+          description="Pick a dataset above and compute statistics, or run the AudioSource → LoadAudio → LoadAudioSegments → AnalyzeAudioFeatures → AggregateDatasetStatistics → SaveStatisticsEntry workflow yourself."
         />
       </div>
     );
@@ -82,6 +94,7 @@ export function StatisticsScreen() {
           <span className="text-[12px] text-txt-mute">Computed {fmtAgo(new Date(summary.created_at).getTime())}</span>
         ) : null}
         <div className="flex-1" />
+        <ComputeStatistics />
         <IconButton icon="trash" title="Delete" onClick={remove} />
       </div>
 
@@ -95,10 +108,14 @@ export function StatisticsScreen() {
 }
 
 function StatisticsBody({ payload, tab, onTab }: { payload: StatisticsPayload; tab: CorpusTab; onTab: (t: CorpusTab) => void }) {
+  const voicesQuery = useVoicesQuery(VOICE_QUERY);
+  const nameById = new Map((voicesQuery.data?.rows ?? []).map((voice) => [voice.id, voice.name]));
   const histograms = audioHistograms(payload);
+  const scatters = rateScatters(payload);
   const tiles = audioTiles(payload);
   const warnings = textWarnings(payload);
   const speakers = speakerDuration(payload);
+  const voices = voiceSamples(payload, nameById);
   const corpus = corpusData(payload, tab);
 
   return (
@@ -127,7 +144,7 @@ function StatisticsBody({ payload, tab, onTab }: { payload: StatisticsPayload; t
       <div className="mb-[14px] grid grid-cols-3 gap-[14px]">
         {histograms.map((h) => (
           <ChartCard key={h.title} title={h.title} unit={h.unit}>
-            <Histogram bins={h.bins} ticks={h.ticks} tone={h.tone} />
+            <Histogram edges={h.edges} counts={h.counts} tone={h.tone} />
           </ChartCard>
         ))}
       </div>
@@ -136,11 +153,31 @@ function StatisticsBody({ payload, tab, onTab }: { payload: StatisticsPayload; t
           <StatTile key={t.label} label={t.label} value={t.value} sub={t.sub} tone={t.tone} />
         ))}
       </div>
-      {speakers.length > 0 ? (
-        <ChartCard title="Duration per speaker" unit="time" span>
-          <HBars items={speakers} tone="blue" />
-        </ChartCard>
-      ) : null}
+
+      <div className="mb-[14px] grid grid-cols-2 gap-[14px]">
+        {scatters.map((s) => (
+          <ChartCard key={`${s.title} · ${s.unit}`} title={s.title} unit={s.unit}>
+            {s.points.length ? (
+              <Scatter points={s.points} xLabel={s.xLabel} yLabel={s.yLabel} tone={s.tone} />
+            ) : (
+              <div className="py-16 text-center text-[12px] text-txt-mute">No sample-level timing available.</div>
+            )}
+          </ChartCard>
+        ))}
+      </div>
+
+      <div className="mb-[14px] grid grid-cols-2 gap-[14px]">
+        {speakers.length > 0 ? (
+          <ChartCard title="Duration per speaker" unit="time">
+            <HBars items={speakers} tone="blue" />
+          </ChartCard>
+        ) : null}
+        {voices.length > 0 ? (
+          <ChartCard title="Samples per voice" unit="count">
+            <HBars items={voices} tone="emerald" />
+          </ChartCard>
+        ) : null}
+      </div>
 
       <div className="mt-[26px] mb-[14px] flex items-center gap-[14px]">
         <SectionTitle className="tracking-[0.06em]">Text corpus</SectionTitle>
@@ -158,7 +195,7 @@ function StatisticsBody({ payload, tab, onTab }: { payload: StatisticsPayload; t
         <>
           <div className="mb-[14px] grid grid-cols-2 gap-[14px]">
             <ChartCard title="Length per file" unit={corpus.unit}>
-              <Histogram bins={corpus.lengthBins} ticks={corpus.lengthTicks} tone="blue" />
+              <Histogram edges={corpus.lengthEdges} counts={corpus.lengthCounts} tone="blue" />
             </ChartCard>
             <ChartCard title="Total length per speaker" unit={corpus.unit}>
               <HBars items={corpus.speakerLength} tone="emerald" />
@@ -167,6 +204,13 @@ function StatisticsBody({ payload, tab, onTab }: { payload: StatisticsPayload; t
           <ChartCard title={`1-gram frequency · ${corpus.unit}`} unit="count" span>
             <HBars items={corpus.grams1} tone="blue" />
           </ChartCard>
+          {corpus.bigramMatrix.labels.length > 0 ? (
+            <div className="mt-[14px]">
+              <ChartCard title={`2-gram frequency · ${corpus.unit}`} unit="count" span>
+                <Heatmap data={corpus.bigramMatrix} unit={corpus.unit === "phonemes" ? "phoneme" : "character"} />
+              </ChartCard>
+            </div>
+          ) : null}
           <div className="mt-[14px] grid grid-cols-2 gap-[14px]">
             <ChartCard title="Top 10 trigrams" unit="count">
               <RankList items={corpus.trigramsTop} tone="blue" />

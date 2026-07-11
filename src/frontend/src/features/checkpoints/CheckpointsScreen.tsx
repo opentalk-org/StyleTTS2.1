@@ -1,5 +1,3 @@
-import { useState } from "react";
-
 import { Icon } from "@/shared/icons";
 import { Card } from "@/shared/ui/Card";
 import { EmptyState } from "@/shared/ui/EmptyState";
@@ -10,10 +8,10 @@ import { Select } from "@/shared/ui/Select";
 import { CheckpointRow } from "./CheckpointRow";
 import { CATALOG, groupCatalogItems, groupCheckpoints } from "./logic";
 import { useCatalogDownloadMutation, useCheckpointsQuery } from "./query";
+import { useCheckpointsFilters } from "./store";
 
 export function CheckpointsScreen() {
-  const [query, setQuery] = useState("");
-  const [type, setType] = useState("all");
+  const { query, type, setQuery, setType } = useCheckpointsFilters();
   const checkpoints = useCheckpointsQuery();
   const catalogDownload = useCatalogDownloadMutation();
   const groups = groupCheckpoints(checkpoints.data ?? [], query, type);

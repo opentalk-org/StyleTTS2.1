@@ -152,6 +152,7 @@ def _single_file(folder: Path, suffixes: tuple[str, ...]) -> Path:
 
 class ResolveTrainingAssetsNode(Node):
     NODE_TYPE = "ResolveTrainingAssets"
+    DESCRIPTION = "Gather the support assets needed to train a StyleTTS model into a single bundle: ASR bundle files, an F0 model, a PL-BERT model, and any out-of-distribution text sets. Select each asset by file or checkpoint; it emits one asset bundle with resolved paths and metadata. Wire it into a training node that expects a training-assets bundle."
     CATEGORY = "Training"
     SETTINGS = ResolveTrainingAssetsSettings
     IS_INPUT = True

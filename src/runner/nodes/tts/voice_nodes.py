@@ -50,9 +50,8 @@ class _EmitOnceNode(Node):
 
 
 class TtsSelectVoiceNode(_EmitOnceNode):
-    """Pick a single preset voice for an engine that ships fixed voices."""
-
     NODE_TYPE = "TtsSelectVoice"
+    DESCRIPTION = "Pick a single preset voice for an engine that ships fixed voices. Choose the engine and one of its built-in voice ids, and it emits a single voice to wire into that engine's synthesis node. Use this when you want a specific known speaker rather than a cloned or random one."
     CATEGORY = "TTS"
     SETTINGS = TtsSelectVoiceSettings
     OUTPUTS = {"voice": JsonPort()}
@@ -64,9 +63,8 @@ class TtsSelectVoiceNode(_EmitOnceNode):
 
 
 class TtsRandomVoicesNode(_EmitOnceNode):
-    """Emit a voice batch of N random preset voices for an engine with presets."""
-
     NODE_TYPE = "TtsRandomVoices"
+    DESCRIPTION = "Emit a batch of N random preset voices for an engine that ships fixed voices. Choose the engine, how many voices to sample, samples per voice, and a seed for reproducibility; it outputs a voice batch that fans out multiple clips per text at synthesis time. Use it to quickly compare or bulk-generate across many speakers."
     CATEGORY = "TTS"
     SETTINGS = TtsRandomVoicesSettings
     OUTPUTS = {"voice": JsonPort()}
@@ -116,29 +114,35 @@ class TtsCloneVoiceNode(Node):
 
 class ChatterboxCloneVoiceNode(TtsCloneVoiceNode):
     NODE_TYPE = "ChatterboxCloneVoice"
+    DESCRIPTION = "Build a Chatterbox voice by cloning a reference recording. Wire reference audio (loaded with a generic audio source node) into the audio input, optionally with a transcript of what is said, and it outputs a cloned voice to feed into the Chatterbox synthesis node."
     ENGINE = TtsEngine.CHATTERBOX
 
 
 class F5TtsCloneVoiceNode(TtsCloneVoiceNode):
     NODE_TYPE = "F5TtsCloneVoice"
+    DESCRIPTION = "Build an F5-TTS voice by cloning a reference recording. Wire reference audio (loaded with a generic audio source node) into the audio input, optionally with a transcript of what is said, and it outputs a cloned voice to feed into the F5-TTS synthesis node."
     ENGINE = TtsEngine.F5_TTS
 
 
 class OrpheusCloneVoiceNode(TtsCloneVoiceNode):
     NODE_TYPE = "OrpheusCloneVoice"
+    DESCRIPTION = "Build an Orpheus voice by cloning a reference recording. Wire reference audio (loaded with a generic audio source node) into the audio input, optionally with a transcript of what is said, and it outputs a cloned voice to feed into the Orpheus synthesis node."
     ENGINE = TtsEngine.ORPHEUS
 
 
 class DiaCloneVoiceNode(TtsCloneVoiceNode):
     NODE_TYPE = "DiaCloneVoice"
+    DESCRIPTION = "Build a Dia voice by cloning a reference recording. Wire reference audio (loaded with a generic audio source node) into the audio input, optionally with a transcript of what is said, and it outputs a cloned voice to feed into the Dia synthesis node."
     ENGINE = TtsEngine.DIA
 
 
 class FishSpeechCloneVoiceNode(TtsCloneVoiceNode):
     NODE_TYPE = "FishSpeechCloneVoice"
+    DESCRIPTION = "Build a Fish Speech voice by cloning a reference recording. Wire reference audio (loaded with a generic audio source node) into the audio input, optionally with a transcript of what is said, and it outputs a cloned voice to feed into the Fish Speech synthesis node."
     ENGINE = TtsEngine.FISH_SPEECH
 
 
 class RaonOpenTtsCloneVoiceNode(TtsCloneVoiceNode):
     NODE_TYPE = "RaonOpenTtsCloneVoice"
+    DESCRIPTION = "Build a Raon OpenTTS voice by cloning a reference recording. Wire reference audio (loaded with a generic audio source node) into the audio input, optionally with a transcript of what is said, and it outputs a cloned voice to feed into the Raon OpenTTS synthesis node."
     ENGINE = TtsEngine.RAON_OPENTTS

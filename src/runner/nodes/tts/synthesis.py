@@ -113,34 +113,41 @@ class TtsSynthesisNode(Node):
 
 class KokoroSynthesisNode(TtsSynthesisNode):
     NODE_TYPE = "KokoroSynthesis"
+    DESCRIPTION = "Synthesize speech with the Kokoro TTS engine. Takes a checkpoint, input text, and a voice (a preset voice or a voice batch), and outputs the generated audio plus a synthesis result. Use it with the Kokoro preset voice nodes; a voice batch fans out one audio clip per voice and sample from the same text."
     ENGINE = TtsEngine.KOKORO
 
 
 class ChatterboxSynthesisNode(TtsSynthesisNode):
     NODE_TYPE = "ChatterboxSynthesis"
+    DESCRIPTION = "Synthesize speech with the Chatterbox TTS engine. Takes a checkpoint, input text, and a voice (typically a cloned voice from the Chatterbox clone node, or a voice batch), and outputs the generated audio plus a synthesis result. A voice batch fans out one audio clip per voice and sample from the same text."
     ENGINE = TtsEngine.CHATTERBOX
 
 
 class F5TtsSynthesisNode(TtsSynthesisNode):
     NODE_TYPE = "F5TtsSynthesis"
+    DESCRIPTION = "Synthesize speech with the F5-TTS engine. Takes a checkpoint, input text, and a voice (typically a cloned voice from the F5-TTS clone node, or a voice batch), and outputs the generated audio plus a synthesis result. A voice batch fans out one audio clip per voice and sample from the same text."
     ENGINE = TtsEngine.F5_TTS
 
 
 class OrpheusSynthesisNode(TtsSynthesisNode):
     NODE_TYPE = "OrpheusSynthesis"
+    DESCRIPTION = "Synthesize speech with the Orpheus TTS engine. Takes a checkpoint, input text, and a voice (typically a cloned voice from the Orpheus clone node, or a voice batch), and outputs the generated audio plus a synthesis result. A voice batch fans out one audio clip per voice and sample from the same text."
     ENGINE = TtsEngine.ORPHEUS
 
 
 class DiaSynthesisNode(TtsSynthesisNode):
     NODE_TYPE = "DiaSynthesis"
+    DESCRIPTION = "Synthesize speech with the Dia TTS engine. Takes a checkpoint, input text, and a voice (typically a cloned voice from the Dia clone node, or a voice batch), and outputs the generated audio plus a synthesis result. A voice batch fans out one audio clip per voice and sample from the same text."
     ENGINE = TtsEngine.DIA
 
 
 class FishSpeechSynthesisNode(TtsSynthesisNode):
     NODE_TYPE = "FishSpeechSynthesis"
+    DESCRIPTION = "Synthesize speech with the Fish Speech TTS engine. Takes a checkpoint, input text, and a voice (typically a cloned voice from the Fish Speech clone node, or a voice batch), and outputs the generated audio plus a synthesis result. A voice batch fans out one audio clip per voice and sample from the same text."
     ENGINE = TtsEngine.FISH_SPEECH
 
 
 class RaonOpenTtsSynthesisNode(TtsSynthesisNode):
     NODE_TYPE = "RaonOpenTtsSynthesis"
+    DESCRIPTION = "Synthesize speech with the Raon OpenTTS engine. Takes a checkpoint, input text, and a voice (typically a cloned voice from the Raon OpenTTS clone node, or a voice batch), and outputs the generated audio plus a synthesis result. A voice batch fans out one audio clip per voice and sample from the same text."
     ENGINE = TtsEngine.RAON_OPENTTS

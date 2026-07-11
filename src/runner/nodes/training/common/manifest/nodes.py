@@ -43,6 +43,7 @@ class BuildTrainingManifestSettings(StrictSettings):
 
 class BuildTrainingManifestNode(Node):
     NODE_TYPE = "BuildTrainingManifest"
+    DESCRIPTION = "Assemble a training manifest that trainers consume, splitting a dataset's audio into train and validation lists and materializing (or planning on-demand streaming of) the audio files. Consumes a list of dataset audio file ids plus a base checkpoint, and optionally an asset bundle and phoneme alphabet, and produces a training manifest. Wire this between dataset selection and any of the model training nodes; enable bucket streaming only when feeding StyleTTS finetuning."
     CATEGORY = "Training"
     SETTINGS = BuildTrainingManifestSettings
     INPUTS = {

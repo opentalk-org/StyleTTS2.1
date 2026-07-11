@@ -217,13 +217,16 @@ def train(config_path: str, *, aim_run: Run) -> None:
     if _has_external_checkpoint(PLBERT_path):
         ignore_modules.append("bert")
 
-    model, optimizer = load_checkpoint(
-        model,
-        optimizer,
-        config["pretrained_model"],
-        load_only_params=config["load_only_params"],
-        ignore_modules=ignore_modules,
-    )
+    # From-scratch runs carry no pretrained StyleTTS weights; the main modules
+    # keep their random init while ASR/F0/PL-BERT are loaded above from assets.
+    if config["pretrained_model"] is not None:
+        model, optimizer = load_checkpoint(
+            model,
+            optimizer,
+            config["pretrained_model"],
+            load_only_params=config["load_only_params"],
+            ignore_modules=ignore_modules,
+        )
 
     for key in model:
         if key != "mpd" and key != "msd" and key != "wd":

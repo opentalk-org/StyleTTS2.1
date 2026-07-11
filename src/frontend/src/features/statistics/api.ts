@@ -2,6 +2,9 @@ import { backendFetch, backendRequest } from "@/app/backend";
 
 export type Histogram = { edges: number[]; counts: number[] };
 export type Pair = [string, number];
+// A sampled per-segment row: [duration, rate, total]. The frontend projects rate against
+// either duration or the total (words/chars). Older entries may carry only [duration, rate].
+export type ScatterPoint = number[];
 export type BigramMatrix = { labels: string[]; matrix: number[][] };
 export type TextWarning = { audio_file_id: string; name: string; char_count: number; reason: string };
 export type PerFileText = { audio_file_id: string; text: string; phon: string };
@@ -34,6 +37,11 @@ export type StatisticsPayload = {
   speaker_duration_seconds: Pair[];
   speaker_char_count: Pair[];
   speaker_phoneme_count: Pair[];
+  speaker_sample_count: Pair[];
+  voice_sample_count: Pair[];
+  words_per_second_scatter: ScatterPoint[];
+  chars_per_second_scatter: ScatterPoint[];
+  inter_word_silence_seconds_histogram: Histogram;
   rms_db_histogram: Histogram;
   frame_value_min_histogram: Histogram;
   frame_value_max_histogram: Histogram;

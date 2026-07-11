@@ -1,4 +1,4 @@
-import type { Histogram, Pair, StatisticsPayload } from "./api";
+import type { BigramMatrix, Histogram, Pair, ScatterPoint, StatisticsPayload } from "./api";
 
 export type Tone = "blue" | "emerald" | "amber" | "red";
 
@@ -9,8 +9,17 @@ export type RankItem = { label: string; value: number };
 export type HistogramConfig = {
   title: string;
   unit: string;
-  bins: number[];
-  ticks: string[];
+  edges: number[];
+  counts: number[];
+  tone: Tone;
+};
+
+export type ScatterConfig = {
+  title: string;
+  unit: string;
+  points: ScatterPoint[];
+  xLabel: string;
+  yLabel: string;
   tone: Tone;
 };
 
@@ -28,12 +37,6 @@ export const TILE_TEXT_CLASS: Record<Tone, string> = {
   red: "text-red-600",
 };
 
-const fmtDb = (v: number) => `${v.toFixed(0)}`;
-const fmtAmp = (v: number) => v.toFixed(2);
-const fmtRatio = (v: number) => v.toFixed(2);
-const fmtSeconds = (v: number) => (v < 10 ? `${v.toFixed(1)}s` : `${Math.round(v)}s`);
-const fmtInt = (v: number) => `${Math.round(v)}`;
-
 function fmtCompact(v: number): string {
   if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
   if (v >= 1_000) return `${(v / 1_000).toFixed(v >= 10_000 ? 0 : 1)}k`;
@@ -50,21 +53,8 @@ export function fmtDuration(seconds: number): string {
   return `${seconds.toFixed(1)}s`;
 }
 
-const AXIS_TICKS = 7;
-
-function histTicks(h: Histogram, fmt: (v: number) => string, count: number = AXIS_TICKS): string[] {
-  const edges = h.edges.length ? h.edges : [0, 1];
-  const last = edges.length - 1;
-  const ticks: string[] = [];
-  for (let i = 0; i < count; i++) {
-    const idx = Math.round((i / (count - 1)) * last);
-    ticks.push(fmt(edges[idx]!));
-  }
-  return ticks;
-}
-
-function histConfig(title: string, unit: string, h: Histogram, tone: Tone, fmt: (v: number) => string): HistogramConfig {
-  return { title, unit, bins: h.counts, ticks: histTicks(h, fmt), tone };
+function histConfig(title: string, unit: string, h: Histogram, tone: Tone): HistogramConfig {
+  return { title, unit, edges: h.edges, counts: h.counts, tone };
 }
 
 function hbars(pairs: Pair[], fmt: (v: number) => string, limit: number): HBarItem[] {
@@ -76,17 +66,54 @@ function ranks(pairs: Pair[]): RankItem[] {
 }
 
 export function audioHistograms(p: StatisticsPayload): HistogramConfig[] {
-  return [
-    histConfig("Duration per file", "seconds", p.duration_seconds_histogram, "blue", fmtSeconds),
-    histConfig("Frame RMS", "dB", p.rms_db_histogram, "blue", fmtDb),
-    histConfig("Silence ratio", "ratio", p.silence_ratio_histogram, "amber", fmtRatio),
-    histConfig("Mean RMS / file", "dB", p.mean_rms_nonsilent_db_per_file_histogram, "blue", fmtDb),
-    histConfig("Sample RMS / file", "dB", p.sample_rms_nonsilent_db_per_file_histogram, "blue", fmtDb),
-    histConfig("Silent-frame RMS", "dB", p.silence_rms_db_histogram, "amber", fmtDb),
-    histConfig("Frame min sample", "amplitude", p.frame_value_min_histogram, "emerald", fmtAmp),
-    histConfig("Frame max sample", "amplitude", p.frame_value_max_histogram, "emerald", fmtAmp),
-    histConfig("Frame mean sample", "amplitude", p.frame_value_mean_histogram, "emerald", fmtAmp),
+  const configs = [
+    histConfig("Duration per file", "seconds", p.duration_seconds_histogram, "blue"),
+    histConfig("Frame RMS", "dB", p.rms_db_histogram, "blue"),
+    histConfig("Silence ratio", "ratio", p.silence_ratio_histogram, "amber"),
+    histConfig("Mean RMS / file", "dB", p.mean_rms_nonsilent_db_per_file_histogram, "blue"),
+    histConfig("Sample RMS / file", "dB", p.sample_rms_nonsilent_db_per_file_histogram, "blue"),
+    histConfig("Silent-frame RMS", "dB", p.silence_rms_db_histogram, "amber"),
+    histConfig("Frame min sample", "amplitude", p.frame_value_min_histogram, "emerald"),
+    histConfig("Frame max sample", "amplitude", p.frame_value_max_histogram, "emerald"),
+    histConfig("Frame mean sample", "amplitude", p.frame_value_mean_histogram, "emerald"),
   ];
+  // Only present when segments carry word-level alignment; otherwise the gap histogram is all
+  // zeros and would read as a real (empty) distribution, so drop it entirely.
+  const silence = p.inter_word_silence_seconds_histogram;
+  if (silence && silence.counts.some((count) => count > 0)) {
+    configs.push(histConfig("Silence between words", "seconds", silence, "amber"));
+  }
+  return configs;
+}
+
+// Per-sample speaking-rate scatters. Points are pre-sampled server-side; x is the clip
+// duration so short clips with inflated rates are easy to spot.
+export function rateScatters(p: StatisticsPayload): ScatterConfig[] {
+  const wps = p.words_per_second_scatter ?? [];
+  const cps = p.chars_per_second_scatter ?? [];
+  // Rows carrying the total (length >= 3) support the count-axis projections; older 2-column
+  // entries simply yield an empty count plot instead of NaN points.
+  const withTotal = (rows: ScatterPoint[]) => rows.filter((row) => row.length >= 3);
+  return [
+    { title: "Estimated words / second", unit: "vs duration", points: wps.map((r) => [r[0]!, r[1]!]), xLabel: "Duration (s)", yLabel: "Words / s", tone: "blue" },
+    { title: "Estimated words / second", unit: "vs total words", points: withTotal(wps).map((r) => [r[2]!, r[1]!]), xLabel: "Total words", yLabel: "Words / s", tone: "blue" },
+    { title: "Estimated chars / second", unit: "vs duration", points: cps.map((r) => [r[0]!, r[1]!]), xLabel: "Duration (s)", yLabel: "Chars / s", tone: "emerald" },
+    { title: "Estimated chars / second", unit: "vs total chars", points: withTotal(cps).map((r) => [r[2]!, r[1]!]), xLabel: "Total chars", yLabel: "Chars / s", tone: "emerald" },
+  ];
+}
+
+// Samples (segments) per voice. Voice ids are resolved to names by the caller; when no
+// segment carries a voice id we fall back to per-speaker counts so the chart is never empty.
+export function voiceSamples(p: StatisticsPayload, nameById: Map<string, string>): HBarItem[] {
+  const byVoice = p.voice_sample_count ?? [];
+  const bySpeaker = p.speaker_sample_count ?? [];
+  const source = byVoice.length ? byVoice : bySpeaker;
+  const resolve = byVoice.length ? (id: string) => nameById.get(id) ?? shortId(id) : (label: string) => label || "-";
+  return source.slice(0, 20).map(([key, value]) => ({ label: resolve(key), value, display: fmtCompact(value) }));
+}
+
+function shortId(id: string): string {
+  return id.length > 10 ? `${id.slice(0, 8)}…` : id;
 }
 
 export type StatTileData = { label: string; value: string; sub?: string; tone: Tone };
@@ -141,10 +168,11 @@ export type CorpusTab = "transcript" | "ipa";
 export type CorpusData = {
   unit: string;
   available: boolean;
-  lengthBins: number[];
-  lengthTicks: string[];
+  lengthEdges: number[];
+  lengthCounts: number[];
   speakerLength: HBarItem[];
   grams1: HBarItem[];
+  bigramMatrix: BigramMatrix;
   trigramsTop: RankItem[];
   trigramsBottom: RankItem[];
 };
@@ -153,16 +181,18 @@ export function corpusData(p: StatisticsPayload, tab: CorpusTab): CorpusData {
   const isIpa = tab === "ipa";
   const lengthHist = isIpa ? p.phoneme_count_per_file_histogram : p.char_count_per_file_histogram;
   const grams = isIpa ? p.phoneme_unigram_counts : p.char_unigram_counts;
+  const bigramMatrix = isIpa ? p.phoneme_bigram_matrix : p.char_bigram_matrix;
   const speaker = isIpa ? p.speaker_phoneme_count : p.speaker_char_count;
   const top = isIpa ? p.phoneme_trigram_top10 : p.char_trigram_top10;
   const bottom = isIpa ? p.phoneme_trigram_bottom10 : p.char_trigram_bottom10;
   return {
     unit: isIpa ? "phonemes" : "characters",
     available: isIpa ? p.phonemes_available : true,
-    lengthBins: lengthHist.counts,
-    lengthTicks: histTicks(lengthHist, fmtInt),
+    lengthEdges: lengthHist.edges,
+    lengthCounts: lengthHist.counts,
     speakerLength: hbars(speaker, fmtCompact, 15),
     grams1: hbars(grams, fmtCompact, 24),
+    bigramMatrix,
     trigramsTop: ranks(top),
     trigramsBottom: ranks(bottom),
   };

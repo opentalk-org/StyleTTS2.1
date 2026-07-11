@@ -79,12 +79,12 @@ export function StyleTtsForm({
         <div className="h-3.5" />
         <div className="grid grid-cols-2 gap-3.5">
           <SettingField schema={settingsSchema} values={values} name="validation_samples" onChange={updateTraining} />
-          <Field label="Base checkpoint" hint="Required — finetuning resumes from here.">
+          <Field label="Base checkpoint" hint="Finetuning resumes from here, or pick “From scratch” for random init.">
             <FormSelect
               defaultValue=""
               value={String(checkpoint.params.checkpoint_id)}
               onChange={selectBaseCheckpoint}
-              options={checkpointOptions(checkpoints.data ?? [], "styletts2", "— select base checkpoint —")}
+              options={checkpointOptions(checkpoints.data ?? [], "styletts2", "— select base checkpoint —", true)}
             />
           </Field>
         </div>

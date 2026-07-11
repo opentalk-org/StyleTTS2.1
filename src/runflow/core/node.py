@@ -36,6 +36,7 @@ class Node(ABC):
 
     NODE_TYPE: str = "BaseNode"
     CATEGORY: str = "Core"
+    DESCRIPTION: str = ""
     INPUTS: dict[str, Port] = {}
     OUTPUTS: dict[str, Port] = {}
     SETTINGS: type[StrictSettings] = StrictSettings
@@ -74,6 +75,7 @@ class Node(ABC):
         return {
             "type": cls.NODE_TYPE,
             "category": cls.CATEGORY,
+            "description": cls.DESCRIPTION,
             "is_input": cls.IS_INPUT,
             "inputs": {name: port.to_schema(name) for name, port in cls.INPUTS.items()},
             "outputs": {name: port.to_schema(name) for name, port in cls.OUTPUTS.items()},

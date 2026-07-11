@@ -22,6 +22,7 @@ from runner.nodes.synthesis.style_reference import ResolveStyleReferenceNode
 from runner.nodes.synthesis.styletts import StyleTtsSynthesisNode
 from runner.nodes.audio_enhancement.denoise import DeepFilterNetDenoiseNode
 from runner.nodes.audio_enhancement.normalize import NormalizeLoudnessNode
+from runner.nodes.audio_enhancement.pad_silence import PadSilenceNode
 from runner.nodes.audio_segments.extract import ExtractSegmentGroupAudioNode, PersistSplitAudioRecordsNode
 from runner.nodes.audio_segments.dedup_overlap import DeduplicateOverlappingSegmentsNode
 from runner.nodes.audio_segments.grouping import PlanSegmentGroupsNode
@@ -87,6 +88,7 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         SortformerDiarizationNode,
         DeepFilterNetDenoiseNode,
         NormalizeLoudnessNode,
+        PadSilenceNode,
         PredictMosScoreNode,
         AnalyzeAudioFeaturesNode,
         EmbedVoicesPcaPlotNode,

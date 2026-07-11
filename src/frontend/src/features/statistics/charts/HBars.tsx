@@ -1,23 +1,33 @@
-import { BAR_CLASS, type HBarItem, type Tone } from "../logic";
+import Plot from "react-plotly.js";
 
+import type { HBarItem, Tone } from "../logic";
+import { baseLayout, PLOT_COLOR, PLOT_CONFIG } from "./plotBase";
+
+// Interactive horizontal bars (per-speaker / per-voice / n-grams). Highest value on top;
+// hover shows the formatted value, and the axes zoom/pan like every other plot.
 export function HBars({ items, tone = "emerald" }: { items: HBarItem[]; tone?: Tone }) {
-  const max = Math.max(...items.map((it) => it.value), 0.001);
+  const height = Math.max(120, items.length * 24 + 34);
   return (
-    <div className="flex flex-col gap-[9px]">
-      {items.map((it, i) => (
-        <div key={i} className="grid grid-cols-[104px_1fr_64px] items-center gap-[10px]">
-          <span className="truncate text-[12px] font-medium text-txt-dim">{it.label}</span>
-          <div className="h-[18px] overflow-hidden rounded-[4px] bg-panel-2">
-            <div
-              className={`h-full rounded-[4px] ${BAR_CLASS[tone]}`}
-              style={{ width: `${(it.value / max) * 100}%` }}
-            />
-          </div>
-          <span className="text-right text-[11.5px] font-semibold tabular-nums text-txt">
-            {it.display}
-          </span>
-        </div>
-      ))}
-    </div>
+    <Plot
+      data={[
+        {
+          type: "bar",
+          orientation: "h",
+          x: items.map((it) => it.value),
+          y: items.map((it) => it.label),
+          marker: { color: PLOT_COLOR[tone], opacity: 0.9 },
+          customdata: items.map((it) => it.display),
+          hovertemplate: "%{y}<br>%{customdata}<extra></extra>",
+        },
+      ]}
+      layout={baseLayout({
+        margin: { l: 116, r: 16, t: 6, b: 28 },
+        yaxis: { autorange: "reversed", type: "category" },
+        xaxis: { rangemode: "tozero" },
+      })}
+      config={PLOT_CONFIG}
+      useResizeHandler
+      style={{ width: "100%", height }}
+    />
   );
 }

@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { showToast } from "@/shared/feedback/Toast";
 import { fetchRun, startGraph } from "../workflows/api";
 import type { WorkflowPayload } from "../workflows/types";
+import type { WorkflowGraph } from "../workflows/types";
 import { fetchRunAudioFiles } from "./api";
 import type { TestingMode } from "./logic";
 
@@ -43,7 +44,10 @@ export type TestingStore = {
   testMode: TestMode;
   testResults: TestResult[];
   sweepResults: SweepResult[];
+  graphsByMode: Partial<Record<TestMode, WorkflowGraph>>;
   setMode: (mode: TestMode) => void;
+  ensureGraph: (mode: TestMode, graph: WorkflowGraph) => void;
+  setGraph: (mode: TestMode, graph: WorkflowGraph) => void;
   runSingle: (payload: WorkflowPayload, display: SingleDisplay) => Promise<void>;
   runSweep: (payload: WorkflowPayload, display: SweepDisplay[]) => Promise<void>;
 };
@@ -68,8 +72,14 @@ export const useTesting = create<TestingStore>((set) => ({
   testMode: "single",
   testResults: [],
   sweepResults: [],
+  graphsByMode: {},
 
   setMode: (mode) => set({ testMode: mode }),
+
+  ensureGraph: (mode, graph) =>
+    set((s) => (s.graphsByMode[mode] ? {} : { graphsByMode: { ...s.graphsByMode, [mode]: graph } })),
+
+  setGraph: (mode, graph) => set((s) => ({ graphsByMode: { ...s.graphsByMode, [mode]: graph } })),
 
   runSingle: async (payload, display) => {
     let runId: string;

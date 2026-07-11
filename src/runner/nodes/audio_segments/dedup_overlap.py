@@ -18,6 +18,7 @@ class DeduplicateOverlappingSegmentsSettings(StrictSettings):
 
 class DeduplicateOverlappingSegmentsNode(Node):
     NODE_TYPE = "DeduplicateOverlappingSegments"
+    DESCRIPTION = "Collapse duplicate transcript segments that cover almost the same span of audio, keeping a single segment where several overlap. Takes audio with segments and outputs the same audio with the redundant overlapping segments removed (the count collapsed is recorded in metadata). Use it to clean up after multiple transcribers or aligners have annotated the same recording. Tune the minimum overlap ratio to control how much two segments must overlap before they are treated as duplicates."
     CATEGORY = "Audio"
     SETTINGS = DeduplicateOverlappingSegmentsSettings
     INPUTS = {"audio": AudioPort()}

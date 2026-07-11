@@ -39,11 +39,9 @@ function Checkbox({ on }: { on: boolean }) {
 }
 
 export function JobsScreen() {
-  const [limit, setLimit] = useState(100);
-  const [offset, setOffset] = useState(0);
+  const { selection, limit, offset, setLimit, setOffset, toggleSelect, selectMany, clearSelection } = useJobsSelection();
   const jobs = useJobsQuery({ limit, offset });
   const { removeMany, removeAll, removingMany, removingAll } = useJobActions();
-  const { selection, toggleSelect, selectMany, clearSelection } = useJobsSelection();
   const rows = jobs.data?.rows ?? [];
   const total = jobs.data?.total ?? 0;
   const page = Math.floor(offset / limit);

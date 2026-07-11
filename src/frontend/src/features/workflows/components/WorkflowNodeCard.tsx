@@ -57,13 +57,19 @@ export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
       className={`group pointer-events-auto absolute w-max min-w-[220px] max-w-[420px] cursor-pointer select-none rounded-[9px] border bg-panel text-left shadow-[0_12px_34px_rgba(17,24,39,0.14)] ${active ? "border-amber-500 ring-1 ring-amber-500" : status === "failed" ? "border-red-500" : waiting ? "border-amber-500" : status === "stopped" ? "border-amber-400" : "border-line-2"} ${status === "running" ? "shadow-[0_0_0_2px_rgba(79,209,197,0.45),0_16px_40px_rgba(17,24,39,0.18)]" : ""} ${status === "failed" ? "shadow-[0_0_0_2px_rgba(231,111,81,0.9),0_16px_40px_rgba(17,24,39,0.22)]" : ""}`}
       style={{ left: node.x, top: node.y }}
     >
-      <div data-node-title className="flex cursor-grab items-center gap-2 border-b border-line px-2.5 py-2 pr-7 active:cursor-grabbing">
+      <div data-node-title className="group/title relative flex cursor-grab items-center gap-2 border-b border-line px-2.5 py-2 pr-7 active:cursor-grabbing">
         <div className="flex min-w-0 flex-1 items-baseline gap-2">
           <strong className="min-w-0 truncate font-mono text-[12px] text-txt">{node.id}</strong>
           {status === "failed" ? <span className="flex-none rounded-full bg-red-100 px-1.5 py-0.5 font-mono text-[9px] font-extrabold uppercase text-red-700">failed</span> : null}
           {info.is_input ? <span className="flex-none rounded-full bg-blue-100 px-1.5 py-0.5 font-mono text-[9px] font-extrabold uppercase text-blue-700">input</span> : null}
           <span className="ml-auto min-w-0 truncate font-mono text-[10px] text-txt-mute">{node.type}</span>
         </div>
+        {info.description ? (
+          <div className="pointer-events-none absolute left-0 top-full z-20 mt-1.5 hidden w-[280px] rounded-md border border-line bg-panel p-2.5 text-[11px] leading-relaxed text-txt-dim shadow-[0_12px_34px_rgba(17,24,39,0.22)] group-hover/title:block">
+            <span className="mb-1 block font-mono text-[10px] font-bold uppercase text-txt-mute">{node.type}</span>
+            {info.description}
+          </div>
+        ) : null}
         <button
           type="button"
           className="absolute right-1.5 top-1.5 cursor-pointer border-0 bg-transparent px-1 py-0.5 text-[16px] leading-none text-txt-mute opacity-0 hover:text-red-500 group-hover:opacity-100"

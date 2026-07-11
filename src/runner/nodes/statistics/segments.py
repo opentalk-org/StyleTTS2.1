@@ -39,16 +39,37 @@ def _canonical_record(audio: Audio, members: list[AudioSegment]) -> dict[str, An
     phon = canonical.phon.strip()
     if not phon:
         phon = next((member.phon.strip() for member in members if member.phon.strip()), "")
+    text = canonical.text.strip()
     return {
         "source_audio_id": str(audio.audio_file_id),
-        "text": canonical.text.strip(),
+        "text": text,
         "phon": phon,
         "speaker": (canonical.speaker or "").strip(),
+        "voice_id": str(canonical.voice_id) if canonical.voice_id is not None else "",
+        "word_count": _word_count(canonical, text),
+        "word_times": _word_times(canonical, members),
         "start": float(canonical.start),
         "end": float(canonical.end),
         "duration": float(canonical.duration),
         "model": _segment_model(canonical),
     }
+
+
+def _word_count(segment: AudioSegment, text: str) -> int:
+    # Word-level alignment is the ground truth when present; fall back to whitespace tokens.
+    if segment.alignment:
+        return len(segment.alignment)
+    return len(text.split())
+
+
+def _word_times(canonical: AudioSegment, members: list[AudioSegment]) -> list[list[float]]:
+    # Per-word [start, end] timings used downstream to measure the silence between consecutive
+    # words. Prefer the canonical member's alignment; fall back to any member that carries one,
+    # mirroring how phon is filled. Empty when no member was force-aligned.
+    alignment = canonical.alignment or next((member.alignment for member in members if member.alignment), None)
+    if not alignment:
+        return []
+    return [[float(word["start"]), float(word["end"])] for word in alignment]
 
 
 def _select_canonical(members: list[AudioSegment]) -> AudioSegment:

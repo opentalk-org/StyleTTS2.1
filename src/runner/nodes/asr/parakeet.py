@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from runner.nodes.accelerator_memory import maybe_cuda_half
-from runner.nodes.asr.confidence import nemo_hypothesis_confidence
+from runner.nodes.asr.confidence import mean_word_confidence, nemo_hypothesis_confidence
 from runner.nodes.assets.model_downloads import single_checkpoint_file
 
 
@@ -185,8 +185,6 @@ def _span_confidence(
     words: list[dict[str, Any]], start: float, end: float, fallback: float | None
 ) -> float | None:
     """Mean of the per-word confidences whose words fall in ``[start, end]``."""
-    inside = _words_in_span(words, start, end) or []
-    scores = [word["score"] for word in inside if word.get("score") is not None]
-    if not scores:
-        return fallback
-    return sum(scores) / len(scores)
+    inside = _words_in_span(words, start, end)
+    mean = mean_word_confidence(inside)
+    return mean if mean is not None else fallback

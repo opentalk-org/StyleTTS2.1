@@ -28,6 +28,7 @@ class AsrTrainingSettings(F0TrainingSettings):
 
 class AsrModelTrainingNode(Node):
     NODE_TYPE = "AsrModelTraining"
+    DESCRIPTION = "Train an ASR (text aligner) model used by StyleTTS from a training manifest, starting from a pretrained checkpoint and a phoneme alphabet. Consumes a checkpoint, phoneme alphabet, and a training manifest, and produces a training result pointing at the trained ASR bundle. Use it to produce the ASR model that StyleTTS finetuning depends on for a given dataset and symbol set."
     CATEGORY = "Training"
     SETTINGS = AsrTrainingSettings
     INPUTS = {

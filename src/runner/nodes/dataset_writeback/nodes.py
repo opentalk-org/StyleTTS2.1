@@ -27,6 +27,7 @@ class AssignVoiceSettings(StrictSettings):
 
 class AddAudioToDatasetNode(Node):
     NODE_TYPE = "AddAudioToDataset"
+    DESCRIPTION = "Add each incoming audio item to a chosen dataset, persisting the membership in the database. Takes audio in and passes through a small JSON result recording which items were updated. Use it near the end of a workflow to collect processed audio into a dataset."
     CATEGORY = "Dataset"
     SETTINGS = DatasetWritebackSettings
     INPUTS = {"audio": AudioPort()}
@@ -45,6 +46,7 @@ class AddAudioToDatasetNode(Node):
 
 class RemoveAudioFromDatasetNode(Node):
     NODE_TYPE = "RemoveAudioFromDataset"
+    DESCRIPTION = "Remove each incoming audio item from a chosen dataset, updating the membership in the database. Takes audio in and emits a small JSON result noting which items were updated. Use it to prune audio out of a dataset without deleting the underlying files."
     CATEGORY = "Dataset"
     SETTINGS = DatasetWritebackSettings
     INPUTS = {"audio": AudioPort()}
@@ -62,6 +64,7 @@ class RemoveAudioFromDatasetNode(Node):
 
 class AssignVoiceNode(Node):
     NODE_TYPE = "AssignVoice"
+    DESCRIPTION = "Assign a speaker or voice to each incoming audio item and its segments, saving the change to the database. Enter a voice by name or by voice ID; it updates the audio and segment metadata and passes the tagged audio through along with a JSON result. Use it to label who is speaking before grouping or training on the audio."
     CATEGORY = "Dataset"
     SETTINGS = AssignVoiceSettings
     INPUTS = {"audio": AudioPort()}
@@ -111,6 +114,7 @@ class AssignVoiceNode(Node):
 
 class DeleteAudioRecordsNode(Node):
     NODE_TYPE = "DeleteAudioRecords"
+    DESCRIPTION = "Permanently delete each incoming audio item and its record from the database. Takes audio in and emits a JSON result listing the deleted IDs. Use it to clean up unwanted audio; this is destructive and cannot be undone."
     CATEGORY = "Dataset"
     INPUTS = {"audio": AudioPort()}
     OUTPUTS = {"writeback_result": JsonPort()}

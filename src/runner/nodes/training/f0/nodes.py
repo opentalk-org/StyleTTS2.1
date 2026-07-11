@@ -36,6 +36,7 @@ class F0TrainingSettings(StrictSettings):
 
 class F0ModelTrainingNode(Node):
     NODE_TYPE = "F0ModelTraining"
+    DESCRIPTION = "Train an F0 (pitch) prediction model used by StyleTTS from a training manifest, starting from a pretrained checkpoint. Consumes a checkpoint and a training manifest, and produces a training result pointing at the trained F0 model. Use it to produce the pitch model that StyleTTS finetuning depends on for a given dataset."
     CATEGORY = "Training"
     SETTINGS = F0TrainingSettings
     INPUTS = {

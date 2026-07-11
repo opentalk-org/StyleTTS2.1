@@ -31,6 +31,7 @@ class DeepFilterNetStack:
 
 class DeepFilterNetDenoiseNode(Node):
     NODE_TYPE = "DeepFilterNetDenoise"
+    DESCRIPTION = "Remove background noise from audio using the DeepFilterNet neural denoiser. Takes an audio clip and outputs a cleaned version of the same clip with steady noise and hiss suppressed. Use it to clean up noisy recordings before transcription or training; pick the DeepFilterNet2 or DeepFilterNet3 model in settings."
     CATEGORY = "Audio"
     SETTINGS = DeepFilterNetSettings
     INPUTS = {"audio": AudioPort()}

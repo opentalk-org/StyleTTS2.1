@@ -14,6 +14,7 @@ from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.asr.audio import write_temp_wav
+from runner.nodes.asr.confidence import mean_word_confidence
 from runner.nodes.asr.whisperx import align_words, load_whisperx_align_model, whisperx_device
 from runner.nodes.datatypes import AudioPort, CheckpointRefPort
 from runner.nodes.models import Audio, AudioSegment, CheckpointRef, typed_checkpoint
@@ -24,14 +25,8 @@ class WhisperXAlignSettings(StrictSettings):
 
 
 class WhisperXAlignNode(Node):
-    """Force-align the words of each existing segment with WhisperX.
-
-    Consumes audio that already carries segments (text + timing) and rewrites each
-    segment's per-word ``alignment`` from the WhisperX aligner, replacing any
-    alignment that was there before. The checkpoint is a downloaded wav2vec2 model.
-    """
-
     NODE_TYPE = "WhisperXAlign"
+    DESCRIPTION = "Force-align the words of each existing transcript segment against the audio to get precise per-word timings. Takes an alignment checkpoint and audio that already carries text segments, and outputs the same audio with each segment's word-level timing (and confidence) rewritten, replacing any alignment that was there before. Use it after transcription when you need accurate word boundaries. Set the language to match the audio."
     CATEGORY = "ASR"
     MODEL_NAME = "whisperx"
     SETTINGS = WhisperXAlignSettings
@@ -87,16 +82,30 @@ class WhisperXAlignNode(Node):
         finally:
             path.unlink(missing_ok=True)
         segments = [
-            replace(seg, alignment=_segment_alignment(words, rel_start, rel_end, audio.start))
+            self._aligned_segment(seg, words, rel_start, rel_end, audio.start)
             for seg, (rel_start, rel_end, _text) in zip(audio.segments, spans, strict=True)
         ]
         return replace(audio, segments=segments)
 
+    def _aligned_segment(
+        self, seg: AudioSegment, words: list[dict[str, Any]], rel_start: float, rel_end: float, offset: float
+    ) -> AudioSegment:
+        inside = _words_in_span(words, rel_start, rel_end)
+        confidence = mean_word_confidence(inside)
+        return replace(
+            seg,
+            alignment=_segment_alignment(inside, offset),
+            confidence=confidence if confidence is not None else seg.confidence,
+        )
 
-def _segment_alignment(words: list[dict[str, Any]], rel_start: float, rel_end: float, offset: float) -> list[dict[str, Any]] | None:
+
+def _words_in_span(words: list[dict[str, Any]], rel_start: float, rel_end: float) -> list[dict[str, Any]]:
+    return [word for word in words if rel_start <= (word["start"] + word["end"]) / 2 <= rel_end]
+
+
+def _segment_alignment(words: list[dict[str, Any]], offset: float) -> list[dict[str, Any]] | None:
     aligned = [
-        {"word": word["word"], "start": word["start"] + offset, "end": word["end"] + offset, "score": word.get("score")}
+        {"word": word["word"], "start": word["start"] + offset, "end": word["end"] + offset}
         for word in words
-        if rel_start <= (word["start"] + word["end"]) / 2 <= rel_end
     ]
     return aligned or None

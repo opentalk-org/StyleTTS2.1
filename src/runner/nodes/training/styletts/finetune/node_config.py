@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from runner.nodes.assets.checkpoints import is_scratch_checkpoint
 from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingManifest
 from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
 from runner.nodes.training.styletts.finetune import config as styletts_config
@@ -40,9 +41,16 @@ def build_node_config(
     symbol_list = resolve_symbol_list(manifest.phoneme_alphabet)
     symbol_count = len(symbol_list)
     symbols = symbol_list
-    base_root = base_checkpoint.path
-    pretrained_model = styletts_layout.latest_weight(base_root)
+    scratch = is_scratch_checkpoint(base_checkpoint)
     asset_paths, ood_paths = _training_asset_paths(pretrained_assets)
+    if scratch:
+        _require_scratch_assets(asset_paths)
+        pretrained_model = None
+        architecture_path = None
+    else:
+        base_root = base_checkpoint.path
+        pretrained_model = styletts_layout.latest_weight(base_root)
+        architecture_path = styletts_layout.architecture_yaml(base_root)
     styletts_yaml = styletts_config.build_config(
         log_dir=output_dir / "run",
         train_list=str(manifest.metadata["train_manifest_path"]),
@@ -74,22 +82,49 @@ def build_node_config(
         slmadv_max_len=settings.slmadv_max_len,
         slmadv_batch_samples=settings.slmadv_batch_samples,
         slmadv_scale=settings.slm_scale,
-        architecture_path=styletts_layout.architecture_yaml(base_root),
+        architecture_path=architecture_path,
         multispeaker=settings.multispeaker,
         decoder_type=settings.decoder.value,
-        studio_publish={
-            "enabled": True,
-            "parent_checkpoint_id": str(base_checkpoint.checkpoint_id),
-            "parent_checkpoint_path": str(base_checkpoint.path),
-            "base_library_root": str(base_checkpoint.path),
-            "pretrained_relpath": _relative_weight(base_root, pretrained_model),
-            "run_name": settings.display_name,
-        },
+        studio_publish=_studio_publish(scratch, base_checkpoint, pretrained_model, settings.display_name),
         symbols=symbols,
         symbol_count=symbol_count,
     )
     styletts_config.write_config(config_path, styletts_yaml)
     return config_path, styletts_yaml
+
+
+def _require_scratch_assets(asset_paths: dict[str, Path | None]) -> None:
+    """From-scratch training has no pretrained weights to fall back on, so the
+    auxiliary ASR text-aligner, F0 pitch-extractor, and PL-BERT must be supplied;
+    otherwise those modules would train from random init and never converge."""
+    missing = [role for role in ("asr_bundle", "f0_model", "plbert") if asset_paths[role] is None]
+    if missing:
+        raise ValueError(f"StyleTTS from-scratch training requires pretrained assets: {', '.join(missing)}")
+
+
+def _studio_publish(
+    scratch: bool,
+    base_checkpoint: CheckpointRef,
+    pretrained_model: Path | None,
+    run_name: str,
+) -> dict[str, Any]:
+    if scratch:
+        return {
+            "enabled": True,
+            "parent_checkpoint_id": "",
+            "parent_checkpoint_path": "",
+            "base_library_root": "",
+            "pretrained_relpath": "",
+            "run_name": run_name,
+        }
+    return {
+        "enabled": True,
+        "parent_checkpoint_id": str(base_checkpoint.checkpoint_id),
+        "parent_checkpoint_path": str(base_checkpoint.path),
+        "base_library_root": str(base_checkpoint.path),
+        "pretrained_relpath": _relative_weight(base_checkpoint.path, pretrained_model),
+        "run_name": run_name,
+    }
 
 
 def _training_asset_paths(ref: AssetBundleRef | None) -> tuple[dict[str, Path | None], list[Path]]:

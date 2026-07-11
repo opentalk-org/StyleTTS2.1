@@ -142,6 +142,7 @@ class TranscribeNode(Node):
 
 class WhisperTranscribeNode(TranscribeNode):
     NODE_TYPE = "WhisperTranscribe"
+    DESCRIPTION = "Transcribe speech to timestamped text segments using an OpenAI Whisper checkpoint. Takes a checkpoint and audio, and outputs the same audio annotated with transcript segments. Good general-purpose multilingual ASR; set the language or leave it on auto-detect."
     MODEL_NAME = "whisper"
     SETTINGS = WhisperTranscribeSettings
 
@@ -154,6 +155,7 @@ class WhisperTranscribeNode(TranscribeNode):
 
 class ParakeetTranscribeNode(TranscribeNode):
     NODE_TYPE = "ParakeetTranscribe"
+    DESCRIPTION = "Transcribe audio with an NVIDIA Parakeet checkpoint, producing timestamped transcript segments on the audio. Fast, accurate English ASR; optionally emit per-word alignment timestamps for downstream segmentation and forced-alignment work."
     MODEL_NAME = "parakeet"
     SETTINGS = ParakeetTranscribeSettings
 
@@ -181,6 +183,7 @@ class ParakeetTranscribeNode(TranscribeNode):
 
 class CanaryTranscribeNode(TranscribeNode):
     NODE_TYPE = "CanaryTranscribe"
+    DESCRIPTION = "Transcribe or translate speech with an NVIDIA Canary checkpoint, writing timestamped segments onto the audio. Supports many European languages and speech-to-text translation by choosing distinct source and target languages, with optional punctuation and capitalization."
     MODEL_NAME = "canary"
     SETTINGS = CanaryTranscribeSettings
 
@@ -269,7 +272,7 @@ def _offset_alignment(words: list[dict[str, Any]] | None, offset: float) -> list
     if not words:
         return None
     return [
-        {"word": word["word"], "start": word["start"] + offset, "end": word["end"] + offset, "score": word.get("score")}
+        {"word": word["word"], "start": word["start"] + offset, "end": word["end"] + offset}
         for word in words
     ]
 

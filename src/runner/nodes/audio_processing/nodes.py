@@ -48,6 +48,7 @@ class DiarizationSegment:
 
 class VadDetectNode(Node):
     NODE_TYPE = "VadDetect"
+    DESCRIPTION = "Split audio into speech chunks using voice-activity detection, dropping silence. Takes audio and streams out one shorter audio clip per detected speech span. Tune the minimum and maximum segment length, silence padding, the maximum silence gap that still keeps neighboring speech together, and the silence threshold. Use it to break a long recording into utterance-sized pieces before transcription."
     CATEGORY = "Audio"
     SETTINGS = VadSettings
     INPUTS = {"audio": AudioPort()}
@@ -65,6 +66,7 @@ class VadDetectNode(Node):
 
 class SortformerDiarizationNode(Node):
     NODE_TYPE = "SortformerDiarization"
+    DESCRIPTION = "Diarize audio to find who spoke when using a Sortformer model, then split it into per-speaker clips. Takes a checkpoint and audio, and streams out one audio clip per speaker turn, each tagged with its speaker label. Use it to separate a multi-speaker recording into single-speaker segments. Tune the minimum segment length, sample rate, batch size, and device."
     CATEGORY = "Audio"
     SETTINGS = SortformerSettings
     INPUTS = {"audio": AudioPort(), "checkpoint": CheckpointRefPort(join_mode=JoinMode.BROADCAST)}
@@ -105,6 +107,7 @@ class SortformerDiarizationNode(Node):
 
 class CutAudioBySegmentsNode(Node):
     NODE_TYPE = "CutAudioBySegments"
+    DESCRIPTION = "Cut audio into separate clips at the boundaries of the segments it already carries. Takes audio that has segments (from transcription, VAD, or diarization) and streams out one standalone audio clip per segment, with timing rebased to each clip's own start and the segment's text, speaker, and other metadata carried along. Use it to turn annotated audio into individually saved utterances."
     CATEGORY = "Audio"
     INPUTS = {"audio": AudioPort()}
     OUTPUTS = {"audio": AudioPort(mode=PortMode.STREAM)}

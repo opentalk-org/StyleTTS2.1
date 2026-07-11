@@ -74,6 +74,7 @@ def normalize_wav_bytes(audio_bytes: bytes, settings: NormalizeSettings) -> Norm
 
 class NormalizeLoudnessNode(Node):
     NODE_TYPE = "NormalizeLoudness"
+    DESCRIPTION = "Normalize an audio clip to a consistent loudness and format. Takes audio in, and outputs mono 24 kHz WAV scaled to a target RMS level, with optional peak-clipping protection and even leading/trailing silence padding. Use it to make recordings from different sources uniform before transcription or training."
     CATEGORY = "Audio"
     SETTINGS = NormalizeSettings
     INPUTS = {"audio": AudioPort()}

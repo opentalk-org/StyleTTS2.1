@@ -30,6 +30,7 @@ class PlanSegmentGroupsSettings(StrictSettings):
 
 class PlanSegmentGroupsNode(Node):
     NODE_TYPE = "PlanSegmentGroups"
+    DESCRIPTION = "Group a recording's transcript segments into contiguous chunks suitable for splitting into shorter clips, without cutting the audio itself. Takes audio with segments and streams out one planned-group audio per chunk, each carrying its span and merged text. Grouping respects a minimum duration and character count, a maximum gap between adjacent segments, and caps on merged length and phoneme characters. Use it before extracting clips to decide where a long recording should be broken up."
     CATEGORY = "Audio"
     SETTINGS = PlanSegmentGroupsSettings
     INPUTS = {"audio": AudioPort()}

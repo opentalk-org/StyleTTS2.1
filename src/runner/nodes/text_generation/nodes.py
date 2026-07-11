@@ -49,14 +49,8 @@ class OpenRouterGenerateSettings(StrictSettings):
 
 
 class OpenRouterGenerateTextsNode(Node):
-    """Generate TTS-ready sentences via OpenRouter and fan them out one text per item.
-
-    Sentence specs (length, topic, keywords, style example) are planned deterministically
-    from ``seed`` up front, so ``remaining_items`` is known before any network call. Each
-    ``execute`` turns one spec batch into a single structured-output request.
-    """
-
     NODE_TYPE = "OpenRouterGenerateTexts"
+    DESCRIPTION = "Generate TTS-ready sentences with a large language model via OpenRouter, streaming out one text per item to feed synthesis. Choose the model, language, how many texts to produce, and length distribution, then guide style with example sentences, keywords, and topics; every sentence is fully normalized for speech (numbers, dates, and symbols spelled out). Sampling is deterministic from the seed, so a run is reproducible. Requires an OpenRouter API key."
     CATEGORY = "Text"
     SETTINGS = OpenRouterGenerateSettings
     IS_INPUT = True

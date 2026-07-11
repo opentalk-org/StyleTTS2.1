@@ -111,10 +111,16 @@ export function datasetOptions(datasets: Dataset[]): Option[] {
   ];
 }
 
-export function checkpointOptions(checkpoints: Checkpoint[], type: string, placeholder: string): Option[] {
+// Base-checkpoint dropdown sentinel that trains StyleTTS from random init. Kept
+// in sync with SCRATCH_CHECKPOINT_ID in runner/nodes/assets/checkpoints.py.
+export const SCRATCH_CHECKPOINT_ID = "__scratch__";
+
+export function checkpointOptions(checkpoints: Checkpoint[], type: string, placeholder: string, includeScratch = false): Option[] {
   const rows = checkpoints.filter((checkpoint) => checkpointTypeKey(checkpoint.type_) === checkpointTypeKey(type));
+  const scratch = includeScratch ? [{ value: SCRATCH_CHECKPOINT_ID, label: "From scratch (random init)" }] : [];
   return [
     { value: "", label: rows.length ? placeholder : `No ${type} checkpoints available` },
+    ...scratch,
     ...rows.map((checkpoint) => ({ value: checkpoint.id, label: checkpoint.name })),
   ];
 }

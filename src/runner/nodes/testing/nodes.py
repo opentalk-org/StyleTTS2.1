@@ -34,6 +34,7 @@ class StyleReferenceSweepSettings(StrictSettings):
 
 class TestingRunInputNode(Node):
     NODE_TYPE = "TestingRunInput"
+    DESCRIPTION = "Start a testing workflow by emitting a single run token that downstream testing nodes consume. Takes no inputs and outputs one run object that seeds the rest of the graph. Place this as the entry point of any voice-testing workflow."
     CATEGORY = "Testing"
     IS_INPUT = True
     INPUTS = {}
@@ -66,6 +67,7 @@ class TestingInputPayloadNode(Node):
 
 class TestingTextPromptNode(TestingInputPayloadNode):
     NODE_TYPE = "TestingTextPrompt"
+    DESCRIPTION = "Provide the text to be synthesized during testing, along with its language. Consumes a run token and outputs a prompt containing the text and language for downstream synthesis. Type the sentence you want the model to speak and set its language here."
     SETTINGS = TestingTextPromptSettings
     OUTPUT_FIELD = "prompt_text"
     OUTPUTS = {"prompt_text": JsonPort()}
@@ -73,6 +75,7 @@ class TestingTextPromptNode(TestingInputPayloadNode):
 
 class SelectStyleReferenceNode(TestingInputPayloadNode):
     NODE_TYPE = "SelectStyleReference"
+    DESCRIPTION = "Pick a single reference audio clip whose voice and style the synthesized speech should imitate. Consumes a run token and outputs a style reference with its alpha and beta blend weights. Use it when testing one specific voice; tune alpha and beta to control how strongly the reference style is applied."
     SETTINGS = SelectStyleReferenceSettings
     OUTPUT_FIELD = "style_reference"
     OUTPUTS = {"style_reference": JsonPort()}
@@ -90,6 +93,7 @@ class SelectStyleReferenceNode(TestingInputPayloadNode):
 
 class StyleReferenceSweepNode(TestingInputPayloadNode):
     NODE_TYPE = "StyleReferenceSweep"
+    DESCRIPTION = "Generate a batch of style references across several voices so you can compare many voices in one test run. Consumes a run token and outputs a batch of style references, one reference audio per selected voice, with shared alpha and beta weights and a configurable number of samples per voice. Use it instead of selecting a single reference when you want to sweep multiple voices at once."
     SETTINGS = StyleReferenceSweepSettings
     OUTPUT_FIELD = "style_reference"
     OUTPUTS = {"style_reference": JsonPort()}

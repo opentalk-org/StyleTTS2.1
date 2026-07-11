@@ -7,19 +7,19 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
-from uuid import UUID
 
 import yaml
 from pydantic import Field
 
 from runflow.core.node import Node
+from runflow.core.ports import JoinMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
-from runner.nodes.datatypes import AudioPort, SaveResultPort
-from runner.nodes.models import Audio, SaveResult, stable_id
+from runner.nodes.datatypes import AudioPort, CheckpointRefPort, SaveResultPort
+from runner.nodes.models import Audio, CheckpointRef, SaveResult, stable_id, typed_checkpoint
 from runner.nodes.statistics.voice_embedding_html import PlotPoint, render_voice_plot_html
-from runner.nodes.synthesis.styletts_runtime.checkpoints import latest_weight, resolve_slot_checkpoint
+from runner.nodes.synthesis.styletts_runtime.checkpoints import latest_weight, resolve_main_checkpoint
 from runner.nodes.synthesis.styletts_runtime.helpers import compute_style_from_wave, training_import_context
 from shared.db import database_session
 from shared.db.assets import crud as asset_crud
@@ -32,7 +32,6 @@ UNASSIGNED_VOICE = "unassigned"
 
 
 class VoiceEmbeddingPlotSettings(StrictSettings):
-    checkpoint_id: UUID = Field(title="StyleTTS2 checkpoint")
     label_source: Literal["voice", "speaker"] = Field(default="voice", title="Colour by")
     embedding_component: Literal["both", "acoustic", "prosodic"] = Field(default="both", title="Style component")
     title: str = Field(default="Voice style embeddings (PCA)", title="Plot title")
@@ -56,9 +55,10 @@ class EmbeddedPoint:
 
 class EmbedVoicesPcaPlotNode(Node):
     NODE_TYPE = "EmbedVoicesPcaPlot"
+    DESCRIPTION = "Embed every incoming audio clip with a StyleTTS2 style encoder, project the style vectors down to 2D with PCA, and produce an interactive HTML scatter plot artifact. Points can be coloured by voice or speaker and use the acoustic, prosodic, or combined style component. Use it to visually inspect how voices cluster and spot outliers or mislabelled samples; wire in the StyleTTS2 checkpoint to embed with on the checkpoint input."
     CATEGORY = "Statistics"
     SETTINGS = VoiceEmbeddingPlotSettings
-    INPUTS = {"audio": AudioPort()}
+    INPUTS = {"audio": AudioPort(), "checkpoint": CheckpointRefPort(join_mode=JoinMode.BROADCAST)}
     OUTPUTS = {"artifact": SaveResultPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.DISABLED)
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, exclusive_group="accelerator", keep_loaded=True)
@@ -76,16 +76,16 @@ class EmbedVoicesPcaPlotNode(Node):
         outputs = []
         for inputs in batch:
             context.check_cancel()
-            result = await asyncio.to_thread(self._ingest, inputs, str(context.run_id), context.output_dir)
+            result = await asyncio.to_thread(self._ingest, inputs, str(context.run_id))
             if result is not None:
                 outputs.append(result)
         return outputs
 
-    def _ingest(self, inputs: dict[str, Any], run_id: str, output_dir: Path) -> dict[str, SaveResult] | None:
+    def _ingest(self, inputs: dict[str, Any], run_id: str) -> dict[str, SaveResult] | None:
         audio = inputs["audio"]
         assert isinstance(audio, Audio), f"unsupported audio input: {type(audio).__name__}"
         if self._runtime is None:
-            self._runtime = _load_style_encoder_runtime(self.settings.checkpoint_id)
+            self._runtime = _load_style_encoder_runtime(typed_checkpoint(inputs["checkpoint"]))
         batch_id = str(audio.metadata["source_batch_id"])
         expected = int(audio.metadata["source_batch_count"])
         point = self._embed_audio(audio)
@@ -94,7 +94,7 @@ class EmbedVoicesPcaPlotNode(Node):
         if len(pending) < expected:
             return None
         del self._pending[batch_id]
-        return {"artifact": _render_and_store(pending, self.settings, run_id, output_dir)}
+        return {"artifact": _render_and_store(pending, self.settings, run_id)}
 
     def _embed_audio(self, audio: Audio) -> EmbeddedPoint:
         with database_session() as session:
@@ -106,8 +106,8 @@ class EmbedVoicesPcaPlotNode(Node):
         return EmbeddedPoint(vector=vector, label=label, name=audio.name)
 
 
-def _load_style_encoder_runtime(checkpoint_id: UUID) -> StyleEncoderRuntime:
-    main = resolve_slot_checkpoint(checkpoint_id, "styletts2")
+def _load_style_encoder_runtime(checkpoint: CheckpointRef) -> StyleEncoderRuntime:
+    main = resolve_main_checkpoint(checkpoint)
     weights_path = latest_weight(main.root)
     config = yaml.safe_load((main.root / "config.yml").read_text(encoding="utf-8"))
     params = config["model_params"]
@@ -173,7 +173,7 @@ def _pca_coordinates(vectors: list[Any]) -> Any:
     return projection
 
 
-def _render_and_store(points: list[EmbeddedPoint], settings: VoiceEmbeddingPlotSettings, run_id: str, output_dir: Path) -> SaveResult:
+def _render_and_store(points: list[EmbeddedPoint], settings: VoiceEmbeddingPlotSettings, run_id: str) -> SaveResult:
     coordinates = _pca_coordinates([point.vector for point in points])
     plot_points = [
         PlotPoint(x=float(coordinates[index, 0]), y=float(coordinates[index, 1]), voice=point.label, name=point.name)
@@ -195,8 +195,5 @@ def _render_and_store(points: list[EmbeddedPoint], settings: VoiceEmbeddingPlotS
             ExtraFileCreate(name=settings.artifact_name, data=html_bytes, type_="artifact", metadata=metadata),
         )
         artifact_id = str(artifact.id)
-    out_dir = output_dir / "artifacts"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{artifact_id}.html"
-    out_path.write_bytes(html_bytes)
-    return SaveResult(out_path, "html", stable_id("artifact", artifact_id), artifact_id, {**metadata, "artifact_id": artifact_id})
+        bucket_key = artifact.path
+    return SaveResult(Path(bucket_key), "html", stable_id("artifact", artifact_id), artifact_id, {**metadata, "artifact_id": artifact_id, "bucket_key": bucket_key})

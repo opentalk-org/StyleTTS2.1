@@ -38,6 +38,21 @@ def nemo_hypothesis_confidence(output: Any) -> float | None:
     return confidence_from_avg_logprob(mean_logprob)
 
 
+def mean_word_confidence(words: list[dict[str, Any]] | None) -> float | None:
+    """Mean of the per-word ``score`` values, ignoring words whose score is ``None``.
+
+    Segments carry a single ``confidence`` (the average over their words) rather
+    than a score on every alignment entry. Returns ``None`` when there are no
+    words or none of them has a score.
+    """
+    if not words:
+        return None
+    scores = [word["score"] for word in words if word["score"] is not None]
+    if not scores:
+        return None
+    return _clamp01(sum(scores) / len(scores))
+
+
 def _sequence_length(sequence: Any) -> int:
     if sequence is None:
         return 0
