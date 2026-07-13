@@ -36,6 +36,7 @@ export type AudioFile = {
   segment_preview: AudioSegment[];
   dataset_ids: string[];
   virtual: boolean;
+  storage_kind: "packed" | "external";
   metadata: Record<string, unknown>;
   updated_at: string;
 };

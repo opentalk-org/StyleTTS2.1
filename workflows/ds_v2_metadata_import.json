@@ -1,0 +1,50 @@
+{
+  "name": "Import Hetzner ds_v2 metadata",
+  "hidden": false,
+  "data": {
+    "nodes": [
+      {
+        "id": "hetzner_ds_v2_metadata",
+        "type": "HetznerDsV2MetadataSource",
+        "x": -180,
+        "y": 140,
+        "params": {
+          "host": "hetzner-storagebox",
+          "row_offset": 0,
+          "row_limit": null,
+          "text_column": "text_src",
+          "name_prefix": "ds_v2",
+          "download_retries": 3,
+          "create_voices": true
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_external_audio",
+        "type": "SaveExternalAudioRecord",
+        "x": 240,
+        "y": 140,
+        "params": {},
+        "runtime": {}
+      }
+    ],
+    "edges": [
+      {
+        "source_node": "hetzner_ds_v2_metadata",
+        "source_port": "audio",
+        "target_node": "save_external_audio",
+        "target_port": "audio"
+      }
+    ],
+    "context": {
+      "work_dir": "work",
+      "cache_dir": "cache",
+      "output_dir": "outputs",
+      "device": "cuda",
+      "config": {},
+      "input_items": []
+    },
+    "launch_source": null,
+    "panels": []
+  }
+}

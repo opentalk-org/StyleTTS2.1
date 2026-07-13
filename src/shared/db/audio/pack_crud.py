@@ -38,6 +38,8 @@ def bulk_create_packed_audio_files(
 
 def read_packed_audio_file(session: Session, store: ObjectStore, audio_file_id: uuid.UUID) -> bytes:
     item = one(session, AudioFile, audio_file_id)
+    _assert_packed(item)
+    assert item.bucket_file is not None
     return store.read_range(item.bucket_file.path, item.byte_offset, item.byte_length)
 
 
@@ -48,7 +50,9 @@ def read_packed_audio_part(
     payload: AudioPartRead,
 ) -> bytes:
     item = one(session, AudioFile, audio_file_id)
+    _assert_packed(item)
     _assert_valid_part(item, payload)
+    assert item.bucket_file is not None
     return store.read_range(item.bucket_file.path, item.byte_offset + payload.start, payload.length)
 
 
@@ -58,6 +62,8 @@ def bulk_read_packed_audio_files(
     audio_file_ids: Iterable[uuid.UUID],
 ) -> dict[uuid.UUID, bytes]:
     items = [one(session, AudioFile, audio_file_id) for audio_file_id in audio_file_ids]
+    for item in items:
+        _assert_packed(item)
     pack_data = _download_packs(store, items)
     return {item.id: _slice_audio(pack_data, item) for item in items}
 
@@ -69,6 +75,7 @@ def bulk_read_packed_audio_parts(
 ) -> dict[uuid.UUID, bytes]:
     items = [one(session, AudioFile, audio_file_id) for audio_file_id in requests]
     for item in items:
+        _assert_packed(item)
         _assert_valid_part(item, requests[item.id])
     pack_data = _download_packs(store, items)
     return {
@@ -133,6 +140,8 @@ def _create_item_from_write(writer: AudioPackWriter, payload: AudioCreate) -> Au
         segments=payload.segments,
         metadata_=payload.metadata,
         virtual=payload.virtual,
+        storage_kind="packed",
+        storage_ref=None,
         updated_at=_now(),
     )
 
@@ -151,10 +160,17 @@ def _replace_item_from_write(item: AudioFile, writer: AudioPackWriter, payload: 
     item.segments = payload.segments
     item.metadata_ = payload.metadata
     item.virtual = payload.virtual
+    item.storage_kind = "packed"
+    item.storage_ref = None
     item.updated_at = _now()
 
 
 def _decrease_used_bytes(item: AudioFile) -> None:
+    if item.storage_kind == "external":
+        assert item.bucket_file is None, f"external audio has a bucket: {item.id}"
+        return
+    _assert_packed(item)
+    assert item.bucket_file is not None
     item.bucket_file.used_bytes -= item.byte_length
     assert item.bucket_file.used_bytes >= 0, f"pack used bytes went negative: {item.bucket_file_id}"
 
@@ -164,6 +180,9 @@ def _now() -> datetime:
 
 
 def _download_packs(store: ObjectStore, items: Sequence[AudioFile]) -> dict[uuid.UUID, bytes]:
+    for item in items:
+        _assert_packed(item)
+        assert item.bucket_file is not None
     packs = {item.bucket_file.id: item.bucket_file for item in items}
     return {pack_id: store.download(pack.path) for pack_id, pack in packs.items()}
 
@@ -184,3 +203,8 @@ def _assert_valid_part(item: AudioFile, payload: AudioPartRead) -> None:
     assert payload.start >= 0, f"part start must be non-negative: {payload.start}"
     assert payload.length > 0, f"part length must be positive: {payload.length}"
     assert payload.start + payload.length <= item.byte_length, f"part exceeds audio length: {item.id}"
+
+
+def _assert_packed(item: AudioFile) -> None:
+    if item.storage_kind != "packed":
+        raise ValueError(f"Audio {item.id} contains metadata only; no stored audio bytes are available")

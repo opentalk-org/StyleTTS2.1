@@ -117,6 +117,7 @@ async def audio_content(audio_file_id: uuid.UUID, range_header: str | None = Hea
     try:
         with database_session() as session:
             item = audio_crud.get_audio_file(session, audio_file_id)
+            _require_packed_audio(item)
             start, end = _content_range(range_header, item.byte_length)
             data = audio_crud.read_audio_part(session, audio_file_id, AudioPartRead(start=start, length=end - start + 1))
             return Response(
@@ -143,6 +144,7 @@ async def get_waveform(
     try:
         with database_session() as session:
             item = audio_crud.get_audio_file(session, audio_file_id)
+            _require_packed_audio(item)
             return waveform_crud.read_waveform(session, audio_file_id, start, end or item.duration, points)
     except KeyError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
@@ -152,7 +154,7 @@ async def get_waveform(
 async def ensure_waveform(audio_file_id: uuid.UUID) -> WaveformStatusRead:
     try:
         with database_session() as session:
-            audio_crud.get_audio_file(session, audio_file_id)
+            _require_packed_audio(audio_crud.get_audio_file(session, audio_file_id))
     except KeyError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     return WaveformStatusRead(status=await waveform_service.ensure(audio_file_id))
@@ -316,6 +318,7 @@ def audio_response(item: AudioFile, segment_limit: int | None) -> AudioFileListI
         segment_preview=[segment_response(segment) for segment in segments],
         dataset_ids=[dataset.id for dataset in item.datasets],
         virtual=item.virtual,
+        storage_kind=item.storage_kind,
         metadata=metadata,
         updated_at=item.updated_at,
     )
@@ -391,6 +394,14 @@ def _content_type(metadata: dict[str, Any]) -> str:
     if "content_type" in metadata:
         return str(metadata["content_type"])
     return "application/octet-stream"
+
+
+def _require_packed_audio(item: AudioFile) -> None:
+    if item.storage_kind != "packed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Audio {item.id} contains metadata only; no stored audio bytes are available",
+        )
 
 
 def _content_range(range_header: str | None, byte_length: int) -> tuple[int, int]:

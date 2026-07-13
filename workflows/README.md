@@ -92,6 +92,14 @@ row-for-row, and uses it as the exclusive metadata source. Both files are cached
 only the four most recently used ds_v2 pairs are retained. A missing or mismatched
 CSV fails the run.
 
+### `ds_v2_metadata_import.json`
+
+Discover ds_v2 metadata CSVs in `/home/ds_v2_metadata` and import their rows
+directly into PostgreSQL without downloading Parquet audio or writing object-store
+packs. Offset and limit apply across the discovered CSVs. Records are virtual,
+retain their external Parquet row location, and cannot be played until audio bytes
+are imported separately.
+
 ### `voice_embedding_pca.json`
 
 Runs the StyleTTS style encoder over voices and plots a PCA scatter coloured by

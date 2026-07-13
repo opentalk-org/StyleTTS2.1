@@ -24,6 +24,7 @@ from runner.nodes.audio_enhancement.denoise import DeepFilterNetDenoiseNode
 from runner.nodes.audio_enhancement.normalize import NormalizeLoudnessNode
 from runner.nodes.audio_enhancement.pad_silence import PadSilenceNode
 from runner.nodes.audio_segments.extract import ExtractSegmentGroupAudioNode, PersistSplitAudioRecordsNode
+from runner.nodes.audio_segments.external_writeback import SaveExternalAudioRecordNode
 from runner.nodes.audio_segments.dedup_overlap import DeduplicateOverlappingSegmentsNode
 from runner.nodes.audio_segments.grouping import PlanSegmentGroupsNode
 from runner.nodes.audio_segments.merge_alignment import MergeAlignmentNode
@@ -40,7 +41,7 @@ from runner.nodes.assets.checkpoints import ResolveCheckpointNode
 from runner.nodes.assets.training_assets import ResolveTrainingAssetsNode
 from runner.nodes.dataset_writeback import AddAudioToDatasetNode, AssignVoiceNode, DeleteAudioRecordsNode, RemoveAudioFromDatasetNode
 from runner.nodes.datatypes import register_runner_types
-from runner.nodes.hetzner import HetznerDsV1ParquetAudioSourceNode, HetznerDsV2ParquetAudioSourceNode
+from runner.nodes.hetzner import HetznerDsV1ParquetAudioSourceNode, HetznerDsV2MetadataSourceNode, HetznerDsV2ParquetAudioSourceNode
 from runner.nodes.mos import BuildMosTrainingManifestNode, MosModelTrainingNode, PredictMosScoreNode
 from runner.nodes.youtube_source import YouTubeAudioSourceNode
 from runner.nodes.text_generation import OpenRouterGenerateTextsNode
@@ -71,9 +72,11 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         AudioSourceNode,
         HetznerDsV1ParquetAudioSourceNode,
         HetznerDsV2ParquetAudioSourceNode,
+        HetznerDsV2MetadataSourceNode,
         YouTubeAudioSourceNode,
         LoadAudioNode,
         SaveAudioRecordNode,
+        SaveExternalAudioRecordNode,
         UpdateAudioRecordBytesNode,
         SaveAudioArtifactNode,
         LoadAudioSegmentsNode,

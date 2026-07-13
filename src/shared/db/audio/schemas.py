@@ -71,6 +71,26 @@ class AudioCreate(BaseModel):
     waveform: WaveformInput | None = None
 
 
+class ExternalAudioLocation(BaseModel):
+    provider: str
+    host: str
+    path: str
+    item_index: int
+
+
+class ExternalAudioCreate(BaseModel):
+    id: UUID
+    name: str
+    duration: float
+    score: float | None = None
+    language: str | None = None
+    style_prompt: str | None = None
+    voice_prompt: str | None = None
+    segments: list[dict[str, Any]]
+    metadata: dict[str, Any]
+    storage_ref: ExternalAudioLocation
+
+
 class AudioUpdate(BaseModel):
     name: str
     wav_bytes: bytes | None

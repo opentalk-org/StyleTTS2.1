@@ -82,6 +82,7 @@ class AudioFileListItem(BaseModel):
     segment_preview: list[AudioSegmentRead]
     dataset_ids: list[UUID]
     virtual: bool
+    storage_kind: Literal["packed", "external"]
     metadata: dict[str, Any]
     updated_at: datetime
 

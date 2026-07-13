@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,7 +15,7 @@ class AudioFile(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    bucket_file_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bucket_files.id"), nullable=False)
+    bucket_file_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("bucket_files.id"), nullable=True)
     byte_offset: Mapped[int] = mapped_column(BigInteger, nullable=False)
     byte_length: Mapped[int] = mapped_column(BigInteger, nullable=False)
     duration: Mapped[float] = mapped_column(Float, nullable=False)
@@ -26,6 +26,8 @@ class AudioFile(Base):
     segments: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False)
     virtual: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    storage_kind: Mapped[str] = mapped_column(String(16), nullable=False, default="packed")
+    storage_ref: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
-    bucket_file: Mapped[BucketFile] = relationship(back_populates="audio_files", lazy="joined")
+    bucket_file: Mapped[BucketFile | None] = relationship(back_populates="audio_files", lazy="joined")
     datasets: Mapped[list["Dataset"]] = relationship(secondary="dataset_audio_files", back_populates="audio_files")

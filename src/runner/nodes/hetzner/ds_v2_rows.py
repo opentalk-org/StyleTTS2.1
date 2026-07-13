@@ -62,6 +62,34 @@ def metadata_remote_path(remote_parquet_path: str) -> str:
     return str(METADATA_DIRECTORY / f"{parquet.stem}_metadata.csv")
 
 
+def cached_metadata_file(
+    host: str,
+    remote_parquet_path: str,
+    cache_dir: Path,
+    retries: int,
+) -> Path:
+    remote_path = metadata_remote_path(remote_parquet_path)
+    pair_key = hashlib.sha1(remote_parquet_path.encode("utf-8")).hexdigest()[:16]
+    path = _cached_remote_file(host, remote_path, cache_dir, retries, pair_key)
+    path.touch()
+    return path
+
+
+def cached_remote_file(host: str, remote_path: str, cache_dir: Path, retries: int) -> Path:
+    cache_key = hashlib.sha1(remote_path.encode("utf-8")).hexdigest()[:16]
+    path = _cached_remote_file(host, remote_path, cache_dir, retries, cache_key)
+    path.touch()
+    return path
+
+
+def validate_metadata_headers(fieldnames: list[str] | None, metadata_path: Path) -> None:
+    _validate_headers(fieldnames, metadata_path)
+
+
+def parse_metadata_row(row: dict[str, str | None], metadata_path: Path, row_index: int) -> dict[str, str]:
+    return _metadata_row(row, metadata_path, row_index)
+
+
 def load_rows(
     host: str,
     remote_parquet_path: str,
