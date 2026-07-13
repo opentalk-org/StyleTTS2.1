@@ -2,16 +2,28 @@ from bisect import bisect_right
 from math import ceil, floor, isfinite
 from typing import Any
 
-MAX_SMART_BINS = 200
+LOW_PERCENTILE = 0.005
+HIGH_PERCENTILE = 0.995
+MIN_PERCENTILE_VALUES = 100
 
 
 def histogram_counts(values: list[float], bins: int, range_: tuple[float, float] | None = None) -> dict[str, Any]:
-    assert 0 < bins <= MAX_SMART_BINS, f"histogram bins must be between 1 and {MAX_SMART_BINS}"
+    assert bins > 0, "histogram bins must be positive"
     finite_values = [float(value) for value in values if isfinite(float(value))]
-    lo, hi = _value_range(finite_values, range_)
-    included = [value for value in finite_values if lo <= value <= hi]
-    edges = _smart_edges(included, bins, lo, hi, range_ is None)
-    return {"edges": edges, "counts": _count_values(included, edges)}
+    if range_ is not None:
+        lo, hi = _value_range(finite_values, range_)
+        included = [value for value in finite_values if lo <= value <= hi]
+        edges = _equal_edges(lo, hi, bins)
+        return {"edges": edges, "counts": _count_values(included, edges), "underflow": 0, "overflow": 0}
+    if len(finite_values) < MIN_PERCENTILE_VALUES or len(set(finite_values)) == 1:
+        lo, hi = _value_range(finite_values, None)
+        edges = _equal_edges(lo, hi, bins)
+        return {"edges": edges, "counts": _count_values(finite_values, edges), "underflow": 0, "overflow": 0}
+    edges = _percentile_edges(finite_values, bins)
+    underflow = sum(value < edges[0] for value in finite_values)
+    overflow = sum(value >= edges[-1] for value in finite_values)
+    included = [value for value in finite_values if edges[0] <= value < edges[-1]]
+    return {"edges": edges, "counts": _count_values(included, edges), "underflow": underflow, "overflow": overflow}
 
 
 def _quantile(sorted_values: list[float], fraction: float) -> float:
@@ -24,26 +36,21 @@ def _quantile(sorted_values: list[float], fraction: float) -> float:
     return sorted_values[lower] * (1.0 - weight) + sorted_values[upper] * weight
 
 
-def _freedman_diaconis_width(values: list[float]) -> float | None:
-    if len(values) < 2:
-        return None
+def _percentile_edges(values: list[float], bins: int) -> list[float]:
     ordered = sorted(values)
-    interquartile_range = _quantile(ordered, 0.75) - _quantile(ordered, 0.25)
-    if interquartile_range == 0.0:
-        return None
-    return 2.0 * interquartile_range / len(ordered) ** (1.0 / 3.0)
+    lo = _quantile(ordered, LOW_PERCENTILE)
+    hi = _quantile(ordered, HIGH_PERCENTILE)
+    if all(value.is_integer() for value in ordered):
+        lo = floor(lo) - 0.5
+        hi = ceil(hi) + 0.5
+        integer_slots = int(hi - lo)
+        if integer_slots <= bins:
+            return [lo + index for index in range(integer_slots + 1)]
+    return _equal_edges(lo, hi, bins)
 
 
-def _smart_edges(values: list[float], bins: int, lo: float, hi: float, auto_range: bool) -> list[float]:
-    width = _freedman_diaconis_width(values)
-    if auto_range and width is not None and width <= 1.0 and all(value.is_integer() for value in values):
-        integer_slots = ceil(hi) - floor(lo) + 1
-        if integer_slots <= MAX_SMART_BINS:
-            start = floor(lo) - 0.5
-            return [start + index for index in range(integer_slots + 1)]
-    derived_bins = bins if width is None else max(bins, ceil((hi - lo) / width))
-    bin_count = min(derived_bins, MAX_SMART_BINS)
-    edges = [lo + ((hi - lo) * index / bin_count) for index in range(bin_count + 1)]
+def _equal_edges(lo: float, hi: float, bins: int) -> list[float]:
+    edges = [lo + ((hi - lo) * index / bins) for index in range(bins + 1)]
     edges[-1] = hi
     return edges
 
