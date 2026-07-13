@@ -8,10 +8,9 @@ type NodeTemplate = { id: string; type: string; x: number; y: number };
 
 const COMMON_NODES: NodeTemplate[] = [
   { id: "source", type: "AudioSource", x: 0, y: 200 },
-  { id: "subset", type: "RandomAudioSubset", x: 240, y: 200 },
-  { id: "segments", type: "LoadAudioSegments", x: 720, y: 200 },
-  { id: "aggregate", type: "AggregateDatasetStatistics", x: 1200, y: 200 },
-  { id: "save", type: "SaveStatisticsEntry", x: 1440, y: 200 },
+  { id: "segments", type: "LoadAudioSegments", x: 480, y: 200 },
+  { id: "aggregate", type: "AggregateDatasetStatistics", x: 960, y: 200 },
+  { id: "save", type: "SaveStatisticsEntry", x: 1200, y: 200 },
 ];
 
 const FINAL_EDGES: WorkflowEdge[] = [
@@ -21,8 +20,8 @@ const FINAL_EDGES: WorkflowEdge[] = [
 
 function buildStatisticsGraph(schema: WorkflowSchema, datasetId: string, name: string, mode: StatisticsMode, sampleCount: number | null): WorkflowGraph {
   const modeNodes: NodeTemplate[] = mode === "acoustic"
-    ? [{ id: "load", type: "LoadAudio", x: 480, y: 200 }, { id: "features", type: "AnalyzeAudioFeatures", x: 960, y: 200 }]
-    : [{ id: "features", type: "DatabaseStatisticsFeatures", x: 960, y: 200 }];
+    ? [{ id: "load", type: "LoadAudio", x: 240, y: 200 }, { id: "features", type: "AnalyzeAudioFeatures", x: 720, y: 200 }]
+    : [{ id: "features", type: "DatabaseStatisticsFeatures", x: 720, y: 200 }];
   const nodes = [...COMMON_NODES, ...modeNodes].map((node) => {
     const info = schema.nodes[node.type];
     if (!info) throw new Error(`Statistics node is not registered: ${node.type}`);
@@ -30,8 +29,7 @@ function buildStatisticsGraph(schema: WorkflowSchema, datasetId: string, name: s
     if (node.id === "source") {
       params.source = "dataset";
       params.dataset_id = datasetId;
-    }
-    if (node.id === "subset") {
+      params.include_virtual = mode === "database";
       params.selection = sampleCount === null ? "all" : "random";
       if (sampleCount !== null) params.count = sampleCount;
     }
@@ -43,14 +41,12 @@ function buildStatisticsGraph(schema: WorkflowSchema, datasetId: string, name: s
   });
   const inputEdges: WorkflowEdge[] = mode === "acoustic"
     ? [
-        { source_node: "source", source_port: "audio", target_node: "subset", target_port: "audio" },
-        { source_node: "subset", source_port: "audio", target_node: "load", target_port: "audio" },
+        { source_node: "source", source_port: "audio", target_node: "load", target_port: "audio" },
         { source_node: "load", source_port: "audio", target_node: "segments", target_port: "audio" },
         { source_node: "segments", source_port: "audio", target_node: "features", target_port: "audio" },
       ]
     : [
-        { source_node: "source", source_port: "audio", target_node: "subset", target_port: "audio" },
-        { source_node: "subset", source_port: "audio", target_node: "segments", target_port: "audio" },
+        { source_node: "source", source_port: "audio", target_node: "segments", target_port: "audio" },
         { source_node: "segments", source_port: "audio", target_node: "features", target_port: "audio" },
       ];
   return { nodes, edges: [...inputEdges, ...FINAL_EDGES] };

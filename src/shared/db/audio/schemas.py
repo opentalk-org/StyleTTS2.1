@@ -125,6 +125,17 @@ class AudioBucketLocation(BaseModel):
     byte_length: int
 
 
+class AudioFileReference(BaseModel):
+    id: UUID
+    name: str
+    duration: float
+    metadata: dict[str, Any]
+    byte_length: int
+    virtual: bool
+    style_prompt: str | None
+    voice_prompt: str | None
+
+
 class AudioFileRead(AudioFileCreate):
     id: UUID
     bucket_file: BucketFileRead

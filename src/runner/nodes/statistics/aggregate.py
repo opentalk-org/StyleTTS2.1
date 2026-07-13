@@ -104,6 +104,8 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
     voice_samples: Counter[str] = Counter()
     words_per_second: list[list[float]] = []
     chars_per_second: list[list[float]] = []
+    ipa_words_per_second: list[list[float]] = []
+    phonemes_per_second: list[list[float]] = []
     inter_word_silence_values: list[float] = []
     corpus_text: list[str] = []
     corpus_phon: list[str] = []
@@ -133,9 +135,20 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
             # clip duration or the total word/char count from the same sampled points.
             words_per_second.append([duration, words / duration, float(words)])
             chars_per_second.append([duration, chars / duration, float(chars)])
+            if phon:
+                ipa_words = len(phon.split())
+                phonemes = len(phon)
+                ipa_words_per_second.append([duration, ipa_words / duration, float(ipa_words)])
+                phonemes_per_second.append([duration, phonemes / duration, float(phonemes)])
     durations = [float_value(item, "duration") for item in feature_records]
+    transcript_by_file = {audio_id: " ".join(text_by_file[audio_id]) for audio_id in file_ids}
+    ipa_by_file = {audio_id: " ".join(phon_by_file[audio_id]) for audio_id in file_ids}
     char_counts = [sum(len(part) for part in text_by_file[audio_id]) for audio_id in file_ids]
     phoneme_counts = [sum(len(part) for part in phon_by_file[audio_id]) for audio_id in file_ids]
+    transcript_sentence_markers = [text.count(". ") + int(text.endswith(".")) for text in transcript_by_file.values()]
+    transcript_comma_markers = [text.count(", ") + int(text.endswith(",")) for text in transcript_by_file.values()]
+    ipa_sentence_markers = [text.count(". ") + int(text.endswith(".")) for text in ipa_by_file.values()]
+    ipa_comma_markers = [text.count(", ") + int(text.endswith(",")) for text in ipa_by_file.values()]
     total_duration = sum(durations)
     duplicate_collapsed = sum(int(item.get("duplicate_segments_collapsed", 0)) for item in feature_records)
     phonemes_available = any(part for parts in phon_by_file.values() for part in parts)
@@ -159,7 +172,7 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
     assert acoustic_metrics_available == (computation_mode == "acoustic"), f"invalid acoustic availability for {computation_mode} mode"
     requested_count = feature_records[0]["sample_requested_count"]
     return {
-        "version": 14,
+        "version": 18,
         "computation_mode": computation_mode,
         "acoustic_metrics_available": acoustic_metrics_available,
         "sample_scope": {
@@ -188,6 +201,10 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
         "duration_seconds_histogram": histogram_counts(durations, settings.histogram_bins),
         "char_count_per_file_histogram": histogram_counts([float(value) for value in char_counts], settings.histogram_bins),
         "phoneme_count_per_file_histogram": histogram_counts([float(value) for value in phoneme_counts], settings.histogram_bins),
+        "transcript_sentence_marker_count_per_file_histogram": histogram_counts([float(value) for value in transcript_sentence_markers], settings.histogram_bins),
+        "transcript_comma_marker_count_per_file_histogram": histogram_counts([float(value) for value in transcript_comma_markers], settings.histogram_bins),
+        "ipa_sentence_marker_count_per_file_histogram": histogram_counts([float(value) for value in ipa_sentence_markers], settings.histogram_bins),
+        "ipa_comma_marker_count_per_file_histogram": histogram_counts([float(value) for value in ipa_comma_markers], settings.histogram_bins),
         "char_unigram_counts": char_unigram_counts(" ".join(corpus_text)),
         "phoneme_unigram_counts": char_unigram_counts(" ".join(corpus_phon)),
         "char_bigram_matrix": char_bigram_matrix(" ".join(corpus_text)),
@@ -203,6 +220,8 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
         "voice_sample_count_histogram": histogram_counts([float(value) for value in voice_samples.values()], settings.histogram_bins),
         "words_per_second_scatter": downsample_scatter(words_per_second, settings.rate_scatter_points),
         "chars_per_second_scatter": downsample_scatter(chars_per_second, settings.rate_scatter_points),
+        "ipa_words_per_second_scatter": downsample_scatter(ipa_words_per_second, settings.rate_scatter_points),
+        "phonemes_per_second_scatter": downsample_scatter(phonemes_per_second, settings.rate_scatter_points),
         "inter_word_silence_seconds_histogram": histogram_counts(inter_word_silence_values, settings.histogram_bins, (0.0, settings.inter_word_silence_max_seconds)),
         "rms_db_histogram": pooled_histogram(feature_records, "rms_db", settings.histogram_bins, (-100.0, 0.0), clip=True),
         "frame_value_min_histogram": pooled_histogram(feature_records, "frame_value_min", settings.histogram_bins, (-1.0, 1.0)),
@@ -215,5 +234,5 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
         "clipped_sample_count_bottom": sum(int(item["clip_bottom"]) for item in feature_records),
         "silence_ratio_histogram": histogram_counts(finite_field_values(feature_records, "silence_ratio"), settings.histogram_bins, (0.0, 1.0)),
         "silence_rms_db_histogram": pooled_histogram(feature_records, "silence_rms_db", settings.histogram_bins, (-100.0, settings.silence_threshold_db), clip=True),
-        "per_file_text": [{"audio_file_id": audio_id, "text": " ".join(text_by_file[audio_id]), "phon": " ".join(phon_by_file[audio_id])} for audio_id in file_ids],
+        "per_file_text": [{"audio_file_id": audio_id, "text": transcript_by_file[audio_id], "phon": ipa_by_file[audio_id]} for audio_id in file_ids],
     }

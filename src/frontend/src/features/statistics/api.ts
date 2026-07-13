@@ -33,6 +33,10 @@ export type StatisticsPayload = {
   duration_seconds_histogram: Histogram;
   char_count_per_file_histogram: Histogram;
   phoneme_count_per_file_histogram: Histogram;
+  transcript_sentence_marker_count_per_file_histogram: Histogram;
+  transcript_comma_marker_count_per_file_histogram: Histogram;
+  ipa_sentence_marker_count_per_file_histogram: Histogram;
+  ipa_comma_marker_count_per_file_histogram: Histogram;
   char_unigram_counts: Pair[];
   phoneme_unigram_counts: Pair[];
   char_bigram_matrix: BigramMatrix;
@@ -48,6 +52,8 @@ export type StatisticsPayload = {
   voice_sample_count_histogram: Histogram;
   words_per_second_scatter: ScatterPoint[];
   chars_per_second_scatter: ScatterPoint[];
+  ipa_words_per_second_scatter: ScatterPoint[];
+  phonemes_per_second_scatter: ScatterPoint[];
   inter_word_silence_seconds_histogram: Histogram;
   rms_db_histogram: Histogram;
   frame_value_min_histogram: Histogram;

@@ -1,11 +1,8 @@
 import { useWorkflowStore } from "../store";
-import { edgePerformance, flowStrokeWidth } from "../performance";
 import type { PortAnchorKey } from "../types";
 
 export function WorkflowEdges() {
-  const { graph, viewport, wireDraft, portAnchors, activeRunId, snapshots } = useWorkflowStore();
-  const snapshot = activeRunId ? snapshots[activeRunId] : undefined;
-  const maximumRate = Math.max(0, ...(snapshot?.edges.map((edge) => edge.rolling_rate) ?? []));
+  const { graph, schema, viewport, wireDraft, portAnchors } = useWorkflowStore();
   const nodeById = Object.fromEntries(graph.nodes.map((node) => [node.id, node]));
   const project = (x: number, y: number) => ({ x: x * viewport.zoom + viewport.x, y: y * viewport.zoom + viewport.y });
   const anchor = (nodeId: string, portName: string, kind: "input" | "output") => portAnchors[`${nodeId}:${portName}:${kind}` as PortAnchorKey];
@@ -22,29 +19,11 @@ export function WorkflowEdges() {
         if (!source || !target) return null;
         const start = anchor(edge.source_node, edge.source_port, "output") ?? project(source.x + 220, source.y + 92);
         const end = anchor(edge.target_node, edge.target_port, "input") ?? project(target.x, target.y + 92);
-        const metrics = edgePerformance(snapshot, edge);
-        const targetMetrics = snapshot?.nodes.find((item) => item.node_id === edge.target_node)?.performance;
-        const width = flowStrokeWidth(metrics?.rolling_rate ?? 0, maximumRate);
-        const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
-        const duration = metrics?.rolling_rate ? Math.max(0.35, 2.4 / Math.sqrt(metrics.rolling_rate)) : 0;
-        return (
-          <g key={`${edge.source_node}-${edge.source_port}-${edge.target_node}-${edge.target_port}`}>
-            <path
-              className={metrics?.rolling_rate ? "workflow-edge-flow" : undefined}
-              d={path(start, end)}
-              fill="none"
-              stroke="#64748b"
-              strokeDasharray={metrics?.rolling_rate ? "8 7" : undefined}
-              strokeLinecap="round"
-              strokeOpacity={metrics?.rolling_rate ? 0.85 : 0.45}
-              strokeWidth={width}
-              style={duration ? { animationDuration: `${duration}s` } : undefined}
-            />
-            {targetMetrics && targetMetrics.queue_growth_rate > 0 ? <text x={midpoint.x - 11} y={midpoint.y - 5} fill="#64748b" fontSize="11">↑</text> : null}
-            {targetMetrics && targetMetrics.resource_wait_ratio > 0 ? <circle cx={midpoint.x} cy={midpoint.y} r="3" fill="#8b5cf6" /> : null}
-            {metrics && metrics.enqueue_blocked_ms > 0 ? <rect x={midpoint.x + 6} y={midpoint.y - 4} width="7" height="7" rx="1" fill="#64748b" /> : null}
-          </g>
-        );
+        const sourceInfo = schema?.nodes[source.type];
+        const port = sourceInfo?.outputs[edge.source_port];
+        const schemaType = port && schema ? schema.types[port.type] : undefined;
+        const color = schemaType ? schemaType.color : "#6b7280";
+        return <path key={`${edge.source_node}-${edge.source_port}-${edge.target_node}-${edge.target_port}`} d={path(start, end)} fill="none" stroke={color} strokeWidth={2} />;
       })}
       {wireDraft && wireNode ? <WirePreview node={wireNode} wire={wireDraft} anchor={anchor} project={project} path={path} /> : null}
     </svg>

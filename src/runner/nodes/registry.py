@@ -36,7 +36,7 @@ from runner.nodes.audio_segments.writeback import (
     SaveAudioSegmentsNode,
     UpdateAudioRecordBytesNode,
 )
-from runner.nodes.audio_sources import AudioSourceNode, RandomAudioSubsetNode
+from runner.nodes.audio_sources import AudioSourceNode
 from runner.nodes.assets.catalog import CatalogDownloadNode
 from runner.nodes.assets.checkpoints import ResolveCheckpointNode
 from runner.nodes.assets.training_assets import ResolveTrainingAssetsNode
@@ -71,7 +71,6 @@ from runner.nodes.training.styletts import StyleTtsFinetuneNode
 def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
     for node_cls in [
         AudioSourceNode,
-        RandomAudioSubsetNode,
         HetznerDsV1ParquetAudioSourceNode,
         HetznerDsV2ParquetAudioSourceNode,
         HetznerDsV2MetadataSourceNode,

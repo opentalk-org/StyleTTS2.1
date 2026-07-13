@@ -20,7 +20,7 @@ from backend.runners import router as runners_router
 from backend.settings import router as settings_router
 from backend.statistics import router as statistics_router
 from backend.voices import router as voices_router
-from backend.service import BackendManager, DuplicateRunError
+from backend.service import BackendManager, DuplicateRunError, IncompatibleSnapshotError
 from backend.workflows import workflow_router
 from runflow.registry.node_registry import NodeRegistry
 from runflow.registry.type_registry import TypeRegistry
@@ -118,6 +118,8 @@ async def get_run_snapshot(run_id: str) -> RunSnapshot:
         return await manager.snapshot(run_id)
     except KeyError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except IncompatibleSnapshotError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
 
 @app.get("/runs/{run_id}/graph", response_model=InlineGraphRunRequest)

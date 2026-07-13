@@ -49,9 +49,9 @@ export function ComputeStatistics() {
         <Select variant="mini" value={datasetId} onChange={setDatasetId} options={options} />
       </div>
       <div className="w-[200px]">
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={selected ? `${selected.name} statistics` : "Entry name"} filled />
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={selected ? `${selected.name} statistics` : "Entry name"} />
       </div>
-      <div className="w-[125px]">
+      <div className="w-[150px]">
         <Select
           variant="mini"
           value={mode}
@@ -69,7 +69,7 @@ export function ComputeStatistics() {
       </div>
       {sampleSelection === "random" ? (
         <div className="w-[90px]">
-          <Input type="number" min={1} step={1} value={sampleCount} onChange={(e) => setSampleCount(e.target.value)} filled />
+          <Input type="number" min={1} step={1} value={sampleCount} onChange={(e) => setSampleCount(e.target.value)} />
         </div>
       ) : null}
       <Button variant="primary" size="sm" icon="bar-chart" disabled={compute.isPending} onClick={run}>

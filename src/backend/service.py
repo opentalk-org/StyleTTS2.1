@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import WebSocket
+from pydantic import ValidationError
 
 from backend.db_watcher import BackendDatabaseWatcher
 from backend.run_records import job_status
@@ -13,6 +14,7 @@ from shared.db import database_session
 from shared.db.jobs import coordination_crud
 from shared.db.jobs import crud as jobs_crud
 from shared.db.jobs.schemas import JobUpsert
+from shared.event_store import RunEventStore
 from shared.schemas import (
     InlineGraphRunRequest,
     NodeLogResponseMessage,
@@ -25,6 +27,10 @@ from shared.schemas import (
 
 
 class DuplicateRunError(ValueError):
+    pass
+
+
+class IncompatibleSnapshotError(ValueError):
     pass
 
 
@@ -165,8 +171,11 @@ class BackendManager:
         with database_session() as session:
             job = jobs_crud.get_job(session, run_id)
         if job.snapshot is not None:
-            return RunSnapshot.model_validate(job.snapshot)
-        return RunSnapshot(run_id=run_id, total_event_count=0, error_count=0, event_counts={}, nodes=[])
+            try:
+                return RunSnapshot.model_validate(job.snapshot)
+            except ValidationError as error:
+                raise IncompatibleSnapshotError(f"Run snapshot is incompatible with the current metrics schema: {run_id}") from error
+        return RunEventStore().snapshot(run_id)
 
     async def connect_socket(self, websocket: WebSocket) -> None:
         await self._hub.connect_global(websocket)
@@ -195,7 +204,7 @@ class BackendManager:
             try:
                 status = await self.status(run_id)
                 snapshot = await self.snapshot(run_id)
-            except KeyError:
+            except (IncompatibleSnapshotError, KeyError):
                 continue
             await self._hub.broadcast_run(
                 run_id,

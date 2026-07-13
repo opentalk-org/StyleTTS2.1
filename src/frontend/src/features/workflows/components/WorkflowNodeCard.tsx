@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 
 import { nodeSnapshot } from "../api";
 import { graphPoint } from "../logic";
+import { servicePerformance } from "../performance";
 import { useLoadNodeMutation, useUnloadNodeMutation } from "../query";
 import { useWorkflowStore } from "../store";
 import type { PortAnchorKey, WorkflowNode } from "../types";
@@ -18,7 +19,8 @@ export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
   const info = schema.nodes[node.type];
   if (!info) throw new Error(`Unknown node type: ${node.type}`);
   const active = selectedNodeIds.includes(node.id);
-  const snapshot = nodeSnapshot(activeRunId ? snapshots[activeRunId] : undefined, node.id);
+  const runSnapshot = activeRunId ? snapshots[activeRunId] : undefined;
+  const snapshot = nodeSnapshot(runSnapshot, node.id);
   const inputs = Object.values(info.inputs);
   const outputs = Object.values(info.outputs);
   const colorFor = (type: string) => {
@@ -27,12 +29,18 @@ export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
     return schemaType.color;
   };
 
-  const completed = snapshot?.counters.tasks_completed ?? snapshot?.counters.packets_created ?? 0;
+  const discovered = snapshot?.counters.input_items_discovered;
+  const emitted = info.is_input && outputs.length === 1 ? snapshot?.counters.packets_created : undefined;
   const queued = snapshot?.queue_size ?? 0;
-  const left = snapshot?.remaining_items ?? "-";
+  const left = discovered !== undefined && emitted !== undefined
+    ? Math.max(0, discovered - emitted)
+    : snapshot?.remaining_items ?? "-";
+  const completed = info.is_input && discovered !== undefined && typeof left === "number"
+    ? Math.max(0, discovered - left)
+    : snapshot?.counters.tasks_completed ?? snapshot?.counters.packets_created ?? 0;
   const loaded = snapshot?.loaded ? "loaded" : "unloaded";
   const status = nodeStatusTone(snapshot?.status);
-  const performance = snapshot?.performance;
+  const performance = snapshot ? servicePerformance(snapshot) : undefined;
   const waiting = queued > 0 && status === "running";
 
   return (

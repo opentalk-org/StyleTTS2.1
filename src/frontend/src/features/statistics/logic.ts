@@ -14,6 +14,16 @@ export type HistogramConfig = {
   underflow: number;
   overflow: number;
   tone: Tone;
+  countLabel?: string;
+};
+
+// A labeled cluster of histograms that belong together (loudness, silence, …). The screen
+// renders one StatSection per group so related distributions sit under a shared heading.
+export type HistogramGroup = {
+  key: string;
+  title: string;
+  caption: string;
+  items: HistogramConfig[];
 };
 
 export type ScatterConfig = {
@@ -55,48 +65,104 @@ export function fmtDuration(seconds: number): string {
   return `${seconds.toFixed(1)}s`;
 }
 
-function histConfig(title: string, unit: string, h: Histogram, tone: Tone): HistogramConfig {
-  return { title, unit, edges: h.edges, counts: h.counts, underflow: h.underflow ?? 0, overflow: h.overflow ?? 0, tone };
+function histConfig(title: string, unit: string, h: Histogram, tone: Tone, countLabel?: string): HistogramConfig {
+  return { title, unit, edges: h.edges, counts: h.counts, underflow: h.underflow ?? 0, overflow: h.overflow ?? 0, tone, countLabel };
 }
 
 function hbars(pairs: Pair[], fmt: (v: number) => string, limit: number): HBarItem[] {
   return pairs.slice(0, limit).map(([label, value]) => ({ label, value, display: fmt(value) }));
 }
 
+// Speaker names can be arbitrarily long (paths, IDs); clip so the bar chart's left gutter
+// stays readable instead of the labels overrunning the plot.
+function clip(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
 function ranks(pairs: Pair[]): RankItem[] {
   return pairs.map(([label, value]) => ({ label, value }));
 }
 
-export function audioHistograms(p: StatisticsPayload): HistogramConfig[] {
-  const configs = [histConfig("Duration per file", "seconds", p.duration_seconds_histogram, "blue")];
-  if (!p.acoustic_metrics_available) return configs;
-  configs.push(
-    histConfig("Frame RMS", "dB", p.rms_db_histogram, "blue"),
-    histConfig("Silence ratio", "ratio", p.silence_ratio_histogram, "amber"),
-    histConfig("Mean RMS / file", "dB", p.mean_rms_nonsilent_db_per_file_histogram, "blue"),
-    histConfig("Sample RMS / file", "dB", p.sample_rms_nonsilent_db_per_file_histogram, "blue"),
+// Audio distributions, grouped by what they describe so the page can render one clearly
+// labeled section per concern (coverage, loudness, silence, waveform) instead of a flat wall.
+export function audioHistogramGroups(p: StatisticsPayload): HistogramGroup[] {
+  const groups: HistogramGroup[] = [
+    {
+      key: "coverage",
+      title: "Coverage & balance",
+      caption: "How recording time is spread across files and across voices.",
+      items: [
+        histConfig("Duration per file", "seconds", p.duration_seconds_histogram, "blue", "files"),
+        histConfig("Samples per voice", "samples", p.voice_sample_count_histogram, "emerald", "voices"),
+        histConfig("Duration per voice", "seconds", p.voice_duration_seconds_histogram, "blue", "voices"),
+      ],
+    },
+  ];
+  if (!p.acoustic_metrics_available) return groups;
+
+  groups.push({
+    key: "loudness",
+    title: "Loudness",
+    caption: "Signal level across frames and per-file, in dB.",
+    items: [
+      histConfig("Frame RMS", "dB", p.rms_db_histogram, "blue"),
+      histConfig("Mean RMS / file", "dB", p.mean_rms_nonsilent_db_per_file_histogram, "blue", "files"),
+      histConfig("Sample RMS / file", "dB", p.sample_rms_nonsilent_db_per_file_histogram, "blue", "files"),
+    ],
+  });
+
+  const silence: HistogramConfig[] = [
+    histConfig("Silence ratio", "ratio", p.silence_ratio_histogram, "amber", "files"),
     histConfig("Silent-frame RMS", "dB", p.silence_rms_db_histogram, "amber"),
-    histConfig("Frame min sample", "amplitude", p.frame_value_min_histogram, "emerald"),
-    histConfig("Frame max sample", "amplitude", p.frame_value_max_histogram, "emerald"),
-    histConfig("Frame mean sample", "amplitude", p.frame_value_mean_histogram, "emerald"),
-  );
+  ];
   // Only present when segments carry word-level alignment; otherwise the gap histogram is all
   // zeros and would read as a real (empty) distribution, so drop it entirely.
-  const silence = p.inter_word_silence_seconds_histogram;
-  if (silence && silence.counts.some((count) => count > 0)) {
-    configs.push(histConfig("Silence between words", "seconds", silence, "amber"));
+  const interWord = p.inter_word_silence_seconds_histogram;
+  if (interWord && interWord.counts.some((count) => count > 0)) {
+    silence.push(histConfig("Silence between words", "seconds", interWord, "amber"));
   }
-  return configs;
+  groups.push({
+    key: "silence",
+    title: "Silence",
+    caption: "Quiet regions and gaps within the signal.",
+    items: silence,
+  });
+
+  groups.push({
+    key: "waveform",
+    title: "Waveform samples",
+    caption: "Raw per-frame sample amplitude — watch the extremes for clipping.",
+    items: [
+      histConfig("Frame min sample", "amplitude", p.frame_value_min_histogram, "emerald"),
+      histConfig("Frame max sample", "amplitude", p.frame_value_max_histogram, "emerald"),
+      histConfig("Frame mean sample", "amplitude", p.frame_value_mean_histogram, "emerald"),
+    ],
+  });
+  return groups;
 }
 
 // Per-sample speaking-rate scatters. Points are pre-sampled server-side; x is the clip
 // duration so short clips with inflated rates are easy to spot.
-export function rateScatters(p: StatisticsPayload): ScatterConfig[] {
+export function rateScatters(p: StatisticsPayload, tab: CorpusTab): ScatterConfig[] {
+  const withTotal = (rows: ScatterPoint[]) => rows.filter((row) => row.length >= 3);
+  if (tab === "ipa") {
+    const words = p.ipa_words_per_second_scatter ?? [];
+    const phonemes = p.phonemes_per_second_scatter ?? [];
+    const wordsWithTotal = withTotal(words);
+    const phonemesWithTotal = withTotal(phonemes);
+    return [
+      { title: "Estimated IPA words / second", unit: "vs duration", points: words.map((r) => [r[0]!, r[1]!]), xLabel: "Duration (s)", yLabel: "IPA words / s", tone: "blue" },
+      { title: "Estimated IPA words / second", unit: "vs total IPA words", points: wordsWithTotal.map((r) => [r[2]!, r[1]!]), xLabel: "Total IPA words", yLabel: "IPA words / s", tone: "blue" },
+      { title: "Estimated phonemes / second", unit: "vs duration", points: phonemes.map((r) => [r[0]!, r[1]!]), xLabel: "Duration (s)", yLabel: "Phonemes / s", tone: "emerald" },
+      { title: "Estimated phonemes / second", unit: "vs total phonemes", points: phonemesWithTotal.map((r) => [r[2]!, r[1]!]), xLabel: "Total phonemes", yLabel: "Phonemes / s", tone: "emerald" },
+      { title: "Total IPA words", unit: "vs duration", points: wordsWithTotal.map((r) => [r[0]!, r[2]!]), xLabel: "Duration (s)", yLabel: "IPA words", tone: "blue" },
+      { title: "Total phonemes", unit: "vs duration", points: phonemesWithTotal.map((r) => [r[0]!, r[2]!]), xLabel: "Duration (s)", yLabel: "Phonemes", tone: "emerald" },
+    ];
+  }
   const wps = p.words_per_second_scatter ?? [];
   const cps = p.chars_per_second_scatter ?? [];
   // Rows carrying the total (length >= 3) support the count-axis projections; older 2-column
   // entries simply yield an empty count plot instead of NaN points.
-  const withTotal = (rows: ScatterPoint[]) => rows.filter((row) => row.length >= 3);
   const wordsWithTotal = withTotal(wps);
   const charsWithTotal = withTotal(cps);
   return [
@@ -106,13 +172,6 @@ export function rateScatters(p: StatisticsPayload): ScatterConfig[] {
     { title: "Estimated chars / second", unit: "vs total chars", points: charsWithTotal.map((r) => [r[2]!, r[1]!]), xLabel: "Total chars", yLabel: "Chars / s", tone: "emerald" },
     { title: "Total words", unit: "vs duration", points: wordsWithTotal.map((r) => [r[0]!, r[2]!]), xLabel: "Duration (s)", yLabel: "Words", tone: "blue" },
     { title: "Total characters", unit: "vs duration", points: charsWithTotal.map((r) => [r[0]!, r[2]!]), xLabel: "Duration (s)", yLabel: "Characters", tone: "emerald" },
-  ];
-}
-
-export function voiceHistograms(p: StatisticsPayload): HistogramConfig[] {
-  return [
-    histConfig("Samples per voice", "samples", p.voice_sample_count_histogram, "emerald"),
-    histConfig("Duration per voice", "seconds", p.voice_duration_seconds_histogram, "blue"),
   ];
 }
 
@@ -171,6 +230,14 @@ export type CorpusData = {
   lengthCounts: number[];
   lengthUnderflow: number;
   lengthOverflow: number;
+  sentenceMarkerEdges: number[];
+  sentenceMarkerCounts: number[];
+  sentenceMarkerUnderflow: number;
+  sentenceMarkerOverflow: number;
+  commaMarkerEdges: number[];
+  commaMarkerCounts: number[];
+  commaMarkerUnderflow: number;
+  commaMarkerOverflow: number;
   speakerLength: HBarItem[];
   grams1: HBarItem[];
   bigramMatrix: BigramMatrix;
@@ -181,6 +248,8 @@ export type CorpusData = {
 export function corpusData(p: StatisticsPayload, tab: CorpusTab): CorpusData {
   const isIpa = tab === "ipa";
   const lengthHist = isIpa ? p.phoneme_count_per_file_histogram : p.char_count_per_file_histogram;
+  const sentenceMarkerHist = isIpa ? p.ipa_sentence_marker_count_per_file_histogram : p.transcript_sentence_marker_count_per_file_histogram;
+  const commaMarkerHist = isIpa ? p.ipa_comma_marker_count_per_file_histogram : p.transcript_comma_marker_count_per_file_histogram;
   const grams = isIpa ? p.phoneme_unigram_counts : p.char_unigram_counts;
   const bigramMatrix = isIpa ? p.phoneme_bigram_matrix : p.char_bigram_matrix;
   const speaker = isIpa ? p.speaker_phoneme_count : p.speaker_char_count;
@@ -193,7 +262,15 @@ export function corpusData(p: StatisticsPayload, tab: CorpusTab): CorpusData {
     lengthCounts: lengthHist.counts,
     lengthUnderflow: lengthHist.underflow ?? 0,
     lengthOverflow: lengthHist.overflow ?? 0,
-    speakerLength: hbars(speaker, fmtCompact, 15),
+    sentenceMarkerEdges: sentenceMarkerHist.edges,
+    sentenceMarkerCounts: sentenceMarkerHist.counts,
+    sentenceMarkerUnderflow: sentenceMarkerHist.underflow ?? 0,
+    sentenceMarkerOverflow: sentenceMarkerHist.overflow ?? 0,
+    commaMarkerEdges: commaMarkerHist.edges,
+    commaMarkerCounts: commaMarkerHist.counts,
+    commaMarkerUnderflow: commaMarkerHist.underflow ?? 0,
+    commaMarkerOverflow: commaMarkerHist.overflow ?? 0,
+    speakerLength: hbars(speaker, fmtCompact, 15).map((it) => ({ ...it, label: clip(it.label, 32) })),
     grams1: hbars(grams, fmtCompact, 24),
     bigramMatrix,
     trigramsTop: ranks(top),

@@ -128,6 +128,7 @@ class NodePerformanceSnapshot(BaseModel):
     queue_growth_rate: float
     busy_ratio: float
     resource_wait_ratio: float
+    resource_wait_ms: float | None = None
     downstream_blocked_ms: float
     batch_p50_ms: float
     batch_p95_ms: float

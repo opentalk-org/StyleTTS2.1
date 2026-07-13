@@ -201,6 +201,7 @@ export type NodePerformanceSnapshot = {
   queue_growth_rate: number;
   busy_ratio: number;
   resource_wait_ratio: number;
+  resource_wait_ms: number | null;
   downstream_blocked_ms: number;
   batch_p50_ms: number;
   batch_p95_ms: number;

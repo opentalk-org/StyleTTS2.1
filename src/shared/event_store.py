@@ -23,16 +23,12 @@ class NodeState:
     counters: dict[str, int] = field(default_factory=dict)
 
     def to_snapshot(self, performance: NodePerformanceSnapshot) -> NodeRunSnapshot:
-        remaining_items = self.remaining_items
-        if "input_items_discovered" in self.counters:
-            completed = self.counters["tasks_completed"] if "tasks_completed" in self.counters else 0
-            remaining_items = max(0, self.counters["input_items_discovered"] - completed)
         return NodeRunSnapshot(
             node_id=self.node_id,
             status=self.status,
             loaded=self.loaded,
             queue_size=self.queue_size,
-            remaining_items=remaining_items,
+            remaining_items=self.remaining_items,
             running_batches=self.running_batches,
             latest_batch_index=self.latest_batch_index,
             latest_message=self.latest_message,

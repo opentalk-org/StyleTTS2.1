@@ -26,7 +26,7 @@ class RunExecution:
         log_manager: NodeLogManager | None = None
         self.state.register_run(self.run_id)
         try:
-            graph = build_inline_graph(self.request)
+            graph = await asyncio.to_thread(build_inline_graph, self.request)
             context = self._context()
             await asyncio.to_thread(self._cleanup_stale_run_dirs, context.work_dir)
             context.event_sink = self._threadsafe_event_sink()

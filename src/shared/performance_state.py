@@ -123,8 +123,6 @@ class PerformanceState:
     def _record_node(self, event: RunEventResponse) -> None:
         if event.kind == "task_enqueued" and event.node_id is not None:
             state = self._node(event.node_id)
-            state.arrived_items += 1
-            _increment_bucket(state.arrivals, event.created_at, 1)
             self._record_queue(state, event)
         elif event.kind == "queue_depth" and event.node_id is not None:
             self._record_queue(self._node(event.node_id), event)
@@ -134,8 +132,16 @@ class PerformanceState:
             state.active_batches[int(event.batch_index)] = ActiveBatch(event.created_at, float(event.detail["queue_wait_ms"]))
         elif event.kind == "batch_completed" and event.node_id is not None:
             self._record_batch(self._node(event.node_id), event)
+        elif event.kind == "packet_created" and event.node_id is not None:
+            state = self._node(event.node_id)
+            state.departed_items += 1
+            _increment_bucket(state.departures, event.created_at, 1)
         elif event.kind == "packet_delivered" and event.node_id is not None:
             self._node(event.node_id).downstream_blocked_ms += float(event.detail["enqueue_blocked_ms"])
+            assert event.target_node_id is not None, "packet delivery requires a target node"
+            target = self._node(event.target_node_id)
+            target.arrived_items += 1
+            _increment_bucket(target.arrivals, event.created_at, 1)
         elif event.kind == "node_failed" and event.node_id is not None:
             self._node(event.node_id).active_batches.clear()
 
@@ -162,11 +168,9 @@ class PerformanceState:
             route_ms=float(detail["route_ms"]), total_ms=float(detail["total_ms"]),
         )
         state.batches += 1
-        state.departed_items += batch.input_items
         state.busy_ms += batch.total_ms
         state.resource_wait_ms += batch.resource_wait_ms
         state.execute_ms += batch.execute_ms
-        _increment_bucket(state.departures, event.created_at, batch.input_items)
         _record_sample(state.batch_latencies, batch.total_ms)
         state.recent_batches.append(batch)
         del state.active_batches[batch.batch_index]
@@ -177,16 +181,19 @@ class PerformanceState:
     def _node_snapshot(self, state: NodePerformanceState, now: datetime, elapsed: float) -> NodePerformanceSnapshot:
         current_busy_ms = sum(max(0.0, (now - batch.started_at).total_seconds() * 1000) for batch in state.active_batches.values())
         queue_growth = _queue_growth(state.queue_samples, now, elapsed)
+        execute_seconds = state.execute_ms / 1000
         return NodePerformanceSnapshot(
             batches=state.batches, arrived_items=state.arrived_items, departed_items=state.departed_items,
-            arrival_rate=_rolling_rate(state.arrivals, now, elapsed), departure_rate=_rolling_rate(state.departures, now, elapsed),
+            arrival_rate=state.arrived_items / execute_seconds if execute_seconds else 0,
+            departure_rate=state.departed_items / execute_seconds if execute_seconds else 0,
             queue_size=state.queue_size, queue_capacity=state.queue_capacity,
             queue_fill_ratio=min(1.0, state.queue_size / state.queue_capacity) if state.queue_capacity else 0,
             queue_growth_rate=queue_growth, busy_ratio=min(1.0, (state.busy_ms + current_busy_ms) / (elapsed * 1000)),
             resource_wait_ratio=min(1.0, state.resource_wait_ms / state.busy_ms) if state.busy_ms else 0,
+            resource_wait_ms=state.resource_wait_ms,
             downstream_blocked_ms=state.downstream_blocked_ms,
             batch_p50_ms=_percentile(state.batch_latencies, 50), batch_p95_ms=_percentile(state.batch_latencies, 95),
-            service_capacity=state.departed_items * 1000 / state.execute_ms if state.execute_ms else 0,
+            service_capacity=state.departed_items / execute_seconds if execute_seconds else 0,
             current_batch_started_at=min((item.started_at for item in state.active_batches.values()), default=None),
             recent_batches=list(state.recent_batches),
         )

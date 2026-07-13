@@ -1,21 +1,20 @@
 import { useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
-import { formatDuration, formatRate, performanceSortValue, type PerformanceSortKey } from "../performance";
+import { batchAverages, formatDuration, formatRate, formatResourceWait, performanceSortValue, servicePerformance, type PerformanceSortKey } from "../performance";
 import { useWorkflowStore } from "../store";
 import type { NodeRunSnapshot } from "../types";
-import { RunPerformanceStrip } from "./RunPerformanceStrip";
 
 type SortState = { key: PerformanceSortKey; ascending: boolean } | null;
 
 const COLUMNS: { key: PerformanceSortKey; label: string }[] = [
   { key: "arrival", label: "in/s" },
   { key: "departure", label: "out/s" },
-  { key: "queueFill", label: "queue" },
-  { key: "queueGrowth", label: "Δ queue/s" },
-  { key: "busy", label: "busy" },
+  { key: "batchSize", label: "avg batch" },
+  { key: "execute", label: "exec/batch" },
+  { key: "route", label: "route/batch" },
   { key: "resourceWait", label: "resource wait" },
-  { key: "blocked", label: "blocked" },
+  { key: "blocked", label: "output wait" },
   { key: "p95", label: "p95 batch" },
 ];
 
@@ -39,22 +38,20 @@ export function PerformancePopover({ onClose }: { onClose: () => void }) {
     <section className="absolute bottom-14 left-0 w-[min(1180px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-line bg-panel shadow-2xl">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
         <div>
-          <strong className="text-[13px] text-txt">Graph flow performance</strong>
+          <strong className="text-[13px] text-txt">Node processing performance</strong>
           <span className="ml-2 font-mono text-[10px] text-txt-mute">{activeRunId ?? "no run selected"}</span>
         </div>
-        <RunPerformanceStrip snapshot={snapshot} compact={false} />
         <button type="button" className="cursor-pointer text-lg text-txt-mute hover:text-txt" onClick={onClose} aria-label="Close performance">&times;</button>
       </header>
       <div className="overflow-x-auto">
         <div className="min-w-[1080px]">
-          <div className="grid grid-cols-[minmax(150px,1.4fr)_repeat(8,minmax(82px,0.72fr))_88px] border-b border-line bg-panel-2 px-3 py-1.5 font-mono text-[9px] font-bold uppercase text-txt-mute">
+          <div className="grid grid-cols-[minmax(150px,1.4fr)_repeat(8,minmax(82px,0.72fr))] border-b border-line bg-panel-2 px-3 py-1.5 font-mono text-[9px] font-bold uppercase text-txt-mute">
             <button type="button" className="cursor-pointer text-left uppercase hover:text-txt" onClick={() => setSort(null)}>node / batches</button>
             {COLUMNS.map((column) => (
               <button key={column.key} type="button" className={`cursor-pointer text-right uppercase ${sort?.key === column.key ? "text-slate-800" : "hover:text-txt"}`} onClick={() => changeSort(column.key)}>
                 {column.label}{sort?.key === column.key ? (sort.ascending ? " ↑" : " ↓") : ""}
               </button>
             ))}
-            <span className="text-right">service cap</span>
           </div>
           <div ref={scrollRef} className="h-[min(540px,60vh)] overflow-auto">
             {nodes.length === 0 ? <div className="p-8 text-center text-sm text-txt-mute">Run a graph or select a completed run to see performance.</div> : null}
@@ -68,18 +65,19 @@ export function PerformancePopover({ onClose }: { onClose: () => void }) {
         </div>
       </div>
       <footer className="flex flex-wrap gap-x-3 border-t border-line px-3 py-1.5 font-mono text-[9px] text-txt-mute">
-        Rates are wall-clock flow. Service cap is execute-time capacity. Violet is resource wait; other heat is neutral.
+        IN/OUT are execute-time processing speeds. Resource wait is lease acquisition; output wait is downstream queue backpressure.
       </footer>
     </section>
   );
 }
 
 function PerformanceRow({ node, top, onSelect }: { node: NodeRunSnapshot; top: number; onSelect: () => void }) {
-  const metrics = node.performance;
+  const metrics = servicePerformance(node);
+  const batch = batchAverages(node);
   return (
     <button
       type="button"
-      className="absolute left-0 grid w-full grid-cols-[minmax(150px,1.4fr)_repeat(8,minmax(82px,0.72fr))_88px] items-center border-b border-line px-3 py-2 font-mono text-[10px] hover:bg-slate-50"
+      className="absolute left-0 grid w-full grid-cols-[minmax(150px,1.4fr)_repeat(8,minmax(82px,0.72fr))] items-center border-b border-line px-3 py-2 font-mono text-[10px] hover:bg-slate-50"
       style={{ height: 70, transform: `translateY(${top}px)` }}
       onClick={onSelect}
     >
@@ -89,13 +87,12 @@ function PerformanceRow({ node, top, onSelect }: { node: NodeRunSnapshot; top: n
       </div>
       <Value value={formatRate(metrics.arrival_rate)} />
       <Value value={formatRate(metrics.departure_rate)} />
-      <Value value={`${metrics.queue_size}/${metrics.queue_capacity || "—"} · ${(metrics.queue_fill_ratio * 100).toFixed(0)}%`} />
-      <Value value={`${metrics.queue_growth_rate >= 0 ? "+" : ""}${metrics.queue_growth_rate.toFixed(1)}`} />
-      <Value value={`${(metrics.busy_ratio * 100).toFixed(0)}%`} />
-      <Value value={`${(metrics.resource_wait_ratio * 100).toFixed(0)}%`} resource />
+      <Value value={`${batch.inputItems.toFixed(1)} → ${batch.outputItems.toFixed(1)}`} />
+      <Value value={formatDuration(batch.executeMs)} />
+      <Value value={formatDuration(batch.routeMs)} />
+      <Value value={formatResourceWait(metrics)} resource />
       <Value value={formatDuration(metrics.downstream_blocked_ms)} />
       <Value value={formatDuration(metrics.batch_p95_ms)} />
-      <Value value={formatRate(metrics.service_capacity)} />
     </button>
   );
 }
