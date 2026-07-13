@@ -1,219 +1,184 @@
-# Statistics Smart Histograms Implementation Plan
+# Readable Statistics Histograms Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Give every statistics histogram data-adaptive bins and add duration-versus-total-word and duration-versus-total-character scatter plots.
+**Goal:** Replace the rejected dynamic-bin histograms with fixed, readable core bins and explicit tail bars while preserving the two duration-versus-count scatter plots.
 
-**Architecture:** A focused runner utility computes Freedman–Diaconis bin edges and counts while preserving the existing histogram payload. The frontend projects the already persisted `[duration, rate, total]` rows into two additional scatter configurations, so no schema or database change is needed.
+**Architecture:** The runner computes a 0.5th–99.5th percentile display range for automatically ranged datasets of at least 100 values, returns fixed core bins plus underflow and overflow counts, and keeps explicit semantic ranges unchanged. The Plotly component renders tail counts as adjacent labeled bars, so outliers remain visible without compressing the dense region.
 
-**Tech Stack:** Python 3, Pydantic runner nodes, React, TypeScript, Plotly, Nix development shell
+**Tech Stack:** Python 3 standard library, React, TypeScript, Plotly, Nix development shell
 
 ## Global Constraints
 
-- Run Python, frontend, and validation commands through `nix develop --command ...`.
-- Do not add dependencies or change the persisted `{edges, counts}` histogram shape.
-- Apply smart binning to every histogram produced by `AggregateDatasetStatistics`.
-- Keep `src/runflow` domain-agnostic and unchanged.
-- Do not leave committed tests or temporary probe files in the repository.
-- Preserve unrelated working-tree changes.
+- Run Python and frontend commands through `nix develop --command ...`.
+- Do not add dependencies or modify `src/runflow`.
+- Use the configured bin count; never expand to 200 bins dynamically.
+- Preserve total finite counts across core, underflow, and overflow for auto-ranged histograms.
+- Keep explicit-range inclusion behavior unchanged.
+- Remove temporary tests before completion and preserve unrelated working-tree changes.
 
 ---
 
-### Task 1: Data-Adaptive Histogram Utility
+### Task 1: Fixed Core Bins and Tail Counts
 
 **Files:**
-- Create: `src/runner/nodes/statistics/smart_histogram.py`
-- Modify: `src/runner/nodes/statistics/aggregate_helpers.py:1-24`
-- Temporary test: `/tmp/runflow_test_smart_histogram.py`
+- Modify: `src/runner/nodes/statistics/smart_histogram.py`
+- Temporary test: `/tmp/runflow_test_readable_histogram.py`
 
 **Interfaces:**
-- Produces: `histogram_counts(values: list[float], bins: int, range_: tuple[float, float] | None = None) -> dict[str, Any]`
-- Preserves: callers import `histogram_counts` from `runner.nodes.statistics.aggregate_helpers`
-- Depends on: Python standard library only
+- Produces: `histogram_counts(...) -> {"edges": list[float], "counts": list[int], "underflow": int, "overflow": int}`
+- Preserves: imports through `runner.nodes.statistics.aggregate_helpers.histogram_counts`
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the failing regression test**
 
-Create `/tmp/runflow_test_smart_histogram.py` as a standard-library `unittest` module containing the three specified cases.
-
-Use `unittest.TestCase` assertions and call `unittest.main()` under the module guard so the locked environment needs no test dependency.
-
-- [ ] **Step 2: Run the tests and verify RED**
-
-Run `nix develop --command python /tmp/runflow_test_smart_histogram.py`.
-
-Expected: collection fails with `ModuleNotFoundError: No module named 'runner.nodes.statistics.smart_histogram'`.
-
-- [ ] **Step 3: Implement `smart_histogram.py`**
-
-Start with this public boundary:
+Create a standard-library `unittest` module with this core case:
 
 ```python
-from bisect import bisect_right
-from math import ceil, floor, isfinite
-from typing import Any
+class ReadableHistogramTests(unittest.TestCase):
+    def test_long_tail_focuses_integer_core_and_reports_overflow(self):
+        values = [1.0] * 8500 + [2.0] * 80 + [3.0] * 45 + [4.0] * 25 + list(range(5, 46))
+        result = histogram_counts(values, bins=50)
+        self.assertEqual(result["edges"][:5], [0.5, 1.5, 2.5, 3.5, 4.5])
+        self.assertLessEqual(len(result["counts"]), 50)
+        self.assertGreater(result["overflow"], 0)
+        self.assertEqual(sum(result["counts"]) + result["underflow"] + result["overflow"], len(values))
 
-MAX_SMART_BINS = 200
-
-
-def histogram_counts(values: list[float], bins: int, range_: tuple[float, float] | None = None) -> dict[str, Any]:
-    assert bins > 0, "histogram bins must be positive"
-    finite_values = [float(value) for value in values if isfinite(float(value))]
-    lo, hi = _value_range(finite_values, range_)
-    included = [value for value in finite_values if lo <= value <= hi]
-    edges = _smart_edges(included, bins, lo, hi, range_ is None)
-    return {"edges": edges, "counts": _count_values(included, edges)}
+    def test_explicit_range_keeps_fixed_bins_without_tail_buckets(self):
+        result = histogram_counts([-1.0, 0.0, 0.5, 1.0, 2.0], bins=10, range_=(0.0, 1.0))
+        self.assertEqual(len(result["counts"]), 10)
+        self.assertEqual(result["underflow"], 0)
+        self.assertEqual(result["overflow"], 0)
+        self.assertEqual(sum(result["counts"]), 3)
 ```
 
-Add module-level helpers with these exact contracts:
+Include the existing empty and constant assertions and `unittest.main()`.
 
-- `_quantile(sorted_values: list[float], fraction: float) -> float` uses linear interpolation between adjacent ranks.
-- `_freedman_diaconis_width(values: list[float]) -> float | None` returns `2 * IQR / n ** (1 / 3)`, or `None` for fewer than two values or zero IQR.
-- `_smart_edges(values, bins, lo, hi, auto_range)` derives `max(bins, ceil((hi - lo) / width))`, capped at 200. For integer-only auto-ranged input with width at most `1.0` and at most 200 integer slots, it returns unit edges from `floor(lo) - 0.5` through `ceil(hi) + 0.5`; this intentional integer exception uses one bin per possible integer rather than padding to `bins`.
-- `_value_range(values, range_)` preserves explicit bounds, returns `(0.0, 1.0)` for empty input, and expands constants with the existing relative epsilon rule.
-- `_count_values(values, edges)` uses `bisect_right` and puts a value equal to the final edge into the final bin.
+- [ ] **Step 2: Verify RED**
 
-- [ ] **Step 4: Re-export through the existing helper boundary**
+Run `nix develop --command python /tmp/runflow_test_readable_histogram.py`.
 
-In `aggregate_helpers.py`, remove its current `histogram_counts` and `_range_for_pair`, then add:
+Expected: failures because the current implementation returns no tail fields and expands the long tail dynamically.
+
+- [ ] **Step 3: Replace dynamic bin selection**
+
+In `smart_histogram.py`:
 
 ```python
-from runner.nodes.statistics.smart_histogram import histogram_counts
+LOW_PERCENTILE = 0.005
+HIGH_PERCENTILE = 0.995
+MIN_PERCENTILE_VALUES = 100
 ```
 
-Keep `isfinite` and `_range_for`, which `pooled_histogram` still uses. This switches every existing aggregate histogram without editing `aggregate.py`.
+- Remove `MAX_SMART_BINS` and `_freedman_diaconis_width`.
+- Validate `bins > 0`.
+- For auto ranges with at least 100 nonconstant values, compute percentile boundaries with `_quantile`.
+- For integer-only data, round the lower boundary down and upper boundary up to half-integer edges. If the integer span is at most `bins`, emit one unit-width bin per integer.
+- Otherwise emit exactly `bins` equal-width core bins.
+- Count auto-range values below the first edge as `underflow`, values at or above the final edge as `overflow`, and remaining values in ordinary bins.
+- For explicit ranges, retain the current inclusive final edge and skip out-of-range values; return zero tail counts.
+- For empty, constant, or fewer-than-100 values, use the complete deterministic range and zero tail counts.
 
-- [ ] **Step 5: Verify GREEN and remove the temporary test**
-
-Run:
+- [ ] **Step 4: Verify GREEN and remove the test**
 
 ```bash
-nix develop --command python /tmp/runflow_test_smart_histogram.py
-rg -n "histogram_counts\(" src/runner/nodes/statistics
-rm /tmp/runflow_test_smart_histogram.py
+nix develop --command python /tmp/runflow_test_readable_histogram.py
+rm /tmp/runflow_test_readable_histogram.py
 ```
 
-Expected: `Ran 3 tests` and `OK`; all aggregate histogram call sites still resolve through `aggregate_helpers`; the temporary test is removed.
+Expected: all tests report `OK`.
 
-- [ ] **Step 6: Commit the isolated runner change**
+- [ ] **Step 5: Commit the runner correction**
 
 ```bash
-git add src/runner/nodes/statistics/smart_histogram.py src/runner/nodes/statistics/aggregate_helpers.py
-git commit -m "feat: add smart statistics histogram bins"
+git add src/runner/nodes/statistics/smart_histogram.py
+git commit -m "fix: focus statistics histograms on readable ranges"
 ```
 
-### Task 2: Duration-versus-Count Scatter Projections
+### Task 2: Tail Bars in Plotly Histograms
 
 **Files:**
-- Modify: `src/frontend/src/features/statistics/logic.ts:90-104`
-- Temporary test: `/tmp/runflow_test_statistics_scatter.mts`
+- Modify: `src/frontend/src/features/statistics/api.ts`
+- Modify: `src/frontend/src/features/statistics/logic.ts`
+- Modify: `src/frontend/src/features/statistics/charts/Histogram.tsx`
+- Modify: `src/frontend/src/features/statistics/StatisticsScreen.tsx`
+- Temporary test: `/tmp/runflow_test_histogram_bars.mts`
 
 **Interfaces:**
-- Consumes: `ScatterPoint` rows shaped as `[duration, rate, total]`
-- Produces: `rateScatters(payload)` with six configurations
-- Preserves: two-column rows are excluded only from projections that require `total`
+- Consumes: histogram `underflow` and `overflow` counts
+- Produces: exported `histogramBars(edges, counts, underflow, overflow)` arrays used by `Histogram`
 
-- [ ] **Step 1: Write the failing frontend probe**
+- [ ] **Step 1: Write a failing bar-geometry probe**
 
-Create `/tmp/runflow_test_statistics_scatter.mts`:
+Create `/tmp/runflow_test_histogram_bars.mts` that imports `histogramBars` and asserts:
 
 ```typescript
-import assert from "node:assert/strict";
-import { rateScatters } from "/workspace/styletts_studio_v2/src/frontend/src/features/statistics/logic.ts";
-
-const payload = {
-  words_per_second_scatter: [[2, 3, 6], [4, 2]],
-  chars_per_second_scatter: [[2, 7, 14], [4, 5]],
-};
-const charts = rateScatters(payload as never);
-
-assert.equal(charts.length, 6);
-assert.deepEqual(charts[4], {
-  title: "Total words", unit: "vs duration", points: [[2, 6]],
-  xLabel: "Duration (s)", yLabel: "Words", tone: "blue",
-});
-assert.deepEqual(charts[5], {
-  title: "Total characters", unit: "vs duration", points: [[2, 14]],
-  xLabel: "Duration (s)", yLabel: "Characters", tone: "emerald",
+assert.deepEqual(histogramBars([0.5, 1.5, 2.5], [80, 15], 0, 5), {
+  centers: [1, 2, 3],
+  widths: [1, 1, 1],
+  counts: [80, 15, 5],
+  ranges: ["0.50 – 1.50", "1.50 – 2.50", "≥ 2.50"],
 });
 ```
 
-- [ ] **Step 2: Run the probe and verify RED**
+- [ ] **Step 2: Verify RED**
 
-Run `nix develop --command node --experimental-strip-types /tmp/runflow_test_statistics_scatter.mts`.
+Run `nix develop --command node --experimental-strip-types /tmp/runflow_test_histogram_bars.mts`.
 
-Expected: assertion failure because `charts.length` is `4`.
+Expected: import failure because `histogramBars` does not exist.
 
-- [ ] **Step 3: Add the two scatter configurations**
+- [ ] **Step 3: Implement and wire tail geometry**
 
-In `rateScatters`, compute `wordsWithTotal` and `charsWithTotal` once, reuse them in the current total-axis rate plots, then append:
+- Extend `Histogram` in `api.ts` with optional `underflow?: number` and `overflow?: number` for already persisted entries.
+- Extend `HistogramConfig` and `histConfig` in `logic.ts` with normalized numeric tail counts.
+- Export `histogramBars` from `Histogram.tsx`. Prepend a same-width bar before the first core bar when underflow is positive and append one after the last core bar when overflow is positive. Label them `< first edge` and `≥ final edge`.
+- Make `Histogram` render the returned arrays.
+- Pass tail counts through audio, voice, and corpus histogram calls in `StatisticsScreen.tsx`; extend `CorpusData` with the two length-tail values.
 
-```typescript
-{ title: "Total words", unit: "vs duration", points: wordsWithTotal.map((r) => [r[0]!, r[2]!]), xLabel: "Duration (s)", yLabel: "Words", tone: "blue" },
-{ title: "Total characters", unit: "vs duration", points: charsWithTotal.map((r) => [r[0]!, r[2]!]), xLabel: "Duration (s)", yLabel: "Characters", tone: "emerald" },
-```
-
-No `StatisticsScreen.tsx` edit is needed because it already renders every returned scatter in a two-column grid.
-
-- [ ] **Step 4: Verify GREEN and remove the probe**
+- [ ] **Step 4: Verify GREEN and build**
 
 ```bash
-nix develop --command node --experimental-strip-types /tmp/runflow_test_statistics_scatter.mts
+nix develop --command node --experimental-strip-types /tmp/runflow_test_histogram_bars.mts
 nix develop --command npm --prefix src/frontend run build
-rm /tmp/runflow_test_statistics_scatter.mts
+rm /tmp/runflow_test_histogram_bars.mts
 ```
 
-Expected: the probe exits successfully; TypeScript and Vite build successfully; the probe is removed.
+Expected: the probe exits successfully and Vite reports `built`.
 
-- [ ] **Step 5: Commit the frontend change**
+- [ ] **Step 5: Commit the renderer correction**
 
 ```bash
-git add src/frontend/src/features/statistics/logic.ts
-git commit -m "feat: plot duration against word and character counts"
+git add src/frontend/src/features/statistics/api.ts src/frontend/src/features/statistics/logic.ts src/frontend/src/features/statistics/charts/Histogram.tsx src/frontend/src/features/statistics/StatisticsScreen.tsx
+git commit -m "fix: render histogram tails without compressing the core"
 ```
 
-### Task 3: Integrated Verification
+### Task 3: Real-Graph and Visual-Data Verification
 
 **Files:**
-- Verify: `src/runner/nodes/statistics/smart_histogram.py`
-- Verify: `src/runner/nodes/statistics/aggregate_helpers.py`
-- Verify: `src/frontend/src/features/statistics/logic.ts`
+- Verify the files from Tasks 1 and 2
 
-**Interfaces:**
-- Confirms: smart edges remain compatible with the existing variable-width Plotly bars
-- Confirms: count conservation, build health, file-size limits, and clean temporary-test state
-
-- [ ] **Step 1: Run Python and frontend checks**
+- [ ] **Step 1: Run static verification**
 
 ```bash
 nix develop --command python -m compileall -q src/runner/nodes/statistics
 nix develop --command npm --prefix src/frontend run build
-```
-
-Expected: both commands exit successfully without Python, TypeScript, or Vite errors.
-
-- [ ] **Step 2: Verify final histogram invariants**
-
-```bash
-nix develop --command python -c 'from runner.nodes.statistics.aggregate_helpers import histogram_counts; h = histogram_counts([1.0] * 30 + [2.0] * 25 + [3.0] * 20 + [4.0] * 15 + [100.0], 10); assert len(h["edges"]) == len(h["counts"]) + 1; assert sum(h["counts"]) == 91; assert len(h["counts"]) <= 200'
-```
-
-Expected: command exits successfully without output.
-
-- [ ] **Step 3: Inspect scope and constraints**
-
-```bash
 git diff --check HEAD~2..HEAD
-wc -l src/runner/nodes/statistics/smart_histogram.py src/runner/nodes/statistics/aggregate_helpers.py src/frontend/src/features/statistics/logic.ts
-git status --short
 ```
 
-Expected: no whitespace errors; every file is under 300 lines; no temporary tests appear; unrelated pre-existing changes remain untouched.
+- [ ] **Step 2: Run a real database statistics graph**
 
-- [ ] **Step 4: Review the implementation commits**
+Submit selected audio IDs through `POST /graphs/runs` using `AudioSource → LoadAudioSegments → DatabaseStatisticsFeatures → AggregateDatasetStatistics → SaveStatisticsEntry`. Assign the response's `.run_id` value to the shell variable `run_id`, then inspect it with:
 
 ```bash
-git log -3 --oneline
-git show --stat --oneline HEAD~1..HEAD
+nix develop --command python -m cli run "$run_id"
+nix develop --command python -m cli logs "$run_id"
 ```
 
-Expected: the implementation commits contain only the smart histogram utility/helper changes and the scatter configuration change.
+Expected: `succeeded`, with all five nodes completing normally.
+
+- [ ] **Step 3: Inspect a 10,000-file payload shape**
+
+Recompute or inspect the available dataset entry and verify that voice histograms use no more than 50 core bins, expose nonzero tail counts where needed, and conserve `sum(counts) + underflow + overflow`.
+
+- [ ] **Step 4: Remove the temporary saved statistics entry and inspect scope**
+
+Delete the verification statistics entry through its API, confirm every touched source file is under 300 lines, and ensure unrelated dirty files remain untouched.
