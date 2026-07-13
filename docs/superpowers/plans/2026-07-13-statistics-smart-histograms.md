@@ -99,24 +99,25 @@ git commit -m "fix: focus statistics histograms on readable ranges"
 **Files:**
 - Modify: `src/frontend/src/features/statistics/api.ts`
 - Modify: `src/frontend/src/features/statistics/logic.ts`
+- Create: `src/frontend/src/features/statistics/charts/histogramGeometry.ts`
 - Modify: `src/frontend/src/features/statistics/charts/Histogram.tsx`
 - Modify: `src/frontend/src/features/statistics/StatisticsScreen.tsx`
 - Temporary test: `/tmp/runflow_test_histogram_bars.mts`
 
 **Interfaces:**
 - Consumes: histogram `underflow` and `overflow` counts
-- Produces: exported `histogramBars(edges, counts, underflow, overflow)` arrays used by `Histogram`
+- Produces: pure `histogramBars(edges, counts, underflow, overflow)` arrays used by `Histogram`
 
 - [ ] **Step 1: Write a failing bar-geometry probe**
 
-Create `/tmp/runflow_test_histogram_bars.mts` that imports `histogramBars` and asserts:
+Create `/tmp/runflow_test_histogram_bars.mts` that imports `histogramBars` from `histogramGeometry.ts` and asserts:
 
 ```typescript
 assert.deepEqual(histogramBars([0.5, 1.5, 2.5], [80, 15], 0, 5), {
   centers: [1, 2, 3],
   widths: [1, 1, 1],
   counts: [80, 15, 5],
-  ranges: ["0.50 – 1.50", "1.50 – 2.50", "≥ 2.50"],
+  ranges: ["0.5 – 1.5", "1.5 – 2.5", "≥ 2.5"],
 });
 ```
 
@@ -130,7 +131,7 @@ Expected: import failure because `histogramBars` does not exist.
 
 - Extend `Histogram` in `api.ts` with optional `underflow?: number` and `overflow?: number` for already persisted entries.
 - Extend `HistogramConfig` and `histConfig` in `logic.ts` with normalized numeric tail counts.
-- Export `histogramBars` from `Histogram.tsx`. Prepend a same-width bar before the first core bar when underflow is positive and append one after the last core bar when overflow is positive. Label them `< first edge` and `≥ final edge`.
+- Implement `histogramBars` in the pure `histogramGeometry.ts` module. Prepend a same-width bar before the first core bar when underflow is positive and append one after the last core bar when overflow is positive. Label them `< first edge` and `≥ final edge`.
 - Make `Histogram` render the returned arrays.
 - Pass tail counts through audio, voice, and corpus histogram calls in `StatisticsScreen.tsx`; extend `CorpusData` with the two length-tail values.
 
@@ -147,7 +148,7 @@ Expected: the probe exits successfully and Vite reports `built`.
 - [ ] **Step 5: Commit the renderer correction**
 
 ```bash
-git add src/frontend/src/features/statistics/api.ts src/frontend/src/features/statistics/logic.ts src/frontend/src/features/statistics/charts/Histogram.tsx src/frontend/src/features/statistics/StatisticsScreen.tsx
+git add src/frontend/src/features/statistics/api.ts src/frontend/src/features/statistics/logic.ts src/frontend/src/features/statistics/charts/histogramGeometry.ts src/frontend/src/features/statistics/charts/Histogram.tsx src/frontend/src/features/statistics/StatisticsScreen.tsx
 git commit -m "fix: render histogram tails without compressing the core"
 ```
 
