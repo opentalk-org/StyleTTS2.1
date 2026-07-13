@@ -28,4 +28,3 @@ class TemporaryAudioBatch:
     def _remove_paths(self) -> None:
         for path in self.paths:
             path.unlink(missing_ok=True)
-
