@@ -25,8 +25,12 @@ def bulk_replace_waveforms_from_audio(
     resolved_store = _object_store(session, store)
     writer = WaveformPackWriter(session, resolved_store, config)
     waveforms = []
+    bulk_delete_waveforms(
+        session,
+        [audio_file_id for audio_file_id, _, _, _ in items],
+        commit=False,
+    )
     for audio_file_id, audio_bytes, duration, payload in items:
-        delete_waveform(session, audio_file_id, commit=False)
         waveform = payload if payload is not None else _waveform_from_audio(audio_bytes)
         data = encode_peaks(waveform.peaks)
         write = writer.append(data)
@@ -47,8 +51,6 @@ def bulk_replace_waveforms_from_audio(
     writer.flush()
     session.add_all(waveforms)
     session.commit()
-    for item in waveforms:
-        session.refresh(item)
     return waveforms
 
 

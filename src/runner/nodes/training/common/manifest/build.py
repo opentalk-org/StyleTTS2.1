@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import batched
 import json
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,9 @@ from uuid import UUID
 from runner.nodes.models import AudioRecordRef, AudioSegment, stable_id
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
+
+
+MATERIALIZE_BATCH_SIZE = 256
 
 
 @dataclass(frozen=True)
@@ -50,12 +54,12 @@ def phoneme_alphabet_symbols(value: dict) -> list[str]:
 def segments_from_audio_file_ids(audio_file_ids: list[UUID]) -> list[AudioSegment]:
     segments: list[AudioSegment] = []
     with database_session() as session:
-        for audio_file_id in audio_file_ids:
-            item = audio_crud.get_audio_file(session, audio_file_id)
+        items = audio_crud.get_audio_files_bulk(session, audio_file_ids)
+        for audio_file_id, item in items.items():
             ref = AudioRecordRef(item.id, item.name, item.duration, item.byte_length, item.virtual, item.metadata_)
             segments.extend(
                 _audio_segment_from_dict(ref, segment)
-                for segment in audio_crud.list_audio_segments(session, item.id)
+                for segment in item.segments
             )
     return segments
 
@@ -118,9 +122,11 @@ def manifest_audio_dir(output_dir: Path, root_path: str) -> Path:
 def materialize_audio_files(audio_ids: list[UUID], audio_dir: Path) -> None:
     audio_dir.mkdir(parents=True, exist_ok=True)
     with database_session() as session:
-        for audio_id in audio_ids:
-            target = audio_dir / f"{audio_id}.wav"
-            target.write_bytes(audio_crud.read_audio_file(session, audio_id))
+        for audio_id_batch in batched(audio_ids, MATERIALIZE_BATCH_SIZE):
+            audio_data = audio_crud.bulk_read_audio_files(session, audio_id_batch)
+            for audio_id, data in audio_data.items():
+                target = audio_dir / f"{audio_id}.wav"
+                target.write_bytes(data)
 
 
 def write_manifest(path: Path, lines: list[ManifestLine]) -> None:

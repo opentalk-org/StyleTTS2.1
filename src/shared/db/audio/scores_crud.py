@@ -26,6 +26,4 @@ def bulk_update_audio_scores(
         items[audio_id].score = score
         items[audio_id].updated_at = updated_at
     session.commit()
-    for item in items.values():
-        session.refresh(item)
-    return items
+    return {audio_id: items[audio_id] for audio_id in scores}

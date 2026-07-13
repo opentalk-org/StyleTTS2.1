@@ -53,6 +53,14 @@ class EmbeddedPoint:
     name: str
 
 
+@dataclass
+class LoadedAudioInput:
+    inputs: dict[str, Any]
+    audio: Audio
+    data: bytes
+    segments: list[dict[str, Any]]
+
+
 class EmbedVoicesPcaPlotNode(Node):
     NODE_TYPE = "EmbedVoicesPcaPlot"
     DESCRIPTION = "Embed every incoming audio clip with a StyleTTS2 style encoder, project the style vectors down to 2D with PCA, and produce an interactive HTML scatter plot artifact. Points can be coloured by voice or speaker and use the acoustic, prosodic, or combined style component. Use it to visually inspect how voices cluster and spot outliers or mislabelled samples; wire in the StyleTTS2 checkpoint to embed with on the checkpoint input."
@@ -74,21 +82,39 @@ class EmbedVoicesPcaPlotNode(Node):
 
     async def execute(self, batch, context):
         outputs = []
-        for inputs in batch:
+        loaded, voice_names = _load_audio_batch(list(batch))
+        for item in loaded:
             context.check_cancel()
-            result = await asyncio.to_thread(self._ingest, inputs, str(context.run_id))
+            result = await asyncio.to_thread(
+                self._ingest,
+                item,
+                voice_names,
+                str(context.run_id),
+            )
             if result is not None:
                 outputs.append(result)
         return outputs
 
-    def _ingest(self, inputs: dict[str, Any], run_id: str) -> dict[str, SaveResult] | None:
-        audio = inputs["audio"]
-        assert isinstance(audio, Audio), f"unsupported audio input: {type(audio).__name__}"
+    def _ingest(
+        self,
+        item: LoadedAudioInput,
+        voice_names: dict[str, str],
+        run_id: str,
+    ) -> dict[str, SaveResult] | None:
+        audio = item.audio
         if self._runtime is None:
-            self._runtime = _load_style_encoder_runtime(typed_checkpoint(inputs["checkpoint"]))
+            self._runtime = _load_style_encoder_runtime(
+                typed_checkpoint(item.inputs["checkpoint"])
+            )
         batch_id = str(audio.metadata["source_batch_id"])
         expected = int(audio.metadata["source_batch_count"])
-        point = self._embed_audio(audio)
+        label = _voice_label(item.segments, voice_names, self.settings.label_source)
+        vector = _style_vector(
+            self._runtime,
+            item.data,
+            self.settings.embedding_component,
+        )
+        point = EmbeddedPoint(vector=vector, label=label, name=audio.name)
         pending = self._pending.setdefault(batch_id, [])
         pending.append(point)
         if len(pending) < expected:
@@ -96,14 +122,33 @@ class EmbedVoicesPcaPlotNode(Node):
         del self._pending[batch_id]
         return {"artifact": _render_and_store(pending, self.settings, run_id)}
 
-    def _embed_audio(self, audio: Audio) -> EmbeddedPoint:
-        with database_session() as session:
-            data = audio.data if audio.data is not None else audio_crud.read_audio_file(session, audio.audio_file_id)
-            record = audio_crud.get_audio_file(session, audio.audio_file_id)
-            voice_names = {str(voice.id): voice.name for voice in voice_crud.list_voices(session)}
-        label = _voice_label(record.segments, voice_names, self.settings.label_source)
-        vector = _style_vector(self._runtime, data, self.settings.embedding_component)
-        return EmbeddedPoint(vector=vector, label=label, name=audio.name)
+
+def _load_audio_batch(batch: list[dict[str, Any]]) -> tuple[list[LoadedAudioInput], dict[str, str]]:
+    audios = [inputs["audio"] for inputs in batch]
+    assert all(isinstance(audio, Audio) for audio in audios), "voice embedding inputs must be Audio"
+    audio_ids = [audio.audio_file_id for audio in audios]
+    missing_ids = [audio.audio_file_id for audio in audios if audio.data is None]
+    with database_session() as session:
+        records = audio_crud.get_audio_files_bulk(session, audio_ids)
+        stored_data = (
+            audio_crud.bulk_read_audio_files(session, missing_ids)
+            if missing_ids
+            else {}
+        )
+        voice_names = {
+            str(voice.id): voice.name
+            for voice in voice_crud.list_voices(session)
+        }
+    loaded = [
+        LoadedAudioInput(
+            inputs=inputs,
+            audio=audio,
+            data=audio.data if audio.data is not None else stored_data[audio.audio_file_id],
+            segments=list(records[audio.audio_file_id].segments),
+        )
+        for inputs, audio in zip(batch, audios, strict=True)
+    ]
+    return loaded, voice_names
 
 
 def _load_style_encoder_runtime(checkpoint: CheckpointRef) -> StyleEncoderRuntime:
