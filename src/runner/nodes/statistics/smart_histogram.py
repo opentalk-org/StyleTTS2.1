@@ -1,5 +1,5 @@
 from bisect import bisect_right
-from math import ceil, floor, isfinite
+from math import ceil, floor, isfinite, sqrt
 from typing import Any
 
 LOW_PERCENTILE = 0.005
@@ -15,9 +15,14 @@ def histogram_counts(values: list[float], bins: int, range_: tuple[float, float]
         included = [value for value in finite_values if lo <= value <= hi]
         edges = _equal_edges(lo, hi, bins)
         return {"edges": edges, "counts": _count_values(included, edges), "underflow": 0, "overflow": 0}
-    if len(finite_values) < MIN_PERCENTILE_VALUES or len(set(finite_values)) == 1:
+    if not finite_values or len(set(finite_values)) == 1:
         lo, hi = _value_range(finite_values, None)
-        edges = _equal_edges(lo, hi, bins)
+        edges = _equal_edges(lo, hi, 1)
+        return {"edges": edges, "counts": _count_values(finite_values, edges), "underflow": 0, "overflow": 0}
+    if len(finite_values) < MIN_PERCENTILE_VALUES:
+        lo, hi = _value_range(finite_values, None)
+        small_bin_count = min(bins, ceil(sqrt(len(finite_values))))
+        edges = _equal_edges(lo, hi, small_bin_count)
         return {"edges": edges, "counts": _count_values(finite_values, edges), "underflow": 0, "overflow": 0}
     edges = _percentile_edges(finite_values, bins)
     underflow = sum(value < edges[0] for value in finite_values)
