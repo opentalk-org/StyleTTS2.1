@@ -92,6 +92,7 @@ def bulk_update_packed_audio_files(
     store: ObjectStore,
     payloads: dict[uuid.UUID, AudioUpdate],
     config: AudioPackConfig = AudioPackConfig(),
+    commit: bool = True,
 ) -> dict[uuid.UUID, AudioFile]:
     writer = AudioPackWriter(session, store, config)
     items = get_audio_files_bulk(session, list(payloads))
@@ -99,7 +100,8 @@ def bulk_update_packed_audio_files(
         _decrease_used_bytes(item)
         _replace_item_from_write(item, writer, payloads[audio_file_id])
     writer.flush()
-    session.commit()
+    if commit:
+        session.commit()
     return items
 
 

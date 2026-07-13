@@ -3,6 +3,7 @@ import wave
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shared.db.settings import crud as settings_crud
@@ -121,12 +122,23 @@ def read_waveform(
 
 
 def delete_waveform(session: Session, audio_file_id: uuid.UUID, commit: bool = True) -> None:
-    item = session.get(AudioWaveform, audio_file_id)
-    if item is None:
+    bulk_delete_waveforms(session, [audio_file_id], commit=commit)
+
+
+def bulk_delete_waveforms(
+    session: Session,
+    audio_file_ids: Sequence[uuid.UUID],
+    commit: bool = True,
+) -> None:
+    ids = list(dict.fromkeys(audio_file_ids))
+    if not ids:
         return
-    item.pack.used_bytes -= item.byte_length
-    assert item.pack.used_bytes >= 0, f"waveform pack used bytes went negative: {item.pack_id}"
-    session.delete(item)
+    statement = select(AudioWaveform).where(AudioWaveform.audio_file_id.in_(ids))
+    items = session.execute(statement).unique().scalars().all()
+    for item in items:
+        item.pack.used_bytes -= item.byte_length
+        assert item.pack.used_bytes >= 0, f"waveform pack used bytes went negative: {item.pack_id}"
+        session.delete(item)
     if commit:
         session.commit()
 
