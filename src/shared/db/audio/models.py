@@ -27,7 +27,7 @@ class AudioFile(Base):
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False)
     virtual: Mapped[bool] = mapped_column(Boolean, nullable=False)
     storage_kind: Mapped[str] = mapped_column(String(16), nullable=False, default="packed")
-    storage_ref: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    storage_ref: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
     bucket_file: Mapped[BucketFile | None] = relationship(back_populates="audio_files", lazy="joined")
     datasets: Mapped[list["Dataset"]] = relationship(secondary="dataset_audio_files", back_populates="audio_files")

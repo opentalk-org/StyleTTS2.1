@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from shared.db.audio.models import AudioFile
 from shared.db.audio.pack_store import AudioPackConfig, AudioPackWriter, ObjectStore
+from shared.db.audio.rows_crud import get_audio_files_bulk
 from shared.db.audio.schemas import AudioCreate, AudioPartRead, AudioUpdate
-from shared.db.common import one
 
 
 def create_packed_audio_file(
@@ -31,16 +31,11 @@ def bulk_create_packed_audio_files(
     writer.flush()
     session.add_all(items)
     session.commit()
-    for item in items:
-        session.refresh(item)
     return items
 
 
 def read_packed_audio_file(session: Session, store: ObjectStore, audio_file_id: uuid.UUID) -> bytes:
-    item = one(session, AudioFile, audio_file_id)
-    _assert_packed(item)
-    assert item.bucket_file is not None
-    return store.read_range(item.bucket_file.path, item.byte_offset, item.byte_length)
+    return bulk_read_packed_audio_files(session, store, [audio_file_id])[audio_file_id]
 
 
 def read_packed_audio_part(
@@ -49,11 +44,7 @@ def read_packed_audio_part(
     audio_file_id: uuid.UUID,
     payload: AudioPartRead,
 ) -> bytes:
-    item = one(session, AudioFile, audio_file_id)
-    _assert_packed(item)
-    _assert_valid_part(item, payload)
-    assert item.bucket_file is not None
-    return store.read_range(item.bucket_file.path, item.byte_offset + payload.start, payload.length)
+    return bulk_read_packed_audio_parts(session, store, {audio_file_id: payload})[audio_file_id]
 
 
 def bulk_read_packed_audio_files(
@@ -61,7 +52,8 @@ def bulk_read_packed_audio_files(
     store: ObjectStore,
     audio_file_ids: Iterable[uuid.UUID],
 ) -> dict[uuid.UUID, bytes]:
-    items = [one(session, AudioFile, audio_file_id) for audio_file_id in audio_file_ids]
+    ids = list(dict.fromkeys(audio_file_ids))
+    items = list(get_audio_files_bulk(session, ids).values())
     for item in items:
         _assert_packed(item)
     pack_data = _download_packs(store, items)
@@ -73,7 +65,7 @@ def bulk_read_packed_audio_parts(
     store: ObjectStore,
     requests: dict[uuid.UUID, AudioPartRead],
 ) -> dict[uuid.UUID, bytes]:
-    items = [one(session, AudioFile, audio_file_id) for audio_file_id in requests]
+    items = list(get_audio_files_bulk(session, list(requests)).values())
     for item in items:
         _assert_packed(item)
         _assert_valid_part(item, requests[item.id])
@@ -102,14 +94,12 @@ def bulk_update_packed_audio_files(
     config: AudioPackConfig = AudioPackConfig(),
 ) -> dict[uuid.UUID, AudioFile]:
     writer = AudioPackWriter(session, store, config)
-    items = {audio_file_id: one(session, AudioFile, audio_file_id) for audio_file_id in payloads}
+    items = get_audio_files_bulk(session, list(payloads))
     for audio_file_id, item in items.items():
         _decrease_used_bytes(item)
         _replace_item_from_write(item, writer, payloads[audio_file_id])
     writer.flush()
     session.commit()
-    for item in items.values():
-        session.refresh(item)
     return items
 
 
@@ -117,12 +107,18 @@ def delete_packed_audio_file(session: Session, audio_file_id: uuid.UUID) -> None
     bulk_delete_packed_audio_files(session, [audio_file_id])
 
 
-def bulk_delete_packed_audio_files(session: Session, audio_file_ids: Iterable[uuid.UUID]) -> None:
-    items = [one(session, AudioFile, audio_file_id) for audio_file_id in audio_file_ids]
+def bulk_delete_packed_audio_files(
+    session: Session,
+    audio_file_ids: Iterable[uuid.UUID],
+    commit: bool = True,
+) -> None:
+    ids = list(dict.fromkeys(audio_file_ids))
+    items = list(get_audio_files_bulk(session, ids).values())
     for item in items:
         _decrease_used_bytes(item)
         session.delete(item)
-    session.commit()
+    if commit:
+        session.commit()
 
 
 def _create_item_from_write(writer: AudioPackWriter, payload: AudioCreate) -> AudioFile:

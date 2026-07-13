@@ -22,6 +22,7 @@ from shared.db.audio.pack_prune import prune_fragmented_audio_packs
 from shared.db.audio.pack_store import AudioPackConfig, ObjectStore
 from shared.db.audio.schemas import AudioBucketLocation, AudioCreate, AudioPartRead, AudioUpdate
 from shared.db.audio.scores_crud import bulk_update_audio_scores
+from shared.db.audio.rows_crud import get_audio_files_bulk
 from shared.db.audio.references_crud import count_audio_file_references, list_audio_file_references_page
 from shared.db.audio.segments_crud import (
     create_segment,
@@ -81,7 +82,7 @@ def search_audio_file_ids(session: Session, query: str, dataset: str) -> list[uu
 
 
 def get_audio_file(session: Session, audio_file_id: uuid.UUID) -> AudioFile:
-    return one(session, AudioFile, audio_file_id)
+    return get_audio_files_bulk(session, [audio_file_id])[audio_file_id]
 
 
 def _audio_filters(query: str, dataset: str) -> list[Any]:
