@@ -3,12 +3,12 @@ import wave
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from shared.db.settings import crud as settings_crud
 from shared.db.waveforms.codec import FORMAT_VERSION, decode_peaks, downsample, encode_peaks, waveform_from_wav
-from shared.db.waveforms.models import AudioWaveform
+from shared.db.waveforms.models import AudioWaveform, WaveformPack
 from shared.db.waveforms.pack_store import ObjectStore, WaveformPackConfig, WaveformPackWriter
 from shared.db.waveforms.schemas import WaveformInput, WaveformRead
 from shared.storage import S3ObjectStore
@@ -135,12 +135,22 @@ def bulk_delete_waveforms(
     ids = list(dict.fromkeys(audio_file_ids))
     if not ids:
         return
-    statement = select(AudioWaveform).where(AudioWaveform.audio_file_id.in_(ids))
-    items = session.execute(statement).unique().scalars().all()
-    for item in items:
-        item.pack.used_bytes -= item.byte_length
-        assert item.pack.used_bytes >= 0, f"waveform pack used bytes went negative: {item.pack_id}"
-        session.delete(item)
+    rows = session.execute(
+        select(AudioWaveform.pack_id, AudioWaveform.byte_length).where(
+            AudioWaveform.audio_file_id.in_(ids)
+        )
+    ).all()
+    removed_by_pack: dict[uuid.UUID, int] = {}
+    for pack_id, byte_length in rows:
+        removed_by_pack[pack_id] = removed_by_pack.get(pack_id, 0) + byte_length
+    for pack_id, removed_bytes in removed_by_pack.items():
+        result = session.execute(
+            update(WaveformPack)
+            .where(WaveformPack.id == pack_id, WaveformPack.used_bytes >= removed_bytes)
+            .values(used_bytes=WaveformPack.used_bytes - removed_bytes)
+        )
+        assert result.rowcount == 1, f"waveform pack used bytes would go negative: {pack_id}"
+    session.execute(delete(AudioWaveform).where(AudioWaveform.audio_file_id.in_(ids)))
     if commit:
         session.commit()
 

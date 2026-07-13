@@ -29,16 +29,19 @@ class MosComparison(Base):
         UUID(as_uuid=True),
         ForeignKey("audio_files.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     audio_b_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("audio_files.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     preferred_audio_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("audio_files.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     score_a: Mapped[float] = mapped_column(Float, nullable=False)
     score_b: Mapped[float] = mapped_column(Float, nullable=False)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import replace
 from typing import Any, Literal
 from uuid import UUID
@@ -84,6 +85,7 @@ class UpdateAudioRecordBytesNode(Node):
 
     async def execute(self, batch, context):
         audios: list[Audio] = [inputs["audio"] for inputs in batch]
+        assert_unique_audio_ids(audios, self.NODE_TYPE)
         with database_session() as session:
             items = audio_crud.get_audio_files_bulk(
                 session,
@@ -150,6 +152,8 @@ class SaveAudioSegmentsNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
+        audios: list[Audio] = [inputs["audio"] for inputs in batch]
+        assert_unique_audio_ids(audios, self.NODE_TYPE)
         records: list[tuple[Audio, AudioRecordRef, SegmentGroup, list[dict[str, Any]]]] = []
         with database_session() as session:
             existing_by_id: dict[UUID, list[dict[str, Any]]] = {}
@@ -180,6 +184,13 @@ class SaveAudioSegmentsNode(Node):
         return outputs
 
 
+def assert_unique_audio_ids(audios: list[Audio], operation: str) -> None:
+    ids = [audio.audio_file_id for audio in audios]
+    duplicates = sorted(str(audio_id) for audio_id, count in Counter(ids).items() if count > 1)
+    if duplicates:
+        raise ValueError(f"{operation} received duplicate audio ids: {duplicates}")
+
+
 def _audio_metadata(audio: Audio) -> dict[str, Any]:
     return {**audio.metadata, "sample_rate": audio.sample_rate, "channels": audio.channels}
 
@@ -189,8 +200,6 @@ def _audio_pack_config(settings: SaveAudioRecordSettings) -> audio_crud.AudioPac
         return audio_crud.AudioPackConfig()
     return audio_crud.AudioPackConfig(
         target_pack_bytes=512 * 1024 * 1024,
-        reuse_open_packs=False,
-        seal_on_flush=True,
     )
 
 

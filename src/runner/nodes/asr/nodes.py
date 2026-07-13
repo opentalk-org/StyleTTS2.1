@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -107,7 +108,7 @@ class TranscribeNode(Node):
         await self._ensure_model(checkpoint)
         audios = [inputs["audio"] for inputs in batch]
         context.check_cancel()
-        transcribed = await asyncio.to_thread(self._transcribe_batch, audios)
+        transcribed = await asyncio.to_thread(self._transcribe_batch, audios, context.check_cancel)
         await context.report_progress(
             self.id,
             len(audios),
@@ -129,10 +130,10 @@ class TranscribeNode(Node):
     def _load_model(self, checkpoint_dir: Path) -> Any:
         raise NotImplementedError
 
-    def _transcribe_batch(self, audios: list[Audio]) -> list[Audio]:
+    def _transcribe_batch(self, audios: list[Audio], check_cancel: Callable[[], None]) -> list[Audio]:
         durations = [audio.duration for audio in audios]
         with TemporaryAudioBatch(audios) as paths:
-            span_batches = self._transcribe_paths(paths, durations)
+            span_batches = self._transcribe_paths(paths, durations, check_cancel)
         assert len(span_batches) == len(audios), f"{self.MODEL_NAME} batch output mismatch"
         return [
             audio_with_transcript_segments(
@@ -148,6 +149,7 @@ class TranscribeNode(Node):
         self,
         paths: list[Path],
         durations_sec: list[float],
+        check_cancel: Callable[[], None],
     ) -> list[list[TranscriptSpan]]:
         raise NotImplementedError
 
@@ -164,8 +166,10 @@ class WhisperTranscribeNode(TranscribeNode):
     def _load_model(self, checkpoint_dir: Path) -> Any:
         return load_whisper_model(checkpoint_dir)
 
-    def _transcribe_paths(self, paths: list[Path], durations_sec: list[float]) -> list[list[TranscriptSpan]]:
-        return whisper_transcribe_wavs(self._model, paths, durations_sec, self.settings.language)
+    def _transcribe_paths(
+        self, paths: list[Path], durations_sec: list[float], check_cancel: Callable[[], None]
+    ) -> list[list[TranscriptSpan]]:
+        return whisper_transcribe_wavs(self._model, paths, durations_sec, self.settings.language, check_cancel)
 
 
 class ParakeetTranscribeNode(TranscribeNode):
@@ -177,7 +181,10 @@ class ParakeetTranscribeNode(TranscribeNode):
     def _load_model(self, checkpoint_dir: Path) -> Any:
         return load_parakeet_model(checkpoint_dir)
 
-    def _transcribe_paths(self, paths: list[Path], durations_sec: list[float]) -> list[list[TranscriptSpan]]:
+    def _transcribe_paths(
+        self, paths: list[Path], durations_sec: list[float], check_cancel: Callable[[], None]
+    ) -> list[list[TranscriptSpan]]:
+        check_cancel()
         return parakeet_transcribe_wavs(
             self._model,
             paths,
@@ -185,11 +192,12 @@ class ParakeetTranscribeNode(TranscribeNode):
             batch_size=self.settings.batch_size,
         )
 
-    def _transcribe_batch(self, audios: list[Audio]) -> list[Audio]:
+    def _transcribe_batch(self, audios: list[Audio], check_cancel: Callable[[], None]) -> list[Audio]:
         if not self.settings.output_alignment:
-            return super()._transcribe_batch(audios)
+            return super()._transcribe_batch(audios, check_cancel)
         durations = [audio.duration for audio in audios]
         with TemporaryAudioBatch(audios) as paths:
+            check_cancel()
             aligned_batches = parakeet_transcribe_aligned_wavs(
                 self._model,
                 paths,
@@ -225,8 +233,11 @@ class CanaryTranscribeNode(TranscribeNode):
     def _load_model(self, checkpoint_dir: Path) -> Any:
         return load_canary_model(checkpoint_dir)
 
-    def _transcribe_paths(self, paths: list[Path], durations_sec: list[float]) -> list[list[TranscriptSpan]]:
+    def _transcribe_paths(
+        self, paths: list[Path], durations_sec: list[float], check_cancel: Callable[[], None]
+    ) -> list[list[TranscriptSpan]]:
         prompt = self._prompt_settings()
+        check_cancel()
         return canary_transcribe_wavs(self._model, paths, durations_sec, **prompt)
 
     def _prompt_settings(self) -> dict[str, Any]:

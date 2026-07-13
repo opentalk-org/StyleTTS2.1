@@ -127,8 +127,13 @@ class DeleteAudioRecordsNode(Node):
     CATEGORY = "Dataset"
     INPUTS = {"audio": AudioPort()}
     OUTPUTS = {"writeback_result": JsonPort()}
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=256)
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=256, max_size=256, timeout_ms=20)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
+    QUEUE_MAX_SIZE = 512
+
+    def __init__(self, node_id: str | None = None, **params):
+        super().__init__(node_id=node_id, **params)
+        self._deleted_any = False
 
     async def execute(self, batch, context):
         audios = [inputs["audio"] for inputs in batch]
@@ -138,8 +143,21 @@ class DeleteAudioRecordsNode(Node):
             audio_crud.bulk_delete_audio_files(
                 session,
                 [audio.audio_file_id for audio in audios],
+                prune=False,
             )
+        self._deleted_any = True
         return [{"writeback_result": {"deleted": str(audio.audio_file_id)}} for audio in audios]
+
+    async def teardown(self, context):
+        if not self._deleted_any:
+            return
+        try:
+            with database_session() as session:
+                audio_crud.prune_audio_packs(session)
+        except Exception:
+            self.logger.exception("audio pack pruning failed after committed deletes")
+        finally:
+            self._deleted_any = False
 
 
 @dataclass(frozen=True)

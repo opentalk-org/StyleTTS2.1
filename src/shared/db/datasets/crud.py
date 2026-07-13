@@ -50,7 +50,12 @@ def add_audio_file_to_dataset(session: Session, dataset_id: uuid.UUID, audio_fil
     return dataset
 
 
-def bulk_add_audio_files_to_dataset(session: Session, dataset_id: uuid.UUID, audio_file_ids: Sequence[uuid.UUID]) -> None:
+def bulk_add_audio_files_to_dataset(
+    session: Session,
+    dataset_id: uuid.UUID,
+    audio_file_ids: Sequence[uuid.UUID],
+    commit: bool = True,
+) -> None:
     one(session, Dataset, dataset_id)
     ids = list(dict.fromkeys(audio_file_ids))
     if not ids:
@@ -61,7 +66,8 @@ def bulk_add_audio_files_to_dataset(session: Session, dataset_id: uuid.UUID, aud
         .on_conflict_do_nothing(index_elements=["dataset_id", "audio_file_id"])
     )
     session.execute(statement)
-    session.commit()
+    if commit:
+        session.commit()
 
 
 def remove_audio_file_from_dataset(session: Session, dataset_id: uuid.UUID, audio_file_id: uuid.UUID) -> Dataset:
@@ -75,6 +81,7 @@ def bulk_remove_audio_files_from_dataset(
     session: Session,
     dataset_id: uuid.UUID,
     audio_file_ids: Sequence[uuid.UUID],
+    commit: bool = True,
 ) -> None:
     one(session, Dataset, dataset_id)
     ids = list(dict.fromkeys(audio_file_ids))
@@ -85,4 +92,5 @@ def bulk_remove_audio_files_from_dataset(
         dataset_audio_files.c.audio_file_id.in_(ids),
     )
     session.execute(statement)
-    session.commit()
+    if commit:
+        session.commit()

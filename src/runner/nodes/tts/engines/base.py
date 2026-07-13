@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,11 +36,13 @@ class EngineRuntime(ABC):
     def synthesize_batch(
         self,
         requests: list[EngineSynthesisRequest],
+        check_cancel: Callable[[], None],
     ) -> list[EngineSynthesisResult]:
-        return [
-            EngineSynthesisResult(*self.synthesize(request.text, request.voice, request.language))
-            for request in requests
-        ]
+        outputs = []
+        for request in requests:
+            check_cancel()
+            outputs.append(EngineSynthesisResult(*self.synthesize(request.text, request.voice, request.language)))
+        return outputs
 
     def close(self) -> None:
         return None

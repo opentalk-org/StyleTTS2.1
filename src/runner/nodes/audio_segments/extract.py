@@ -14,13 +14,16 @@ from runner.nodes.audio_segments.extract_writeback import (
     save_result as _save_result,
     saved_segment_group as _saved_segment_group,
 )
+from runner.nodes.audio_segments.persist_split import (
+    completed_replace_source_ids,
+    persist_split_records,
+)
 from runner.nodes.datatypes import AudioPort, SaveResultPort
 from runner.nodes.models import Audio, SegmentGroup, stable_id
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 from shared.db.audio.models import AudioFile
 from shared.db.audio.schemas import AudioCreate
-from shared.db.datasets import crud as dataset_crud
 
 class PersistSplitAudioRecordsSettings(StrictSettings):
     target_dataset_id: UUID | None = None
@@ -36,7 +39,7 @@ class ExtractSegmentGroupAudioNode(Node):
     CATEGORY = "Audio"
     INPUTS = {"audio": AudioPort()}
     OUTPUTS = {"audio": AudioPort()}
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
+    BATCH_POLICY = BatchPolicy(BatchMode.FULL_WINDOW)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
@@ -83,43 +86,15 @@ class PersistSplitAudioRecordsNode(Node):
                 metadata=_target_audio_metadata(audio),
                 virtual=self.settings.virtual,
             ))
-        with database_session() as session:
-            items = audio_crud.bulk_create_audio_files(session, payloads)
-            segments_by_id = audio_crud.bulk_replace_audio_segments(
-                session,
-                {
-                    item.id: _metadata_segment_payloads(audio)
-                    for item, audio in zip(items, audios, strict=True)
-                },
-            )
-            dataset_ids = [
-                dataset_id
-                for dataset_id in dict.fromkeys([
-                    self.settings.target_dataset_id,
-                    self.settings.source_dataset_id,
-                ])
-                if dataset_id is not None
-            ]
-            for dataset_id in dataset_ids:
-                dataset_crud.bulk_add_audio_files_to_dataset(
-                    session,
-                    dataset_id,
-                    [item.id for item in items],
-                )
-            completed_source_ids = list(dict.fromkeys(
-                UUID(str(audio.metadata["source_audio_id"]))
-                for audio in audios
-                if self.settings.mode == "replace_all"
-                and int(audio.metadata["group_index"]) + 1 >= int(audio.metadata["group_count"])
-            ))
-            if self.settings.source_dataset_id is not None and completed_source_ids:
-                dataset_crud.bulk_remove_audio_files_from_dataset(
-                    session,
-                    self.settings.source_dataset_id,
-                    completed_source_ids,
-                )
-            if self.settings.delete_source_on_replace and completed_source_ids:
-                audio_crud.bulk_delete_audio_files(session, completed_source_ids)
+        items, segments_by_id = persist_split_records(
+            audios=audios,
+            payloads=payloads,
+            segment_payloads=[_metadata_segment_payloads(audio) for audio in audios],
+            target_dataset_id=self.settings.target_dataset_id,
+            source_dataset_id=self.settings.source_dataset_id,
+            replace_all=self.settings.mode == "replace_all",
+            delete_source=self.settings.delete_source_on_replace,
+        )
         outputs = []
         for item, audio in zip(items, audios, strict=True):
             segments = segments_by_id[item.id]

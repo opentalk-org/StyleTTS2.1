@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -37,12 +38,14 @@ def transcribe_wavs_to_segments(
     wav_paths: list[Path],
     durations_sec: list[float],
     language: str,
+    check_cancel: Callable[[], None],
 ) -> list[list[tuple[float, float, str, float | None]]]:
     assert len(wav_paths) == len(durations_sec), "whisper batch path/duration mismatch"
-    return [
-        transcribe_wav_to_segments(model, path, duration, language)
-        for path, duration in zip(wav_paths, durations_sec, strict=True)
-    ]
+    outputs = []
+    for path, duration in zip(wav_paths, durations_sec, strict=True):
+        check_cancel()
+        outputs.append(transcribe_wav_to_segments(model, path, duration, language))
+    return outputs
 
 
 def _span_from_whisper_segment(item: dict, duration_sec: float) -> tuple[float, float, str, float | None]:

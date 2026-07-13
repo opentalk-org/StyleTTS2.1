@@ -23,7 +23,7 @@ class AudioWaveform(Base):
     __tablename__ = "audio_waveforms"
 
     audio_file_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("audio_files.id"), primary_key=True)
-    pack_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("waveform_packs.id"), nullable=False)
+    pack_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("waveform_packs.id"), nullable=False, index=True)
     byte_offset: Mapped[int] = mapped_column(BigInteger, nullable=False)
     byte_length: Mapped[int] = mapped_column(BigInteger, nullable=False)
     duration: Mapped[float] = mapped_column(Float, nullable=False)

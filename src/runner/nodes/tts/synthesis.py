@@ -12,6 +12,7 @@ from runflow.core.node import Node
 from runflow.core.ports import JoinMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
+from runflow.runtime.output_router import INPUT_INDEX_OUTPUT
 from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AudioPort, CheckpointRefPort, JsonPort, SynthesisResultPort, TextPort
 from runner.nodes.languages import Language
@@ -35,13 +36,14 @@ class PendingSynthesis:
     text: str
     sample_index: int
     run_id: str
+    input_index: int
 
 
 class TtsSynthesisNode(Node):
     """Base synthesis node: (checkpoint, text, voice) -> audio.
 
     A ``voice`` may be a single voice or a ``tts_voice_batch``; a batch fans out one
-    audio per (voice, sample) from the single input text (see AGENTS.md fan-out rule).
+    audio per (voice, sample) for each input text.
     """
 
     ENGINE: TtsEngine
@@ -73,17 +75,26 @@ class TtsSynthesisNode(Node):
         await self._ensure_runtime(checkpoint.checkpoint_id, checkpoint.path)
         pending: list[PendingSynthesis] = []
         run_id = str(context.run_id)
-        for inputs in batch:
+        for input_index, inputs in enumerate(batch):
             text = inputs["text"]
             voices, samples = self._resolve_voices(inputs["voice"])
             for voice in voices:
                 for sample_index in range(samples):
                     context.check_cancel()
-                    pending.append(self._pending_synthesis(text, voice, sample_index, run_id))
+                    pending.append(
+                        self._pending_synthesis(
+                            text,
+                            voice,
+                            sample_index,
+                            run_id,
+                            input_index,
+                        )
+                    )
         assert self._runtime is not None, "runtime not loaded"
         results = await asyncio.to_thread(
             self._runtime.synthesize_batch,
             [item.request for item in pending],
+            context.check_cancel,
         )
         assert len(results) == len(pending), f"{self.ENGINE.value} batch output mismatch"
         await context.report_progress(
@@ -118,11 +129,28 @@ class TtsSynthesisNode(Node):
         voice: Voice,
         sample_index: int,
         run_id: str,
+        input_index: int,
     ) -> PendingSynthesis:
         voice_key = voice.preset if voice.preset is not None else "clone"
-        request_id = stable_id("tts_request", self.NODE_TYPE, run_id, text, voice_key, sample_index)
+        request_id = stable_id(
+            "tts_request",
+            self.NODE_TYPE,
+            run_id,
+            input_index,
+            text,
+            voice_key,
+            sample_index,
+        )
         request = EngineSynthesisRequest(text, voice, self.settings.language.value)
-        return PendingSynthesis(request, request_id, voice_key, text, sample_index, run_id)
+        return PendingSynthesis(
+            request,
+            request_id,
+            voice_key,
+            text,
+            sample_index,
+            run_id,
+            input_index,
+        )
 
     def _synthesis_output(
         self,
@@ -153,7 +181,11 @@ class TtsSynthesisNode(Node):
             audio.lineage_id,
             metadata,
         )
-        return {"audio": audio, "synthesis_result": synthesis_result}
+        return {
+            INPUT_INDEX_OUTPUT: pending.input_index,
+            "audio": audio,
+            "synthesis_result": synthesis_result,
+        }
 
 
 class KokoroSynthesisNode(TtsSynthesisNode):

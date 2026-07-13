@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -129,15 +130,17 @@ def synthesize_to_wav_bytes(
 
 def synthesize_to_wav_bytes_batch(
     payloads: list[dict[str, Any]],
+    check_cancel: Callable[[], None],
     runtime: Any | None = None,
 ) -> tuple[Any | None, list[bytes]]:
     if not payloads:
         return runtime, []
     resolved_runtime = runtime if runtime is not None else load_synthesis_runtime(payloads[0])
-    return resolved_runtime, [
-        synthesize_to_wav_bytes(runtime=resolved_runtime, payload=payload)
-        for payload in payloads
-    ]
+    outputs = []
+    for payload in payloads:
+        check_cancel()
+        outputs.append(synthesize_to_wav_bytes(runtime=resolved_runtime, payload=payload))
+    return resolved_runtime, outputs
 
 
 def materialize_style_reference(

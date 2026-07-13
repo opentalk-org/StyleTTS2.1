@@ -61,6 +61,10 @@ def database_session(database_url: str | None = None) -> Iterator[Session]:
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     try:
         with factory() as session:
-            yield session
+            try:
+                yield session
+            except BaseException:
+                session.rollback()
+                raise
     finally:
         engine.dispose()

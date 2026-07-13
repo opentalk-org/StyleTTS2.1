@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, ForeignKey, Table, Text
+from sqlalchemy import Column, ForeignKey, Index, Table, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -12,6 +12,7 @@ dataset_audio_files = Table(
     Base.metadata,
     Column("dataset_id", UUID(as_uuid=True), ForeignKey("datasets.id"), primary_key=True),
     Column("audio_file_id", UUID(as_uuid=True), ForeignKey("audio_files.id"), primary_key=True),
+    Index("ix_dataset_audio_files_audio_file_id", "audio_file_id"),
 )
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -38,13 +39,15 @@ class OrpheusRuntime(EngineRuntime):
         self._decode_tokens = decode_tokens
 
     def synthesize(self, text: str, voice: Voice, language: str) -> tuple[np.ndarray, int]:
-        result = self.synthesize_batch([EngineSynthesisRequest(text, voice, language)])[0]
+        result = self.synthesize_batch([EngineSynthesisRequest(text, voice, language)], lambda: None)[0]
         return result.samples, result.sample_rate
 
     def synthesize_batch(
         self,
         requests: list[EngineSynthesisRequest],
+        check_cancel: Callable[[], None],
     ) -> list[EngineSynthesisResult]:
+        check_cancel()
         prompts = [
             self._format_prompt(request.text, request.voice.require_preset())
             for request in requests
@@ -53,6 +56,7 @@ class OrpheusRuntime(EngineRuntime):
             temperature=0.6, top_p=0.8, max_tokens=1200, stop_token_ids=[_STOP_TOKEN_ID], repetition_penalty=1.3
         )
         outputs = self._llm.generate(prompts, params)
+        check_cancel()
         assert len(outputs) == len(requests), "orpheus batch output mismatch"
         return [self._decode_output(output) for output in outputs]
 

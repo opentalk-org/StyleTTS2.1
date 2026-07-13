@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import io
 import wave
 from dataclasses import dataclass, replace
@@ -14,6 +15,7 @@ from runflow.core.node import Node
 from runflow.core.ports import JoinMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
+from runflow.runtime.output_router import INPUT_INDEX_OUTPUT
 from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AudioPort, CheckpointRefPort, JsonPort, SynthesisResultPort
 from runner.nodes.models import Audio, SynthesisResult, stable_id, typed_checkpoint
@@ -33,6 +35,7 @@ from shared.db.audio import crud as audio_crud
 class PendingStyleTts:
     inputs: dict[str, Any]
     output_index: int
+    input_index: int
 
 
 class StyleTtsSynthesisSettings(StrictSettings):
@@ -90,6 +93,7 @@ class StyleTtsSynthesisNode(Node):
             list(batch),
             str(context.run_id),
             self._runtime,
+            context.check_cancel,
         )
         self._loaded_checkpoint_id = checkpoint.checkpoint_id
         await context.report_progress(
@@ -107,7 +111,8 @@ def synthesize_styletts_batch(
     batch: list[dict[str, Any]],
     run_id: str,
     runtime: Any | None,
-) -> tuple[list[dict[str, Audio | SynthesisResult]], Any]:
+    check_cancel: Callable[[], None],
+) -> tuple[list[dict[str, Any]], Any]:
     pending = _expand_styletts_batch(batch, settings)
     checkpoint = typed_checkpoint(pending[0].inputs["checkpoint"])
     assert all(
@@ -145,6 +150,7 @@ def synthesize_styletts_batch(
         )
         runtime, wav_batches = synthesize_to_wav_bytes_batch(
             payloads,
+            check_cancel,
             runtime,
         )
     assert len(wav_batches) == len(pending), "styletts batch output mismatch"
@@ -160,20 +166,23 @@ def _expand_styletts_batch(
     batch: list[dict[str, Any]],
     settings: StyleTtsSynthesisSettings,
 ) -> list[PendingStyleTts]:
-    expanded = []
-    for inputs in batch:
+    indexed_inputs = []
+    for input_index, inputs in enumerate(batch):
         style_reference = inputs["style_reference"]
         if isinstance(style_reference, dict) and style_reference.get("kind") == "style_reference_batch":
             references = style_reference_batch_items(style_reference)
             samples = _sweep_sample_count(style_reference, settings.samples_per_reference)
-            expanded.extend(
-                {**inputs, "style_reference": reference}
+            indexed_inputs.extend(
+                (input_index, {**inputs, "style_reference": reference})
                 for reference in references
                 for _sample_index in range(samples)
             )
         else:
-            expanded.append(inputs)
-    return [PendingStyleTts(inputs, index) for index, inputs in enumerate(expanded)]
+            indexed_inputs.append((input_index, inputs))
+    return [
+        PendingStyleTts(inputs, output_index, input_index)
+        for output_index, (input_index, inputs) in enumerate(indexed_inputs)
+    ]
 
 
 def _styletts_output(
@@ -183,7 +192,7 @@ def _styletts_output(
     payload: dict[str, Any],
     wav_bytes: bytes,
     run_id: str,
-) -> dict[str, Audio | SynthesisResult]:
+) -> dict[str, Any]:
     request_id = stable_id(
         "synthesis_request",
         node_type,
@@ -201,7 +210,11 @@ def _styletts_output(
         audio.lineage_id,
         _result_metadata(payload, audio, settings),
     )
-    return {"synthesis_result": result, "audio": audio}
+    return {
+        INPUT_INDEX_OUTPUT: pending.input_index,
+        "synthesis_result": result,
+        "audio": audio,
+    }
 
 
 def style_reference_batch_items(value: dict[str, Any]) -> list[dict[str, Any]]:

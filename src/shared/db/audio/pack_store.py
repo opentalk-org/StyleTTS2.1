@@ -2,10 +2,10 @@ import uuid
 from dataclasses import dataclass
 from typing import Protocol
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shared.db.assets.models import BucketFile
+from shared.db.staged_objects import register_staged_object
 
 
 @dataclass(frozen=True)
@@ -13,8 +13,6 @@ class AudioPackConfig:
     target_pack_bytes: int = 128 * 1024 * 1024
     path_prefix: str = "audio-packs"
     prune_used_ratio: float = 0.5
-    reuse_open_packs: bool = True
-    seal_on_flush: bool = False
 
 
 @dataclass(frozen=True)
@@ -64,9 +62,9 @@ class AudioPackWriter:
     def flush(self) -> None:
         for pack_id in self._dirty_pack_ids:
             pack = self._packs[pack_id]
+            register_staged_object(self._session, self._store, pack.path)
             self._store.upload(pack.path, bytes(self._pack_data[pack_id]))
-            if self._config.seal_on_flush:
-                pack.sealed = True
+            pack.sealed = True
 
     def _write_oversized_pack(self, wav_bytes: bytes) -> PackedWrite:
         pack = self._create_pack(size=len(wav_bytes), used_bytes=len(wav_bytes), sealed=True)
@@ -83,18 +81,6 @@ class AudioPackWriter:
         return pack
 
     def _load_writable_pack(self, byte_length: int) -> BucketFile:
-        if not self._config.reuse_open_packs:
-            return self._create_pack(size=0, used_bytes=0, sealed=False)
-        statement = (
-            select(BucketFile)
-            .where(BucketFile.sealed.is_(False))
-            .order_by(BucketFile.size.desc())
-            .with_for_update()
-        )
-        for pack in self._session.execute(statement).scalars():
-            if pack.size + byte_length <= self._config.target_pack_bytes:
-                return pack
-            pack.sealed = True
         return self._create_pack(size=0, used_bytes=0, sealed=False)
 
     def _create_pack(self, size: int, used_bytes: int, sealed: bool) -> BucketFile:

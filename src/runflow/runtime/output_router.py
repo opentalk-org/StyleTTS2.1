@@ -12,6 +12,29 @@ from runflow.runtime.routing import add_to_join_buffer, can_create_single_input_
 from runflow.runtime.scheduler_events import SchedulerEventEmitter
 
 
+INPUT_INDEX_OUTPUT = "__input_index__"
+
+
+def tasks_for_outputs(
+    node_id: str,
+    batch: list[Task],
+    outputs: list[dict[str, Any]],
+) -> list[Task]:
+    associations = [INPUT_INDEX_OUTPUT in output for output in outputs]
+    if any(associations):
+        if not all(associations):
+            raise ValueError(f"{node_id} returned partial output-to-input association")
+        indices = [int(output[INPUT_INDEX_OUTPUT]) for output in outputs]
+        if any(index < 0 or index >= len(batch) for index in indices):
+            raise ValueError(f"{node_id} returned invalid output-to-input association")
+        return [batch[index] for index in indices]
+    if len(outputs) == len(batch):
+        return batch
+    if len(batch) == 1:
+        return [batch[0] for _ in outputs]
+    raise ValueError(f"{node_id} returned {len(outputs)} output item(s) for batch size {len(batch)}")
+
+
 class OutputRouter:
     def __init__(
         self,
@@ -31,12 +54,7 @@ class OutputRouter:
 
     async def route(self, node: Node, batch: list[Task], outputs: list[dict[str, Any]], batch_index: int) -> None:
         self.context.check_cancel()
-        if len(outputs) == len(batch):
-            task_for_output = batch
-        elif len(batch) == 1:
-            task_for_output = [batch[0] for _ in outputs]
-        else:
-            raise ValueError(f"{node.id} returned {len(outputs)} output item(s) for batch size {len(batch)}")
+        task_for_output = tasks_for_outputs(node.id, batch, outputs)
 
         for output_index, (task, output_dict) in enumerate(zip(task_for_output, outputs)):
             lineage_id = f"{node.id}:{batch_index}:{output_index}" if node.IS_INPUT else task.lineage_id
@@ -57,6 +75,8 @@ class OutputRouter:
         lineage_id: str,
     ) -> None:
         for port_name, value in output_dict.items():
+            if port_name == INPUT_INDEX_OUTPUT:
+                continue
             if port_name == "__progress__":
                 self.context.check_cancel()
                 await self.events.node_progress(node, value, batch_index)

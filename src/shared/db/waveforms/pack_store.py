@@ -2,9 +2,9 @@ import uuid
 from dataclasses import dataclass
 from typing import Protocol
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from shared.db.staged_objects import register_staged_object
 from shared.db.waveforms.models import WaveformPack
 
 
@@ -61,7 +61,9 @@ class WaveformPackWriter:
     def flush(self) -> None:
         for pack_id in self._dirty_pack_ids:
             pack = self._packs[pack_id]
+            register_staged_object(self._session, self._store, pack.path)
             self._store.upload(pack.path, bytes(self._pack_data[pack_id]))
+            pack.sealed = True
 
     def _write_oversized_pack(self, data: bytes) -> WaveformWrite:
         pack = self._create_pack(size=len(data), used_bytes=len(data), sealed=True)
@@ -77,11 +79,6 @@ class WaveformPackWriter:
         return pack
 
     def _load_writable_pack(self, byte_length: int) -> WaveformPack:
-        statement = select(WaveformPack).where(WaveformPack.sealed.is_(False)).order_by(WaveformPack.size.desc()).with_for_update()
-        for pack in self._session.execute(statement).scalars():
-            if pack.size + byte_length <= self._config.target_pack_bytes:
-                return pack
-            pack.sealed = True
         return self._create_pack(size=0, used_bytes=0, sealed=False)
 
     def _create_pack(self, size: int, used_bytes: int, sealed: bool) -> WaveformPack:

@@ -62,6 +62,7 @@ def replace_audio_segments(
 def bulk_replace_audio_segments(
     session: Session,
     payloads: dict[uuid.UUID, Sequence[SegmentPayload]],
+    commit: bool = True,
 ) -> dict[uuid.UUID, list[dict[str, Any]]]:
     if not payloads:
         return {}
@@ -73,7 +74,8 @@ def bulk_replace_audio_segments(
         rows.append({"id": audio_file_id, "segments": segments, "updated_at": now})
         out[audio_file_id] = segments
     session.execute(update(AudioFile), rows)
-    session.commit()
+    if commit:
+        session.commit()
     return out
 
 

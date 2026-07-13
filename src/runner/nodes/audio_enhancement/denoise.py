@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -60,6 +61,7 @@ class DeepFilterNetDenoiseNode(Node):
         denoised_batch = denoise_wav_bytes_batch(
             [audio.data for audio in audios],
             self._stack,
+            context.check_cancel,
         )
         outputs = []
         for audio, denoised in zip(audios, denoised_batch, strict=True):
@@ -110,8 +112,13 @@ def denoise_wav_bytes(audio_bytes: bytes, stack: DeepFilterNetStack) -> bytes:
 def denoise_wav_bytes_batch(
     audio_batch: list[bytes],
     stack: DeepFilterNetStack,
+    check_cancel: Callable[[], None],
 ) -> list[bytes]:
-    return [denoise_wav_bytes(audio_bytes, stack) for audio_bytes in audio_batch]
+    outputs = []
+    for audio_bytes in audio_batch:
+        check_cancel()
+        outputs.append(denoise_wav_bytes(audio_bytes, stack))
+    return outputs
 
 
 def denoise_wav_with_model(audio_path: Path, stack: DeepFilterNetStack) -> None:

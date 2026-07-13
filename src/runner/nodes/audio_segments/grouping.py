@@ -51,8 +51,23 @@ class PlanSegmentGroupsNode(Node):
                 max_merged_duration_seconds=self.settings.max_merged_duration_seconds,
             )
             group_count = len(groups)
+            operation_id = stable_id(
+                "split_operation",
+                source.id,
+                self.settings.mode,
+                [[segment.id for segment in group] for group in groups],
+            )
             for index, segments in enumerate(groups):
-                outputs.append({"audio": _planned_audio(source, segments, index, group_count, self.settings.mode)})
+                outputs.append({
+                    "audio": _planned_audio(
+                        source,
+                        segments,
+                        index,
+                        group_count,
+                        self.settings.mode,
+                        operation_id,
+                    ),
+                })
         return outputs
 
 
@@ -139,6 +154,7 @@ def _planned_audio(
     index: int,
     group_count: int,
     mode: Mode,
+    operation_id: str,
 ) -> Audio:
     merged_text, merged_phon = merge_segments_text_phon(segments)
     span_start = min(segment.start for segment in segments)
@@ -149,6 +165,7 @@ def _planned_audio(
         "source_group_id": source.id,
         "source_group_lineage_id": source.lineage_id,
         "mode": mode,
+        "split_operation_id": operation_id,
         "group_index": index,
         "group_count": group_count,
         "span_start": span_start,

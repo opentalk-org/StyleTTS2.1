@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -12,10 +12,21 @@ from shared.db.base import Base
 
 class AudioFile(Base):
     __tablename__ = "audio_files"
+    __table_args__ = (
+        Index(
+            "ix_audio_files_split_operation",
+            text("(metadata ->> 'source_audio_id')"),
+            text("(metadata ->> 'split_operation_id')"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    bucket_file_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("bucket_files.id"), nullable=True)
+    bucket_file_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("bucket_files.id"),
+        nullable=True,
+        index=True,
+    )
     byte_offset: Mapped[int] = mapped_column(BigInteger, nullable=False)
     byte_length: Mapped[int] = mapped_column(BigInteger, nullable=False)
     duration: Mapped[float] = mapped_column(Float, nullable=False)

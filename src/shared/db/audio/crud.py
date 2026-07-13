@@ -6,10 +6,10 @@ from typing import Any
 from sqlalchemy import Text, cast, desc, func, or_, select
 from sqlalchemy.orm import Session
 
+from shared.db.audio.delete_crud import bulk_delete_audio_files, delete_audio_file
 from shared.db.audio.models import AudioFile
 from shared.db.audio.pack_crud import (
     bulk_create_packed_audio_files,
-    bulk_delete_packed_audio_files,
     bulk_read_packed_audio_files,
     bulk_read_packed_audio_parts,
     bulk_update_packed_audio_files,
@@ -37,7 +37,6 @@ from shared.db.audio.segments_crud import (
 from shared.db.common import many
 from shared.db.settings import crud as settings_crud
 from shared.db.datasets.models import Dataset
-from shared.db.waveforms import crud as waveform_crud
 from shared.storage import S3ObjectStore
 
 
@@ -124,9 +123,16 @@ def bulk_create_audio_files(
     payloads: Sequence[AudioCreate],
     store: ObjectStore | None = None,
     config: AudioPackConfig = AudioPackConfig(),
+    commit: bool = True,
 ) -> list[AudioFile]:
     resolved_store = _object_store(session, store)
-    return bulk_create_packed_audio_files(session, resolved_store, payloads, config)
+    return bulk_create_packed_audio_files(
+        session,
+        resolved_store,
+        payloads,
+        config,
+        commit=commit,
+    )
 
 
 def read_audio_file(
@@ -245,29 +251,12 @@ def bulk_update_audio_files(
     return items
 
 
-def delete_audio_file(
+def prune_audio_packs(
     session: Session,
-    audio_file_id: uuid.UUID,
     store: ObjectStore | None = None,
     config: AudioPackConfig = AudioPackConfig(),
 ) -> None:
-    bulk_delete_audio_files(session, [audio_file_id], store=store, config=config)
-
-
-def bulk_delete_audio_files(
-    session: Session,
-    audio_file_ids: Iterable[uuid.UUID],
-    store: ObjectStore | None = None,
-    config: AudioPackConfig = AudioPackConfig(),
-) -> None:
-    ids = list(dict.fromkeys(audio_file_ids))
-    if not ids:
-        return
-    resolved_store = _object_store(session, store)
-    waveform_crud.bulk_delete_waveforms(session, ids, commit=False)
-    bulk_delete_packed_audio_files(session, ids, commit=False)
-    session.commit()
-    prune_fragmented_audio_packs(session, resolved_store, config)
+    prune_fragmented_audio_packs(session, _object_store(session, store), config)
 
 
 def _object_store(session: Session, store: ObjectStore | None) -> ObjectStore:

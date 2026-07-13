@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -53,7 +54,7 @@ class WhisperXAlignNode(Node):
         await self._ensure_model(checkpoint)
         audios = [inputs["audio"] for inputs in batch]
         context.check_cancel()
-        aligned = await asyncio.to_thread(self._align_batch, audios)
+        aligned = await asyncio.to_thread(self._align_batch, audios, context.check_cancel)
         await context.report_progress(
             self.id,
             len(audios),
@@ -74,7 +75,7 @@ class WhisperXAlignNode(Node):
         model, metadata = load_whisperx_align_model(checkpoint_dir, self.settings.language, device)
         return model, metadata, device
 
-    def _align_batch(self, audios: list[Audio]) -> list[Audio]:
+    def _align_batch(self, audios: list[Audio], check_cancel: Callable[[], None]) -> list[Audio]:
         spans_by_audio = [
             [
                 (
@@ -96,6 +97,7 @@ class WhisperXAlignNode(Node):
                 self._metadata,
                 requests,
                 self._device or "cpu",
+                check_cancel,
             )
         assert len(words_by_audio) == len(audios), "whisperx batch output mismatch"
         return [

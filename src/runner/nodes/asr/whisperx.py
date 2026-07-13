@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -55,11 +56,13 @@ def align_wavs(
     metadata: Any,
     requests: list[AlignmentRequest],
     device: str,
+    check_cancel: Callable[[], None],
 ) -> list[list[dict[str, Any]]]:
-    return [
-        align_words(model, metadata, request.wav_path, request.spans, device)
-        for request in requests
-    ]
+    outputs = []
+    for request in requests:
+        check_cancel()
+        outputs.append(align_words(model, metadata, request.wav_path, request.spans, device))
+    return outputs
 
 
 def _word_entry(item: Any) -> dict[str, Any] | None:
