@@ -95,11 +95,15 @@ export function rateScatters(p: StatisticsPayload): ScatterConfig[] {
   // Rows carrying the total (length >= 3) support the count-axis projections; older 2-column
   // entries simply yield an empty count plot instead of NaN points.
   const withTotal = (rows: ScatterPoint[]) => rows.filter((row) => row.length >= 3);
+  const wordsWithTotal = withTotal(wps);
+  const charsWithTotal = withTotal(cps);
   return [
     { title: "Estimated words / second", unit: "vs duration", points: wps.map((r) => [r[0]!, r[1]!]), xLabel: "Duration (s)", yLabel: "Words / s", tone: "blue" },
-    { title: "Estimated words / second", unit: "vs total words", points: withTotal(wps).map((r) => [r[2]!, r[1]!]), xLabel: "Total words", yLabel: "Words / s", tone: "blue" },
+    { title: "Estimated words / second", unit: "vs total words", points: wordsWithTotal.map((r) => [r[2]!, r[1]!]), xLabel: "Total words", yLabel: "Words / s", tone: "blue" },
     { title: "Estimated chars / second", unit: "vs duration", points: cps.map((r) => [r[0]!, r[1]!]), xLabel: "Duration (s)", yLabel: "Chars / s", tone: "emerald" },
-    { title: "Estimated chars / second", unit: "vs total chars", points: withTotal(cps).map((r) => [r[2]!, r[1]!]), xLabel: "Total chars", yLabel: "Chars / s", tone: "emerald" },
+    { title: "Estimated chars / second", unit: "vs total chars", points: charsWithTotal.map((r) => [r[2]!, r[1]!]), xLabel: "Total chars", yLabel: "Chars / s", tone: "emerald" },
+    { title: "Total words", unit: "vs duration", points: wordsWithTotal.map((r) => [r[0]!, r[2]!]), xLabel: "Duration (s)", yLabel: "Words", tone: "blue" },
+    { title: "Total characters", unit: "vs duration", points: charsWithTotal.map((r) => [r[0]!, r[2]!]), xLabel: "Duration (s)", yLabel: "Characters", tone: "emerald" },
   ];
 }
 
