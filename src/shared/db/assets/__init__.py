@@ -1,4 +1,5 @@
 from shared.db.assets.crud import (
+    bulk_create_extra_files,
     create_bucket_file,
     create_checkpoint,
     create_config,
@@ -21,6 +22,7 @@ from shared.db.assets.crud import (
 )
 
 __all__ = [
+    "bulk_create_extra_files",
     "create_bucket_file",
     "create_checkpoint",
     "create_config",

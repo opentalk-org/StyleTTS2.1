@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from pydantic import Field
@@ -25,6 +25,14 @@ class LoadAudioSettings(StrictSettings):
 class SaveAudioArtifactSettings(StrictSettings):
     output_subdir: str = "audio"
     extension: str = "wav"
+
+
+@dataclass(frozen=True)
+class ArtifactWrite:
+    audio: Audio
+    payload: ExtraFileCreate
+    kind: str
+    metadata: dict
 
 
 def _artifact_bytes(audio: Audio, extension: str) -> tuple[bytes, str, str]:
@@ -89,18 +97,39 @@ class SaveAudioArtifactNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        outputs = []
+        writes = []
+        for inputs in context.cancellable(batch):
+            audio = inputs["audio"]
+            data, kind, content_type = _artifact_bytes(audio, self.settings.extension)
+            name = f"{self.settings.output_subdir}/{audio.id}.{self.settings.extension}"
+            metadata = {**audio.metadata, "content_type": content_type, "subdir": self.settings.output_subdir}
+            writes.append(ArtifactWrite(
+                audio=audio,
+                payload=ExtraFileCreate(
+                    name=name,
+                    data=data,
+                    type_="artifact",
+                    metadata=metadata,
+                ),
+                kind=kind,
+                metadata=metadata,
+            ))
         with database_session() as session:
-            for inputs in batch:
-                audio = inputs["audio"]
-                data, kind, content_type = _artifact_bytes(audio, self.settings.extension)
-                name = f"{self.settings.output_subdir}/{audio.id}.{self.settings.extension}"
-                metadata = {**audio.metadata, "content_type": content_type, "subdir": self.settings.output_subdir}
-                artifact = asset_crud.create_extra_file(
-                    session,
-                    ExtraFileCreate(name=name, data=data, type_="artifact", metadata=metadata),
+            artifacts = asset_crud.bulk_create_extra_files(
+                session,
+                [write.payload for write in writes],
+            )
+        outputs = []
+        for write, artifact in zip(writes, artifacts, strict=True):
+            result_id = stable_id("save", artifact.path)
+            result_metadata = {**write.metadata, "artifact_id": str(artifact.id), "bucket_key": artifact.path}
+            outputs.append({
+                "save_result": SaveResult(
+                    Path(artifact.path),
+                    write.kind,
+                    result_id,
+                    write.audio.lineage_id,
+                    result_metadata,
                 )
-                result_id = stable_id("save", artifact.path)
-                result_metadata = {**metadata, "artifact_id": str(artifact.id), "bucket_key": artifact.path}
-                outputs.append({"save_result": SaveResult(Path(artifact.path), kind, result_id, audio.lineage_id, result_metadata)})
+            })
         return outputs

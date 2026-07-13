@@ -119,23 +119,46 @@ def delete_checkpoint(session: Session, checkpoint_id: UUID) -> None:
 
 
 def create_extra_file(session: Session, payload: ExtraFileCreate) -> ExtraFile:
-    stored = stored_bytes(payload.data)
-    item_id = uuid.uuid4()
-    path = f"extra-files/{item_id}"
-    _object_store(session).upload(path, stored.data)
-    item = ExtraFile(
-        id=item_id,
-        name=payload.name,
-        path=path,
-        size=stored.size,
-        content_hash=stored.content_hash,
-        type_=payload.type_,
-        metadata_=payload.metadata,
-    )
-    session.add(item)
-    session.commit()
-    session.refresh(item)
-    return item
+    return bulk_create_extra_files(session, [payload])[0]
+
+
+def bulk_create_extra_files(
+    session: Session,
+    payloads: Sequence[ExtraFileCreate],
+    store: S3ObjectStore | None = None,
+) -> list[ExtraFile]:
+    if not payloads:
+        return []
+    resolved_store = store or _object_store(session)
+    writes = []
+    for payload in payloads:
+        stored = stored_bytes(payload.data)
+        item_id = uuid.uuid4()
+        path = f"extra-files/{item_id}"
+        item = ExtraFile(
+            id=item_id,
+            name=payload.name,
+            path=path,
+            size=stored.size,
+            content_hash=stored.content_hash,
+            type_=payload.type_,
+            metadata_=payload.metadata,
+        )
+        writes.append((item, stored.data))
+    uploaded_paths = []
+    try:
+        for item, data in writes:
+            resolved_store.upload(item.path, data)
+            uploaded_paths.append(item.path)
+        items = [item for item, _ in writes]
+        session.add_all(items)
+        session.commit()
+        return items
+    except Exception:
+        session.rollback()
+        for path in uploaded_paths:
+            resolved_store.delete(path)
+        raise
 
 
 def get_extra_file(session: Session, extra_file_id: UUID) -> ExtraFile:

@@ -89,12 +89,26 @@ class DiarizeSplitSpeakersNode(Node):
 
         outputs: list[dict[str, list[Audio]]] = []
         with database_session() as session:
+            voices_by_name = {}
+            if self.settings.create_voices:
+                voice_names = list(dict.fromkeys(
+                    self._voice_name(audio, speaker)
+                    for audio, diar in zip(audios, diarized, strict=True)
+                    for speaker in {"speaker_0", *(str(segment.speaker) for segment in diar)}
+                ))
+                voices_by_name = voice_crud.get_voices_by_names(session, voice_names)
+                missing_names = [name for name in voice_names if name not in voices_by_name]
+                created = voice_crud.bulk_create_voices(
+                    session,
+                    [VoiceCreate(name=name) for name in missing_names],
+                )
+                voices_by_name.update({voice.name: voice for voice in created})
             for audio, diar in zip(audios, diarized, strict=True):
-                clips = self._split_audio(session, audio, diar)
+                clips = self._split_audio(audio, diar, voices_by_name)
                 outputs.append({"audio": clips})
         return outputs
 
-    def _split_audio(self, session, audio: Audio, diar) -> list[Audio]:
+    def _split_audio(self, audio: Audio, diar, voices_by_name) -> list[Audio]:
         assert audio.data is not None, f"audio bytes are required: {audio.id}"
         # Transcript segments carry absolute (source) timestamps; convert to the
         # clip-local timeline that the diarization output uses.
@@ -116,7 +130,7 @@ class DiarizeSplitSpeakersNode(Node):
 
         for item in local_segments:
             item.speaker = _speaker_for_span(item.start, item.end, diar)
-        voice_map = self._voice_map(session, audio, {item.speaker for item in local_segments})
+        voice_map = self._voice_map(audio, {item.speaker for item in local_segments}, voices_by_name)
 
         groups = _group_by_speaker_punctuation(local_segments, self.settings)
         info = wav_info(audio.data)
@@ -127,17 +141,20 @@ class DiarizeSplitSpeakersNode(Node):
                 clips.append(clip)
         return clips
 
-    def _voice_map(self, session, audio: Audio, speakers) -> dict[str, tuple[str, uuid.UUID | None]]:
+    def _voice_map(self, audio: Audio, speakers, voices_by_name) -> dict[str, tuple[str, uuid.UUID | None]]:
         mapping: dict[str, tuple[str, uuid.UUID | None]] = {}
         for speaker in sorted(speakers):
             if not self.settings.create_voices:
                 mapping[speaker] = (speaker, None)
                 continue
-            token = stable_id("voice", audio.audio_file_id, audio.id, speaker)[:12]
-            name = f"{self.settings.voice_prefix}_{token}"
-            voice = _get_or_create_voice(session, name)
+            name = self._voice_name(audio, speaker)
+            voice = voices_by_name[name]
             mapping[speaker] = (name, voice.id)
         return mapping
+
+    def _voice_name(self, audio: Audio, speaker: str) -> str:
+        token = stable_id("voice", audio.audio_file_id, audio.id, speaker)[:12]
+        return f"{self.settings.voice_prefix}_{token}"
 
     def _build_clip(self, audio: Audio, group, info, index, voice_map) -> Audio | None:
         local_start = min(item.start for item in group)
@@ -279,10 +296,3 @@ def _group_seed(segments) -> int:
         return 0
     raw = f"{segments[0].start:.3f}|{segments[-1].end:.3f}|{len(segments)}"
     return int(stable_id("seed", raw).split("_")[1], 16)
-
-
-def _get_or_create_voice(session, name: str):
-    for voice in voice_crud.list_voices(session):
-        if voice.name == name:
-            return voice
-    return voice_crud.create_voice(session, VoiceCreate(name=name))
