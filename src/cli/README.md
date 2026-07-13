@@ -1,7 +1,7 @@
 # runflow-cli
 
 Inspect workflow runs from the terminal, over the same backend HTTP API the UI
-uses. Nothing here talks to NATS or a runner directly — the backend fetches and
+uses. Nothing here talks to a runner directly — the backend reads authoritative
 persists each node's log from whichever runner executed it, so the CLI works the
 same whether the runner is **local or remote**.
 

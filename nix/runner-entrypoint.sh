@@ -1,10 +1,10 @@
-# Joins the Headscale tailnet in userspace mode, derives the hub's DB/NATS/S3
+# Joins the Headscale tailnet in userspace mode, derives the hub's DB/S3
 # endpoints from RUNFLOW_HUB_HOST, then launches the runner under proxychains-ng
-# so its raw-TCP Postgres/NATS clients (and boto3) transparently route through
+# so its raw-TCP PostgreSQL clients (and boto3) transparently route through
 # the tailnet SOCKS5 proxy. No app code changes required.
 
 # Each Salad replica must have a distinct RUNNER_ID: it keys the runner's DB
-# heartbeat row (runner/heartbeat.py) and NATS work routing, so a shared id
+# heartbeat row and job claiming, so a shared id
 # would make replicas overwrite each other. Prefer an explicit RUNNER_ID, else
 # Salad's per-replica machine id, else the container hostname, else a default.
 if [ -z "${RUNNER_ID:-}" ]; then
@@ -17,7 +17,7 @@ fi
 export RUNNER_ID
 
 export RUNFLOW_HUB_HOST="${RUNFLOW_HUB_HOST:-runflow-hub}"
-export NATS_PORT="${NATS_PORT:-4222}"
+export POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 export PGBOUNCER_PORT="${PGBOUNCER_PORT:-6432}"
 export POSTGRES_USER="${POSTGRES_USER:-runflow}"
 export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-runflow}"
@@ -32,8 +32,8 @@ export TAILSCALE_USERSPACE="${TAILSCALE_USERSPACE:-1}"
 tailscale-up
 
 # (resolved remotely by the SOCKS5 proxy when running under proxychains).
-export NATS_URL="${NATS_URL:-nats://$RUNFLOW_HUB_HOST:$NATS_PORT}"
 export RUNFLOW_PGBOUNCER_DATABASE_URL="${RUNFLOW_PGBOUNCER_DATABASE_URL:-postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@$RUNFLOW_HUB_HOST:$PGBOUNCER_PORT/$POSTGRES_DB}"
+export RUNFLOW_NOTIFY_DATABASE_URL="${RUNFLOW_NOTIFY_DATABASE_URL:-postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@$RUNFLOW_HUB_HOST:$POSTGRES_PORT/$POSTGRES_DB}"
 export RUNFLOW_S3_ENDPOINT_URL="${RUNFLOW_S3_ENDPOINT_URL:-http://$RUNFLOW_HUB_HOST:9000}"
 export RUNFLOW_S3_BUCKET="${RUNFLOW_S3_BUCKET:-$RUSTFS_BUCKET}"
 export RUNFLOW_S3_REGION="${RUNFLOW_S3_REGION:-$AWS_REGION}"
@@ -46,7 +46,7 @@ export AWS_ENDPOINT_URL="${AWS_ENDPOINT_URL:-$RUNFLOW_S3_ENDPOINT_URL}"
 # Writable cache dirs on the /data volume (root has no home in the minimal image).
 mkdir -p "${HOME:?}" "${XDG_CACHE_HOME:?}" "${HF_HOME:?}" "${TORCHINDUCTOR_CACHE_DIR:?}"
 
-echo "runner-entrypoint: runner=$RUNNER_ID hub=$RUNFLOW_HUB_HOST nats=$NATS_URL"
+echo "runner-entrypoint: runner=$RUNNER_ID hub=$RUNFLOW_HUB_HOST"
 
 # Only route through the SOCKS5 proxy when userspace tailscale actually brought
 # it up. In kernel mode, or standalone (no authkey, e.g. hub-on-same-host test),

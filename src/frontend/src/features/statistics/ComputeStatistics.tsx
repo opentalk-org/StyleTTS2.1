@@ -16,6 +16,9 @@ export function ComputeStatistics() {
   const compute = useComputeStatisticsMutation();
   const [datasetId, setDatasetId] = useState("");
   const [name, setName] = useState("");
+  const [mode, setMode] = useState("database");
+  const [sampleSelection, setSampleSelection] = useState("all");
+  const [sampleCount, setSampleCount] = useState("100");
 
   const rows = datasets.data ?? [];
   const placeholder = { value: "", label: rows.length ? "Select dataset…" : "No datasets" };
@@ -31,8 +34,13 @@ export function ComputeStatistics() {
       showToast("Choose a dataset first", undefined, "error");
       return;
     }
+    const count = sampleSelection === "all" ? null : Number(sampleCount);
+    if (count !== null && (!Number.isInteger(count) || count < 1)) {
+      showToast("Sample count must be a positive whole number", undefined, "error");
+      return;
+    }
     const entryName = name.trim() || `${selected?.name ?? "Dataset"} statistics`;
-    compute.mutate({ schema: schemaQuery.data, datasetId, name: entryName });
+    compute.mutate({ schema: schemaQuery.data, datasetId, name: entryName, mode: mode as "database" | "acoustic", sampleCount: count });
   };
 
   return (
@@ -43,6 +51,27 @@ export function ComputeStatistics() {
       <div className="w-[200px]">
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={selected ? `${selected.name} statistics` : "Entry name"} filled />
       </div>
+      <div className="w-[125px]">
+        <Select
+          variant="mini"
+          value={mode}
+          onChange={setMode}
+          options={[{ value: "database", label: "Database only" }, { value: "acoustic", label: "With audio" }]}
+        />
+      </div>
+      <div className="w-[105px]">
+        <Select
+          variant="mini"
+          value={sampleSelection}
+          onChange={setSampleSelection}
+          options={[{ value: "all", label: "ALL" }, { value: "random", label: "Random" }]}
+        />
+      </div>
+      {sampleSelection === "random" ? (
+        <div className="w-[90px]">
+          <Input type="number" min={1} step={1} value={sampleCount} onChange={(e) => setSampleCount(e.target.value)} filled />
+        </div>
+      ) : null}
       <Button variant="primary" size="sm" icon="bar-chart" disabled={compute.isPending} onClick={run}>
         {compute.isPending ? "Computing…" : "Compute statistics"}
       </Button>

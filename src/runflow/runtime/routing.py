@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from runflow.core.node import Node
 from runflow.core.ports import JoinMode
 from runflow.core.task import Packet, Task
 from runflow.runtime.join_builder import NodeJoinBuffers, pop_ready_join_tasks
+
+
+@dataclass(frozen=True)
+class JoinRoutingResult:
+    tasks: list[Task]
+    opened_lineages: tuple[str, ...] = ()
+    closed_lineages: tuple[str, ...] = ()
 
 
 def can_create_single_input_task(node: Node) -> bool:
@@ -16,22 +25,25 @@ def add_to_join_buffer(
     input_name: str,
     packet: Packet,
     join_buffers: dict[str, NodeJoinBuffers],
-) -> list[Task]:
+) -> JoinRoutingResult:
     state = join_buffers[node.id]
     port = node.INPUTS[input_name]
     if port.join_mode == JoinMode.BROADCAST:
         state.broadcasts[input_name] = packet
         if _has_no_required_item_inputs(node) and _has_required_broadcasts(node, state.broadcasts):
-            return [_broadcast_only_task(node, state.broadcasts, packet.lineage_id)]
+            return JoinRoutingResult(tasks=[_broadcast_only_task(node, state.broadcasts, packet.lineage_id)])
         tasks = []
+        closed = []
         for lineage_id, grouped in list(state.item_groups.items()):
             tasks.extend(pop_ready_join_tasks(node, lineage_id, grouped, state.broadcasts))
             if not any(grouped.values()):
                 del state.item_groups[lineage_id]
+                closed.append(lineage_id)
         if not state.item_groups and not state.broadcasts:
             del join_buffers[node.id]
-        return tasks
+        return JoinRoutingResult(tasks=tasks, closed_lineages=tuple(closed))
 
+    opened = packet.lineage_id not in state.item_groups
     grouped = state.item_groups[packet.lineage_id]
     grouped[input_name].append(packet)
 
@@ -41,12 +53,17 @@ def add_to_join_buffer(
         if not candidate.optional and name not in node.params and candidate.join_mode != JoinMode.BROADCAST
     ]
     if not all(name in grouped or name in node.params for name in required):
-        return []
+        return JoinRoutingResult(tasks=[], opened_lineages=(packet.lineage_id,) if opened else ())
 
     tasks = pop_ready_join_tasks(node, packet.lineage_id, grouped, state.broadcasts)
+    closed = not any(grouped.values())
     if not any(grouped.values()):
         del state.item_groups[packet.lineage_id]
-    return tasks
+    return JoinRoutingResult(
+        tasks=tasks,
+        opened_lineages=(packet.lineage_id,) if opened else (),
+        closed_lineages=(packet.lineage_id,) if closed else (),
+    )
 
 
 def _has_no_required_item_inputs(node: Node) -> bool:

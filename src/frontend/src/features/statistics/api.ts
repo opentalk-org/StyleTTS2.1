@@ -11,6 +11,13 @@ export type PerFileText = { audio_file_id: string; text: string; phon: string };
 
 export type StatisticsPayload = {
   version: number;
+  computation_mode: "database" | "acoustic";
+  acoustic_metrics_available: boolean;
+  sample_scope: {
+    selection: "all" | "random";
+    requested_count: number | null;
+    actual_count: number;
+  };
   params: Record<string, number>;
   audio_file_ids: string[];
   file_count: number;

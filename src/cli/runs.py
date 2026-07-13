@@ -7,7 +7,7 @@ Run it against a running backend (the same one the UI uses):
     python -m cli logs <run_id>             # aggregated logs (merged by time)
     python -m cli node-log <run_id> <node>  # one node's log
     python -m cli failed <run_id>           # failed node(s): error + traceback + log
-    python -m cli perf <run_id>             # per-node latency & throughput metrics
+    python -m cli perf <run_id>             # graph flow and per-node performance
 
 The backend URL defaults to $RUNFLOW_BACKEND_URL / $VITE_BACKEND_URL, else
 http://$BACKEND_HOST:$BACKEND_PORT (127.0.0.1:8001 in the dev stack). Override
@@ -131,35 +131,33 @@ def _current_elapsed_ms(started_at: str | None) -> float:
 
 
 def cmd_perf(client: BackendClient, args: argparse.Namespace) -> int:
-    """Per-node latency & throughput, matching the UI's node-performance table."""
-    nodes = client.run_snapshot(args.run_id).get("nodes", [])
+    """Show graph throughput and factual per-node flow measurements."""
+    snapshot = client.run_snapshot(args.run_id)
+    graph = snapshot["performance"]
+    nodes = snapshot["nodes"]
     if not nodes:
         print("No nodes in snapshot.")
         return 0
 
-    header = (f"{'node':<28} {'active total':>12} {'queue avg':>10} {'resource avg':>12} "
-              f"{'p95 batch':>10} {'input/s':>8} {'output/s':>8} {'max q':>6}")
+    print(
+        f"graph: {graph['rolling_throughput']:.2f}/s rolling · {graph['average_throughput']:.2f}/s average · "
+        f"{graph['completed_items']}/{graph['started_items']} complete · {graph['inflight_items']} in flight · "
+        f"p95 {_duration(graph['latency_p95_ms'])}"
+    )
+    header = (f"{'node':<28} {'in/s':>8} {'out/s':>8} {'queue':>11} {'delta/s':>9} "
+              f"{'busy':>7} {'resource':>9} {'blocked':>10} {'p95':>9}")
     print(header)
     print("-" * len(header))
     for node in nodes:
-        metrics = node.get("performance") or {}
-        batches = metrics.get("batches", 0) or 1
-        current_started = metrics.get("current_batch_started_at")
-        wait_batches = (metrics.get("batches", 0) + (1 if current_started else 0)) or 1
-        current_elapsed = _current_elapsed_ms(current_started)
-        completed_total = (metrics.get("total_resource_wait_ms", 0.0) + metrics.get("total_load_ms", 0.0)
-                           + metrics.get("total_execute_ms", 0.0) + metrics.get("total_unload_ms", 0.0)
-                           + metrics.get("total_route_ms", 0.0))
-        active_total = _duration(completed_total + current_elapsed)
-        queue_avg = _duration((metrics.get("total_queue_wait_ms", 0.0)
-                               + metrics.get("current_queue_wait_ms", 0.0)) / wait_batches)
-        resource_avg = _duration(metrics.get("total_resource_wait_ms", 0.0) / batches)
-        p95 = _duration(metrics.get("p95_batch_ms", 0.0))
-        input_throughput = _rate(metrics.get("input_items_per_second", 0.0))
-        output_throughput = _rate(metrics.get("output_items_per_second", 0.0))
-        max_q = str(metrics.get("max_queue_size", 0))
-        print(f"{node['node_id']:<28} {active_total:>12} {queue_avg:>10} {resource_avg:>12} "
-              f"{p95:>10} {input_throughput:>8} {output_throughput:>8} {max_q:>6}")
+        metrics = node["performance"]
+        queue = f"{metrics['queue_size']}/{metrics['queue_capacity']}"
+        busy = f"{metrics['busy_ratio'] * 100:.0f}%"
+        resource = f"{metrics['resource_wait_ratio'] * 100:.0f}%"
+        print(
+            f"{node['node_id']:<28} {_rate(metrics['arrival_rate']):>8} {_rate(metrics['departure_rate']):>8} "
+            f"{queue:>11} {metrics['queue_growth_rate']:>+9.1f} {busy:>7} {resource:>9} "
+            f"{_duration(metrics['downstream_blocked_ms']):>10} {_duration(metrics['batch_p95_ms']):>9}"
+        )
     return 0
 
 
@@ -189,7 +187,7 @@ def build_parser() -> argparse.ArgumentParser:
     failed.add_argument("run_id")
     failed.set_defaults(func=cmd_failed)
 
-    perf = sub.add_parser("perf", help="per-node latency & throughput metrics")
+    perf = sub.add_parser("perf", help="graph flow and per-node performance")
     perf.add_argument("run_id")
     perf.set_defaults(func=cmd_perf)
 

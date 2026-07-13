@@ -32,7 +32,6 @@ dependencies = [
     "monotonic-align",
     "munch>=4.0",
     "nemo-toolkit[asr]>=2.0",
-    "nats-py>=2.10",
     "numba>=0.60",
     "openai-whisper>=20240930",
     "pandas>=2.2",

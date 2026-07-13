@@ -34,6 +34,16 @@ def list_all_job_ids(session: Session) -> list[str]:
     return list(session.execute(select(Job.run_id)).scalars().all())
 
 
+def list_run_jobs(session: Session) -> Sequence[Job]:
+    return session.execute(select(Job).order_by(desc(Job.updated_at))).scalars().all()
+
+
+def list_jobs_updated_after(session: Session, updated_at: datetime) -> Sequence[Job]:
+    return session.execute(
+        select(Job).where(Job.updated_at > updated_at).order_by(Job.updated_at)
+    ).scalars().all()
+
+
 def get_job(session: Session, run_id: str) -> Job:
     item = session.get(Job, run_id)
     if item is None:
@@ -51,6 +61,7 @@ def upsert_job(session: Session, payload: JobUpsert) -> Job:
         for key, value in data.items():
             setattr(item, key, value)
     item.updated_at = datetime.now(UTC)
+    session.execute(select(func.pg_notify("runflow_runs", "")))
     session.commit()
     session.refresh(item)
     return item

@@ -7,9 +7,6 @@ export PGBOUNCER_PORT="${PGBOUNCER_PORT:-6432}"
 export POSTGRES_DB="${POSTGRES_DB:-runflow}"
 export POSTGRES_USER="${POSTGRES_USER:-runflow}"
 export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-runflow}"
-export NATS_DATA="${NATS_DATA:-/data/nats}"
-export NATS_PORT="${NATS_PORT:-4222}"
-export NATS_URL="${NATS_URL:-nats://127.0.0.1:$NATS_PORT}"
 export RUSTFS_DATA="${RUSTFS_DATA:-/data/rustfs}"
 export RUSTFS_VOLUMES="${RUSTFS_VOLUMES:-$RUSTFS_DATA}"
 export RUSTFS_ADDRESS="${RUSTFS_ADDRESS:-0.0.0.0:9000}"
@@ -30,22 +27,23 @@ export RUNFLOW_S3_SECRET_ACCESS_KEY="${RUNFLOW_S3_SECRET_ACCESS_KEY:-$RUSTFS_SEC
 export BACKEND_PORT="${BACKEND_PORT:-8000}"
 export DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGBOUNCER_PORT/$POSTGRES_DB"
 export RUNFLOW_PGBOUNCER_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGBOUNCER_PORT/$POSTGRES_DB"
+export RUNFLOW_NOTIFY_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGPORT/$POSTGRES_DB"
 
 # Join the self-hosted Headscale tailnet as the hub so remote runners can reach
-# this box's PgBouncer/NATS/RustFS. Vast.ai containers have no /dev/net/tun, so
+# this box's PostgreSQL/PgBouncer/RustFS. Vast.ai containers have no /dev/net/tun, so
 # use userspace mode and publish the service ports with `tailscale serve --tcp`
 # (raw passthrough). No-ops if TAILSCALE_AUTHKEY is unset, keeping the single-box
 # path working unchanged.
 export TAILSCALE_HOSTNAME="${TAILSCALE_HOSTNAME:-runflow-hub}"
 export TAILSCALE_USERSPACE="${TAILSCALE_USERSPACE:-1}"
-export TAILSCALE_SERVE_PORTS="${TAILSCALE_SERVE_PORTS:-$PGBOUNCER_PORT $NATS_PORT 9000}"
+export TAILSCALE_SERVE_PORTS="${TAILSCALE_SERVE_PORTS:-$PGPORT $PGBOUNCER_PORT 9000}"
 tailscale-up
 
 pgbouncer_dir=/tmp/pgbouncer
 pgbouncer_config="$pgbouncer_dir/pgbouncer.ini"
 pgbouncer_userlist="$pgbouncer_dir/userlist.txt"
 
-mkdir -p "$PGDATA" "$PGHOST" "$NATS_DATA" "$RUSTFS_DATA" "$pgbouncer_dir"
+mkdir -p "$PGDATA" "$PGHOST" "$RUSTFS_DATA" "$pgbouncer_dir"
 
 if [ ! -s "$PGDATA/PG_VERSION" ]; then
   echo "Initializing PostgreSQL database at $PGDATA"
@@ -127,18 +125,6 @@ until pg_isready -h 127.0.0.1 -p "$PGBOUNCER_PORT" -d "$POSTGRES_DB"; do
   sleep 1
 done
 
-echo "Starting NATS JetStream"
-nats-server -js -sd "$NATS_DATA" -p "$NATS_PORT" > /tmp/nats.log 2>&1 &
-pid_nats=$!
-
-until grep -q "Server is ready" /tmp/nats.log 2>/dev/null; do
-  if ! kill -0 "$pid_nats" 2>/dev/null; then
-    echo "NATS exited before becoming ready"
-    exit 1
-  fi
-  sleep 1
-done
-
 echo "Starting RustFS"
 rustfs > /tmp/rustfs.log 2>&1 &
 pid_rustfs=$!
@@ -183,9 +169,9 @@ shutdown() {
   echo "Stopping services"
   kill "$pid_backend" "$pid_runners" "$pid_aim" 2>/dev/null || true
   sleep 1
-  kill "$pid_rustfs" "$pid_nats" "$pid_pgbouncer" 2>/dev/null || true
+  kill "$pid_rustfs" "$pid_pgbouncer" 2>/dev/null || true
   pg_ctl -D "$PGDATA" stop -m fast || true
 }
 
 trap shutdown EXIT INT TERM
-wait -n "$pid_backend" "$pid_runners" "$pid_rustfs" "$pid_nats" "$pid_pgbouncer"
+wait -n "$pid_backend" "$pid_runners" "$pid_rustfs" "$pid_pgbouncer"

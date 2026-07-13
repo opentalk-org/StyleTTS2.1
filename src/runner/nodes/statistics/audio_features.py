@@ -44,12 +44,13 @@ class AnalyzeAudioFeaturesNode(Node):
 
 
 def analyze_audio_features(audio: Audio, silence_threshold_db: float, hop_length: int) -> dict[str, Any]:
+    assert audio.data is not None, f"audio bytes are required: {audio.id}"
     librosa, np = _audio_dependencies()
     y, sr = librosa.load(BytesIO(audio.data), sr=None, mono=True)
     y = np.asarray(y, dtype=np.float64)
     sr_int = int(sr)
     duration = float(len(y) / float(sr_int)) if sr_int > 0 else audio.duration
-    features = _empty_features(np, audio, sr_int, duration)
+    features = empty_feature_record(audio, sr_int, duration, acoustic_metrics_available=True)
     if y.size == 0:
         return features
     rms = librosa.feature.rms(y=y, frame_length=FRAME_LENGTH, hop_length=hop_length)[0]
@@ -92,7 +93,13 @@ def _audio_dependencies():
     return librosa, np
 
 
-def _empty_features(np, audio: Audio, sample_rate: int, duration: float) -> dict[str, Any]:
+def empty_feature_record(
+    audio: Audio,
+    sample_rate: int,
+    duration: float,
+    *,
+    acoustic_metrics_available: bool,
+) -> dict[str, Any]:
     return {
         "audio_file_id": str(audio.audio_file_id),
         "name": audio.name,
@@ -117,6 +124,10 @@ def _empty_features(np, audio: Audio, sample_rate: int, duration: float) -> dict
         "source_batch_id": audio.metadata["source_batch_id"],
         "source_batch_count": audio.metadata["source_batch_count"],
         "metadata": _json_value(audio.metadata),
+        "acoustic_metrics_available": acoustic_metrics_available,
+        "computation_mode": "acoustic" if acoustic_metrics_available else "database",
+        "sample_selection": audio.metadata["sample_selection"],
+        "sample_requested_count": audio.metadata["sample_requested_count"],
     }
 
 

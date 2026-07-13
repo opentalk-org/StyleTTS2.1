@@ -20,7 +20,6 @@ from backend.runners import router as runners_router
 from backend.settings import router as settings_router
 from backend.statistics import router as statistics_router
 from backend.voices import router as voices_router
-from backend.nats_bus import BackendNatsBus
 from backend.service import BackendManager, DuplicateRunError
 from backend.workflows import workflow_router
 from runflow.registry.node_registry import NodeRegistry
@@ -35,8 +34,6 @@ from shared.schemas import InlineGraphRunRequest, NodeLogResponseMessage, RunEve
 configure_logging("backend")
 logger = get_logger("backend.api")
 manager = BackendManager()
-nats_bus = BackendNatsBus(manager)
-manager.set_command_bus(nats_bus)
 old_static_dir = Path(__file__).parent / "ui" / "static"
 
 
@@ -44,12 +41,12 @@ old_static_dir = Path(__file__).parent / "ui" / "static"
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("backend startup")
     create_database_schema()
-    await nats_bus.start()
+    await manager.start()
     try:
         yield
     finally:
         logger.info("backend shutdown")
-        await nats_bus.stop()
+        await manager.close()
         waveform_service.shutdown()
 
 

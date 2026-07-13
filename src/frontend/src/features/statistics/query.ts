@@ -4,6 +4,7 @@ import { showToast } from "@/shared/feedback/Toast";
 import type { WorkflowSchema } from "../workflows/types";
 import { deleteStatisticsEntry, fetchStatisticsEntries, fetchStatisticsEntry } from "./api";
 import { computeDatasetStatistics } from "./workflow";
+import type { StatisticsMode } from "./workflow";
 
 export const STATISTICS_KEY = "statistics";
 
@@ -41,8 +42,13 @@ export function useStatisticsActions() {
 export function useComputeStatisticsMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ schema, datasetId, name }: { schema: WorkflowSchema; datasetId: string; name: string }) =>
-      computeDatasetStatistics(schema, datasetId, name),
+    mutationFn: ({ schema, datasetId, name, mode, sampleCount }: {
+      schema: WorkflowSchema;
+      datasetId: string;
+      name: string;
+      mode: StatisticsMode;
+      sampleCount: number | null;
+    }) => computeDatasetStatistics(schema, datasetId, name, mode, sampleCount),
     onSuccess: () => {
       showToast("Statistics computed");
       qc.invalidateQueries({ queryKey: [STATISTICS_KEY] });

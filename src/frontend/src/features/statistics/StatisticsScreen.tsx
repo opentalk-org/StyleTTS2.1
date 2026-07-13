@@ -70,7 +70,7 @@ export function StatisticsScreen() {
         <EmptyState
           icon="bar-chart"
           title="No statistics yet"
-          description="Pick a dataset above and compute statistics, or run the AudioSource → LoadAudio → LoadAudioSegments → AnalyzeAudioFeatures → AggregateDatasetStatistics → SaveStatisticsEntry workflow yourself."
+          description="Pick a dataset above, choose database-only or acoustic analysis, then compute all files or a random sample."
         />
       </div>
     );
@@ -134,7 +134,10 @@ function StatisticsBody({ payload, tab, onTab }: { payload: StatisticsPayload; t
         </div>
       ) : null}
 
-      <SectionTitle className="my-2 mb-[14px] tracking-[0.06em]">Audio · {payload.file_count} files</SectionTitle>
+      <SectionTitle className="my-2 mb-[14px] tracking-[0.06em]">
+        Audio · {payload.file_count} files · {payload.computation_mode === "database" ? "database only" : "with audio"}
+        {payload.sample_scope.selection === "random" ? ` · random ${payload.sample_scope.actual_count}` : " · ALL"}
+      </SectionTitle>
       <div className="mb-[14px] grid grid-cols-3 gap-[14px]">
         {histograms.map((h) => (
           <ChartCard key={h.title} title={h.title} unit={h.unit}>
@@ -142,7 +145,7 @@ function StatisticsBody({ payload, tab, onTab }: { payload: StatisticsPayload; t
           </ChartCard>
         ))}
       </div>
-      <div className="mb-[14px] grid grid-cols-4 gap-[14px]">
+      <div className={`mb-[14px] grid gap-[14px] ${payload.acoustic_metrics_available ? "grid-cols-4" : "grid-cols-3"}`}>
         {tiles.map((t) => (
           <StatTile key={t.label} label={t.label} value={t.value} sub={t.sub} tone={t.tone} />
         ))}

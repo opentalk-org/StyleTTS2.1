@@ -16,6 +16,7 @@ from runner.nodes.audio_processing import (
 )
 from runner.nodes.statistics.aggregate import AggregateDatasetStatisticsNode
 from runner.nodes.statistics.audio_features import AnalyzeAudioFeaturesNode
+from runner.nodes.statistics.database_features import DatabaseStatisticsFeaturesNode
 from runner.nodes.statistics.voice_embedding_plot import EmbedVoicesPcaPlotNode
 from runner.nodes.statistics.writeback import SaveStatisticsEntryNode
 from runner.nodes.synthesis.style_reference import ResolveStyleReferenceNode
@@ -35,7 +36,7 @@ from runner.nodes.audio_segments.writeback import (
     SaveAudioSegmentsNode,
     UpdateAudioRecordBytesNode,
 )
-from runner.nodes.audio_sources import AudioSourceNode
+from runner.nodes.audio_sources import AudioSourceNode, RandomAudioSubsetNode
 from runner.nodes.assets.catalog import CatalogDownloadNode
 from runner.nodes.assets.checkpoints import ResolveCheckpointNode
 from runner.nodes.assets.training_assets import ResolveTrainingAssetsNode
@@ -70,6 +71,7 @@ from runner.nodes.training.styletts import StyleTtsFinetuneNode
 def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
     for node_cls in [
         AudioSourceNode,
+        RandomAudioSubsetNode,
         HetznerDsV1ParquetAudioSourceNode,
         HetznerDsV2ParquetAudioSourceNode,
         HetznerDsV2MetadataSourceNode,
@@ -94,6 +96,7 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         PadSilenceNode,
         PredictMosScoreNode,
         AnalyzeAudioFeaturesNode,
+        DatabaseStatisticsFeaturesNode,
         EmbedVoicesPcaPlotNode,
         AggregateDatasetStatisticsNode,
         SaveStatisticsEntryNode,

@@ -2,7 +2,7 @@ from fastapi import APIRouter, status
 
 from backend.runners.schemas import RunnerPage, RunnerRegisterRequest
 from backend.runners.schemas import RunnerStatusRead
-from backend.runners.service import runner_live_registry
+from backend.runners.service import runner_is_online
 from shared.db import database_session
 from shared.db.runners import crud
 from shared.db.runners.schemas import RunnerRead
@@ -24,19 +24,18 @@ async def create_runner(payload: RunnerRegisterRequest) -> RunnerRead:
 
 
 def runner_response(row: RunnerRead) -> RunnerStatusRead:
-    heartbeat = runner_live_registry.heartbeat(row.name)
-    online = runner_live_registry.is_online(heartbeat)
-    active_run_ids = heartbeat.active_run_ids if heartbeat is not None else []
+    online = runner_is_online(row.last_seen_at)
     return RunnerStatusRead(
         id=row.id,
         name=row.name,
-        hostname=heartbeat.hostname if heartbeat is not None else row.hostname,
-        port=heartbeat.port if heartbeat is not None else row.port,
-        gpu_index=heartbeat.gpu_index if heartbeat is not None else row.gpu_index,
+        hostname=row.hostname,
+        port=row.port,
+        gpu_index=row.gpu_index,
+        capabilities=row.capabilities,
         online=online,
-        stale=heartbeat is not None and not online,
-        busy=bool(active_run_ids),
-        active_run_ids=active_run_ids,
-        process_id=heartbeat.process_id if heartbeat is not None else None,
-        last_seen_at=heartbeat.created_at if heartbeat is not None else None,
+        stale=row.last_seen_at is not None and not online,
+        busy=bool(row.active_run_ids),
+        active_run_ids=row.active_run_ids,
+        process_id=row.process_id,
+        last_seen_at=row.last_seen_at,
     )

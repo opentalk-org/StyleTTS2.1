@@ -66,8 +66,9 @@ function ranks(pairs: Pair[]): RankItem[] {
 }
 
 export function audioHistograms(p: StatisticsPayload): HistogramConfig[] {
-  const configs = [
-    histConfig("Duration per file", "seconds", p.duration_seconds_histogram, "blue"),
+  const configs = [histConfig("Duration per file", "seconds", p.duration_seconds_histogram, "blue")];
+  if (!p.acoustic_metrics_available) return configs;
+  configs.push(
     histConfig("Frame RMS", "dB", p.rms_db_histogram, "blue"),
     histConfig("Silence ratio", "ratio", p.silence_ratio_histogram, "amber"),
     histConfig("Mean RMS / file", "dB", p.mean_rms_nonsilent_db_per_file_histogram, "blue"),
@@ -76,7 +77,7 @@ export function audioHistograms(p: StatisticsPayload): HistogramConfig[] {
     histConfig("Frame min sample", "amplitude", p.frame_value_min_histogram, "emerald"),
     histConfig("Frame max sample", "amplitude", p.frame_value_max_histogram, "emerald"),
     histConfig("Frame mean sample", "amplitude", p.frame_value_mean_histogram, "emerald"),
-  ];
+  );
   // Only present when segments carry word-level alignment; otherwise the gap histogram is all
   // zeros and would read as a real (empty) distribution, so drop it entirely.
   const silence = p.inter_word_silence_seconds_histogram;
@@ -114,13 +115,7 @@ export type StatTileData = { label: string; value: string; sub?: string; tone: T
 export function audioTiles(p: StatisticsPayload): StatTileData[] {
   const clippedPct = p.file_count ? ((p.clipped_audio_file_count / p.file_count) * 100).toFixed(1) : "0.0";
   const avg = p.file_count ? p.total_duration_seconds / p.file_count : 0;
-  return [
-    {
-      label: "Clipped files",
-      value: `${p.clipped_audio_file_count}`,
-      sub: `of ${p.file_count} (${clippedPct}%)`,
-      tone: p.clipped_audio_file_count > 0 ? "amber" : "blue",
-    },
+  const tiles: StatTileData[] = [
     { label: "Total duration", value: fmtDuration(p.total_duration_seconds), sub: `avg ${fmtDuration(avg)} / file`, tone: "blue" },
     { label: "Speakers", value: `${p.speaker_count}`, sub: `${p.segment_count} segments`, tone: "emerald" },
     {
@@ -130,6 +125,15 @@ export function audioTiles(p: StatisticsPayload): StatTileData[] {
       tone: p.duplicate_segments_collapsed > 0 ? "amber" : "blue",
     },
   ];
+  if (p.acoustic_metrics_available) {
+    tiles.unshift({
+      label: "Clipped files",
+      value: `${p.clipped_audio_file_count}`,
+      sub: `of ${p.file_count} (${clippedPct}%)`,
+      tone: p.clipped_audio_file_count > 0 ? "amber" : "blue",
+    });
+  }
+  return tiles;
 }
 
 export function textWarnings(p: StatisticsPayload): { file: string; why: string; detail: string }[] {

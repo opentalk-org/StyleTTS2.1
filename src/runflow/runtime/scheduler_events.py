@@ -45,6 +45,31 @@ class SchedulerEventEmitter:
             detail={"queue_size": queue_size, "inputs": list(task.inputs.keys())},
         )
 
+    async def lineage_started(self, lineage_id: str, source_node_id: str) -> None:
+        await self.context.emit_event(
+            "lineage_started",
+            message=f"{source_node_id} started source item",
+            node_id=source_node_id,
+            lineage_id=lineage_id,
+            detail={"source_node_id": source_node_id},
+        )
+
+    async def lineage_completed(self, lineage_id: str, elapsed_ms: float) -> None:
+        await self.context.emit_event(
+            "lineage_completed",
+            message="source item completed all branches",
+            lineage_id=lineage_id,
+            detail={"elapsed_ms": elapsed_ms},
+        )
+
+    async def lineage_abandoned(self, lineage_id: str, reason: str) -> None:
+        await self.context.emit_event(
+            "lineage_abandoned",
+            message=f"source item abandoned: {reason}",
+            lineage_id=lineage_id,
+            detail={"reason": reason},
+        )
+
     async def queue_depth(self, node_id: str, queue_size: int) -> None:
         await self.context.emit_event(
             "queue_depth",
@@ -72,6 +97,7 @@ class SchedulerEventEmitter:
                 "node_type": node.NODE_TYPE,
                 "lineage_ids": [task.lineage_id for task in batch],
                 "resources": node.runtime.resource_policy.resources,
+                "queue_capacity": node.runtime.queue_max_size,
                 "queue_wait_ms": queue_wait_ms,
             },
         )
@@ -131,7 +157,14 @@ class SchedulerEventEmitter:
             detail=self.packet_detail(packet),
         )
 
-    async def packet_delivered(self, packet: Packet, target_node: Node, target_port: str) -> None:
+    async def packet_delivered(
+        self,
+        packet: Packet,
+        target_node: Node,
+        target_port: str,
+        enqueue_blocked_ms: float,
+        join_waiting: bool,
+    ) -> None:
         await self.context.emit_event(
             "packet_delivered",
             message=f"{packet.node_id}.{packet.port} -> {target_node.id}.{target_port}",
@@ -140,16 +173,21 @@ class SchedulerEventEmitter:
             target_node_id=target_node.id,
             target_port=target_port,
             lineage_id=packet.lineage_id,
-            detail=self.packet_detail(packet),
+            detail={
+                **self.packet_detail(packet),
+                "enqueue_blocked_ms": enqueue_blocked_ms,
+                "join_waiting": join_waiting,
+            },
         )
 
-    async def join_waiting(self, target_node: Node, target_port: str, packet: Packet) -> None:
+    async def join_waiting(self, target_node: Node, target_port: str, packet: Packet, waiting_lineages: int) -> None:
         await self.context.emit_event(
             "join_waiting",
             message=f"{target_node.id} waiting for required inputs",
             node_id=target_node.id,
             port=target_port,
             lineage_id=packet.lineage_id,
+            detail={"waiting_lineages": waiting_lineages},
         )
 
     async def join_ready(self, task: Task) -> None:

@@ -124,3 +124,19 @@ body {
     transform: none;
   }
 }
+
+@keyframes workflow-edge-flow {
+  to {
+    stroke-dashoffset: -30;
+  }
+}
+
+.workflow-edge-flow {
+  animation: workflow-edge-flow 1.2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workflow-edge-flow {
+    animation: none;
+  }
+}

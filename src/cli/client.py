@@ -1,7 +1,7 @@
 """Thin HTTP client for the runflow backend.
 
 Every call maps to an existing backend endpoint (see ``src/backend/api.py``);
-nothing here talks to NATS or a runner directly. Because the backend fetches and
+nothing here talks to a runner directly. Because the backend reads and
 persists each node's log from whichever runner ran it — local or remote — this
 client works identically regardless of where the runner lives.
 """

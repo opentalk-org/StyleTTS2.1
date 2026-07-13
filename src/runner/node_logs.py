@@ -1,15 +1,11 @@
 import logging
 import re
 import threading
+from collections.abc import Callable
 from pathlib import Path
-
-from nats.aio.msg import Msg
-from nats.js.client import JetStreamContext
 
 from runflow.core.node import Node
 from runflow.runtime.log_capture import current_output_logger
-from shared.jetstream import EVENT_STREAM, decode_json, encode_model, node_log_response_subject
-from shared.schemas import NodeLogRequestCommand, NodeLogResponseMessage
 
 
 MAX_NODE_LOG_BYTES = 1_000_000
@@ -23,9 +19,10 @@ def node_log_path(work_dir: Path, run_id: str, node_id: str) -> Path:
 
 
 class CappedNodeLogHandler(logging.Handler):
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, on_dirty: Callable[[], None]) -> None:
         super().__init__()
         self.path = path.resolve()
+        self.on_dirty = on_dirty
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.setFormatter(logging.Formatter(LOG_FORMAT))
 
@@ -34,6 +31,7 @@ class CappedNodeLogHandler(logging.Handler):
         with self.path.open("ab") as file:
             file.write(line)
         self._trim()
+        self.on_dirty()
 
     def _trim(self) -> None:
         size = self.path.stat().st_size
@@ -77,16 +75,17 @@ def ensure_context_forwarding() -> None:
 
 
 class NodeLogManager:
-    def __init__(self, work_dir: Path, run_id: str) -> None:
+    def __init__(self, work_dir: Path, run_id: str, on_dirty: Callable[[str, Path], None]) -> None:
         self.work_dir = work_dir
         self.run_id = run_id
+        self.on_dirty = on_dirty
         self._handlers: list[tuple[logging.Logger, CappedNodeLogHandler]] = []
 
     def attach(self, nodes: list[Node]) -> None:
         ensure_context_forwarding()
         for node in nodes:
             path = node_log_path(self.work_dir, self.run_id, node.id)
-            handler = CappedNodeLogHandler(path)
+            handler = CappedNodeLogHandler(path, lambda node_id=node.id, path=path: self.on_dirty(node_id, path))
             node.logger.addHandler(handler)
             self._handlers.append((node.logger, handler))
 
@@ -104,26 +103,3 @@ def read_node_log(work_dir: Path, run_id: str, node_id: str) -> tuple[str, bool]
     data = path.read_bytes()
     truncated = len(data) >= MAX_NODE_LOG_BYTES
     return data.decode("utf-8", errors="replace"), truncated
-
-
-async def publish_node_log_response(js: JetStreamContext, message: Msg, work_dir_for_run, logger: logging.Logger) -> None:
-    command = NodeLogRequestCommand.model_validate(decode_json(message.data))
-    content = ""
-    truncated = False
-    error_message = None
-    try:
-        work_dir = command.work_dir if command.work_dir is not None else work_dir_for_run(command.run_id)
-        content, truncated = read_node_log(work_dir, command.run_id, command.node_id)
-    except Exception as error:
-        error_message = f"{type(error).__name__}: {error}"
-        logger.exception("read node log failed")
-    response = NodeLogResponseMessage(
-        request_id=command.request_id,
-        run_id=command.run_id,
-        node_id=command.node_id,
-        content=content,
-        truncated=truncated,
-        error=error_message,
-    )
-    await js.publish(node_log_response_subject(command.request_id), encode_model(response), stream=EVENT_STREAM)
-    await message.ack()

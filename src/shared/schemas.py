@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -98,27 +98,53 @@ class BatchPerformanceSnapshot(BaseModel):
     total_ms: float
 
 
+class RatePoint(BaseModel):
+    timestamp: datetime
+    count: int
+    rate: float
+
+
+class GraphPerformanceSnapshot(BaseModel):
+    started_items: int
+    completed_items: int
+    inflight_items: int
+    abandoned_items: int
+    rolling_throughput: float
+    average_throughput: float
+    latency_p50_ms: float
+    latency_p95_ms: float
+    history: list[RatePoint]
+
+
 class NodePerformanceSnapshot(BaseModel):
     batches: int
-    input_items: int
-    output_items: int
-    max_queue_size: int
-    total_queue_wait_ms: float
-    total_resource_wait_ms: float
-    total_load_ms: float
-    total_execute_ms: float
-    total_unload_ms: float
-    total_route_ms: float
-    average_batch_ms: float
-    p95_batch_ms: float
-    max_batch_ms: float
-    average_input_batch_size: float
-    average_output_batch_size: float
-    input_items_per_second: float
-    output_items_per_second: float
+    arrived_items: int
+    departed_items: int
+    arrival_rate: float
+    departure_rate: float
+    queue_size: int
+    queue_capacity: int
+    queue_fill_ratio: float
+    queue_growth_rate: float
+    busy_ratio: float
+    resource_wait_ratio: float
+    downstream_blocked_ms: float
+    batch_p50_ms: float
+    batch_p95_ms: float
+    service_capacity: float
     current_batch_started_at: datetime | None
-    current_queue_wait_ms: float
     recent_batches: list[BatchPerformanceSnapshot]
+
+
+class EdgePerformanceSnapshot(BaseModel):
+    source_node: str
+    source_port: str
+    target_node: str
+    target_port: str
+    delivered_items: int
+    rolling_rate: float
+    enqueue_blocked_ms: float
+    join_waiting_items: int
 
 
 class NodeRunSnapshot(BaseModel):
@@ -140,26 +166,9 @@ class RunSnapshot(BaseModel):
     total_event_count: int
     error_count: int
     event_counts: dict[str, int]
+    performance: GraphPerformanceSnapshot
     nodes: list[NodeRunSnapshot]
-
-
-class StopRunCommand(BaseModel):
-    command: Literal["stop"] = "stop"
-    run_id: str
-
-
-class NodeLifecycleCommand(BaseModel):
-    command: Literal["load_node", "unload_node"]
-    run_id: str
-    node_id: str
-
-
-class NodeLogRequestCommand(BaseModel):
-    command: Literal["read_node_log"] = "read_node_log"
-    request_id: str
-    run_id: str
-    node_id: str
-    work_dir: Path | None = None
+    edges: list[EdgePerformanceSnapshot]
 
 
 class NodeLogResponseMessage(BaseModel):
@@ -169,22 +178,3 @@ class NodeLogResponseMessage(BaseModel):
     content: str
     truncated: bool
     error: str | None = None
-
-
-class StartGraphRunCommand(BaseModel):
-    command: Literal["start_graph"] = "start_graph"
-    request: InlineGraphRunRequest
-
-
-class RunnerEventMessage(BaseModel):
-    event: RunEventResponse
-
-
-class RunnerHeartbeatMessage(BaseModel):
-    runner_id: str
-    hostname: str
-    process_id: int
-    port: int
-    gpu_index: int | None
-    active_run_ids: list[str]
-    created_at: datetime

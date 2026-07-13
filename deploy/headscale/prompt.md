@@ -11,7 +11,7 @@ execute and verify.
 Headscale coordinates one private tailnet for the "Runflow" system:
 
 - **hub** — a stateful box on Vast.ai, joins as hostname `runflow-hub`, tag `tag:vast`.
-  It exposes Postgres/PgBouncer (6432), NATS (4222) and an S3 store (9000) to peers.
+  It exposes PostgreSQL (5432), PgBouncer (6432), and an S3 store (9000) to peers.
 - **runners** — scalable GPU workers on a GPU worker, tag `tag:runner`, that dial
   `runflow-hub` over the tailnet. They run the normal Tailscale client with
   `--login-server=<your headscale URL>`.

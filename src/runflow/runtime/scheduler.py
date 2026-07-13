@@ -12,6 +12,7 @@ from runflow.planning.batch_planner import BatchPlanner
 from runflow.planning.graph_validator import GraphValidator
 from runflow.runtime.cancellation import cancellation_scope
 from runflow.runtime.input_progress import remaining_counts
+from runflow.runtime.lineage_tracker import LineageTracker
 from runflow.runtime.log_capture import route_output_to_logger
 from runflow.runtime.node_manager import NodeManager
 from runflow.runtime.output_router import OutputRouter
@@ -27,6 +28,7 @@ class WindowedScheduler:
         self.logger = logging.getLogger(f"runflow.scheduler.{context.run_id}")
         self.validator = GraphValidator()
         self.events = SchedulerEventEmitter(context)
+        self.lineages = LineageTracker(self.events)
         self.batch_planner = BatchPlanner()
         self.node_manager = NodeManager(context)
 
@@ -34,7 +36,7 @@ class WindowedScheduler:
 
         self.queues: dict[str, asyncio.Queue[Task]] = {}
         self.join_buffers: dict[str, NodeJoinBuffers] = defaultdict(NodeJoinBuffers)
-        self.output_router = OutputRouter(graph, context, self.events, self.join_buffers, self._enqueue)
+        self.output_router = OutputRouter(graph, context, self.events, self.join_buffers, self._enqueue, self.lineages)
         self._active_tasks = 0
         self._active_condition: asyncio.Condition | None = None
         self._workers: list[asyncio.Task] = []
@@ -79,6 +81,9 @@ class WindowedScheduler:
             self.context.check_cancel()
             await self.context.emit_event("run_completed", message="run completed")
             self.logger.info("run completed")
+        except BaseException as error:
+            await self.lineages.abandon_all(str(error) or type(error).__name__)
+            raise
         finally:
             await self._stop_workers()
             for node_id in list(self.node_manager.loaded):
@@ -123,23 +128,35 @@ class WindowedScheduler:
         if errors:
             raise ExceptionGroup("Scheduler worker failures", errors)
 
-    async def _enqueue(self, node_id: str, task: Task) -> None:
+    async def _enqueue(self, node_id: str, task: Task) -> float:
         self.context.check_cancel()
         if self._active_condition is None:
             raise RuntimeError("Scheduler is not running")
         async with self._active_condition:
             self._active_tasks += 1
         self._enqueued_at[id(task)] = perf_counter()
-        await self.queues[node_id].put(task)
+        blocked_at = perf_counter()
+        try:
+            await self.queues[node_id].put(task)
+        except BaseException:
+            self._enqueued_at.pop(id(task), None)
+            async with self._active_condition:
+                self._active_tasks -= 1
+                self._active_condition.notify_all()
+            raise
+        blocked_ms = (perf_counter() - blocked_at) * 1000
         await self.events.task_enqueued(node_id, task, self.queues[node_id].qsize())
+        return blocked_ms
 
-    async def _mark_task_done(self) -> None:
+    async def _mark_task_done(self, task: Task) -> None:
         if self._active_condition is None:
             raise RuntimeError("Scheduler is not running")
         async with self._active_condition:
             self._active_tasks -= 1
             if self._active_tasks <= 0:
                 self._active_condition.notify_all()
+        if self.lineages.tracks(task.lineage_id):
+            await self.lineages.finish_task(task.lineage_id)
 
     async def _wait_until_idle(self) -> None:
         if self._active_condition is None:
@@ -220,7 +237,7 @@ class WindowedScheduler:
                 for task in consumed_tasks:
                     self._enqueued_at.pop(id(task))
                     queue.task_done()
-                    await self._mark_task_done()
+                    await self._mark_task_done(task)
 
     async def _execute_node(self, node: Node, inputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         def run_execute() -> list[dict[str, Any]]:

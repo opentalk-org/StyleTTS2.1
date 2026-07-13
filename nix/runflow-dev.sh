@@ -1,8 +1,5 @@
 set -euo pipefail
 
-export NATS_DATA="${NATS_DATA:-.data/nats}"
-export NATS_PORT="${NATS_PORT:-4222}"
-export NATS_URL="${NATS_URL:-nats://127.0.0.1:$NATS_PORT}"
 export PGDATA="${PGDATA:-.data/postgres}"
 export PGHOST="${PGHOST:-.data/postgres-socket}"
 export PGPORT="${PGPORT:-5432}"
@@ -37,6 +34,7 @@ export RUNFLOW_S3_REGION="${RUNFLOW_S3_REGION:-$AWS_REGION}"
 export RUNFLOW_S3_ACCESS_KEY_ID="${RUNFLOW_S3_ACCESS_KEY_ID:-$RUSTFS_ACCESS_KEY}"
 export RUNFLOW_S3_SECRET_ACCESS_KEY="${RUNFLOW_S3_SECRET_ACCESS_KEY:-$RUSTFS_SECRET_KEY}"
 export RUNFLOW_PGBOUNCER_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGBOUNCER_PORT/$POSTGRES_DB"
+export RUNFLOW_NOTIFY_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGPORT/$POSTGRES_DB"
 export PYTHONPATH="$PWD/src"
 
 case "$PGDATA" in
@@ -60,7 +58,7 @@ if [ "$(id -u)" = "0" ]; then
     exit 1
   fi
 
-  mkdir -p "$NATS_DATA" "$RUSTFS_DATA" "$PGDATA" "$PGHOST" "$pgbouncer_dir"
+  mkdir -p "$RUSTFS_DATA" "$PGDATA" "$PGHOST" "$pgbouncer_dir"
   chown -R "$runflow_dev_user" "$PWD/.data"
   chmod 700 "$PGDATA" "$PGHOST" "$pgbouncer_dir"
   if [ -d "$PWD/src/frontend/node_modules" ]; then
@@ -90,7 +88,7 @@ if [ "$(id -u)" = "0" ]; then
     "$0" "$@"
 fi
 
-mkdir -p "$NATS_DATA" "$RUSTFS_DATA" "$PGDATA" "$PGHOST" "$pgbouncer_dir"
+mkdir -p "$RUSTFS_DATA" "$PGDATA" "$PGHOST" "$pgbouncer_dir"
 chmod 700 "$PGDATA" "$PGHOST" "$pgbouncer_dir"
 
 if [ ! -f uv.lock ]; then
@@ -112,7 +110,7 @@ fi
 # runs can leave app-tier services orphaned (e.g. an Aim UI double-forked past the
 # shutdown trap); a fresh run then fails to bind, exits, and the wait -n below tears
 # the whole stack down. Only used for services that have no "reuse existing" guard
-# (backend/frontend/aim) -- Postgres/PgBouncer/NATS/RustFS are detected and reused.
+# (backend/frontend/aim) -- Postgres/PgBouncer/RustFS are detected and reused.
 free_port() {
   local port="$1" label="${2:-port}" pids
   # `|| true` inside the substitution: when the port is free, grep matches nothing
@@ -136,7 +134,6 @@ free_port() {
 
 pid_postgres=""
 pid_pgbouncer=""
-pid_nats=""
 pid_rustfs=""
 pid_backend=""
 pid_frontend=""
@@ -232,26 +229,6 @@ until pg_isready -h 127.0.0.1 -p "$PGBOUNCER_PORT" -d "$POSTGRES_DB"; do
   fi
   sleep 1
 done
-
-if python -c "import socket; socket.create_connection(('127.0.0.1', $NATS_PORT), 1).close()" >/dev/null 2>&1; then
-  echo "Using existing NATS on $NATS_URL"
-else
-  echo "Starting NATS JetStream on $NATS_URL"
-  nats-server -js -sd "$NATS_DATA" -p "$NATS_PORT" &
-  pid_nats=$!
-fi
-
-until python -c "import socket; socket.create_connection(('127.0.0.1', $NATS_PORT), 1).close()" >/dev/null 2>&1; do
-  if [ -n "$pid_nats" ] && ! kill -0 "$pid_nats" 2>/dev/null; then
-    echo "NATS exited before becoming ready"
-    exit 1
-  fi
-  sleep 1
-done
-if [ -n "$pid_nats" ] && ! kill -0 "$pid_nats" 2>/dev/null; then
-  echo "NATS exited before becoming ready"
-  exit 1
-fi
 
 if aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-buckets >/dev/null 2>&1; then
   echo "Using existing RustFS at $AWS_ENDPOINT_URL"
@@ -380,7 +357,6 @@ shutdown() {
   [ -z "$pid_backend" ] || kill "$pid_backend" 2>/dev/null || true
   sleep 1
   [ -z "$pid_rustfs" ] || kill "$pid_rustfs" 2>/dev/null || true
-  [ -z "$pid_nats" ] || kill "$pid_nats" 2>/dev/null || true
   [ -z "$pid_pgbouncer" ] || kill "$pid_pgbouncer" 2>/dev/null || true
   [ -z "$pid_postgres" ] || pg_ctl -D "$PGDATA" stop -m fast >/dev/null 2>&1 || true
 }
@@ -391,6 +367,5 @@ wait_pids=()
 [ -z "$pid_frontend" ] || wait_pids+=("$pid_frontend")
 [ -z "$pid_runners" ] || wait_pids+=("$pid_runners")
 [ -z "$pid_rustfs" ] || wait_pids+=("$pid_rustfs")
-[ -z "$pid_nats" ] || wait_pids+=("$pid_nats")
 [ -z "$pid_pgbouncer" ] || wait_pids+=("$pid_pgbouncer")
 wait -n "${wait_pids[@]}"

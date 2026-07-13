@@ -1,5 +1,5 @@
 {
-  description = "Runflow Studio single-image runtime with backend, runner, NATS JetStream, PgBouncer, and PostgreSQL";
+  description = "Runflow Studio runtime with PostgreSQL-coordinated backend and runners";
 
   nixConfig = {
     substituters = [
@@ -132,7 +132,6 @@
               pkgs.bash
               pkgs.coreutils
               pkgs.gnugrep
-              pkgs.nats-server
               pkgs.nodejs_22
               pkgs.pgbouncer
               pkgs.postgresql_16
@@ -232,7 +231,6 @@
             runflowDevStop
             frontendDev
             runnerLaunch
-            pkgs.nats-server
             pkgs.nodejs_22
             pkgs.pgbouncer
             pkgs.postgresql_16
@@ -277,7 +275,7 @@
         "POSTGRES_DB=runflow"
         "POSTGRES_USER=runflow"
         "POSTGRES_PASSWORD=runflow"
-        "NATS_PORT=4222"
+        "POSTGRES_PORT=5432"
         "PGBOUNCER_PORT=6432"
         "RUSTFS_ACCESS_KEY=runflow"
         "RUSTFS_SECRET_KEY=runflow-secret"
@@ -294,8 +292,6 @@
         "PGDATA=/data/postgres"
         "PGHOST=/tmp/postgres"
         "PGPORT=5432"
-        "NATS_DATA=/data/nats"
-        "NATS_URL=nats://127.0.0.1:4222"
         "RUSTFS_DATA=/data/rustfs"
         "RUSTFS_VOLUMES=/data/rustfs"
         "RUSTFS_ADDRESS=0.0.0.0:9000"
@@ -309,14 +305,14 @@
         # userspace tailscale and exposes its services to the tailnet with
         # `tailscale serve --tcp` (raw TCP passthrough) on these ports.
         "TAILSCALE_USERSPACE=1"
-        "TAILSCALE_SERVE_PORTS=6432 4222 9000"
+        "TAILSCALE_SERVE_PORTS=5432 6432 9000"
       ];
 
       # Runner-only: the hub name it dials over the tailnet, plus userspace
       # tailscale (USERSPACE=1) since Salad containers have no TUN device. The
-      # NATS/DB/S3 URLs are derived from RUNFLOW_HUB_HOST in runner-entrypoint.sh.
+      # Database and S3 URLs are derived from RUNFLOW_HUB_HOST in runner-entrypoint.sh.
       # NOTE: RUNNER_ID is intentionally NOT baked — it must be unique per Salad
-      # replica (it keys the runner's DB heartbeat row and NATS work routing).
+      # replica (it keys the runner's DB heartbeat row and job claiming).
       # runner-entrypoint.sh derives it from $SALAD_MACHINE_ID at start.
       runnerEnv = [
         "RUNFLOW_HUB_HOST=runflow-hub"
@@ -402,8 +398,7 @@
           cd ${./.}
           export PYTHONPATH="${./src}"
           exec uv run --frozen python -m runner.cli \
-            --runner-id "''${RUNNER_ID:-runner-1}" \
-            --nats-url "''${NATS_URL:-nats://127.0.0.1:4222}"
+            --runner-id "''${RUNNER_ID:-runner-1}"
         '';
       };
       runnerLaunch = pkgs.writeShellApplication {
@@ -467,7 +462,6 @@
           pkgs.coreutils
           pkgs.gnugrep
           pkgs.gnused
-          pkgs.nats-server
           pkgs.pgbouncer
           pkgs.postgresql_16
           pkgs.tailscale
@@ -482,7 +476,7 @@
       };
 
       # Slim runner entrypoint: userspace tailscale + proxychains-ng so the
-      # runner's raw-TCP Postgres/NATS clients reach the hub over the tailnet.
+      # runner's raw-TCP PostgreSQL clients reach the hub over the tailnet.
       runnerEntrypoint = pkgs.writeShellApplication {
         name = "runflow-runner-entrypoint";
         runtimeInputs = [
@@ -532,7 +526,6 @@
               pkgs.cacert
               pkgs.coreutils
               pkgs.dockerTools.fakeNss
-              pkgs.nats-server
               pkgs.pgbouncer
               pkgs.postgresql_16
               pkgs.tailscale
@@ -565,9 +558,9 @@
           };
 
           # Slim runner-only image for remote GPU workers (Salad). Drops every
-          # server binary (postgres/pgbouncer/nats/rustfs/backend/frontend/aim);
+          # server binary (postgres/pgbouncer/rustfs/backend/frontend/aim);
           # keeps the ML runtime + tailscale + proxychains. Reaches the hub's
-          # DB/NATS/S3 as a client over the tailnet.
+          # database and S3 services as a client over the tailnet.
           runner-image = pkgs.dockerTools.buildLayeredImage {
             name = "runflow-studio-runner";
             tag = "latest";

@@ -191,25 +191,51 @@ export type BatchPerformanceSnapshot = {
 
 export type NodePerformanceSnapshot = {
   batches: number;
-  input_items: number;
-  output_items: number;
-  max_queue_size: number;
-  total_queue_wait_ms: number;
-  total_resource_wait_ms: number;
-  total_load_ms: number;
-  total_execute_ms: number;
-  total_unload_ms: number;
-  total_route_ms: number;
-  average_batch_ms: number;
-  p95_batch_ms: number;
-  max_batch_ms: number;
-  average_input_batch_size: number;
-  average_output_batch_size: number;
-  input_items_per_second: number;
-  output_items_per_second: number;
+  arrived_items: number;
+  departed_items: number;
+  arrival_rate: number;
+  departure_rate: number;
+  queue_size: number;
+  queue_capacity: number;
+  queue_fill_ratio: number;
+  queue_growth_rate: number;
+  busy_ratio: number;
+  resource_wait_ratio: number;
+  downstream_blocked_ms: number;
+  batch_p50_ms: number;
+  batch_p95_ms: number;
+  service_capacity: number;
   current_batch_started_at: string | null;
-  current_queue_wait_ms: number;
   recent_batches: BatchPerformanceSnapshot[];
+};
+
+export type RatePoint = {
+  timestamp: string;
+  count: number;
+  rate: number;
+};
+
+export type GraphPerformanceSnapshot = {
+  started_items: number;
+  completed_items: number;
+  inflight_items: number;
+  abandoned_items: number;
+  rolling_throughput: number;
+  average_throughput: number;
+  latency_p50_ms: number;
+  latency_p95_ms: number;
+  history: RatePoint[];
+};
+
+export type EdgePerformanceSnapshot = {
+  source_node: string;
+  source_port: string;
+  target_node: string;
+  target_port: string;
+  delivered_items: number;
+  rolling_rate: number;
+  enqueue_blocked_ms: number;
+  join_waiting_items: number;
 };
 
 export type RunSnapshot = {
@@ -217,7 +243,9 @@ export type RunSnapshot = {
   total_event_count: number;
   error_count: number;
   event_counts: Record<string, number>;
+  performance: GraphPerformanceSnapshot;
   nodes: NodeRunSnapshot[];
+  edges: EdgePerformanceSnapshot[];
 };
 
 export type WorkflowSocketMessage =
