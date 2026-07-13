@@ -2,18 +2,7 @@ from collections import Counter
 from math import isfinite
 from typing import Any
 
-
-def histogram_counts(values: list[float], bins: int, range_: tuple[float, float] | None = None) -> dict[str, Any]:
-    finite_values = [float(value) for value in values if isfinite(float(value))]
-    lo, hi = _range_for_pair(range_) if range_ is not None else _range_for(finite_values)
-    edges = [lo + ((hi - lo) * index / bins) for index in range(bins + 1)]
-    counts = [0] * bins
-    for value in finite_values:
-        if value < lo or value > hi:
-            continue
-        slot = bins - 1 if value == hi else int((value - lo) / (hi - lo) * bins)
-        counts[max(0, min(bins - 1, slot))] += 1
-    return {"edges": edges, "counts": counts}
+from runner.nodes.statistics.smart_histogram import histogram_counts
 
 
 def pooled_histogram(records: list[dict[str, Any]], field: str, bins: int, fallback: tuple[float, float], clip: bool = False) -> dict[str, Any]:
@@ -92,14 +81,6 @@ def _range_for(values: list[float]) -> tuple[float, float]:
     if not values:
         return 0.0, 1.0
     lo, hi = min(values), max(values)
-    if hi > lo:
-        return lo, hi
-    epsilon = 1e-9 if lo == 0 else abs(lo) * 1e-9
-    return lo - epsilon, hi + epsilon
-
-
-def _range_for_pair(value_range: tuple[float, float]) -> tuple[float, float]:
-    lo, hi = value_range
     if hi > lo:
         return lo, hi
     epsilon = 1e-9 if lo == 0 else abs(lo) * 1e-9
