@@ -1,6 +1,6 @@
 import { backendFetch, backendRequest } from "@/app/backend";
 
-export type Histogram = { edges: number[]; counts: number[] };
+export type Histogram = { edges: number[]; counts: number[]; underflow?: number; overflow?: number };
 export type Pair = [string, number];
 // A sampled per-segment row: [duration, rate, total]. The frontend projects rate against
 // either duration or the total (words/chars). Older entries may carry only [duration, rate].

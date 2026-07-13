@@ -11,6 +11,8 @@ export type HistogramConfig = {
   unit: string;
   edges: number[];
   counts: number[];
+  underflow: number;
+  overflow: number;
   tone: Tone;
 };
 
@@ -54,7 +56,7 @@ export function fmtDuration(seconds: number): string {
 }
 
 function histConfig(title: string, unit: string, h: Histogram, tone: Tone): HistogramConfig {
-  return { title, unit, edges: h.edges, counts: h.counts, tone };
+  return { title, unit, edges: h.edges, counts: h.counts, underflow: h.underflow ?? 0, overflow: h.overflow ?? 0, tone };
 }
 
 function hbars(pairs: Pair[], fmt: (v: number) => string, limit: number): HBarItem[] {
@@ -167,6 +169,8 @@ export type CorpusData = {
   available: boolean;
   lengthEdges: number[];
   lengthCounts: number[];
+  lengthUnderflow: number;
+  lengthOverflow: number;
   speakerLength: HBarItem[];
   grams1: HBarItem[];
   bigramMatrix: BigramMatrix;
@@ -187,6 +191,8 @@ export function corpusData(p: StatisticsPayload, tab: CorpusTab): CorpusData {
     available: isIpa ? p.phonemes_available : true,
     lengthEdges: lengthHist.edges,
     lengthCounts: lengthHist.counts,
+    lengthUnderflow: lengthHist.underflow ?? 0,
+    lengthOverflow: lengthHist.overflow ?? 0,
     speakerLength: hbars(speaker, fmtCompact, 15),
     grams1: hbars(grams, fmtCompact, 24),
     bigramMatrix,

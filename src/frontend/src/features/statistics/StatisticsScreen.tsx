@@ -141,7 +141,7 @@ function StatisticsBody({ payload, tab, onTab }: { payload: StatisticsPayload; t
       <div className="mb-[14px] grid grid-cols-3 gap-[14px]">
         {histograms.map((h) => (
           <ChartCard key={h.title} title={h.title} unit={h.unit}>
-            <Histogram edges={h.edges} counts={h.counts} tone={h.tone} />
+            <Histogram edges={h.edges} counts={h.counts} underflow={h.underflow} overflow={h.overflow} tone={h.tone} />
           </ChartCard>
         ))}
       </div>
@@ -166,7 +166,7 @@ function StatisticsBody({ payload, tab, onTab }: { payload: StatisticsPayload; t
       <div className="mb-[14px] grid grid-cols-2 gap-[14px]">
         {voiceDistributions.map((histogram) => (
           <ChartCard key={histogram.title} title={histogram.title} unit={histogram.unit}>
-            <Histogram edges={histogram.edges} counts={histogram.counts} tone={histogram.tone} countLabel="voices" />
+            <Histogram edges={histogram.edges} counts={histogram.counts} underflow={histogram.underflow} overflow={histogram.overflow} tone={histogram.tone} countLabel="voices" />
           </ChartCard>
         ))}
       </div>
@@ -187,7 +187,7 @@ function StatisticsBody({ payload, tab, onTab }: { payload: StatisticsPayload; t
         <>
           <div className="mb-[14px] grid grid-cols-2 gap-[14px]">
             <ChartCard title="Length per file" unit={corpus.unit}>
-              <Histogram edges={corpus.lengthEdges} counts={corpus.lengthCounts} tone="blue" />
+              <Histogram edges={corpus.lengthEdges} counts={corpus.lengthCounts} underflow={corpus.lengthUnderflow} overflow={corpus.lengthOverflow} tone="blue" />
             </ChartCard>
             <ChartCard title="Total length per speaker" unit={corpus.unit}>
               <HBars items={corpus.speakerLength} tone="emerald" />
