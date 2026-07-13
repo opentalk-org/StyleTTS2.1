@@ -12,7 +12,7 @@
 
 - Run Python and frontend commands through `nix develop --command ...`.
 - Do not add dependencies or modify `src/runflow`.
-- Use the configured bin count; never expand to 200 bins dynamically.
+- Treat the configured bin count as a maximum; never expand to 200 bins dynamically.
 - Preserve total finite counts across core, underflow, and overflow for auto-ranged histograms.
 - Keep explicit-range inclusion behavior unchanged.
 - Remove temporary tests before completion and preserve unrelated working-tree changes.
@@ -76,7 +76,7 @@ MIN_PERCENTILE_VALUES = 100
 - Otherwise emit exactly `bins` equal-width core bins.
 - Count auto-range values below the first edge as `underflow`, values at or above the final edge as `overflow`, and remaining values in ordinary bins.
 - For explicit ranges, retain the current inclusive final edge and skip out-of-range values; return zero tail counts.
-- For empty, constant, or fewer-than-100 values, use the complete deterministic range and zero tail counts.
+- For fewer-than-100 values, use the complete range and at most `ceil(sqrt(n))` bins. Empty and constant inputs use one deterministic bin. These cases return zero tail counts.
 
 - [ ] **Step 4: Verify GREEN and remove the test**
 

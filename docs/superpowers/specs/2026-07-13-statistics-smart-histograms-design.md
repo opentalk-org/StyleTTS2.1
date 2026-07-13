@@ -10,7 +10,7 @@ Make every statistics histogram informative when its values contain a dense clus
 
 The utility filters non-finite values and retains the configured bin count. Automatically ranged histograms with at least 100 values display the 0.5th through 99.5th percentile range so a small number of extreme values cannot flatten the dense region. Values below or above that range are counted in explicit underflow and overflow buckets; they are never silently discarded or folded into a misleading ordinary bin.
 
-Integer-valued inputs use one integer-aligned bin per value when the displayed integer span does not exceed the configured bin count; wider spans use the configured number of numeric bins. Empty, smaller-than-100, and constant inputs use their complete deterministic range rather than percentile trimming. Callers with explicit semantic ranges keep those bounds and the configured fixed bin count.
+Integer-valued inputs use one integer-aligned bin per value when the displayed integer span does not exceed the configured bin count; wider spans use the configured number of numeric bins. Smaller-than-100 inputs use their complete range with at most `ceil(sqrt(n))` bins, while empty and constant inputs use one deterministic bin. Callers with explicit semantic ranges keep those bounds and the configured fixed bin count.
 
 The output extends the existing histogram object with `underflow` and `overflow` counts. The Plotly renderer places nonzero tail buckets directly beside the ordinary bins with `< boundary` and `≥ boundary` hover labels. Ordinary bars retain numeric widths and exact range labels.
 
