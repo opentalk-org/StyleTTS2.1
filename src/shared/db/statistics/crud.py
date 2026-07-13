@@ -10,13 +10,23 @@ from shared.db.statistics.schemas import StatisticsEntryCreate
 
 
 def create_statistics_entry(session: Session, payload: StatisticsEntryCreate) -> StatisticsEntry:
-    data = payload.model_dump()
-    data["metadata_"] = data.pop("metadata")
-    item = StatisticsEntry(**data)
-    session.add(item)
+    return bulk_create_statistics_entries(session, [payload])[0]
+
+
+def bulk_create_statistics_entries(
+    session: Session,
+    payloads: Sequence[StatisticsEntryCreate],
+) -> list[StatisticsEntry]:
+    items = []
+    for payload in payloads:
+        data = payload.model_dump()
+        data["metadata_"] = data.pop("metadata")
+        items.append(StatisticsEntry(**data))
+    if not items:
+        return []
+    session.add_all(items)
     session.commit()
-    session.refresh(item)
-    return item
+    return items
 
 
 def get_statistics_entry(session: Session, statistics_entry_id: uuid.UUID) -> StatisticsEntry:

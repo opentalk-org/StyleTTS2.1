@@ -1,5 +1,6 @@
 from shared.db.datasets.crud import (
     add_audio_file_to_dataset,
+    bulk_remove_audio_files_from_dataset,
     create_dataset,
     delete_dataset,
     list_dataset_file_counts,
@@ -9,6 +10,7 @@ from shared.db.datasets.crud import (
 
 __all__ = [
     "add_audio_file_to_dataset",
+    "bulk_remove_audio_files_from_dataset",
     "create_dataset",
     "delete_dataset",
     "list_dataset_file_counts",

@@ -14,11 +14,34 @@ def list_voices(session: Session) -> Sequence[Voice]:
 
 
 def create_voice(session: Session, payload: VoiceCreate) -> Voice:
-    item = Voice(**payload.model_dump())
-    session.add(item)
+    return bulk_create_voices(session, [payload])[0]
+
+
+def get_voices_by_names(
+    session: Session,
+    names: Sequence[str],
+) -> dict[str, Voice]:
+    requested = list(dict.fromkeys(names))
+    if not requested:
+        return {}
+    statement = select(Voice).where(Voice.name.in_(requested))
+    loaded = {voice.name: voice for voice in session.execute(statement).scalars().all()}
+    return {name: loaded[name] for name in requested if name in loaded}
+
+
+def bulk_create_voices(
+    session: Session,
+    payloads: Sequence[VoiceCreate],
+) -> list[Voice]:
+    names = [payload.name for payload in payloads]
+    if len(set(names)) != len(names):
+        raise ValueError("voice create payloads must have unique names")
+    items = [Voice(**payload.model_dump()) for payload in payloads]
+    if not items:
+        return []
+    session.add_all(items)
     session.commit()
-    session.refresh(item)
-    return item
+    return items
 
 
 def search_voices(session: Session, query: str, limit: int, offset: int) -> tuple[Sequence[Voice], int]:

@@ -1,4 +1,5 @@
 from shared.db.statistics.crud import (
+    bulk_create_statistics_entries,
     create_statistics_entry,
     delete_statistics_entry,
     get_statistics_entry,
@@ -13,6 +14,7 @@ __all__ = [
     "StatisticsEntryCreate",
     "StatisticsEntryRead",
     "StatisticsEntrySummary",
+    "bulk_create_statistics_entries",
     "create_statistics_entry",
     "delete_statistics_entry",
     "get_statistics_entry",
