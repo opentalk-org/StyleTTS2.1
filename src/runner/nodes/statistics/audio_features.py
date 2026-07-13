@@ -31,11 +31,16 @@ class AnalyzeAudioFeaturesNode(Node):
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
 
     async def execute(self, batch, context):
+        audios = [inputs["audio"] for inputs in batch]
+        assert all(isinstance(audio, Audio) for audio in audios), "feature inputs must be Audio"
+        context.check_cancel()
+        feature_batch = analyze_audio_features_batch(
+            audios,
+            self.settings.silence_threshold_db,
+            self.settings.hop_length,
+        )
         outputs = []
-        for inputs in batch:
-            audio = inputs["audio"]
-            assert isinstance(audio, Audio), f"unsupported audio input: {type(audio).__name__}"
-            features = analyze_audio_features(audio, self.settings.silence_threshold_db, self.settings.hop_length)
+        for audio, features in zip(audios, feature_batch, strict=True):
             speech = speech_segment_records(audio)
             features["segments"] = speech["segments"]
             features["duplicate_segments_collapsed"] = speech["duplicate_segments_collapsed"]
@@ -43,9 +48,14 @@ class AnalyzeAudioFeaturesNode(Node):
         return outputs
 
 
-def analyze_audio_features(audio: Audio, silence_threshold_db: float, hop_length: int) -> dict[str, Any]:
+def analyze_audio_features(
+    audio: Audio,
+    silence_threshold_db: float,
+    hop_length: int,
+    dependencies: tuple[Any, Any] | None = None,
+) -> dict[str, Any]:
     assert audio.data is not None, f"audio bytes are required: {audio.id}"
-    librosa, np = _audio_dependencies()
+    librosa, np = dependencies if dependencies is not None else _audio_dependencies()
     y, sr = librosa.load(BytesIO(audio.data), sr=None, mono=True)
     y = np.asarray(y, dtype=np.float64)
     sr_int = int(sr)
@@ -81,6 +91,18 @@ def analyze_audio_features(audio: Audio, silence_threshold_db: float, hop_length
         }
     )
     return features
+
+
+def analyze_audio_features_batch(
+    audios: list[Audio],
+    silence_threshold_db: float,
+    hop_length: int,
+) -> list[dict[str, Any]]:
+    dependencies = _audio_dependencies()
+    return [
+        analyze_audio_features(audio, silence_threshold_db, hop_length, dependencies)
+        for audio in audios
+    ]
 
 
 def _audio_dependencies():

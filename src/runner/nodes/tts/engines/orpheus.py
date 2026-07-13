@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 
 from runner.nodes.assets.credentials import huggingface_token
-from runner.nodes.tts.engines.base import EngineRuntime
+from runner.nodes.tts.engines.base import EngineRuntime, EngineSynthesisRequest, EngineSynthesisResult
 from runner.nodes.tts.voices import Voice
 
 # Unsloth's ungated re-host of canopylabs/orpheus-3b-0.1-ft (same finetuned weights)
@@ -38,18 +38,31 @@ class OrpheusRuntime(EngineRuntime):
         self._decode_tokens = decode_tokens
 
     def synthesize(self, text: str, voice: Voice, language: str) -> tuple[np.ndarray, int]:
-        preset = voice.require_preset()
-        prompt = self._format_prompt(text, preset)
+        result = self.synthesize_batch([EngineSynthesisRequest(text, voice, language)])[0]
+        return result.samples, result.sample_rate
+
+    def synthesize_batch(
+        self,
+        requests: list[EngineSynthesisRequest],
+    ) -> list[EngineSynthesisResult]:
+        prompts = [
+            self._format_prompt(request.text, request.voice.require_preset())
+            for request in requests
+        ]
         params = self._sampling_cls(
             temperature=0.6, top_p=0.8, max_tokens=1200, stop_token_ids=[_STOP_TOKEN_ID], repetition_penalty=1.3
         )
-        outputs = self._llm.generate([prompt], params)
-        token_ids = list(outputs[0].outputs[0].token_ids)
+        outputs = self._llm.generate(prompts, params)
+        assert len(outputs) == len(requests), "orpheus batch output mismatch"
+        return [self._decode_output(output) for output in outputs]
+
+    def _decode_output(self, output: Any) -> EngineSynthesisResult:
+        token_ids = list(output.outputs[0].token_ids)
         audio_bytes = b"".join(self._decode_tokens(self._token_text_stream(token_ids)))
         if not audio_bytes:
             raise RuntimeError("orpheus_empty_audio")
         samples = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-        return samples, ORPHEUS_SAMPLE_RATE
+        return EngineSynthesisResult(samples, ORPHEUS_SAMPLE_RATE)
 
     def _format_prompt(self, text: str, voice: str) -> str:
         import torch

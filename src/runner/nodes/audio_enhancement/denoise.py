@@ -8,7 +8,7 @@ from typing import Any
 
 from runflow.core.node import Node
 from runflow.core.settings import StrictSettings
-from runflow.policies import ResourcePolicy
+from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AudioPort
 from runner.nodes.models import Audio, stable_id
@@ -36,6 +36,7 @@ class DeepFilterNetDenoiseNode(Node):
     SETTINGS = DeepFilterNetSettings
     INPUTS = {"audio": AudioPort()}
     OUTPUTS = {"audio": AudioPort()}
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=8, max_size=16)
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 4})
 
     def __init__(self, node_id: str | None = None, **params: Any):
@@ -52,11 +53,16 @@ class DeepFilterNetDenoiseNode(Node):
     async def execute(self, batch, context):
         if self._stack is None:
             raise RuntimeError("DeepFilterNetDenoiseNode.setup() must load the model before execute().")
+        audios = [inputs["audio"] for inputs in batch]
+        assert all(isinstance(audio, Audio) for audio in audios), "denoise inputs must be Audio"
+        assert all(audio.data is not None for audio in audios), "denoise requires audio bytes"
+        context.check_cancel()
+        denoised_batch = denoise_wav_bytes_batch(
+            [audio.data for audio in audios],
+            self._stack,
+        )
         outputs = []
-        for inputs in batch:
-            audio = inputs["audio"]
-            assert isinstance(audio, Audio), f"unsupported audio input: {type(audio).__name__}"
-            denoised = denoise_wav_bytes(audio.data, self._stack)
+        for audio, denoised in zip(audios, denoised_batch, strict=True):
             denoised_id = stable_id("audio", audio.id, "denoise", self.settings.model)
             outputs.append({
                 "audio": replace(
@@ -99,6 +105,13 @@ def denoise_wav_bytes(audio_bytes: bytes, stack: DeepFilterNetStack) -> bytes:
         audio_path.write_bytes(audio_bytes)
         denoise_wav_with_model(audio_path, stack)
         return audio_path.read_bytes()
+
+
+def denoise_wav_bytes_batch(
+    audio_batch: list[bytes],
+    stack: DeepFilterNetStack,
+) -> list[bytes]:
+    return [denoise_wav_bytes(audio_bytes, stack) for audio_bytes in audio_batch]
 
 
 def denoise_wav_with_model(audio_path: Path, stack: DeepFilterNetStack) -> None:

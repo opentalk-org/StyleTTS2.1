@@ -13,9 +13,9 @@ from runflow.core.ports import JoinMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
-from runner.nodes.asr.audio import write_temp_wav
+from runner.nodes.asr.batch import TemporaryAudioBatch
 from runner.nodes.asr.confidence import mean_word_confidence
-from runner.nodes.asr.whisperx import align_words, load_whisperx_align_model, whisperx_device
+from runner.nodes.asr.whisperx import AlignmentRequest, align_wavs, load_whisperx_align_model, whisperx_device
 from runner.nodes.datatypes import AudioPort, CheckpointRefPort
 from runner.nodes.models import Audio, AudioSegment, CheckpointRef, typed_checkpoint
 
@@ -51,13 +51,16 @@ class WhisperXAlignNode(Node):
     async def execute(self, batch, context):
         checkpoint = typed_checkpoint(batch[0]["checkpoint"])
         await self._ensure_model(checkpoint)
-        outputs = []
-        for index, inputs in enumerate(batch, start=1):
-            audio: Audio = inputs["audio"]
-            await context.report_progress(self.id, index, len(batch), f"whisperx aligned {index}/{len(batch)}")
-            aligned = self._align_audio(audio)
-            outputs.append({"audio": aligned})
-        return outputs
+        audios = [inputs["audio"] for inputs in batch]
+        context.check_cancel()
+        aligned = await asyncio.to_thread(self._align_batch, audios)
+        await context.report_progress(
+            self.id,
+            len(audios),
+            len(audios),
+            f"whisperx aligned {len(audios)}/{len(audios)}",
+        )
+        return [{"audio": audio} for audio in aligned]
 
     async def _ensure_model(self, checkpoint: CheckpointRef) -> None:
         if self._model is not None and self._loaded_checkpoint_id == checkpoint.checkpoint_id:
@@ -71,19 +74,49 @@ class WhisperXAlignNode(Node):
         model, metadata = load_whisperx_align_model(checkpoint_dir, self.settings.language, device)
         return model, metadata, device
 
-    def _align_audio(self, audio: Audio) -> Audio:
-        if not audio.segments:
-            return audio
-        assert audio.data is not None, f"audio bytes are required for alignment: {audio.id}"
-        spans = [(max(0.0, seg.start - audio.start), max(0.0, seg.end - audio.start), seg.text) for seg in audio.segments]
-        path = write_temp_wav(audio.data)
-        try:
-            words = align_words(self._model, self._metadata, path, spans, self._device or "cpu")
-        finally:
-            path.unlink(missing_ok=True)
+    def _align_batch(self, audios: list[Audio]) -> list[Audio]:
+        spans_by_audio = [
+            [
+                (
+                    max(0.0, segment.start - audio.start),
+                    max(0.0, segment.end - audio.start),
+                    segment.text,
+                )
+                for segment in audio.segments
+            ]
+            for audio in audios
+        ]
+        with TemporaryAudioBatch(audios) as paths:
+            requests = [
+                AlignmentRequest(path, spans)
+                for path, spans in zip(paths, spans_by_audio, strict=True)
+            ]
+            words_by_audio = align_wavs(
+                self._model,
+                self._metadata,
+                requests,
+                self._device or "cpu",
+            )
+        assert len(words_by_audio) == len(audios), "whisperx batch output mismatch"
+        return [
+            self._aligned_audio(audio, spans, words)
+            for audio, spans, words in zip(
+                audios,
+                spans_by_audio,
+                words_by_audio,
+                strict=True,
+            )
+        ]
+
+    def _aligned_audio(
+        self,
+        audio: Audio,
+        spans: list[tuple[float, float, str]],
+        words: list[dict[str, Any]],
+    ) -> Audio:
         segments = [
-            self._aligned_segment(seg, words, rel_start, rel_end, audio.start)
-            for seg, (rel_start, rel_end, _text) in zip(audio.segments, spans, strict=True)
+            self._aligned_segment(segment, words, start, end, audio.start)
+            for segment, (start, end, _text) in zip(audio.segments, spans, strict=True)
         ]
         return replace(audio, segments=segments)
 

@@ -8,7 +8,7 @@ from pydantic import Field
 
 from runflow.core.node import Node
 from runflow.core.settings import StrictSettings
-from runflow.policies import ResourcePolicy
+from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.datatypes import AudioPort, JsonPort, TextPort
 from runner.nodes.models import Audio
 from runner.nodes.tts.audio_out import samples_from_wav_bytes, wav_bytes_from_samples
@@ -97,19 +97,39 @@ class TtsCloneVoiceNode(Node):
     SETTINGS = TtsCloneVoiceSettings
     INPUTS = {"audio": AudioPort(), "transcript": TextPort(optional=True)}
     OUTPUTS = {"voice": JsonPort()}
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        outputs = []
-        for inputs in batch:
-            audio: Audio = inputs["audio"]
-            assert audio.data is not None, f"clone reference needs audio bytes: {audio.id}"
-            samples, sample_rate = samples_from_wav_bytes(audio.data)
-            wav_base64 = base64.b64encode(wav_bytes_from_samples(samples, sample_rate)).decode("ascii")
-            transcript = inputs.get("transcript") or self.settings.default_transcript
-            reference = CloneReference(wav_base64=wav_base64, sample_rate=sample_rate, transcript=transcript)
-            outputs.append({"voice": clone_voice_payload(self.ENGINE, reference)})
-        return outputs
+        voices = clone_voice_payloads(
+            list(batch),
+            self.ENGINE,
+            self.settings.default_transcript,
+        )
+        return [{"voice": voice} for voice in voices]
+
+
+def clone_voice_payloads(
+    batch: list[dict[str, Any]],
+    engine: TtsEngine,
+    default_transcript: str,
+) -> list[dict[str, Any]]:
+    outputs = []
+    for inputs in batch:
+        audio: Audio = inputs["audio"]
+        assert audio.data is not None, f"clone reference needs audio bytes: {audio.id}"
+        samples, sample_rate = samples_from_wav_bytes(audio.data)
+        wav_base64 = base64.b64encode(
+            wav_bytes_from_samples(samples, sample_rate)
+        ).decode("ascii")
+        transcript = inputs.get("transcript") or default_transcript
+        reference = CloneReference(
+            wav_base64=wav_base64,
+            sample_rate=sample_rate,
+            transcript=transcript,
+        )
+        outputs.append(clone_voice_payload(engine, reference))
+    return outputs
 
 
 class ChatterboxCloneVoiceNode(TtsCloneVoiceNode):

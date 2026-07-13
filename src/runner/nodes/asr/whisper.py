@@ -32,6 +32,19 @@ def transcribe_wav_to_segments(
     return [(0.0, max(0.0, duration_sec), text, None)]
 
 
+def transcribe_wavs_to_segments(
+    model: Any,
+    wav_paths: list[Path],
+    durations_sec: list[float],
+    language: str,
+) -> list[list[tuple[float, float, str, float | None]]]:
+    assert len(wav_paths) == len(durations_sec), "whisper batch path/duration mismatch"
+    return [
+        transcribe_wav_to_segments(model, path, duration, language)
+        for path, duration in zip(wav_paths, durations_sec, strict=True)
+    ]
+
+
 def _span_from_whisper_segment(item: dict, duration_sec: float) -> tuple[float, float, str, float | None]:
     start = max(0.0, float(item.get("start", 0.0)))
     end = max(start, float(item.get("end", start)))

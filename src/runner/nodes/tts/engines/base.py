@@ -1,11 +1,25 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
 from runner.nodes.tts.voices import Voice
+
+
+@dataclass(frozen=True)
+class EngineSynthesisRequest:
+    text: str
+    voice: Voice
+    language: str
+
+
+@dataclass(frozen=True)
+class EngineSynthesisResult:
+    samples: np.ndarray
+    sample_rate: int
 
 
 class EngineRuntime(ABC):
@@ -17,6 +31,15 @@ class EngineRuntime(ABC):
     def synthesize(self, text: str, voice: Voice, language: str) -> tuple[np.ndarray, int]:
         """Return (float32 mono waveform in [-1, 1], sample_rate) for one utterance."""
         raise NotImplementedError
+
+    def synthesize_batch(
+        self,
+        requests: list[EngineSynthesisRequest],
+    ) -> list[EngineSynthesisResult]:
+        return [
+            EngineSynthesisResult(*self.synthesize(request.text, request.voice, request.language))
+            for request in requests
+        ]
 
     def close(self) -> None:
         return None

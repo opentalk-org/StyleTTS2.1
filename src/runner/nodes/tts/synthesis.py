@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -10,20 +11,30 @@ from pydantic import Field
 from runflow.core.node import Node
 from runflow.core.ports import JoinMode
 from runflow.core.settings import StrictSettings
-from runflow.policies import ResourcePolicy
+from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AudioPort, CheckpointRefPort, JsonPort, SynthesisResultPort, TextPort
 from runner.nodes.languages import Language
 from runner.nodes.models import Audio, SynthesisResult, stable_id, typed_checkpoint
 from runner.nodes.tts.audio_out import audio_from_samples
 from runner.nodes.tts.engines import load_engine
-from runner.nodes.tts.engines.base import EngineRuntime
+from runner.nodes.tts.engines.base import EngineRuntime, EngineSynthesisRequest, EngineSynthesisResult
 from runner.nodes.tts.voices import TtsEngine, Voice, expand_voice_batch, parse_voice
 
 
 class TtsSynthesisSettings(StrictSettings):
     language: Language = Field(default=Language.ENGLISH, title="Language")
     output_name: str = Field(default="tts.wav", title="Output name")
+
+
+@dataclass(frozen=True)
+class PendingSynthesis:
+    request: EngineSynthesisRequest
+    request_id: str
+    voice_key: str
+    text: str
+    sample_index: int
+    run_id: str
 
 
 class TtsSynthesisNode(Node):
@@ -42,6 +53,7 @@ class TtsSynthesisNode(Node):
         "voice": JsonPort(join_mode=JoinMode.BROADCAST),
     }
     OUTPUTS = {"audio": AudioPort(), "synthesis_result": SynthesisResultPort()}
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=16, max_size=32)
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, keep_loaded=True, exclusive_group="accelerator")
 
     def __init__(self, node_id: str | None = None, **params: Any):
@@ -59,16 +71,31 @@ class TtsSynthesisNode(Node):
     async def execute(self, batch, context):
         checkpoint = typed_checkpoint(batch[0]["checkpoint"])
         await self._ensure_runtime(checkpoint.checkpoint_id, checkpoint.path)
-        outputs: list[dict[str, Any]] = []
-        for index, inputs in enumerate(batch, start=1):
+        pending: list[PendingSynthesis] = []
+        run_id = str(context.run_id)
+        for inputs in batch:
             text = inputs["text"]
             voices, samples = self._resolve_voices(inputs["voice"])
-            await context.report_progress(self.id, index, len(batch), f"{self.ENGINE.value} synthesizing {index}/{len(batch)}")
             for voice in voices:
                 for sample_index in range(samples):
                     context.check_cancel()
-                    outputs.append(await asyncio.to_thread(self._synthesize_one, text, voice, sample_index, str(context.run_id)))
-        return outputs
+                    pending.append(self._pending_synthesis(text, voice, sample_index, run_id))
+        assert self._runtime is not None, "runtime not loaded"
+        results = await asyncio.to_thread(
+            self._runtime.synthesize_batch,
+            [item.request for item in pending],
+        )
+        assert len(results) == len(pending), f"{self.ENGINE.value} batch output mismatch"
+        await context.report_progress(
+            self.id,
+            len(results),
+            len(results),
+            f"{self.ENGINE.value} synthesized {len(results)}/{len(results)}",
+        )
+        return [
+            self._synthesis_output(item, result)
+            for item, result in zip(pending, results, strict=True)
+        ]
 
     async def _ensure_runtime(self, checkpoint_id: UUID, checkpoint_dir: Path) -> None:
         if self._runtime is not None and self._loaded_checkpoint_id == checkpoint_id:
@@ -85,30 +112,48 @@ class TtsSynthesisNode(Node):
             return expand_voice_batch(payload, self.ENGINE)
         return [parse_voice(payload, self.ENGINE)], 1
 
-    def _synthesize_one(self, text: str, voice: Voice, sample_index: int, run_id: str) -> dict[str, Any]:
-        assert self._runtime is not None, "runtime not loaded"
+    def _pending_synthesis(
+        self,
+        text: str,
+        voice: Voice,
+        sample_index: int,
+        run_id: str,
+    ) -> PendingSynthesis:
         voice_key = voice.preset if voice.preset is not None else "clone"
         request_id = stable_id("tts_request", self.NODE_TYPE, run_id, text, voice_key, sample_index)
-        samples, sample_rate = self._runtime.synthesize(text, voice, self.settings.language.value)
+        request = EngineSynthesisRequest(text, voice, self.settings.language.value)
+        return PendingSynthesis(request, request_id, voice_key, text, sample_index, run_id)
+
+    def _synthesis_output(
+        self,
+        pending: PendingSynthesis,
+        result: EngineSynthesisResult,
+    ) -> dict[str, Any]:
         metadata = {
             "engine": self.ENGINE.value,
-            "voice": voice_key,
+            "voice": pending.voice_key,
             "language": self.settings.language.value,
-            "text": text,
-            "sample_index": sample_index,
-            "run_id": run_id,
-            "sample_rate": sample_rate,
+            "text": pending.text,
+            "sample_index": pending.sample_index,
+            "run_id": pending.run_id,
+            "sample_rate": result.sample_rate,
         }
         audio = audio_from_samples(
             node_type=self.NODE_TYPE,
-            request_id=request_id,
+            request_id=pending.request_id,
             output_name=self.settings.output_name,
-            samples=samples,
-            sample_rate=sample_rate,
+            samples=result.samples,
+            sample_rate=result.sample_rate,
             metadata=metadata,
         )
-        result = SynthesisResult(request_id, audio, stable_id("tts_result", request_id), audio.lineage_id, metadata)
-        return {"audio": audio, "synthesis_result": result}
+        synthesis_result = SynthesisResult(
+            pending.request_id,
+            audio,
+            stable_id("tts_result", pending.request_id),
+            audio.lineage_id,
+            metadata,
+        )
+        return {"audio": audio, "synthesis_result": synthesis_result}
 
 
 class KokoroSynthesisNode(TtsSynthesisNode):

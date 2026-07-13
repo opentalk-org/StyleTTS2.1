@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import io
 import wave
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -13,18 +13,27 @@ from pydantic import Field
 from runflow.core.node import Node
 from runflow.core.ports import JoinMode
 from runflow.core.settings import StrictSettings
-from runflow.policies import ResourcePolicy
+from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AudioPort, CheckpointRefPort, JsonPort, SynthesisResultPort
 from runner.nodes.models import Audio, SynthesisResult, stable_id, typed_checkpoint
 from runner.nodes.synthesis.styletts_runtime.actions import (
+    StyleTtsPayloadRequest,
     StyleTtsRequestSettings,
-    build_styletts_payload,
-    synthesize_to_wav_bytes,
+    build_styletts_payloads,
+    synthesize_to_wav_bytes_batch,
     temporary_synthesis_dir,
     _prompt_text,
 )
-from runner.nodes.synthesis.styletts_runtime.runtime import load_synthesis_runtime
+from shared.db import database_session
+from shared.db.audio import crud as audio_crud
+
+
+@dataclass(frozen=True)
+class PendingStyleTts:
+    inputs: dict[str, Any]
+    output_index: int
+
 
 class StyleTtsSynthesisSettings(StrictSettings):
     diffusion_steps: int = Field(default=5, title="Diffusion steps", ge=1, le=100)
@@ -52,65 +61,146 @@ class StyleTtsSynthesisNode(Node):
         "style_reference": JsonPort(),
     }
     OUTPUTS = {"synthesis_result": SynthesisResultPort(), "audio": AudioPort()}
-    RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, exclusive_group="accelerator")
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=8, max_size=16)
+    RESOURCE_POLICY = ResourcePolicy(
+        resources={"accelerator": 1, "vram_gb": 8},
+        exclusive_group="accelerator",
+        keep_loaded=True,
+    )
+
+    def __init__(self, node_id: str | None = None, **params: Any):
+        super().__init__(node_id=node_id, **params)
+        self._runtime: Any | None = None
+        self._loaded_checkpoint_id: UUID | None = None
 
     async def teardown(self, context) -> None:
+        self._runtime = None
+        self._loaded_checkpoint_id = None
         release_accelerator_memory()
 
     async def execute(self, batch, context):
-        outputs = []
-        for inputs in batch:
-            outputs.extend(await asyncio.to_thread(synthesize_styletts_items, self.NODE_TYPE, self.settings, inputs, str(context.run_id)))
+        context.check_cancel()
+        checkpoint = typed_checkpoint(batch[0]["checkpoint"])
+        if self._loaded_checkpoint_id != checkpoint.checkpoint_id:
+            self._runtime = None
+        outputs, self._runtime = await asyncio.to_thread(
+            synthesize_styletts_batch,
+            self.NODE_TYPE,
+            self.settings,
+            list(batch),
+            str(context.run_id),
+            self._runtime,
+        )
+        self._loaded_checkpoint_id = checkpoint.checkpoint_id
+        await context.report_progress(
+            self.id,
+            len(outputs),
+            len(outputs),
+            f"styletts synthesized {len(outputs)}/{len(outputs)}",
+        )
         return outputs
 
 
-def synthesize_styletts_items(
+def synthesize_styletts_batch(
     node_type: str,
     settings: StyleTtsSynthesisSettings,
-    inputs: dict[str, Any],
+    batch: list[dict[str, Any]],
     run_id: str,
-) -> list[dict[str, Audio | SynthesisResult]]:
-    style_reference = inputs["style_reference"]
-    if isinstance(style_reference, dict) and style_reference.get("kind") == "style_reference_batch":
-        outputs = []
-        runtime: Any | None = None
-        references = style_reference_batch_items(style_reference)
-        samples = _sweep_sample_count(style_reference, settings.samples_per_reference)
-        for reference_index, reference in enumerate(references):
-            for sample_index in range(samples):
-                output_index = reference_index * samples + sample_index
-                synthesis_inputs = {**inputs, "style_reference": reference}
-                if runtime is None:
-                    runtime = _load_runtime_for_inputs(settings, synthesis_inputs, output_index)
-                outputs.append(synthesize_styletts(node_type, settings, synthesis_inputs, run_id, output_index, runtime))
-        return outputs
-    return [synthesize_styletts(node_type, settings, inputs, run_id, 0, None)]
-
-
-def synthesize_styletts(
-    node_type: str,
-    settings: StyleTtsSynthesisSettings,
-    inputs: dict[str, Any],
-    run_id: str,
-    output_index: int,
     runtime: Any | None,
-) -> dict[str, Audio | SynthesisResult]:
-    request_id = stable_id("synthesis_request", node_type, run_id, output_index, _prompt_text(inputs["prompt_text"]), inputs["style_reference"])
-    checkpoint = typed_checkpoint(inputs["checkpoint"])
+) -> tuple[list[dict[str, Audio | SynthesisResult]], Any]:
+    pending = _expand_styletts_batch(batch, settings)
+    checkpoint = typed_checkpoint(pending[0].inputs["checkpoint"])
+    assert all(
+        typed_checkpoint(item.inputs["checkpoint"]).checkpoint_id
+        == checkpoint.checkpoint_id
+        for item in pending
+    ), "styletts batch requires one checkpoint"
+    audio_ids = list(dict.fromkeys(
+        UUID(str(item.inputs["style_reference"]["audio_file_id"]))
+        for item in pending
+        if item.inputs["style_reference"]["kind"] == "audio_file"
+    ))
+    if audio_ids:
+        with database_session() as session:
+            audio_data = audio_crud.bulk_read_audio_files(session, audio_ids)
+    else:
+        audio_data = {}
     with temporary_synthesis_dir() as tmp:
-        payload = build_styletts_payload(
+        payloads = build_styletts_payloads(
             checkpoint=checkpoint,
-            prompt_text=inputs["prompt_text"],
-            style_reference=inputs["style_reference"],
+            requests=[
+                StyleTtsPayloadRequest(
+                    prompt_text=item.inputs["prompt_text"],
+                    style_reference=item.inputs["style_reference"],
+                    output_filename=_output_filename(
+                        settings.output_name,
+                        item.output_index,
+                    ),
+                )
+                for item in pending
+            ],
             settings=_request_settings(settings),
             work_dir=Path(tmp),
-            output_filename=_output_filename(settings.output_name, output_index),
+            audio_data=audio_data,
         )
-        wav_bytes = synthesize_to_wav_bytes(runtime=runtime, payload=payload)
+        runtime, wav_batches = synthesize_to_wav_bytes_batch(
+            payloads,
+            runtime,
+        )
+    assert len(wav_batches) == len(pending), "styletts batch output mismatch"
+    assert runtime is not None, "styletts runtime was not loaded"
+    outputs = [
+        _styletts_output(node_type, settings, item, payload, wav_bytes, run_id)
+        for item, payload, wav_bytes in zip(pending, payloads, wav_batches, strict=True)
+    ]
+    return outputs, runtime
+
+
+def _expand_styletts_batch(
+    batch: list[dict[str, Any]],
+    settings: StyleTtsSynthesisSettings,
+) -> list[PendingStyleTts]:
+    expanded = []
+    for inputs in batch:
+        style_reference = inputs["style_reference"]
+        if isinstance(style_reference, dict) and style_reference.get("kind") == "style_reference_batch":
+            references = style_reference_batch_items(style_reference)
+            samples = _sweep_sample_count(style_reference, settings.samples_per_reference)
+            expanded.extend(
+                {**inputs, "style_reference": reference}
+                for reference in references
+                for _sample_index in range(samples)
+            )
+        else:
+            expanded.append(inputs)
+    return [PendingStyleTts(inputs, index) for index, inputs in enumerate(expanded)]
+
+
+def _styletts_output(
+    node_type: str,
+    settings: StyleTtsSynthesisSettings,
+    pending: PendingStyleTts,
+    payload: dict[str, Any],
+    wav_bytes: bytes,
+    run_id: str,
+) -> dict[str, Audio | SynthesisResult]:
+    request_id = stable_id(
+        "synthesis_request",
+        node_type,
+        run_id,
+        pending.output_index,
+        _prompt_text(pending.inputs["prompt_text"]),
+        pending.inputs["style_reference"],
+    )
     audio = _audio_from_wav(settings.output_name, wav_bytes, request_id, node_type)
     audio = replace(audio, metadata={**audio.metadata, "run_id": run_id})
-    result_id = stable_id("synthesis_result", request_id, audio.id)
-    result = SynthesisResult(request_id, audio, result_id, audio.lineage_id, _result_metadata(payload, audio, settings))
+    result = SynthesisResult(
+        request_id,
+        audio,
+        stable_id("synthesis_result", request_id, audio.id),
+        audio.lineage_id,
+        _result_metadata(payload, audio, settings),
+    )
     return {"synthesis_result": result, "audio": audio}
 
 
@@ -119,23 +209,6 @@ def style_reference_batch_items(value: dict[str, Any]) -> list[dict[str, Any]]:
     assert isinstance(references, list), "style_reference_batch references must be a list"
     assert references, "style_reference_batch requires at least one reference"
     return references
-
-
-def _load_runtime_for_inputs(
-    settings: StyleTtsSynthesisSettings,
-    inputs: dict[str, Any],
-    output_index: int,
-) -> Any:
-    with temporary_synthesis_dir() as tmp:
-        payload = build_styletts_payload(
-            checkpoint=typed_checkpoint(inputs["checkpoint"]),
-            prompt_text=inputs["prompt_text"],
-            style_reference=inputs["style_reference"],
-            settings=_request_settings(settings),
-            work_dir=Path(tmp),
-            output_filename=_output_filename(settings.output_name, output_index),
-        )
-        return load_synthesis_runtime(payload)
 
 
 def _request_settings(settings: StyleTtsSynthesisSettings) -> StyleTtsRequestSettings:

@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+
+@dataclass(frozen=True)
+class AlignmentRequest:
+    wav_path: Path
+    spans: list[tuple[float, float, str]]
 
 
 def whisperx_device() -> str:
@@ -41,6 +48,18 @@ def align_words(
     audio = whisperx.load_audio(str(wav_path))
     result = whisperx.align(transcript, model, metadata, audio, device, return_char_alignments=False)
     return [word for word in (_word_entry(item) for item in result.get("word_segments", [])) if word is not None]
+
+
+def align_wavs(
+    model: Any,
+    metadata: Any,
+    requests: list[AlignmentRequest],
+    device: str,
+) -> list[list[dict[str, Any]]]:
+    return [
+        align_words(model, metadata, request.wav_path, request.spans, device)
+        for request in requests
+    ]
 
 
 def _word_entry(item: Any) -> dict[str, Any] | None:

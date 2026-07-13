@@ -40,13 +40,18 @@ class PadSilenceNode(Node):
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
 
     async def execute(self, batch, context):
-        outputs = []
-        for inputs in batch:
-            context.check_cancel()
-            audio = inputs["audio"]
-            assert isinstance(audio, Audio), f"unsupported audio input: {type(audio).__name__}"
+        audios = [inputs["audio"] for inputs in batch]
+        assert all(isinstance(audio, Audio) for audio in audios), "pad silence inputs must be Audio"
+        for audio in audios:
             assert audio.data is not None, f"audio bytes are required: {audio.id}"
-            result = pad_silence_wav_bytes(audio.data, self.settings)
+        context.check_cancel()
+        results = pad_silence_wav_bytes_batch(
+            [audio.data for audio in audios],
+            self.settings,
+        )
+        outputs = []
+        for audio, result in zip(audios, results, strict=True):
+            context.check_cancel()
             padded_id = stable_id("audio", audio.id, "pad_silence", self.settings.model_dump())
             outputs.append({
                 "audio": replace(
@@ -74,8 +79,12 @@ class PadSilenceNode(Node):
         return outputs
 
 
-def pad_silence_wav_bytes(audio_bytes: bytes, settings: PadSilenceSettings) -> PaddedAudio:
-    np, sf = _audio_dependencies()
+def pad_silence_wav_bytes(
+    audio_bytes: bytes,
+    settings: PadSilenceSettings,
+    dependencies: tuple[Any, Any] | None = None,
+) -> PaddedAudio:
+    np, sf = dependencies if dependencies is not None else _audio_dependencies()
     samples, sample_rate = sf.read(BytesIO(audio_bytes), always_2d=True, dtype="float32")
     sample_rate = int(sample_rate)
     content = _non_silent_content(np, samples, sample_rate, settings.silence_threshold)
@@ -94,6 +103,17 @@ def pad_silence_wav_bytes(audio_bytes: bytes, settings: PadSilenceSettings) -> P
         sample_rate=sample_rate,
         channels=int(samples.shape[1]),
     )
+
+
+def pad_silence_wav_bytes_batch(
+    audio_batch: list[bytes],
+    settings: PadSilenceSettings,
+) -> list[PaddedAudio]:
+    dependencies = _audio_dependencies()
+    return [
+        pad_silence_wav_bytes(audio_bytes, settings, dependencies)
+        for audio_bytes in audio_batch
+    ]
 
 
 def _non_silent_content(np: Any, samples: Any, sample_rate: int, threshold: float) -> Any:

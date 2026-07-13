@@ -9,6 +9,7 @@ from pydantic import Field
 
 from runflow.core.node import Node
 from runflow.core.settings import StrictSettings
+from runflow.policies import BatchMode, BatchPolicy
 from runner.nodes.datatypes import AudioPort
 from runner.nodes.models import Audio, stable_id
 
@@ -32,8 +33,12 @@ class NormalizedAudio:
     channels: int
 
 
-def normalize_wav_bytes(audio_bytes: bytes, settings: NormalizeSettings) -> NormalizedAudio:
-    deps = _load_normalize_dependencies()
+def normalize_wav_bytes(
+    audio_bytes: bytes,
+    settings: NormalizeSettings,
+    deps: dict[str, Any] | None = None,
+) -> NormalizedAudio:
+    deps = deps if deps is not None else _load_normalize_dependencies()
     np = deps["numpy"]
     librosa = deps["librosa"]
     sf = deps["soundfile"]
@@ -79,13 +84,19 @@ class NormalizeLoudnessNode(Node):
     SETTINGS = NormalizeSettings
     INPUTS = {"audio": AudioPort()}
     OUTPUTS = {"audio": AudioPort()}
+    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=64)
 
     async def execute(self, batch, context):
+        audios = [inputs["audio"] for inputs in batch]
+        assert all(isinstance(audio, Audio) for audio in audios), "normalize inputs must be Audio"
+        assert all(audio.data is not None for audio in audios), "normalize requires audio bytes"
+        context.check_cancel()
+        results = normalize_wav_bytes_batch(
+            [audio.data for audio in audios],
+            self.settings,
+        )
         outputs = []
-        for inputs in batch:
-            audio = inputs["audio"]
-            assert isinstance(audio, Audio), f"unsupported audio input: {type(audio).__name__}"
-            result = normalize_wav_bytes(audio.data, self.settings)
+        for audio, result in zip(audios, results, strict=True):
             metadata = {
                 **audio.metadata,
                 "duration": result.duration,
@@ -114,6 +125,14 @@ class NormalizeLoudnessNode(Node):
                 ),
             })
         return outputs
+
+
+def normalize_wav_bytes_batch(
+    audio_batch: list[bytes],
+    settings: NormalizeSettings,
+) -> list[NormalizedAudio]:
+    deps = _load_normalize_dependencies()
+    return [normalize_wav_bytes(audio_bytes, settings, deps) for audio_bytes in audio_batch]
 
 
 def _load_normalize_dependencies() -> dict[str, Any]:
