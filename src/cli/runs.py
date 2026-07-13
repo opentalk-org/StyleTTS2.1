@@ -138,7 +138,7 @@ def cmd_perf(client: BackendClient, args: argparse.Namespace) -> int:
         return 0
 
     header = (f"{'node':<28} {'active total':>12} {'queue avg':>10} {'resource avg':>12} "
-              f"{'p95 batch':>10} {'items/s':>8} {'max q':>6}")
+              f"{'p95 batch':>10} {'input/s':>8} {'output/s':>8} {'max q':>6}")
     print(header)
     print("-" * len(header))
     for node in nodes:
@@ -155,10 +155,11 @@ def cmd_perf(client: BackendClient, args: argparse.Namespace) -> int:
                                + metrics.get("current_queue_wait_ms", 0.0)) / wait_batches)
         resource_avg = _duration(metrics.get("total_resource_wait_ms", 0.0) / batches)
         p95 = _duration(metrics.get("p95_batch_ms", 0.0))
-        throughput = _rate(metrics.get("items_per_second", 0.0))
+        input_throughput = _rate(metrics.get("input_items_per_second", 0.0))
+        output_throughput = _rate(metrics.get("output_items_per_second", 0.0))
         max_q = str(metrics.get("max_queue_size", 0))
         print(f"{node['node_id']:<28} {active_total:>12} {queue_avg:>10} {resource_avg:>12} "
-              f"{p95:>10} {throughput:>8} {max_q:>6}")
+              f"{p95:>10} {input_throughput:>8} {output_throughput:>8} {max_q:>6}")
     return 0
 
 

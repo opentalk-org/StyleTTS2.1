@@ -85,8 +85,9 @@ export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
         </button>
       </div>
       {performance && (performance.batches > 0 || performance.current_batch_started_at) ? (
-        <div className="grid grid-cols-3 border-b border-line bg-panel px-2.5 py-1.5 font-mono">
-          <PerformanceMetric label="items/s" value={formatRate(performance.items_per_second)} />
+        <div className="grid grid-cols-4 border-b border-line bg-panel px-2.5 py-1.5 font-mono">
+          <PerformanceMetric label="input/s" value={formatRate(performance.input_items_per_second)} />
+          <PerformanceMetric label="output/s" value={formatRate(performance.output_items_per_second)} />
           <PerformanceMetric
             label={performance.current_batch_started_at ? "current" : "p95 batch"}
             value={formatDuration(performance.current_batch_started_at ? Date.now() - Date.parse(performance.current_batch_started_at) : performance.p95_batch_ms)}

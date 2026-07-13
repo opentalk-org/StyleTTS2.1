@@ -4,12 +4,12 @@ import { fmtDur } from "@/shared/format";
 import { WaveformBars } from "@/shared/media/WaveformBars";
 import { cn } from "@/shared/ui/cn";
 import type { Segment } from "./api";
+import { activeAlignment, placeAlignmentRows } from "./editor/alignment";
 import { WaveformPeaks } from "./WaveformPeaks";
 
 const LANE_H = 30;
+const SEEK_GAP_H = 12;
 const MIN_BODY = 96;
-const MAX_BODY = 240;
-const MAX_RENDER_LANES = 8;
 const MIN_SEG = 0.1;
 const TICK_TARGETS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900];
 
@@ -81,21 +81,11 @@ export function SegmentTimeline({
 
   const inView = segs.filter((g) => g.end > viewStart && g.start < viewEnd);
   const sorted = [...inView].sort((a, b) => a.start - b.start);
-  const laneLayout = assignLanes(sorted);
-  const tooDense = inView.length > 200 || laneLayout.lanes > MAX_RENDER_LANES;
-  const { placed, lanes } = tooDense ? { placed: [], lanes: 1 } : laneLayout;
-  const bodyH = Math.min(MAX_BODY, Math.max(MIN_BODY, lanes * LANE_H));
-  const laneH = bodyH / lanes;
+  const { placed, lanes } = assignLanes(sorted);
+  const laneAreaH = Math.max(MIN_BODY, lanes * LANE_H);
+  const bodyH = SEEK_GAP_H + laneAreaH + SEEK_GAP_H;
+  const laneH = laneAreaH / lanes;
   const pct = (t: number) => ((t - viewStart) / span) * 100;
-
-  // Per-word alignment marks for segments in view: a thin tick at each word start,
-  // and a highlight band for the word the playhead currently sits in.
-  const wordMarks = tooDense
-    ? []
-    : inView
-        .flatMap((g) => g.alignment ?? [])
-        .filter((w) => w.end > viewStart && w.start < viewEnd);
-  const currentWord = wordMarks.find((w) => playPos >= w.start && playPos <= w.end) ?? null;
 
   const panTo = (e: PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -186,7 +176,7 @@ export function SegmentTimeline({
                   "group absolute cursor-grab touch-none overflow-hidden rounded-[3px] border text-[9px] font-bold active:cursor-grabbing",
                   sel ? "border-blue-600 bg-blue-500/25 text-blue-700" : "border-blue-500/50 bg-blue-500/10 text-blue-700 hover:bg-blue-500/20",
                 )}
-                style={{ left: `${left}%`, width: `max(6px, ${right - left}%)`, top: lane * laneH + 1, height: laneH - 2 }}
+                style={{ left: `${left}%`, width: `max(6px, ${right - left}%)`, top: SEEK_GAP_H + lane * laneH + 1, height: laneH - 2 }}
               >
                 <span className="pointer-events-none absolute left-1.5 top-0.5 tabular-nums">{(indexOf.get(seg.id) ?? 0) + 1}</span>
                 <div data-handle="l" className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize bg-blue-600/0 group-hover:bg-blue-600/40" />
@@ -195,28 +185,32 @@ export function SegmentTimeline({
             );
           })}
 
-          {currentWord ? (
-            <div
-              className="pointer-events-none absolute top-0 bottom-0 bg-amber-400/20"
-              style={{ left: `${pct(currentWord.start)}%`, width: `max(2px, ${pct(currentWord.end) - pct(currentWord.start)}%)` }}
-            />
-          ) : null}
-
-          {wordMarks.map((w, i) => (
-            <div
-              key={`${w.start}-${i}`}
-              className={cn("pointer-events-none absolute top-0 bottom-0 w-px", w === currentWord ? "bg-amber-500/80" : "bg-blue-700/40")}
-              style={{ left: `${pct(w.start)}%` }}
-            />
-          ))}
-
-          {tooDense ? (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <span className="rounded-full bg-panel/80 px-3 py-1 text-[11px] font-semibold text-txt-dim">
-                {inView.length} segments / {laneLayout.lanes} lanes in view - zoom in to edit on the timeline
-              </span>
-            </div>
-          ) : null}
+          {placed.flatMap(({ seg, lane }) => {
+            const currentWord = activeAlignment(seg.alignment, playPos);
+            return placeAlignmentRows(seg.alignment ?? [])
+              .filter(({ word }) => word.end > viewStart && word.start < viewEnd)
+              .map(({ word, row }, index) => {
+                const left = Math.max(0, pct(word.start));
+                const right = Math.min(100, pct(word.end));
+                return (
+                  <div
+                    key={`${seg.id}-${word.start}-${index}`}
+                    title={word.word}
+                    className={cn(
+                      "pointer-events-none absolute h-[5px] border-x border-t",
+                      word === currentWord
+                        ? "z-20 border-2 border-b-0 border-amber-600 bg-amber-300/60 shadow-[0_0_5px_rgba(217,119,6,0.65)]"
+                        : "z-10 border-blue-700/70 bg-blue-400/15",
+                    )}
+                    style={{
+                      left: `${left}%`,
+                      width: `max(3px, ${right - left}%)`,
+                      top: SEEK_GAP_H + lane * laneH + 6 + row * 5,
+                    }}
+                  />
+                );
+              });
+          })}
 
           {playPos >= viewStart && playPos <= viewEnd ? (
             <div className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-gray-900" style={{ left: `${pct(playPos)}%` }}>

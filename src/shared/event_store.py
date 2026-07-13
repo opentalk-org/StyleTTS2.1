@@ -19,7 +19,8 @@ class ActiveBatchPerformance:
 @dataclass
 class NodePerformanceState:
     batches: int = 0
-    items: int = 0
+    input_items: int = 0
+    output_items: int = 0
     max_queue_size: int = 0
     total_queue_wait_ms: float = 0
     total_resource_wait_ms: float = 0
@@ -42,7 +43,8 @@ class NodePerformanceState:
         detail = event.detail
         batch = BatchPerformanceSnapshot(
             batch_index=int(event.batch_index),
-            batch_size=int(event.batch_size),
+            input_items=int(detail["input_items"]),
+            output_items=int(detail["output_items"]),
             queue_wait_ms=float(detail["queue_wait_ms"]),
             resource_wait_ms=float(detail["resource_wait_ms"]),
             load_ms=float(detail["load_ms"]),
@@ -52,7 +54,8 @@ class NodePerformanceState:
             total_ms=float(detail["total_ms"]),
         )
         self.batches += 1
-        self.items += batch.batch_size
+        self.input_items += batch.input_items
+        self.output_items += batch.output_items
         self.total_queue_wait_ms += batch.queue_wait_ms
         self.total_resource_wait_ms += batch.resource_wait_ms
         self.total_load_ms += batch.load_ms
@@ -72,7 +75,8 @@ class NodePerformanceState:
         measured_total = self.total_resource_wait_ms + self.total_load_ms + self.total_execute_ms + self.total_unload_ms + self.total_route_ms
         return NodePerformanceSnapshot(
             batches=self.batches,
-            items=self.items,
+            input_items=self.input_items,
+            output_items=self.output_items,
             max_queue_size=self.max_queue_size,
             total_queue_wait_ms=self.total_queue_wait_ms,
             total_resource_wait_ms=self.total_resource_wait_ms,
@@ -83,8 +87,10 @@ class NodePerformanceState:
             average_batch_ms=measured_total / self.batches if self.batches else 0,
             p95_batch_ms=p95,
             max_batch_ms=self.max_batch_ms,
-            average_batch_size=self.items / self.batches if self.batches else 0,
-            items_per_second=self.items * 1000 / self.total_execute_ms if self.total_execute_ms else 0,
+            average_input_batch_size=self.input_items / self.batches if self.batches else 0,
+            average_output_batch_size=self.output_items / self.batches if self.batches else 0,
+            input_items_per_second=self.input_items * 1000 / self.total_execute_ms if self.total_execute_ms else 0,
+            output_items_per_second=self.output_items * 1000 / self.total_execute_ms if self.total_execute_ms else 0,
             current_batch_started_at=active.started_at if active is not None else None,
             current_queue_wait_ms=active.queue_wait_ms if active is not None else 0,
             recent_batches=list(self.recent_batches),

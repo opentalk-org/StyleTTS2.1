@@ -3,6 +3,7 @@ import { fmtClock } from "@/shared/format";
 import { Icon } from "@/shared/icons";
 import { cn } from "@/shared/ui/cn";
 import type { Segment } from "./api";
+import { activeAlignment } from "./editor/alignment";
 import { useEditor } from "./editorStore";
 
 const ROW_COLS = "22px 30px 92px 126px 1fr auto";
@@ -26,6 +27,7 @@ export function SegmentRow({ seg, index, isLast }: { seg: Segment; index: number
   const { segSel, segChecked, playPos, select, toggleCheck, seek, playing, togglePlay, setSegText, setSegPhon, setSegVoice, deleteSeg, mergeNext } = useEditor();
   const sel = seg.id === segSel;
   const checked = segChecked.includes(seg.id);
+  const currentWord = activeAlignment(seg.alignment, playPos);
 
   return (
     <div className="px-0.5 py-1.5">
@@ -102,7 +104,6 @@ export function SegmentRow({ seg, index, isLast }: { seg: Segment; index: number
         <div onClick={(e) => e.stopPropagation()} className="flex flex-wrap items-center gap-1 border-t border-line bg-panel-2/40 px-2.5 py-1.5">
           <span className="mr-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-txt-mute">Words</span>
           {seg.alignment.map((word, i) => {
-            const current = playPos >= word.start && playPos <= word.end;
             return (
               <button
                 key={`${word.start}-${i}`}
@@ -110,7 +111,7 @@ export function SegmentRow({ seg, index, isLast }: { seg: Segment; index: number
                 title={`${fmtClock(word.start)} – ${fmtClock(word.end)}`}
                 className={cn(
                   "rounded px-1.5 py-0.5 font-mono text-[10.5px]",
-                  current ? "bg-blue-500 text-white" : "bg-panel-2 text-txt-dim hover:bg-blue-100 hover:text-blue-600",
+                  word === currentWord ? "bg-blue-500 text-white" : "bg-panel-2 text-txt-dim hover:bg-blue-100 hover:text-blue-600",
                 )}
               >
                 {word.word}

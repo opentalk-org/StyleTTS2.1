@@ -178,7 +178,8 @@ export type NodeRunSnapshot = {
 
 export type BatchPerformanceSnapshot = {
   batch_index: number;
-  batch_size: number;
+  input_items: number;
+  output_items: number;
   queue_wait_ms: number;
   resource_wait_ms: number;
   load_ms: number;
@@ -190,7 +191,8 @@ export type BatchPerformanceSnapshot = {
 
 export type NodePerformanceSnapshot = {
   batches: number;
-  items: number;
+  input_items: number;
+  output_items: number;
   max_queue_size: number;
   total_queue_wait_ms: number;
   total_resource_wait_ms: number;
@@ -201,8 +203,10 @@ export type NodePerformanceSnapshot = {
   average_batch_ms: number;
   p95_batch_ms: number;
   max_batch_ms: number;
-  average_batch_size: number;
-  items_per_second: number;
+  average_input_batch_size: number;
+  average_output_batch_size: number;
+  input_items_per_second: number;
+  output_items_per_second: number;
   current_batch_started_at: string | null;
   current_queue_wait_ms: number;
   recent_batches: BatchPerformanceSnapshot[];

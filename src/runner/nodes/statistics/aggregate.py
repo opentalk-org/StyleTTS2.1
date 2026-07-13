@@ -78,6 +78,7 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
     speaker_chars: Counter[str] = Counter()
     speaker_phonemes: Counter[str] = Counter()
     speaker_samples: Counter[str] = Counter()
+    voice_seconds: Counter[str] = Counter()
     voice_samples: Counter[str] = Counter()
     words_per_second: list[list[float]] = []
     chars_per_second: list[list[float]] = []
@@ -101,6 +102,7 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
         speaker_phonemes[speaker] += len(phon)
         speaker_samples[speaker] += 1
         if voice_id:
+            voice_seconds[voice_id] += duration
             voice_samples[voice_id] += 1
         if duration > 0.0:
             words = int(segment.get("word_count", len(text.split())))
@@ -117,7 +119,7 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
     phonemes_available = any(part for parts in phon_by_file.values() for part in parts)
     text_warnings = _text_length_warnings(file_ids, name_by_file, char_counts, settings)
     return {
-        "version": 12,
+        "version": 13,
         "params": {
             "histogram_bins": settings.histogram_bins,
             "silence_threshold_db": settings.silence_threshold_db,
@@ -147,11 +149,11 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
         "char_trigram_bottom10": char_trigram_extremes(" ".join(corpus_text))[1],
         "phoneme_trigram_top10": char_trigram_extremes(" ".join(corpus_phon))[0],
         "phoneme_trigram_bottom10": char_trigram_extremes(" ".join(corpus_phon))[1],
-        "speaker_duration_seconds": _counter_pairs(speaker_seconds),
         "speaker_char_count": _counter_pairs(speaker_chars),
         "speaker_phoneme_count": _counter_pairs(speaker_phonemes),
         "speaker_sample_count": _counter_pairs(speaker_samples),
-        "voice_sample_count": _counter_pairs(voice_samples),
+        "voice_duration_seconds_histogram": histogram_counts(list(voice_seconds.values()), settings.histogram_bins),
+        "voice_sample_count_histogram": histogram_counts([float(value) for value in voice_samples.values()], settings.histogram_bins),
         "words_per_second_scatter": _downsample_scatter(words_per_second, settings.rate_scatter_points),
         "chars_per_second_scatter": _downsample_scatter(chars_per_second, settings.rate_scatter_points),
         "inter_word_silence_seconds_histogram": histogram_counts(inter_word_silences, settings.histogram_bins, (0.0, settings.inter_word_silence_max_seconds)),

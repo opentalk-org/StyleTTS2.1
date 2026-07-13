@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, useState } from "react";
 
 import { cn } from "../ui/cn";
 
@@ -16,6 +16,7 @@ export function VirtualTable({
   overscan = 12,
   className,
   scrollClassName,
+  pageScroll = false,
 }: {
   count: number;
   estimateRowHeight: number;
@@ -24,19 +25,25 @@ export function VirtualTable({
   overscan?: number;
   className?: string;
   scrollClassName?: string;
+  pageScroll?: boolean;
 }) {
-  const parentRef = useRef<HTMLDivElement>(null);
+  const [parentElement, setParentElement] = useState<HTMLDivElement | null>(null);
+  const pageScrollElement = pageScroll ? parentElement?.closest("main") : null;
+  const scrollMargin = pageScroll && parentElement && pageScrollElement
+    ? parentElement.getBoundingClientRect().top - pageScrollElement.getBoundingClientRect().top + pageScrollElement.scrollTop
+    : 0;
   const virtualizer = useVirtualizer({
     count,
-    getScrollElement: () => parentRef.current,
+    getScrollElement: () => pageScrollElement ?? parentElement,
     estimateSize: () => estimateRowHeight,
     overscan,
+    scrollMargin,
   });
 
   return (
-    <div className={cn("flex min-h-0 flex-col", className)}>
+    <div className={cn(pageScroll ? "" : "flex min-h-0 flex-col", className)}>
       {header}
-      <div ref={parentRef} className={cn("min-h-0 flex-1 overflow-y-auto", scrollClassName)}>
+      <div ref={setParentElement} className={cn(pageScroll ? "" : "min-h-0 flex-1 overflow-y-auto", scrollClassName)}>
         <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map((item) => (
             <div
@@ -44,7 +51,7 @@ export function VirtualTable({
               data-index={item.index}
               ref={virtualizer.measureElement}
               className="absolute left-0 top-0 w-full"
-              style={{ transform: `translateY(${item.start}px)` }}
+              style={{ transform: `translateY(${item.start - scrollMargin}px)` }}
             >
               {renderRow(item.index)}
             </div>

@@ -7,7 +7,7 @@ import re
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import Field
@@ -22,17 +22,14 @@ from runner.nodes.models import Audio, stable_id
 
 DEFAULT_PARQUET_PATH = "/home/ds_v1/000f72c2-caa7-4958-b8e8-0e7668bb9bb6_20260512T173847038808Z.parquet"
 AUDIO_COLUMN = "audio_bytes"
-# ds_v1 rows are long recordings (fewer, longer videos) with a large metadata
-# block. Columns that hold structured JSON payloads are decoded before storing.
+# Structured JSON metadata columns are decoded before storage.
 JSON_METADATA_COLUMNS = ("categories_json", "tags_json")
 NAME_COLUMNS = ("video_id", "opus_file", "metadata_id", "title")
 
 
 class HetznerDsV1ParquetAudioSourceSettings(StrictSettings):
-    source: Literal["sftp", "local"] = Field(default="sftp", title="Source")
     host: str = Field(default="hetzner-storagebox", title="SFTP host")
     remote_parquet_path: str = Field(default=DEFAULT_PARQUET_PATH, title="Remote parquet path")
-    local_parquet_path: str = Field(default="", title="Local parquet path")
     row_offset: int = Field(default=0, ge=0, title="Row offset")
     row_limit: int = Field(default=1, ge=1, title="Rows to import")
     name_prefix: str = Field(default="ds_v1", title="Audio name prefix")
@@ -42,7 +39,7 @@ class HetznerDsV1ParquetAudioSourceSettings(StrictSettings):
 
 class HetznerDsV1ParquetAudioSourceNode(Node):
     NODE_TYPE = "HetznerDsV1ParquetAudioSource"
-    DESCRIPTION = "Import audio from a ds_v1 parquet dataset (long recordings) stored on a Hetzner storage box or a local file, streaming out one audio item per row. Decodes the row's Opus audio to WAV and attaches all of the row's metadata columns. Choose the source, row offset, and how many rows to import; use it as an input node to feed the ds_v1 corpus into a workflow."
+    DESCRIPTION = "Import audio from a ds_v1 parquet dataset of long recordings stored on a Hetzner storage box, streaming out one audio item per row. Decodes the row's Opus audio to WAV and attaches all of the row's metadata columns. Choose the remote path, row offset, and how many rows to import."
     CATEGORY = "Inputs"
     SETTINGS = HetznerDsV1ParquetAudioSourceSettings
     IS_INPUT = True
@@ -70,16 +67,12 @@ class HetznerDsV1ParquetAudioSourceNode(Node):
 
 
 def _load_audio_items(settings: HetznerDsV1ParquetAudioSourceSettings, context: Any) -> list[Audio]:
-    parquet_path = _local_parquet_path(settings, context)
+    parquet_path = _parquet_path(settings, context)
     rows = list(_iter_parquet_rows(parquet_path, settings.row_offset, settings.row_limit))
     return [_audio_from_row(row, settings, absolute_index) for absolute_index, row in rows]
 
 
-def _local_parquet_path(settings: HetznerDsV1ParquetAudioSourceSettings, context: Any) -> Path:
-    if settings.source == "local":
-        if not settings.local_parquet_path:
-            raise ValueError("local_parquet_path is required when source is local")
-        return Path(settings.local_parquet_path).expanduser()
+def _parquet_path(settings: HetznerDsV1ParquetAudioSourceSettings, context: Any) -> Path:
     cache_dir = Path(context.cache_dir) / "hetzner"
     cache_dir.mkdir(parents=True, exist_ok=True)
     cached = cache_dir / _cache_name(settings.remote_parquet_path)

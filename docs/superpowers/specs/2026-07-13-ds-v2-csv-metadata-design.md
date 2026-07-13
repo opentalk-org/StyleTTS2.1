@@ -17,8 +17,10 @@ derives one exact metadata path from the Parquet basename:
 ```
 
 Both files are downloaded over SFTP into the runner's Hetzner cache. Cached
-files are reused. A missing or empty Parquet or CSV fails the node with both
-resolved remote paths in the error.
+files are reused. The cache retains the four most recently used ds_v2 pairs and
+removes the least recently used complete pairs without touching other Hetzner
+cache entries. A missing or empty Parquet or CSV fails the node with both resolved
+remote paths in the error.
 
 The `source`, `local_parquet_path`, and `cache_download` settings are removed.
 The node always uses cached Hetzner SFTP input.

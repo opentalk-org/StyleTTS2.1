@@ -4,14 +4,15 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useWorkflowStore } from "../store";
 import type { NodeRunSnapshot } from "../types";
 
-type SortKey = "total" | "queue" | "resource" | "p95" | "throughput";
+type SortKey = "total" | "queue" | "resource" | "p95" | "inputThroughput" | "outputThroughput";
 
 const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "total", label: "active total" },
   { key: "queue", label: "queue avg" },
   { key: "resource", label: "resource avg" },
   { key: "p95", label: "p95 batch" },
-  { key: "throughput", label: "items/s" },
+  { key: "inputThroughput", label: "input/s" },
+  { key: "outputThroughput", label: "output/s" },
 ];
 
 export function PerformancePopover({ onClose }: { onClose: () => void }) {
@@ -47,7 +48,7 @@ export function PerformancePopover({ onClose }: { onClose: () => void }) {
         </div>
         <button type="button" className="cursor-pointer text-lg text-txt-mute hover:text-txt" onClick={onClose} aria-label="Close performance">&times;</button>
       </header>
-      <div className="grid grid-cols-[minmax(150px,1.4fr)_repeat(5,minmax(76px,0.7fr))_74px] border-b border-line bg-panel-2 px-3 py-1.5 font-mono text-[9px] font-bold uppercase text-txt-mute">
+      <div className="grid grid-cols-[minmax(150px,1.4fr)_repeat(6,minmax(76px,0.7fr))_74px] border-b border-line bg-panel-2 px-3 py-1.5 font-mono text-[9px] font-bold uppercase text-txt-mute">
         <span>node / recent batches</span>
         {COLUMNS.map((column) => (
           <button key={column.key} type="button" className={`cursor-pointer text-right uppercase ${sort === column.key ? "text-amber-700" : "hover:text-txt"}`} onClick={() => setSort(column.key)}>
@@ -81,7 +82,7 @@ function PerformanceRow({ node, top, now }: { node: NodeRunSnapshot; top: number
   const currentElapsed = metrics.current_batch_started_at ? Math.max(0, now - Date.parse(metrics.current_batch_started_at)) : 0;
   const completedTotal = metrics.total_resource_wait_ms + metrics.total_load_ms + metrics.total_execute_ms + metrics.total_unload_ms + metrics.total_route_ms;
   return (
-    <div className="absolute left-0 grid w-full grid-cols-[minmax(150px,1.4fr)_repeat(5,minmax(76px,0.7fr))_74px] items-center border-b border-line px-3 py-2 font-mono text-[10px]" style={{ height: 70, transform: `translateY(${top}px)` }}>
+    <div className="absolute left-0 grid w-full grid-cols-[minmax(150px,1.4fr)_repeat(6,minmax(76px,0.7fr))_74px] items-center border-b border-line px-3 py-2 font-mono text-[10px]" style={{ height: 70, transform: `translateY(${top}px)` }}>
       <div className="min-w-0 pr-3">
         <strong className="block truncate text-[11px] text-txt">{node.node_id}</strong>
         <BatchTimeline node={node} />
@@ -90,7 +91,8 @@ function PerformanceRow({ node, top, now }: { node: NodeRunSnapshot; top: number
       <Value value={duration((metrics.total_queue_wait_ms + metrics.current_queue_wait_ms) / waitBatches)} />
       <Value value={duration(metrics.total_resource_wait_ms / batches)} />
       <Value value={duration(metrics.p95_batch_ms)} />
-      <Value value={rate(metrics.items_per_second)} />
+      <Value value={rate(metrics.input_items_per_second)} />
+      <Value value={rate(metrics.output_items_per_second)} />
       <Value value={String(metrics.max_queue_size)} warning={node.queue_size > 0 && node.running_batches > 0} />
     </div>
   );
@@ -137,7 +139,8 @@ function sortValue(node: NodeRunSnapshot, key: SortKey, now: number): number {
   }
   if (key === "resource") return metrics.total_resource_wait_ms / batches;
   if (key === "p95") return metrics.p95_batch_ms;
-  if (key === "throughput") return metrics.items_per_second;
+  if (key === "inputThroughput") return metrics.input_items_per_second;
+  if (key === "outputThroughput") return metrics.output_items_per_second;
   const currentElapsed = metrics.current_batch_started_at ? Math.max(0, now - Date.parse(metrics.current_batch_started_at)) : 0;
   return metrics.total_resource_wait_ms + metrics.total_load_ms + metrics.total_execute_ms + metrics.total_unload_ms + metrics.total_route_ms + currentElapsed;
 }

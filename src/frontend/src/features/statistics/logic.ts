@@ -102,18 +102,11 @@ export function rateScatters(p: StatisticsPayload): ScatterConfig[] {
   ];
 }
 
-// Samples (segments) per voice. Voice ids are resolved to names by the caller; when no
-// segment carries a voice id we fall back to per-speaker counts so the chart is never empty.
-export function voiceSamples(p: StatisticsPayload, nameById: Map<string, string>): HBarItem[] {
-  const byVoice = p.voice_sample_count ?? [];
-  const bySpeaker = p.speaker_sample_count ?? [];
-  const source = byVoice.length ? byVoice : bySpeaker;
-  const resolve = byVoice.length ? (id: string) => nameById.get(id) ?? shortId(id) : (label: string) => label || "-";
-  return source.slice(0, 20).map(([key, value]) => ({ label: resolve(key), value, display: fmtCompact(value) }));
-}
-
-function shortId(id: string): string {
-  return id.length > 10 ? `${id.slice(0, 8)}…` : id;
+export function voiceHistograms(p: StatisticsPayload): HistogramConfig[] {
+  return [
+    histConfig("Samples per voice", "samples", p.voice_sample_count_histogram, "emerald"),
+    histConfig("Duration per voice", "seconds", p.voice_duration_seconds_histogram, "blue"),
+  ];
 }
 
 export type StatTileData = { label: string; value: string; sub?: string; tone: Tone };
@@ -137,10 +130,6 @@ export function audioTiles(p: StatisticsPayload): StatTileData[] {
       tone: p.duplicate_segments_collapsed > 0 ? "amber" : "blue",
     },
   ];
-}
-
-export function speakerDuration(p: StatisticsPayload): HBarItem[] {
-  return hbars(p.speaker_duration_seconds, (v) => fmtDuration(v), 15);
 }
 
 export function textWarnings(p: StatisticsPayload): { file: string; why: string; detail: string }[] {

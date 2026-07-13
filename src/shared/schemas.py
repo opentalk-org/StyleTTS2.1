@@ -87,7 +87,8 @@ class RunEventResponse(BaseModel):
 
 class BatchPerformanceSnapshot(BaseModel):
     batch_index: int
-    batch_size: int
+    input_items: int
+    output_items: int
     queue_wait_ms: float
     resource_wait_ms: float
     load_ms: float
@@ -99,7 +100,8 @@ class BatchPerformanceSnapshot(BaseModel):
 
 class NodePerformanceSnapshot(BaseModel):
     batches: int
-    items: int
+    input_items: int
+    output_items: int
     max_queue_size: int
     total_queue_wait_ms: float
     total_resource_wait_ms: float
@@ -110,8 +112,10 @@ class NodePerformanceSnapshot(BaseModel):
     average_batch_ms: float
     p95_batch_ms: float
     max_batch_ms: float
-    average_batch_size: float
-    items_per_second: float
+    average_input_batch_size: float
+    average_output_batch_size: float
+    input_items_per_second: float
+    output_items_per_second: float
     current_batch_started_at: datetime | None
     current_queue_wait_ms: float
     recent_batches: list[BatchPerformanceSnapshot]

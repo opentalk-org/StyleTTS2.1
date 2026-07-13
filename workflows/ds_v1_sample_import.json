@@ -9,10 +9,8 @@
         "x": -180,
         "y": 140,
         "params": {
-          "source": "sftp",
           "host": "hetzner-storagebox",
           "remote_parquet_path": "/home/ds_v1/000f72c2-caa7-4958-b8e8-0e7668bb9bb6_20260512T173847038808Z.parquet",
-          "local_parquet_path": "",
           "row_offset": 0,
           "row_limit": 1,
           "name_prefix": "ds_v1",

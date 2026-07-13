@@ -10,7 +10,7 @@ export function EditorSegmentList() {
   const visible = query ? segs.filter((segment) => segment.text.toLowerCase().includes(query) || segment.phon.toLowerCase().includes(query)) : segs;
   const allVisibleChecked = visible.length > 0 && visible.every((segment) => segChecked.includes(segment.id));
   return (
-    <div className="flex min-h-0 flex-1 flex-col rounded-[10px] border border-line bg-panel p-4">
+    <div className="flex flex-col rounded-[10px] border border-line bg-panel p-4">
       <div className="mb-3 flex items-center gap-3">
         <label className="flex items-center gap-2" title={allVisibleChecked ? "Clear selection" : "Select all shown"}>
           <input
@@ -31,7 +31,7 @@ export function EditorSegmentList() {
         <VirtualTable
           count={visible.length}
           estimateRowHeight={72}
-          className="flex-1"
+          pageScroll
           renderRow={(index) => <SegmentRow seg={visible[index]!} index={segs.indexOf(visible[index]!)} isLast={segs.indexOf(visible[index]!) === segs.length - 1} />}
         />
       ) : (

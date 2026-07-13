@@ -5,12 +5,14 @@ from dataclasses import replace
 from difflib import SequenceMatcher
 from typing import Any
 
+from runner.nodes.audio_segments.alignment_merge import alignment_midpoint, merge_alignment_tracks
 from runner.nodes.models import Audio, AudioSegment
 
 
 DEFAULT_MODEL_PRIORITY = ("src", "canary", "parakeet", "whisper")
 
 DEFAULT_MIN_OVERLAP_RATIO = 0.5
+DEFAULT_ALIGNMENT_MATCH_WINDOW_SEC = 0.2
 
 _WHITESPACE = re.compile(r"\s+")
 _NON_WORD = re.compile(r"[^\w\s]", re.UNICODE)
@@ -113,6 +115,7 @@ def deduplicate_overlapping_segments(
     segments: list[AudioSegment],
     *,
     min_overlap_ratio: float = DEFAULT_MIN_OVERLAP_RATIO,
+    alignment_match_window_sec: float = DEFAULT_ALIGNMENT_MATCH_WINDOW_SEC,
 ) -> tuple[list[AudioSegment], int]:
     if not segments:
         return [], 0
@@ -120,7 +123,7 @@ def deduplicate_overlapping_segments(
     collapsed = 0
     for members in _overlap_clusters(segments, min_overlap_ratio):
         collapsed += len(members) - 1
-        kept.append(_consensus_segment(members))
+        kept.append(_consensus_segment(members, alignment_match_window_sec))
     kept.sort(key=lambda segment: (segment.start, segment.end))
     return kept, collapsed
 
@@ -171,7 +174,7 @@ def _overlap_ratio(left: AudioSegment, right: AudioSegment) -> float:
 CONFIDENCE_WEIGHT_FLOOR = 0.7
 
 
-def _consensus_segment(members: list[AudioSegment]) -> AudioSegment:
+def _consensus_segment(members: list[AudioSegment], alignment_match_window_sec: float) -> AudioSegment:
     if len(members) == 1:
         return members[0]
     normals = [_normalized_text(member) for member in members]
@@ -207,7 +210,16 @@ def _consensus_segment(members: list[AudioSegment]) -> AudioSegment:
         "overlap_alternatives": [member.text.strip() for index, member in enumerate(members) if index != winner_index],
     }
     confidence = _consensus_confidence(winner.confidence, sims, other_confidences)
-    return replace(winner, confidence=confidence, metadata=metadata)
+    other_tracks = [
+        [word for word in (member.alignment or []) if winner.start <= alignment_midpoint(word) <= winner.end]
+        for index, member in enumerate(members)
+        if index != winner_index
+    ]
+    alignment = merge_alignment_tracks(
+        [winner.alignment or [], *other_tracks],
+        alignment_match_window_sec,
+    )
+    return replace(winner, confidence=confidence, metadata=metadata, alignment=alignment)
 
 
 # How much a fully-confident, fully-agreeing peer can lift the score toward 1.0. Damped well
@@ -271,10 +283,6 @@ def _confidence_weighted_support(normals: list[str], weights: list[float], index
         _text_similarity(normals[index], normals[other]) * weights[other]
         for other in range(len(normals))
     )
-
-
-def _agreement_score(normals: list[str], index: int) -> float:
-    return sum(_text_similarity(normals[index], normals[other]) for other in range(len(normals)) if other != index)
 
 
 def _text_similarity(left: str, right: str) -> float:

@@ -34,11 +34,11 @@ export type StatisticsPayload = {
   char_trigram_bottom10: Pair[];
   phoneme_trigram_top10: Pair[];
   phoneme_trigram_bottom10: Pair[];
-  speaker_duration_seconds: Pair[];
   speaker_char_count: Pair[];
   speaker_phoneme_count: Pair[];
   speaker_sample_count: Pair[];
-  voice_sample_count: Pair[];
+  voice_duration_seconds_histogram: Histogram;
+  voice_sample_count_histogram: Histogram;
   words_per_second_scatter: ScatterPoint[];
   chars_per_second_scatter: ScatterPoint[];
   inter_word_silence_seconds_histogram: Histogram;

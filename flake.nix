@@ -106,6 +106,25 @@
           pythonRuntime = mkPythonRuntime pkgs;
           rustfs = mkRustfs pkgs;
           pythonTools = [ pkgs.uv pythonRuntime.python ] ++ pythonRuntime.runtimeExecutableDeps;
+          runflowDevUserHandoff = ''
+            if [ "$(id -u)" = "0" ]; then
+              runflow_dev_user="''${RUNFLOW_DEV_USER:-user}"
+              user_home="$(getent passwd "$runflow_dev_user" | cut -d: -f6)"
+              project_root="$PWD"
+              mkdir -p "$user_home/.cache" "$user_home/.local/share" "$user_home/.local/state"
+              chown "$runflow_dev_user" "$user_home/.cache" "$user_home/.local" \
+                "$user_home/.local/share" "$user_home/.local/state"
+              # The inner shell expands its positional parameters after the user handoff.
+              # shellcheck disable=SC2016
+              exec runuser -u "$runflow_dev_user" -- env \
+                HOME="$user_home" \
+                TMPDIR=/tmp \
+                XDG_CACHE_HOME="$user_home/.cache" \
+                XDG_DATA_HOME="$user_home/.local/share" \
+                XDG_STATE_HOME="$user_home/.local/state" \
+                bash -c 'cd "$1"; shift; exec "$@"' bash "$project_root" "$0" "$@"
+            fi
+          '';
           runflowDev = pkgs.writeShellApplication {
             name = "runflow-dev";
             runtimeInputs = [
@@ -126,33 +145,39 @@
             runtimeInputs = [
               pkgs.bash
               pkgs.coreutils
+              pkgs.glibc.bin
               pkgs.gnugrep
+              pkgs.util-linux
               pkgs.zellij
               runflowDev
             ];
-            text = ''
+            text = runflowDevUserHandoff + ''
               set -euo pipefail
 
               session_name="runflow-dev"
               if zellij list-sessions --short --no-formatting | grep -Fxq "$session_name"; then
                 echo "attaching to existing $session_name session"
+                exec zellij attach "$session_name"
               else
                 echo "creating $session_name session and starting runflow-dev"
-                zellij attach --create-background "$session_name"
-                zellij --session "$session_name" run --name runflow-dev -- runflow-dev
+                zellij --max-panes 1 attach --create-background "$session_name" options \
+                  --session-serialization false \
+                  --show-startup-tips false
+                zellij --session "$session_name" run --cwd "$PWD" --name runflow-dev -- runflow-dev
+                exec zellij attach --force-run-commands "$session_name"
               fi
-
-              exec zellij attach --create "$session_name"
             '';
           };
           runflowDevStatus = pkgs.writeShellApplication {
             name = "runflow-dev-status";
             runtimeInputs = [
               pkgs.coreutils
+              pkgs.glibc.bin
               pkgs.gnugrep
+              pkgs.util-linux
               pkgs.zellij
             ];
-            text = ''
+            text = runflowDevUserHandoff + ''
               set -euo pipefail
 
               session_name="runflow-dev"
@@ -168,15 +193,17 @@
             name = "runflow-dev-stop";
             runtimeInputs = [
               pkgs.coreutils
+              pkgs.glibc.bin
               pkgs.gnugrep
+              pkgs.util-linux
               pkgs.zellij
             ];
-            text = ''
+            text = runflowDevUserHandoff + ''
               set -euo pipefail
 
               session_name="runflow-dev"
               if zellij list-sessions --short --no-formatting | grep -Fxq "$session_name"; then
-                zellij kill-session "$session_name"
+                zellij delete-session --force "$session_name"
                 echo "stopped $session_name session"
               else
                 echo "$session_name session is not running"

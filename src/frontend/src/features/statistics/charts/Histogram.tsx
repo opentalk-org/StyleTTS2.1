@@ -10,11 +10,13 @@ export function Histogram({
   counts,
   tone = "blue",
   height = 132,
+  countLabel = "files",
 }: {
   edges: number[];
   counts: number[];
   tone?: Tone;
   height?: number;
+  countLabel?: string;
 }) {
   const centers = counts.map((_, i) => (edges[i]! + edges[i + 1]!) / 2);
   const widths = counts.map((_, i) => edges[i + 1]! - edges[i]!);
@@ -29,7 +31,7 @@ export function Histogram({
           width: widths,
           marker: { color: PLOT_COLOR[tone], opacity: 0.9 },
           customdata: ranges,
-          hovertemplate: "%{customdata}<br>%{y} files<extra></extra>",
+          hovertemplate: `%{customdata}<br>%{y} ${countLabel}<extra></extra>`,
         },
       ]}
       layout={baseLayout({ yaxis: { rangemode: "tozero" } })}

@@ -9,7 +9,6 @@ import { SectionTitle } from "@/shared/ui/SectionTitle";
 import { Select } from "@/shared/ui/Select";
 import { Tabs } from "@/shared/ui/Tabs";
 
-import { useVoicesQuery } from "../voices/query";
 import type { StatisticsPayload } from "./api";
 import { ComputeStatistics } from "./ComputeStatistics";
 import { ChartCard } from "./charts/ChartCard";
@@ -19,11 +18,9 @@ import { Histogram } from "./charts/Histogram";
 import { RankList } from "./charts/RankList";
 import { Scatter } from "./charts/Scatter";
 import { StatTile } from "./charts/StatTile";
-import { audioHistograms, audioTiles, corpusData, rateScatters, speakerDuration, textWarnings, voiceSamples, type CorpusTab } from "./logic";
+import { audioHistograms, audioTiles, corpusData, rateScatters, textWarnings, voiceHistograms, type CorpusTab } from "./logic";
 import { useStatisticsActions, useStatisticsEntriesQuery, useStatisticsEntryQuery } from "./query";
 import { useStatisticsUi } from "./store";
-
-const VOICE_QUERY = { query: "", limit: 500, offset: 0 };
 
 export function StatisticsScreen() {
   const entriesQuery = useStatisticsEntriesQuery();
@@ -108,14 +105,11 @@ export function StatisticsScreen() {
 }
 
 function StatisticsBody({ payload, tab, onTab }: { payload: StatisticsPayload; tab: CorpusTab; onTab: (t: CorpusTab) => void }) {
-  const voicesQuery = useVoicesQuery(VOICE_QUERY);
-  const nameById = new Map((voicesQuery.data?.rows ?? []).map((voice) => [voice.id, voice.name]));
   const histograms = audioHistograms(payload);
+  const voiceDistributions = voiceHistograms(payload);
   const scatters = rateScatters(payload);
   const tiles = audioTiles(payload);
   const warnings = textWarnings(payload);
-  const speakers = speakerDuration(payload);
-  const voices = voiceSamples(payload, nameById);
   const corpus = corpusData(payload, tab);
 
   return (
@@ -167,16 +161,11 @@ function StatisticsBody({ payload, tab, onTab }: { payload: StatisticsPayload; t
       </div>
 
       <div className="mb-[14px] grid grid-cols-2 gap-[14px]">
-        {speakers.length > 0 ? (
-          <ChartCard title="Duration per speaker" unit="time">
-            <HBars items={speakers} tone="blue" />
+        {voiceDistributions.map((histogram) => (
+          <ChartCard key={histogram.title} title={histogram.title} unit={histogram.unit}>
+            <Histogram edges={histogram.edges} counts={histogram.counts} tone={histogram.tone} countLabel="voices" />
           </ChartCard>
-        ) : null}
-        {voices.length > 0 ? (
-          <ChartCard title="Samples per voice" unit="count">
-            <HBars items={voices} tone="emerald" />
-          </ChartCard>
-        ) : null}
+        ))}
       </div>
 
       <div className="mt-[26px] mb-[14px] flex items-center gap-[14px]">

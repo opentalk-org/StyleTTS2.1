@@ -8,19 +8,18 @@ from pydantic import Field
 from runflow.core.node import Node
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
+from runner.nodes.audio_segments.alignment_merge import alignment_midpoint, merge_alignment_tracks
 from runner.nodes.datatypes import AudioPort
 from runner.nodes.models import Audio, AudioSegment
 
 
 class MergeAlignmentSettings(StrictSettings):
-    # Two words are treated as the same word (a duplicate to collapse) when they
-    # share text and their spans are within this many seconds of each other.
-    dedupe_window_sec: float = Field(default=0.2, ge=0.0, le=2.0, title="Dedupe window (s)")
+    dedupe_window_sec: float = Field(default=0.2, ge=0.0, le=2.0, title="Preferred match window (s)")
 
 
 class MergeAlignmentNode(Node):
     NODE_TYPE = "MergeAlignment"
-    DESCRIPTION = "Merge the per-word alignment of two versions of the same recording. Segments and text come from the first audio input; each segment's word timings are the best combination of its own words and the second input's words that fall within it. Duplicate words (the same word at nearly the same time) are collapsed, keeping the higher-scored one, so two aligners contribute their best timings without doubling up. Use it to combine the outputs of different aligners on one recording; tune the dedupe window to control how close two matching words must be to count as the same word."
+    DESCRIPTION = "Merge the per-word alignment of two versions of the same recording. Segments and text come from the first audio input; each segment's word timings are the best combination of its own words and the second input's words that fall within it. Matching words are paired one-to-one across aligners even when their timings are misaligned, while genuine repetitions within one alignment are preserved. The higher-scored timing wins each pair."
     CATEGORY = "Audio"
     SETTINGS = MergeAlignmentSettings
     INPUTS = {"audio_a": AudioPort(), "audio_b": AudioPort()}
@@ -43,39 +42,9 @@ class MergeAlignmentNode(Node):
         return replace(audio_a, segments=segments)
 
     def _merge_segment(self, seg: AudioSegment, other_words: list[dict[str, Any]]) -> AudioSegment:
-        in_span = [word for word in other_words if seg.start <= _midpoint(word) <= seg.end]
-        merged = _merge_words([*(seg.alignment or []), *in_span], self.settings.dedupe_window_sec)
+        in_span = [word for word in other_words if seg.start <= alignment_midpoint(word) <= seg.end]
+        merged = merge_alignment_tracks(
+            [seg.alignment or [], in_span],
+            self.settings.dedupe_window_sec,
+        )
         return replace(seg, alignment=merged)
-
-
-def _merge_words(words: list[dict[str, Any]], window_sec: float) -> list[dict[str, Any]] | None:
-    ordered = sorted(words, key=lambda word: (float(word["start"]), float(word["end"])))
-    merged: list[dict[str, Any]] = []
-    for word in ordered:
-        duplicate = next((i for i, kept in enumerate(merged) if _same_word(kept, word, window_sec)), None)
-        if duplicate is None:
-            merged.append(dict(word))
-        elif _score(word) > _score(merged[duplicate]):
-            merged[duplicate] = dict(word)
-    merged.sort(key=lambda word: float(word["start"]))
-    return merged or None
-
-
-def _same_word(a: dict[str, Any], b: dict[str, Any], window_sec: float) -> bool:
-    if _normalized(a["word"]) != _normalized(b["word"]):
-        return False
-    overlaps = float(a["start"]) < float(b["end"]) and float(b["start"]) < float(a["end"])
-    return overlaps or abs(_midpoint(a) - _midpoint(b)) <= window_sec
-
-
-def _normalized(word: str) -> str:
-    return "".join(char for char in str(word).lower() if char.isalnum())
-
-
-def _midpoint(word: dict[str, Any]) -> float:
-    return (float(word["start"]) + float(word["end"])) / 2
-
-
-def _score(word: dict[str, Any]) -> float:
-    score = word.get("score")
-    return float(score) if score is not None else -1.0
