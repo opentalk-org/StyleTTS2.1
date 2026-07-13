@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
 
@@ -9,7 +8,14 @@ from runflow.core.node import Node
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.datatypes import AudioPort, SaveResultPort
-from runner.nodes.models import Audio, AudioRecordRef, AudioSegment, SaveResult, SegmentGroup, stable_id
+from runner.nodes.models import Audio, AudioRecordRef, SaveResult, SegmentGroup, stable_id
+from runner.nodes.audio_segments.writeback_helpers import (
+    audio_ref_from_audio as _audio_ref_from_audio,
+    audio_segment_from_dict as _audio_segment_from_dict,
+    new_group_segments as _new_group_segments,
+    save_result as _save_result,
+    segment_group_from_audio as _segment_group_from_audio,
+)
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 from shared.db.audio.models import AudioFile
@@ -77,14 +83,18 @@ class UpdateAudioRecordBytesNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        outputs = []
+        audios: list[Audio] = [inputs["audio"] for inputs in batch]
         with database_session() as session:
-            for inputs in batch:
+            items = audio_crud.get_audio_files_bulk(
+                session,
+                [audio.audio_file_id for audio in audios],
+            )
+            payloads = {}
+            for audio in audios:
                 context.check_cancel()
-                audio: Audio = inputs["audio"]
                 assert audio.data is not None, f"audio bytes are required: {audio.id}"
-                item = audio_crud.get_audio_file(session, audio.audio_file_id)
-                payload = AudioUpdate(
+                item = items[audio.audio_file_id]
+                payloads[audio.audio_file_id] = AudioUpdate(
                     name=item.name,
                     wav_bytes=audio.data,
                     duration=audio.duration,
@@ -96,10 +106,11 @@ class UpdateAudioRecordBytesNode(Node):
                     metadata=_audio_metadata(audio),
                     virtual=item.virtual,
                 )
-                updated = audio_crud.update_audio_file(session, audio.audio_file_id, payload)
-                context.check_cancel()
-                outputs.append(_audio_writeback_output(updated, audio, "updated"))
-        return outputs
+            updated_by_id = audio_crud.bulk_update_audio_files(session, payloads)
+        return [
+            _audio_writeback_output(updated_by_id[audio.audio_file_id], audio, "updated")
+            for audio in context.cancellable(audios)
+        ]
 
 
 class LoadAudioSegmentsNode(Node):
@@ -218,103 +229,3 @@ def _audio_writeback_output(item: AudioFile, source: Audio, action: str) -> dict
         "audio": audio,
         "save_result": _save_result(f"db/audio/{item.id}", "audio_record", source.lineage_id, {"action": action}),
     }
-
-
-def _audio_ref_from_audio(audio: Audio) -> AudioRecordRef:
-    return AudioRecordRef(audio.audio_file_id, audio.name, audio.duration, audio.byte_length, audio.virtual, audio.metadata)
-
-
-def _segment_group_from_audio(audio: Audio) -> SegmentGroup:
-    group_id = stable_id("segment_group", audio.id, *(segment.id for segment in audio.segments))
-    return SegmentGroup(audio.name, audio.segments, group_id, audio.lineage_id, audio.metadata)
-
-
-def _audio_segment_from_dict(ref: AudioRecordRef, segment: dict[str, Any]) -> AudioSegment:
-    segment_id = str(segment["id"])
-    speaker = str(segment["speaker"]) if "speaker" in segment else None
-    metadata = dict(segment["metadata"]) if isinstance(segment.get("metadata"), dict) else {}
-    metadata.setdefault("type_", _segment_type(segment))
-    return AudioSegment(
-        source_audio_id=ref.audio_file_id,
-        name=ref.name,
-        start=float(segment["start"]),
-        end=float(segment["end"]),
-        sample_rate=int(ref.metadata["sample_rate"]),
-        channels=int(ref.metadata["channels"]) if "channels" in ref.metadata else 1,
-        text=str(segment["text"]),
-        phon=str(segment["phon"]),
-        id=stable_id("segment", ref.audio_file_id, segment_id),
-        lineage_id=stable_id("segment_lineage", ref.audio_file_id, segment_id),
-        segment_id=segment_id,
-        speaker=speaker,
-        voice_id=_optional_uuid(segment["voice_id"]) if "voice_id" in segment else None,
-        confidence=_optional_float(segment.get("confidence")),
-        metadata=metadata,
-        alignment=segment["alignment"] if isinstance(segment.get("alignment"), list) else None,
-    )
-
-
-def _segment_dict(segment: AudioSegment) -> dict[str, Any]:
-    type_ = _segment_type({"metadata": segment.metadata})
-    return {
-        "id": _segment_entry_id(segment),
-        "start": segment.start,
-        "end": segment.end,
-        "text": segment.text,
-        "phon": segment.phon,
-        "speaker": segment.speaker or "",
-        "voice_id": str(segment.voice_id) if segment.voice_id is not None else None,
-        "confidence": segment.confidence,
-        "type_": type_,
-        "metadata": {**segment.metadata, "type_": type_},
-        "alignment": segment.alignment,
-    }
-
-
-def _new_group_segments(group: SegmentGroup, mode: Literal["replace", "append"], existing: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    new_segments = [_segment_dict(segment) for segment in group.segments]
-    if mode == "append":
-        new_segments = [*existing, *new_segments]
-    return sorted(new_segments, key=_segment_sort_key)
-
-
-def _segment_sort_key(segment: dict[str, Any]) -> tuple[float, float, str, str]:
-    return (
-        float(segment["start"]),
-        float(segment["end"]),
-        _segment_type(segment),
-        str(segment["id"]),
-    )
-
-
-def _segment_type(segment: dict[str, Any]) -> str:
-    if segment.get("type_"):
-        return str(segment["type_"])
-    metadata = segment.get("metadata")
-    if isinstance(metadata, dict):
-        if metadata.get("type_"):
-            return str(metadata["type_"])
-        if metadata.get("model"):
-            return str(metadata["model"])
-    return "manual"
-
-
-def _segment_entry_id(segment: AudioSegment) -> str:
-    return segment.segment_id or segment.id
-
-
-def _optional_uuid(value: object) -> UUID | None:
-    if value is None or value == "":
-        return None
-    return UUID(str(value))
-
-
-def _optional_float(value: object) -> float | None:
-    if value is None or value == "":
-        return None
-    return float(value)  # type: ignore[arg-type]
-
-
-def _save_result(path: str, kind: str, lineage_id: str, metadata: dict[str, Any]) -> SaveResult:
-    result_id = stable_id("save", path, kind, lineage_id)
-    return SaveResult(Path(path), kind, result_id, lineage_id, metadata)

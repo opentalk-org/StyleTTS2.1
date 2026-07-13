@@ -56,20 +56,26 @@ class LoadAudioNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
+        audios = [inputs["audio"] for inputs in batch]
+        missing_ids = [audio.audio_file_id for audio in audios if audio.data is None]
+        stored = {}
+        if missing_ids:
+            with database_session() as session:
+                context.check_cancel()
+                stored = audio_crud.bulk_read_audio_files(session, missing_ids)
         outputs = []
-        with database_session() as session:
-            for inputs in batch:
-                audio: Audio = inputs["audio"]
-                data = audio.data if audio.data is not None else audio_crud.read_audio_file(session, audio.audio_file_id)
-                loaded = replace(
-                    audio,
-                    data=data,
-                    sample_rate=self.settings.sample_rate,
-                    channels=self.settings.channels,
-                    metadata={**audio.metadata, "byte_length": len(data), "source_duration": audio.duration},
-                    byte_length=len(data),
-                )
-                outputs.append({"audio": loaded})
+        for audio in audios:
+            context.check_cancel()
+            data = audio.data if audio.data is not None else stored[audio.audio_file_id]
+            loaded = replace(
+                audio,
+                data=data,
+                sample_rate=self.settings.sample_rate,
+                channels=self.settings.channels,
+                metadata={**audio.metadata, "byte_length": len(data), "source_duration": audio.duration},
+                byte_length=len(data),
+            )
+            outputs.append({"audio": loaded})
         return outputs
 
 

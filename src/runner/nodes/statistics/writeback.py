@@ -30,18 +30,24 @@ class SaveStatisticsEntryNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1})
 
     async def execute(self, batch, context):
-        outputs = []
-        for inputs in batch:
+        payloads = []
+        for inputs in context.cancellable(batch):
             payload = inputs["statistics"]
             assert isinstance(payload, dict), f"statistics payload must be a dict, got {type(payload).__name__}"
-            create_payload = StatisticsEntryCreate(
+            payloads.append(StatisticsEntryCreate(
                 name=self.settings.name,
                 dataset_id=self.settings.dataset_id,
                 payload=payload,
                 metadata=self.settings.metadata,
-            )
-            with database_session() as session:
-                entry = statistics_crud.create_statistics_entry(session, create_payload)
-                read = StatisticsEntryRead.model_validate(entry).model_dump(mode="json", by_alias=False)
-            outputs.append({"statistics_entry": read})
-        return outputs
+            ))
+        with database_session() as session:
+            entries = statistics_crud.bulk_create_statistics_entries(session, payloads)
+        return [
+            {
+                "statistics_entry": StatisticsEntryRead.model_validate(entry).model_dump(
+                    mode="json",
+                    by_alias=False,
+                )
+            }
+            for entry in entries
+        ]
