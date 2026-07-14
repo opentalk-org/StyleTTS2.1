@@ -17,6 +17,7 @@ from backend.datasets import router as datasets_router
 from backend.jobs import router as jobs_router
 from backend.mos import router as mos_router
 from backend.runners import router as runners_router
+from backend.reviews import review_router
 from backend.settings import router as settings_router
 from backend.statistics import router as statistics_router
 from backend.voices import router as voices_router
@@ -66,6 +67,7 @@ app.include_router(datasets_router)
 app.include_router(jobs_router)
 app.include_router(mos_router)
 app.include_router(runners_router)
+app.include_router(review_router(manager))
 app.include_router(settings_router)
 app.include_router(statistics_router)
 app.include_router(voices_router)
