@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
 
@@ -15,22 +16,28 @@ def consolidate_labels(
     min_support_pairs: int,
     max_members: int,
     *,
+    block_rows: int,
     prototype_neighbors: np.ndarray,
+    check_cancel: Callable[[], None] | None = None,
 ) -> int:
+    _validate_block_rows(block_rows)
     connection = sqlite3.connect(":memory:")
+    progress = _SqliteCancellation(check_cancel)
+    connection.set_progress_handler(progress, 1_000)
     try:
         _create_support_table(connection)
-        block_rows = _count_support(connection, labels, edge_blocks, None)
+        _count_support(connection, labels, edge_blocks, block_rows, check_cancel)
         return _apply_supported_merges(
             connection,
             labels,
             prototype_neighbors,
             min_support_pairs,
             max_members,
-            max(block_rows, 1),
-            None,
+            block_rows,
+            check_cancel,
         )
     finally:
+        connection.set_progress_handler(None, 0)
         connection.close()
 
 
@@ -40,23 +47,27 @@ def consolidate_labels_on_disk(
     database_path: Path,
     min_support_pairs: int,
     max_members: int,
+    block_rows: int,
     check_cancel: Callable[[], None] | None = None,
     *,
     prototype_neighbors: np.ndarray,
 ) -> int:
+    _validate_block_rows(block_rows)
     connection = sqlite3.connect(database_path)
+    progress = _SqliteCancellation(check_cancel)
+    connection.set_progress_handler(progress, 1_000)
     try:
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=NORMAL")
         _create_support_table(connection)
-        block_rows = _count_support(connection, labels, edge_blocks, check_cancel)
+        _count_support(connection, labels, edge_blocks, block_rows, check_cancel)
         merged_count = _apply_supported_merges(
             connection,
             labels,
             prototype_neighbors,
             min_support_pairs,
             max_members,
-            max(block_rows, 1),
+            block_rows,
             check_cancel,
         )
         if isinstance(labels, np.memmap):
@@ -64,6 +75,7 @@ def consolidate_labels_on_disk(
             labels.flush()
         return merged_count
     finally:
+        connection.set_progress_handler(None, 0)
         connection.close()
 
 
@@ -80,13 +92,12 @@ def _count_support(
     connection: sqlite3.Connection,
     labels: np.ndarray,
     edge_blocks: Iterable[EdgeBlock],
+    block_rows: int,
     check_cancel: Callable[[], None] | None,
-) -> int:
+) -> None:
     statement = "INSERT OR IGNORE INTO support_members VALUES (?, ?, ?, ?)"
-    block_rows = 0
     for block in edge_blocks:
         _check_cancel(check_cancel)
-        block_rows = max(block_rows, len(block.left_ids))
         left_clusters = labels[block.left_ids]
         right_clusters = labels[block.right_ids]
         valid = (
@@ -97,16 +108,20 @@ def _count_support(
         left_first = left_clusters[valid] < right_clusters[valid]
         left_members = block.left_ids[valid]
         right_members = block.right_ids[valid]
-        rows = zip(
-            np.where(left_first, left_clusters[valid], right_clusters[valid]).tolist(),
-            np.where(left_first, right_clusters[valid], left_clusters[valid]).tolist(),
-            np.where(left_first, left_members, right_members).tolist(),
-            np.where(left_first, right_members, left_members).tolist(),
-            strict=True,
+        columns = (
+            np.where(left_first, left_clusters[valid], right_clusters[valid]),
+            np.where(left_first, right_clusters[valid], left_clusters[valid]),
+            np.where(left_first, left_members, right_members),
+            np.where(left_first, right_members, left_members),
         )
-        connection.executemany(statement, rows)
+        for start in range(0, len(columns[0]), block_rows):
+            _check_cancel(check_cancel)
+            stop = min(start + block_rows, len(columns[0]))
+            rows = zip(
+                *(column[start:stop].tolist() for column in columns), strict=True
+            )
+            connection.executemany(statement, rows)
         connection.commit()
-    return block_rows
 
 
 def _apply_supported_merges(
@@ -178,3 +193,17 @@ def _cluster_sizes(
 def _check_cancel(check_cancel: Callable[[], None] | None) -> None:
     if check_cancel is not None:
         check_cancel()
+
+
+def _validate_block_rows(block_rows: int) -> None:
+    if block_rows <= 0:
+        raise ValueError("consolidation block_rows must be positive")
+
+
+@dataclass(frozen=True)
+class _SqliteCancellation:
+    check_cancel: Callable[[], None] | None
+
+    def __call__(self) -> int:
+        _check_cancel(self.check_cancel)
+        return 0

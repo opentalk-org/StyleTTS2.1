@@ -31,6 +31,29 @@ nix develop --command uv run --frozen --with pytest python -m pytest \
 
 The temporary test was removed before commit.
 
+## SQLite cancellation follow-up
+
+- Both consolidation APIs now require an explicit positive configured
+  `block_rows`; empty edge graphs still scan and remap labels in those configured
+  blocks.
+- Support-row insertion uses bounded `executemany` chunks with cancellation
+  checks between chunks.
+- SQLite connections install a progress handler that calls `check_cancel` during
+  long insert and `COUNT(DISTINCT)` VM work, and clear it in `finally` before
+  closing.
+
+Focused follow-up evidence:
+
+```text
+nix develop --command uv run --frozen --with pytest python -m pytest \
+  tmp_tests/test_task4_sqlite_cancellation_temp.py -q
+.....                                                                    [100%]
+5 passed
+```
+
+The follow-up suite also rechecked reciprocal prototype gating and distinct
+member support, then was removed before commit.
+
 ## Scope
 
 Only Task 4 microcluster/prototype/support modules and this report are included.
