@@ -16,6 +16,7 @@ from shared.db.speakers.schemas import (
     ClusteringArtifactCreate,
     ClusteringArtifactRole,
     ClusteringRunCreate,
+    ClusteringOutcomeCounts,
     ClusteringRunState,
     EmbeddingRunState,
 )
@@ -118,7 +119,10 @@ def list_clustering_artifacts(
 
 def clear_open_clustering_artifacts(session: Session, run_id: UUID) -> list[UUID]:
     run = _locked_run(session, run_id)
-    if run.state != ClusteringRunState.OPEN.value:
+    if run.state not in {
+        ClusteringRunState.OPEN.value,
+        ClusteringRunState.FAILED.value,
+    }:
         raise ValueError(f"speaker clustering run {run_id} is {run.state}")
     artifact_ids = list(
         session.scalars(
@@ -127,13 +131,16 @@ def clear_open_clustering_artifacts(session: Session, run_id: UUID) -> list[UUID
             )
         )
     )
-    session.query(SpeakerClusteringArtifact).filter(
-        SpeakerClusteringArtifact.run_id == run_id
-    ).delete()
     session.query(SpeakerClusterSummary).filter(
         SpeakerClusterSummary.run_id == run_id
     ).delete()
     run.assignment_count = 0
+    run.outcome_counts = None
+    run.failure_details = None
+    run.prototype_artifact_id = None
+    run.index_artifact_id = None
+    run.completed_at = None
+    run.state = ClusteringRunState.OPEN.value
     session.commit()
     return artifact_ids
 
@@ -165,12 +172,41 @@ def replace_cluster_summaries(
     return rows
 
 
+def append_cluster_summaries(
+    session: Session,
+    run_id: UUID,
+    payloads: list[ClusterSummaryCreate],
+) -> None:
+    run = _locked_run(session, run_id)
+    if run.state != ClusteringRunState.OPEN.value:
+        raise ValueError(f"speaker clustering run {run_id} is {run.state}")
+    session.add_all(
+        SpeakerClusterSummary(run_id=run_id, **payload.model_dump(mode="json"))
+        for payload in payloads
+    )
+    session.commit()
+
+
+def fail_clustering_run(
+    session: Session, run_id: UUID, details: dict[str, object]
+) -> SpeakerClusteringRun:
+    run = _locked_run(session, run_id)
+    if run.state == ClusteringRunState.COMPLETED.value:
+        raise ValueError(f"speaker clustering run {run_id} is completed")
+    run.state = ClusteringRunState.FAILED.value
+    run.failure_details = details
+    session.commit()
+    session.refresh(run)
+    return run
+
+
 def complete_clustering_run(
     session: Session,
     run_id: UUID,
     assignment_count: int,
     prototype_artifact_id: UUID,
     index_artifact_id: UUID,
+    outcome_counts: ClusteringOutcomeCounts,
 ) -> SpeakerClusteringRun:
     run = _locked_run(session, run_id)
     if run.state != ClusteringRunState.OPEN.value:
@@ -181,18 +217,22 @@ def complete_clustering_run(
             SpeakerClusteringArtifact.role == ClusteringArtifactRole.ASSIGNMENT.value,
         )
     )
+    counted_outcomes = sum(outcome_counts.model_dump().values())
     if (
         persisted_count != assignment_count
         or assignment_count != run.expected_count
+        or counted_outcomes != assignment_count
     ):
         raise ValueError(
             f"cannot complete clustering run {run_id}: persisted assignment count "
             f"{persisted_count}, declared {assignment_count}, "
-            f"expected {run.expected_count}"
+            f"outcome count {counted_outcomes}, expected {run.expected_count}"
         )
     run.assignment_count = assignment_count
     run.prototype_artifact_id = prototype_artifact_id
     run.index_artifact_id = index_artifact_id
+    run.outcome_counts = outcome_counts.model_dump()
+    run.failure_details = None
     run.state = ClusteringRunState.COMPLETED.value
     run.completed_at = datetime.now(UTC)
     session.commit()

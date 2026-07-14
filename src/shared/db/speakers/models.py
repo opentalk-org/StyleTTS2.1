@@ -101,6 +101,8 @@ class SpeakerClusteringRun(Base):
     state: Mapped[str] = mapped_column(
         String(32), nullable=False, default=ClusteringRunState.OPEN.value
     )
+    outcome_counts: Mapped[dict[str, int] | None] = mapped_column(JSONB, nullable=True)
+    failure_details: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     prototype_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("extra_files.id", ondelete="RESTRICT"), nullable=True
     )
@@ -119,7 +121,7 @@ class SpeakerClusteringArtifact(Base):
     __tablename__ = "speaker_clustering_artifacts"
     __table_args__ = (
         CheckConstraint(
-            "role IN ('candidate', 'assignment', 'prototype', 'index')",
+            "role IN ('candidate', 'assignment', 'prototype', 'index', 'manifest')",
             name="ck_speaker_clustering_artifacts_role",
         ),
         UniqueConstraint(
@@ -139,7 +141,7 @@ class SpeakerClusteringArtifact(Base):
         index=True,
     )
     artifact_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("extra_files.id", ondelete="RESTRICT"), nullable=False
+        ForeignKey("extra_files.id", ondelete="CASCADE"), nullable=False
     )
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     ordinal: Mapped[int] = mapped_column(Integer, nullable=False)

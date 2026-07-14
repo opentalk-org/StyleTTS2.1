@@ -5,9 +5,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shared.db.speakers.clustering_crud import (
+    append_cluster_summaries as append_cluster_summaries,
     clear_open_clustering_artifacts as clear_open_clustering_artifacts,
     complete_clustering_run as complete_clustering_run,
     create_clustering_run as create_clustering_run,
+    fail_clustering_run as fail_clustering_run,
     get_clustering_run as get_clustering_run,
     list_clustering_artifacts as list_clustering_artifacts,
     register_clustering_artifact as register_clustering_artifact,

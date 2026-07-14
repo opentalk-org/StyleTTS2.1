@@ -79,6 +79,7 @@ class ClusteringArtifactRole(StrEnum):
     ASSIGNMENT = "assignment"
     PROTOTYPE = "prototype"
     INDEX = "index"
+    MANIFEST = "manifest"
 
 
 class ClusteringRunCreate(BaseModel):
@@ -109,3 +110,10 @@ class ClusteringRunComplete(BaseModel):
     assignment_count: int = Field(ge=0)
     prototype_artifact_id: UUID
     index_artifact_id: UUID
+
+
+class ClusteringOutcomeCounts(BaseModel):
+    accepted: int = Field(ge=0)
+    provisional_new: int = Field(ge=0)
+    ambiguous: int = Field(ge=0)
+    rejected: int = Field(ge=0)

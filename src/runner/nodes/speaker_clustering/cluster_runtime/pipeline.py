@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable
 from functools import partial
 from pathlib import Path
 import shutil
+from uuid import UUID
 
 import numpy as np
 from pydantic import Field
@@ -25,9 +26,11 @@ from runner.nodes.speaker_clustering.cluster_runtime.artifacts import (
     write_prototype_shards,
 )
 from runner.nodes.speaker_clustering.cluster_runtime.persistence import (
+    fail_clustering_run,
     persist_clustering_outputs,
     prepare_clustering_run,
 )
+from shared.db.speakers.schemas import ClusteringOutcomeCounts
 from runner.nodes.speaker_clustering.edge_shards import (
     EdgeBlock,
     iter_edge_paths,
@@ -96,8 +99,25 @@ def run_clustering_pipeline(
     if completed is not None:
         return completed
     scratch = work_dir / "speaker-clustering"
-    if scratch.exists():
-        shutil.rmtree(scratch)
+    try:
+        return _execute_clustering_pipeline(
+            run_id, embedding_set, settings, work_dir, check_cancel, report_stage
+        )
+    except BaseException as error:
+        fail_clustering_run(run_id, error)
+        raise
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _execute_clustering_pipeline(
+    run_id: UUID, embedding_set: SpeakerEmbeddingSetRef,
+    settings: ClusterSpeakerEmbeddingsSettings, work_dir: Path,
+    check_cancel: Callable[[], None],
+    report_stage: Callable[[int, str], None],
+) -> SpeakerClusterRunRef:
+    scratch = work_dir / "speaker-clustering"
+    shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
     blocks = partial(
         iter_embedding_blocks,
@@ -220,6 +240,7 @@ def run_clustering_pipeline(
         prototype_paths,
         index_path,
         embedding_set.item_count,
+        ClusteringOutcomeCounts(**assignment_result.counts.__dict__),
     )
     report_stage(9, "speaker clustering complete")
     return result
