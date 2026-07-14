@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, defer
 
 from shared.db.jobs.models import Job, NodeLog
 from shared.db.jobs.schemas import JobUpsert, NodeLogUpsert
+from shared.db.reviews.models import WorkflowReview
 from shared.schemas import RunState
 
 
@@ -27,6 +28,15 @@ def list_jobs(session: Session, limit: int, offset: int) -> tuple[Sequence[Job],
         .offset(offset)
     ).scalars().all()
     total = session.execute(select(func.count()).select_from(Job)).scalar_one()
+    counts = dict(
+        session.execute(
+            select(WorkflowReview.producer_run_id, func.count())
+            .where(WorkflowReview.producer_run_id.in_([row.run_id for row in rows]))
+            .group_by(WorkflowReview.producer_run_id)
+        ).all()
+    )
+    for row in rows:
+        row.review_count = int(counts.get(row.run_id, 0))
     return rows, total
 
 

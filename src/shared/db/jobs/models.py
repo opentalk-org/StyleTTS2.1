@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, ClassVar
 from uuid import UUID as PythonUUID, uuid4
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Text, UniqueConstraint
@@ -28,6 +28,7 @@ class Job(Base):
     # restart still shows which node failed rather than a blank graph.
     snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    review_count: ClassVar[int] = 0
 
 
 class NodeLog(Base):

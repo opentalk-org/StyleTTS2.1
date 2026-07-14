@@ -37,6 +37,7 @@ class JobSummary(BaseModel):
     finished_at: datetime | None
     error: str | None
     updated_at: datetime
+    review_count: int = Field(ge=0)
     model_config = ConfigDict(from_attributes=True)
 
 
