@@ -6,7 +6,7 @@ from pathlib import Path
 import shutil
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from runflow.core.settings import StrictSettings
 from runner.nodes.models import SpeakerClusterRunRef, SpeakerEmbeddingSetRef
@@ -71,7 +71,8 @@ class ClusterSpeakerEmbeddingsSettings(StrictSettings):
     prototype_shard_rows: int = Field(default=50_000, gt=0)
     threshold_version: str = Field(min_length=1)
 
-    def model_post_init(self, __context: object) -> None:
+    @model_validator(mode="after")
+    def validate_threshold_contract(self) -> "ClusterSpeakerEmbeddingsSettings":
         if self.new_threshold >= self.accept_threshold:
             raise ValueError("new_threshold must be lower than accept_threshold")
         if (
@@ -84,6 +85,7 @@ class ClusterSpeakerEmbeddingsSettings(StrictSettings):
             and self.calibration_artifact_id is not None
         ):
             raise ValueError("exploratory thresholds cannot claim a calibration artifact")
+        return self
 
 
 def run_clustering_pipeline(
