@@ -15,7 +15,6 @@ from shared.db.speakers.schemas import (
     ClusterSummaryCreate,
     ClusteringArtifactCreate,
     ClusteringArtifactRole,
-    ClusteringRunComplete,
     ClusteringRunCreate,
     ClusteringRunState,
     EmbeddingRunState,
@@ -140,7 +139,9 @@ def replace_cluster_summaries(
 def complete_clustering_run(
     session: Session,
     run_id: UUID,
-    payload: ClusteringRunComplete,
+    assignment_count: int,
+    prototype_artifact_id: UUID,
+    index_artifact_id: UUID,
 ) -> SpeakerClusteringRun:
     run = _locked_run(session, run_id)
     if run.state != ClusteringRunState.OPEN.value:
@@ -152,17 +153,17 @@ def complete_clustering_run(
         )
     )
     if (
-        persisted_count != payload.assignment_count
-        or payload.assignment_count != run.expected_count
+        persisted_count != assignment_count
+        or assignment_count != run.expected_count
     ):
         raise ValueError(
             f"cannot complete clustering run {run_id}: persisted assignment count "
-            f"{persisted_count}, declared {payload.assignment_count}, "
+            f"{persisted_count}, declared {assignment_count}, "
             f"expected {run.expected_count}"
         )
-    run.assignment_count = payload.assignment_count
-    run.prototype_artifact_id = payload.prototype_artifact_id
-    run.index_artifact_id = payload.index_artifact_id
+    run.assignment_count = assignment_count
+    run.prototype_artifact_id = prototype_artifact_id
+    run.index_artifact_id = index_artifact_id
     run.state = ClusteringRunState.COMPLETED.value
     run.completed_at = datetime.now(UTC)
     session.commit()
