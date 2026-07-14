@@ -12,6 +12,8 @@ from runner.nodes.models import SpeakerEmbeddingSetRef
 from runner.nodes.speaker_clustering.shards import EmbeddingQuality
 from shared.db import database_session
 from shared.db.assets import crud as asset_crud
+from shared.db.speakers import crud as speaker_crud
+from shared.db.speakers.schemas import EmbeddingRunState
 
 
 @dataclass(frozen=True)
@@ -53,10 +55,27 @@ def iter_embedding_blocks(
     check_cancel: Callable[[], None] | None = None,
 ) -> Iterator[EmbeddingBlock]:
     with database_session() as session:
-        paths = [
-            asset_crud.get_extra_file_path(session, artifact_id)
-            for artifact_id in embedding_set.artifact_ids
-        ]
+        run = speaker_crud.get_embedding_run(session, embedding_set.run_id)
+        if run.state != EmbeddingRunState.SEALED.value:
+            raise ValueError(f"speaker embedding run {run.id} is {run.state}")
+        shards = speaker_crud.list_embedding_shards(session, embedding_set.run_id)
+        durable_artifact_ids = [shard.artifact_id for shard in shards]
+        if embedding_set.artifact_ids != durable_artifact_ids:
+            raise ValueError(
+                "speaker embedding set artifact manifest does not match ordered "
+                "durable manifest"
+            )
+        durable_rows = sum(shard.row_count for shard in shards)
+        if embedding_set.item_count != durable_rows:
+            raise ValueError(
+                f"speaker embedding set item count {embedding_set.item_count} does "
+                f"not match durable manifest row count {durable_rows}"
+            )
+        paths = []
+        for artifact_id in durable_artifact_ids:
+            if check_cancel is not None:
+                check_cancel()
+            paths.append(asset_crud.get_extra_file_path(session, artifact_id))
     yield from iter_embedding_paths(
         paths,
         dimension=embedding_set.dimension,

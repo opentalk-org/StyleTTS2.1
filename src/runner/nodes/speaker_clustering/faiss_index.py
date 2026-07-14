@@ -10,19 +10,29 @@ import numpy as np
 
 from runner.nodes.speaker_clustering.shard_reader import EmbeddingBlock
 from runner.nodes.speaker_clustering.shard_reader import iter_embedding_blocks
+from runner.nodes.speaker_clustering.reservoir import DeterministicVectorReservoir
 from runner.nodes.models import SpeakerEmbeddingSetRef
 
 
 @dataclass(frozen=True)
 class FaissIndexSettings:
-    index_factory: str
-    training_rows: int
-    search_probes: int
-    random_seed: int
+    index_factory: str = "IVF65536_HNSW32,Flat"
+    training_rows: int = 1_000_000
+    search_probes: int = 64
+    random_seed: int = 0
 
     def __post_init__(self) -> None:
         if self.training_rows <= 0 or self.search_probes <= 0:
             raise ValueError("FAISS training_rows and search_probes must be positive")
+
+    @classmethod
+    def for_test(cls) -> FaissIndexSettings:
+        return cls(
+            index_factory="Flat",
+            training_rows=1,
+            search_probes=1,
+            random_seed=0,
+        )
 
 
 @dataclass(frozen=True)
@@ -133,7 +143,11 @@ def build_candidate_index_from_blocks(
         check_cancel=check_cancel,
     )
     index = SpeakerCandidateIndex(dimension, settings)
+    if check_cancel is not None:
+        check_cancel()
     index.train(training_vectors)
+    if check_cancel is not None:
+        check_cancel()
     for block in block_factory():
         if check_cancel is not None:
             check_cancel()
@@ -149,65 +163,13 @@ def select_training_vectors(
     random_seed: int,
     check_cancel: Callable[[], None] | None = None,
 ) -> np.ndarray:
-    if maximum_rows <= 0:
-        raise ValueError(
-            f"training sample maximum_rows must be positive, got {maximum_rows}"
-        )
-    selected_vectors: np.ndarray | None = None
-    selected_ids = np.empty(0, dtype=np.int64)
-    selected_priorities = np.empty(0, dtype=np.uint64)
+    reservoir = DeterministicVectorReservoir(maximum_rows, random_seed)
     for block in blocks:
         if check_cancel is not None:
             check_cancel()
         accepted = block.accepted_mask
-        vectors = block.embeddings[accepted]
-        row_ids = block.row_ids[accepted]
-        priorities = _stable_priorities(row_ids, random_seed)
-        selected_vectors, selected_ids, selected_priorities = _retain_smallest(
-            selected_vectors,
-            selected_ids,
-            selected_priorities,
-            vectors,
-            row_ids,
-            priorities,
-            maximum_rows,
-        )
-    if selected_vectors is None or not len(selected_vectors):
-        raise ValueError("cannot train FAISS index without accepted speaker embeddings")
-    order = np.lexsort((selected_ids, selected_priorities))
-    return np.ascontiguousarray(selected_vectors[order], dtype=np.float32)
-
-
-def _retain_smallest(
-    selected_vectors: np.ndarray | None,
-    selected_ids: np.ndarray,
-    selected_priorities: np.ndarray,
-    vectors: np.ndarray,
-    row_ids: np.ndarray,
-    priorities: np.ndarray,
-    maximum_rows: int,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    combined_vectors = (
-        vectors if selected_vectors is None else np.vstack((selected_vectors, vectors))
-    )
-    combined_ids = np.concatenate((selected_ids, row_ids))
-    combined_priorities = np.concatenate((selected_priorities, priorities))
-    if len(combined_ids) <= maximum_rows:
-        return combined_vectors, combined_ids, combined_priorities
-    retained = np.argpartition(combined_priorities, maximum_rows - 1)[:maximum_rows]
-    return (
-        combined_vectors[retained],
-        combined_ids[retained],
-        combined_priorities[retained],
-    )
-
-
-def _stable_priorities(row_ids: np.ndarray, random_seed: int) -> np.ndarray:
-    values = np.asarray(row_ids, dtype=np.uint64) + np.uint64(random_seed)
-    values += np.uint64(0x9E3779B97F4A7C15)
-    values = (values ^ (values >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
-    values = (values ^ (values >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)
-    return values ^ (values >> np.uint64(31))
+        reservoir.add(block.row_ids[accepted], block.embeddings[accepted])
+    return reservoir.result()
 
 
 def _normalized(vectors: np.ndarray, dimension: int) -> np.ndarray:
