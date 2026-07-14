@@ -51,8 +51,9 @@ For each aligned segment:
    `min_break_time`.
 3. An internal candidate exists where the interval overlaps the temporal gap
    between two consecutive aligned words.
-4. If one interval overlaps multiple internal gaps, assign it only to the gap
-   with the greatest overlap. Stable chronological order breaks ties.
+4. Select at most one eligible boundary across the enabled start, internal, and
+   end candidates. Choose the boundary with the greatest overlap; stable
+   chronological order breaks ties.
 5. A start candidate exists where the interval overlaps the range from the
    segment start to the first aligned word, but only when `insert_at_start` is
    enabled.
