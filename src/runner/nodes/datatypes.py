@@ -32,6 +32,14 @@ class IntPort(Port):
 
 
 @dataclass(frozen=True)
+class BoolPort(Port):
+    TYPE_NAME = "BOOL"
+    python_type = bool
+    color = "#0F766E"
+    description = "Boolean"
+
+
+@dataclass(frozen=True)
 class FloatPort(Port):
     TYPE_NAME = "FLOAT"
     python_type = float
@@ -106,6 +114,7 @@ class SynthesisResultPort(Port):
 ALL_PORT_TYPES: list[type[Port]] = [
     TextPort,
     IntPort,
+    BoolPort,
     FloatPort,
     JsonPort,
     AudioPort,

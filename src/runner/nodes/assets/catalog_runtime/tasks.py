@@ -13,6 +13,8 @@ from runner.nodes.assets.model_downloads import download_hf_snapshot, download_n
 
 _NEMO_ASR_KINDS = {"parakeet", "canary", "sortformer"}
 _MOS_BASE_MODEL = "facebook/wav2vec2-xls-r-300m"
+_SMART_TURN_MODEL = "pipecat-ai/smart-turn-v3"
+_SMART_TURN_FILE = "smart-turn-v3.2-cpu.onnx"
 
 _TTS_DEFAULT_REPOS = {
     "kokoro": "hexgrad/Kokoro-82M",
@@ -183,6 +185,28 @@ def bootstrap_mos_model(item: str = "", *, logger: logging.Logger | None = None)
     }
 
 
+def bootstrap_turn_model(item: str = "", *, logger: logging.Logger | None = None) -> dict[str, Any]:
+    log = logger or _LOGGER
+    model_id = item.strip()
+    if model_id != _SMART_TURN_MODEL:
+        raise ValueError(f"catalog_item_unknown:{item}")
+    log.info("Smart Turn model download starting model=%s", model_id)
+    ref = ensure_model_checkpoint(
+        "smart_turn",
+        model_id,
+        lambda folder: download_hf_snapshot(model_id, folder, allow_patterns=[_SMART_TURN_FILE]),
+    )
+    log.info("Smart Turn model download resolved model=%s checkpoint=%s", model_id, ref.checkpoint_id)
+    return {
+        "model_checkpoint": {
+            "kind": "smart_turn",
+            "model_id": model_id,
+            "checkpoint_id": str(ref.checkpoint_id),
+            "name": ref.name,
+        }
+    }
+
+
 def _parse_tts_item(item: str) -> tuple[str, str]:
     requested = item.strip()
     engine, separator, repo = requested.partition(":")
@@ -245,5 +269,9 @@ CATALOG_DOWNLOAD_TASKS: dict[str, CatalogTask] = {
     "mos_models": CatalogTask(
         key="mos_models",
         run=bootstrap_mos_model,
+    ),
+    "turn_models": CatalogTask(
+        key="turn_models",
+        run=bootstrap_turn_model,
     ),
 }
