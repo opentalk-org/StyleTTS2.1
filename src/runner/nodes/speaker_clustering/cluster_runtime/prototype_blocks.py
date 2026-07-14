@@ -26,7 +26,6 @@ def finalize_prototype_statistics(
     dispersion: np.ndarray,
     member_counts: np.ndarray,
     suspicious: np.ndarray,
-    labels: np.ndarray,
     max_members: int,
     max_dispersion: float,
     block_rows: int,
@@ -41,16 +40,6 @@ def finalize_prototype_statistics(
         suspicious[start:stop] = (counts > max_members) | (
             (counts > 0) & (block_dispersion > max_dispersion)
         )
-    for start in range(0, len(labels), block_rows):
-        _check_cancel(check_cancel)
-        block = labels[start : start + block_rows]
-        valid = block >= 0
-        rejected = np.zeros(len(block), dtype=np.bool_)
-        rejected[valid] = suspicious[block[valid]]
-        block[rejected] = -1
-    if isinstance(labels, np.memmap):
-        _check_cancel(check_cancel)
-        labels.flush()
 
 
 def _check_cancel(check_cancel: Callable[[], None] | None) -> None:

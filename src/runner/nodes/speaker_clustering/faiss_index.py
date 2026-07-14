@@ -69,6 +69,10 @@ class SpeakerCandidateIndex:
     def item_count(self) -> int:
         return self._index.ntotal
 
+    @property
+    def requires_training(self) -> bool:
+        return not self._index.is_trained
+
     def train(self, vectors: np.ndarray) -> None:
         normalized = _normalized(vectors, self.dimension)
         if not self._index.is_trained:
@@ -101,9 +105,12 @@ class SpeakerCandidateIndex:
 
     def _configure_search(self) -> None:
         parameters = faiss.ParameterSpace()
+        parameter_name = (
+            "efSearch" if self.settings.index_factory.startswith("HNSW") else "nprobe"
+        )
         try:
             parameters.set_index_parameter(
-                self._index, "nprobe", self.settings.search_probes
+                self._index, parameter_name, self.settings.search_probes
             )
         except RuntimeError:
             if self.settings.index_factory != "Flat":

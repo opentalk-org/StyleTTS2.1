@@ -1,0 +1,61 @@
+{
+  "name": "Speaker clustering — sealed ECAPA set → conservative ANN clusters → audit",
+  "hidden": false,
+  "data": {
+    "nodes": [
+      {
+        "id": "embeddings",
+        "type": "SpeakerEmbeddingSetSource",
+        "x": 0,
+        "y": 120,
+        "params": {
+          "embedding_run_id": "00000000-0000-0000-0000-000000000000"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "cluster",
+        "type": "ClusterSpeakerEmbeddings",
+        "x": 380,
+        "y": 120,
+        "params": {},
+        "runtime": {}
+      },
+      {
+        "id": "audit",
+        "type": "AuditSpeakerClusters",
+        "x": 760,
+        "y": 120,
+        "params": {},
+        "runtime": {}
+      }
+    ],
+    "edges": [
+      {
+        "source_node": "embeddings",
+        "source_port": "embedding_set",
+        "target_node": "cluster",
+        "target_port": "embeddings"
+      },
+      {
+        "source_node": "cluster",
+        "source_port": "cluster_run",
+        "target_node": "audit",
+        "target_port": "cluster_run"
+      }
+    ],
+    "context": {
+      "work_dir": "work",
+      "cache_dir": "cache",
+      "output_dir": "outputs",
+      "device": "cpu",
+      "config": {
+        "resources": {
+          "io": 2,
+          "cpu_workers": 2
+        }
+      },
+      "input_items": []
+    }
+  }
+}

@@ -209,7 +209,6 @@ def build_prototype_store(
         store.dispersion,
         store.member_counts,
         store.suspicious,
-        labels,
         max_members,
         max_dispersion,
         block_rows,

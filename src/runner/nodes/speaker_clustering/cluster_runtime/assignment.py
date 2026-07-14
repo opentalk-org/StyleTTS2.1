@@ -70,6 +70,7 @@ def decide(
     quality: EmbeddingQuality,
     rejection_reason: str | None,
     provisional_cluster_id: int,
+    provisional_cluster_suspicious: bool,
     candidates: CandidateScores | None,
     policy: AssignmentPolicy,
 ) -> AssignmentDecision:
@@ -83,6 +84,15 @@ def decide(
             policy,
             AssignmentReason.QUALITY_REJECTED,
             rejection_reason,
+        )
+    if provisional_cluster_suspicious:
+        return _decision(
+            SpeakerAssignmentOutcome.AMBIGUOUS,
+            None,
+            candidates,
+            policy,
+            AssignmentReason.SUSPICIOUS_CLUSTER,
+            None,
         )
     if candidates is None:
         return _decision(

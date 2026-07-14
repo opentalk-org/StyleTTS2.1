@@ -116,6 +116,35 @@ def list_clustering_artifacts(
     )
 
 
+def clear_open_clustering_artifacts(session: Session, run_id: UUID) -> list[UUID]:
+    run = _locked_run(session, run_id)
+    if run.state != ClusteringRunState.OPEN.value:
+        raise ValueError(f"speaker clustering run {run_id} is {run.state}")
+    artifact_ids = list(
+        session.scalars(
+            select(SpeakerClusteringArtifact.artifact_id).where(
+                SpeakerClusteringArtifact.run_id == run_id
+            )
+        )
+    )
+    session.query(SpeakerClusteringArtifact).filter(
+        SpeakerClusteringArtifact.run_id == run_id
+    ).delete()
+    session.query(SpeakerClusterSummary).filter(
+        SpeakerClusterSummary.run_id == run_id
+    ).delete()
+    run.assignment_count = 0
+    session.commit()
+    return artifact_ids
+
+
+def get_clustering_run(session: Session, run_id: UUID) -> SpeakerClusteringRun:
+    run = session.get(SpeakerClusteringRun, run_id)
+    if run is None:
+        raise KeyError(f"speaker clustering run not found: {run_id}")
+    return run
+
+
 def replace_cluster_summaries(
     session: Session,
     run_id: UUID,
