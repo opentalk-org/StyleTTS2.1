@@ -182,11 +182,9 @@ class SpeakerClusterAudit(Base):
     __tablename__ = "speaker_cluster_audits"
     __table_args__ = (
         CheckConstraint(
-            "(state = 'open' AND report_artifact_id IS NULL "
-            "AND listening_artifact_id IS NULL AND metrics IS NULL "
+            "(state = 'open' AND review_id IS NULL AND metrics IS NULL "
             "AND completed_at IS NULL) OR "
-            "(state = 'completed' AND report_artifact_id IS NOT NULL "
-            "AND listening_artifact_id IS NOT NULL AND metrics IS NOT NULL "
+            "(state = 'completed' AND review_id IS NOT NULL AND metrics IS NOT NULL "
             "AND completed_at IS NOT NULL)",
             name="ck_speaker_cluster_audits_completed_integrity",
         ),
@@ -207,11 +205,10 @@ class SpeakerClusterAudit(Base):
     state: Mapped[str] = mapped_column(
         String(32), nullable=False, default=SpeakerAuditState.OPEN.value
     )
-    report_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("extra_files.id", ondelete="RESTRICT"), nullable=True
-    )
-    listening_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("extra_files.id", ondelete="RESTRICT"), nullable=True
+    review_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("workflow_reviews.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
     metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

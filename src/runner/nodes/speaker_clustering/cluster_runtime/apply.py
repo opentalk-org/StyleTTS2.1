@@ -14,6 +14,8 @@ from shared.db import database_session
 from shared.db.assets import crud as asset_crud
 from shared.db.audio import crud as audio_crud
 from shared.db.audio.speaker_assignment_crud import AcceptedSpeakerAssignment
+from shared.db.reviews import crud as review_crud
+from shared.db.reviews.schemas import ReviewState
 from shared.db.speakers import crud as speaker_crud
 from shared.db.speakers.schemas import (
     ClusteringArtifactRole,
@@ -121,9 +123,7 @@ class AssignmentSpool:
             yield [UUID(row[0]) for row in rows]
             cursor = rows[-1][0]
 
-    def assignments_for(
-        self, audio_ids: Sequence[UUID]
-    ) -> list[AcceptedSpeakerAssignment]:
+    def assignments_for(self, audio_ids: Sequence[UUID]) -> list[AcceptedSpeakerAssignment]:
         if not audio_ids:
             return []
         placeholders = ",".join("?" for _value in audio_ids)
@@ -210,15 +210,17 @@ def reconcile_cluster_voices(
         report_progress(pages, pages + 1, f"reconciled speaker voice page {pages}")
 
 
-def _apply_inputs(
-    audit_ref: SpeakerAuditRef,
-) -> tuple[list[Path], ApplyOutcomeCounts, ApplyCheckpoint]:
+def _apply_inputs(audit_ref: SpeakerAuditRef) -> tuple[list[Path], ApplyOutcomeCounts, ApplyCheckpoint]:
     with database_session() as session:
         audit = speaker_crud.get_audit(session, audit_ref.audit_id)
-        stored = (audit.cluster_run_id, audit.report_artifact_id, audit.listening_artifact_id)
-        incoming = (audit_ref.cluster_run_id, audit_ref.report_artifact_id, audit_ref.listening_artifact_id)
+        stored = (audit.cluster_run_id, audit.review_id)
+        incoming = (audit_ref.cluster_run_id, audit_ref.review_id)
         if audit.state != SpeakerAuditState.COMPLETED.value or stored != incoming:
             raise ValueError(f"speaker audit {audit.id} is not a completed durable match")
+        assert audit.review_id is not None
+        review = review_crud.get_review(session, audit.review_id)
+        if review.state != ReviewState.APPROVED.value:
+            raise ValueError(f"workflow review {review.id} is {review.state}")
         run = speaker_crud.get_clustering_run(session, audit.cluster_run_id)
         if run.state != ClusteringRunState.COMPLETED.value:
             raise ValueError(f"speaker clustering run {run.id} is {run.state}")

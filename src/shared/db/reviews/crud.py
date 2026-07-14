@@ -17,7 +17,9 @@ from shared.db.reviews.schemas import (
 )
 
 
-def create_review(session: Session, payload: ReviewCreate) -> WorkflowReview:
+def create_review(
+    session: Session, payload: ReviewCreate, *, commit: bool = True
+) -> WorkflowReview:
     existing = _review_for_identity(session, payload.kind, payload.source_key)
     if existing is not None:
         _validate_duplicate(existing, payload)
@@ -37,7 +39,10 @@ def create_review(session: Session, payload: ReviewCreate) -> WorkflowReview:
     )
     session.add(item)
     try:
-        session.commit()
+        if commit:
+            session.commit()
+        else:
+            session.flush()
     except IntegrityError:
         session.rollback()
         existing = _review_for_identity(session, payload.kind, payload.source_key)
@@ -45,7 +50,8 @@ def create_review(session: Session, payload: ReviewCreate) -> WorkflowReview:
             raise
         _validate_duplicate(existing, payload)
         return existing
-    session.refresh(item)
+    if commit:
+        session.refresh(item)
     return item
 
 

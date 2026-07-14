@@ -52,6 +52,7 @@ from runner.nodes.speaker_clustering import (
     CollectSpeakerEmbeddingsNode,
     ECAPASpeakerEmbedNode,
     SpeakerEmbeddingSetSourceNode,
+    SpeakerAuditSourceNode,
     SpeakerSegmentSource,
 )
 from runner.nodes.youtube_source import YouTubeAudioSourceNode
@@ -106,6 +107,7 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         SmartTurnPredictNode,
         SpeakerSegmentSource,
         SpeakerEmbeddingSetSourceNode,
+        SpeakerAuditSourceNode,
         ECAPASpeakerEmbedNode,
         CollectSpeakerEmbeddingsNode,
         ClusterSpeakerEmbeddingsNode,

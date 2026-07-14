@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-
 from pydantic import BaseModel, ConfigDict, Field
 
 from runner.nodes.speaker_clustering.audit_metrics import SpeakerAuditMetrics
@@ -52,11 +50,3 @@ class AssignmentAuditDocument(BaseModel):
     total_rows: int = Field(ge=0)
     metrics: SpeakerAuditMetrics
     listening_manifest: ListeningManifest
-
-
-class AssignmentAuditBuildResult(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    json_report_path: Path
-    html_report_path: Path
-    listening_manifest_path: Path

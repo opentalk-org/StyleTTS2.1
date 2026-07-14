@@ -179,8 +179,7 @@ class SpeakerClusterRunRef:
 class SpeakerAuditRef:
     audit_id: UUID
     cluster_run_id: UUID
-    report_artifact_id: UUID
-    listening_artifact_id: UUID
+    review_id: UUID
 
 
 @dataclass(frozen=True)

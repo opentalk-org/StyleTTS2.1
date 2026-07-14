@@ -63,8 +63,7 @@ def create_audit(
 def complete_audit(
     session: Session,
     audit_id: UUID,
-    report_artifact_id: UUID,
-    listening_artifact_id: UUID,
+    review_id: UUID,
     metrics: SpeakerAuditMetricsRecord,
 ) -> SpeakerClusterAudit:
     audit = _locked_audit(session, audit_id)
@@ -74,19 +73,17 @@ def complete_audit(
             audit.metrics
         ).model_dump(mode="json")
         stored = (
-            audit.report_artifact_id,
-            audit.listening_artifact_id,
+            audit.review_id,
             stored_metrics,
         )
-        incoming = (report_artifact_id, listening_artifact_id, metrics_payload)
+        incoming = (review_id, metrics_payload)
         if stored != incoming:
             raise ValueError(f"audit {audit_id} has different completion payload")
         session.commit()
         return audit
     if audit.state != SpeakerAuditState.OPEN.value:
         raise ValueError(f"speaker cluster audit {audit_id} is {audit.state}")
-    audit.report_artifact_id = report_artifact_id
-    audit.listening_artifact_id = listening_artifact_id
+    audit.review_id = review_id
     audit.metrics = metrics_payload
     audit.state = SpeakerAuditState.COMPLETED.value
     audit.completed_at = datetime.now(UTC)

@@ -13,11 +13,9 @@ from runner.nodes.speaker_clustering.audit_metrics import (
     score_distribution,
 )
 from runner.nodes.speaker_clustering.audit_report.models import (
-    AssignmentAuditBuildResult,
     AssignmentAuditDocument,
     AssignmentAuditInput,
 )
-from runner.nodes.speaker_clustering.audit_report.render import render_assignment_audit
 from runner.nodes.speaker_clustering.audit_report.scans import AssignmentParquetScan
 from runner.nodes.speaker_clustering.audit_report.selection import (
     select_listening_manifest,
@@ -40,14 +38,13 @@ MANIFEST_COLUMNS = (
 REQUIRED_COLUMNS = frozenset((*MANIFEST_COLUMNS, "candidate_scores"))
 
 
-def build_assignment_audit_report(
+def build_assignment_audit(
     assignment_paths: Sequence[Path],
-    output_dir: Path,
     batch_rows: int,
     category_limit: int,
     check_cancel: Callable[[], None],
     report_progress: Callable[[int, int], None],
-) -> AssignmentAuditBuildResult:
+) -> AssignmentAuditDocument:
     if category_limit <= 0:
         raise ValueError("category_limit must be positive")
     scan = AssignmentParquetScan.create(
@@ -70,12 +67,11 @@ def build_assignment_audit_report(
         frozenset(labeled.suspicious_cluster_ids),
         category_limit,
     )
-    document = AssignmentAuditDocument(
+    return AssignmentAuditDocument(
         total_rows=scan.total_rows,
         metrics=metrics,
         listening_manifest=manifest,
     )
-    return render_assignment_audit(document, output_dir)
 
 
 def _labeled_rows(scan: AssignmentParquetScan) -> Iterator[AssignmentAuditRow]:
