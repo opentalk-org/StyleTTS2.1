@@ -39,6 +39,7 @@ dependencies = [
     "phonemizer>=3.3",
     "pydantic>=2.9",
     "psycopg[binary]>=3.2",
+    "pyarrow>=20.0",
     "pyworld>=0.3",
     "pyyaml>=6.0",
     "python-multipart>=0.0.20",

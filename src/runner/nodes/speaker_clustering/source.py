@@ -66,7 +66,16 @@ class SpeakerSegmentSource(Node):
         outputs = []
         for reference in references:
             context.check_cancel()
-            outputs.append({"audio": _segment_audio(reference, stored[reference.audio_file_id], self._segment_count)})
+            outputs.append(
+                {
+                    "audio": _segment_audio(
+                        reference,
+                        stored[reference.audio_file_id],
+                        self._segment_count,
+                        self.settings.dataset_id,
+                    )
+                }
+            )
         self._after = references[-1].cursor
         self._emitted += len(outputs)
         await context.report_progress(
@@ -78,7 +87,12 @@ class SpeakerSegmentSource(Node):
         return outputs
 
 
-def _segment_audio(reference: SegmentReference, wav_bytes: bytes, source_count: int) -> Audio:
+def _segment_audio(
+    reference: SegmentReference,
+    wav_bytes: bytes,
+    source_count: int,
+    dataset_id: UUID,
+) -> Audio:
     source_ref = AudioRecordRef(
         audio_file_id=reference.audio_file_id,
         name=reference.audio_name,
@@ -121,6 +135,7 @@ def _segment_audio(reference: SegmentReference, wav_bytes: bytes, source_count: 
             "source_segment_id": segment.segment_id,
             "source_segment_index": reference.segment_index,
             "source_segment_count": source_count,
+            "dataset_id": str(dataset_id),
         },
         byte_length=len(clip_bytes),
         virtual=reference.audio_virtual,
