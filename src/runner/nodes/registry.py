@@ -46,6 +46,7 @@ from runner.nodes.hetzner import HetznerDsV1ParquetAudioSourceNode, HetznerDsV2S
 from runner.nodes.mos import BuildMosTrainingManifestNode, MosModelTrainingNode, PredictMosScoreNode
 from runner.nodes.smart_turn import SmartTurnPredictNode
 from runner.nodes.speaker_clustering import (
+    ApplySpeakerClustersNode,
     AuditSpeakerClustersNode,
     ClusterSpeakerEmbeddingsNode,
     CollectSpeakerEmbeddingsNode,
@@ -109,6 +110,7 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         CollectSpeakerEmbeddingsNode,
         ClusterSpeakerEmbeddingsNode,
         AuditSpeakerClustersNode,
+        ApplySpeakerClustersNode,
         AnalyzeAudioFeaturesNode,
         DatabaseStatisticsFeaturesNode,
         EmbedVoicesPcaPlotNode,

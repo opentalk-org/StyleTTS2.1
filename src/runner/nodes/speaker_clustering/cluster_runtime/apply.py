@@ -205,6 +205,7 @@ def apply_speaker_audit(
         "audit_id": str(audit_ref.audit_id),
         "cluster_run_id": str(audit_ref.cluster_run_id),
         "accepted_count": counts.accepted,
+        "provisional_new_count": counts.provisional_new,
         "ambiguous_count": counts.ambiguous,
         "rejected_count": counts.rejected,
         "created_voice_count": created_voice_count,
