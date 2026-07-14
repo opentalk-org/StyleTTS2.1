@@ -1,4 +1,6 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from uuid import UUID
 
 from sqlalchemy import select
@@ -12,6 +14,22 @@ from shared.db.speakers.schemas import (
     SpeakerAuditMetricsRecord,
     SpeakerAuditState,
 )
+
+
+class SpeakerAuditApplyState(StrEnum):
+    RUNNING = "running"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class SpeakerAuditApplyProgress:
+    state: SpeakerAuditApplyState
+    last_audio_id: UUID | None
+    updated_audio_count: int
+    total_audio_count: int
+    error: str | None
 
 
 def create_audit(
@@ -52,10 +70,13 @@ def complete_audit(
     audit = _locked_audit(session, audit_id)
     metrics_payload = metrics.model_dump(mode="json")
     if audit.state == SpeakerAuditState.COMPLETED.value:
+        stored_metrics = SpeakerAuditMetricsRecord.model_validate(
+            audit.metrics
+        ).model_dump(mode="json")
         stored = (
             audit.report_artifact_id,
             audit.listening_artifact_id,
-            audit.metrics,
+            stored_metrics,
         )
         incoming = (report_artifact_id, listening_artifact_id, metrics_payload)
         if stored != incoming:
@@ -79,6 +100,49 @@ def get_audit(session: Session, audit_id: UUID) -> SpeakerClusterAudit:
     if audit is None:
         raise KeyError(f"speaker cluster audit not found: {audit_id}")
     return audit
+
+
+def get_audit_apply_progress(
+    audit: SpeakerClusterAudit,
+) -> SpeakerAuditApplyProgress | None:
+    if audit.metrics is None or "apply" not in audit.metrics:
+        return None
+    value = audit.metrics["apply"]
+    return SpeakerAuditApplyProgress(
+        state=SpeakerAuditApplyState(value["state"]),
+        last_audio_id=(
+            None if value["last_audio_id"] is None else UUID(value["last_audio_id"])
+        ),
+        updated_audio_count=int(value["updated_audio_count"]),
+        total_audio_count=int(value["total_audio_count"]),
+        error=value["error"],
+    )
+
+
+def record_audit_apply_progress(
+    session: Session,
+    audit_id: UUID,
+    progress: SpeakerAuditApplyProgress,
+) -> None:
+    audit = _locked_audit(session, audit_id)
+    if audit.state != SpeakerAuditState.COMPLETED.value or audit.metrics is None:
+        raise ValueError(f"speaker cluster audit {audit_id} is not completed")
+    audit.metrics = {
+        **audit.metrics,
+        "apply": {
+            "state": progress.state.value,
+            "last_audio_id": (
+                None
+                if progress.last_audio_id is None
+                else str(progress.last_audio_id)
+            ),
+            "updated_audio_count": progress.updated_audio_count,
+            "total_audio_count": progress.total_audio_count,
+            "error": progress.error,
+            "updated_at": datetime.now(UTC).isoformat(),
+        },
+    }
+    session.commit()
 
 
 def _audit_for_identity(

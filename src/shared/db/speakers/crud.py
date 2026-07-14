@@ -5,9 +5,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shared.db.speakers.audit_crud import (
+    SpeakerAuditApplyProgress as SpeakerAuditApplyProgress,
+    SpeakerAuditApplyState as SpeakerAuditApplyState,
     complete_audit as complete_audit,
     create_audit as create_audit,
+    get_audit_apply_progress as get_audit_apply_progress,
     get_audit as get_audit,
+    record_audit_apply_progress as record_audit_apply_progress,
 )
 from shared.db.speakers.clustering_crud import (
     append_cluster_summaries as append_cluster_summaries,
@@ -30,6 +34,7 @@ from shared.db.speakers.schemas import (
 from shared.db.speakers.summary_crud import (
     assign_cluster_summary_voices as assign_cluster_summary_voices,
     list_cluster_summaries as list_cluster_summaries,
+    reconcile_cluster_summary_voice_page as reconcile_cluster_summary_voice_page,
 )
 
 
