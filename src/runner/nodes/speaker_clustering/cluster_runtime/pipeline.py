@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from enum import StrEnum
 from functools import partial
 from pathlib import Path
 import shutil
@@ -23,10 +24,6 @@ from runner.nodes.speaker_clustering.cluster_runtime.artifacts import (
     write_assignment_shards,
     write_prototype_shards,
 )
-from runner.nodes.speaker_clustering.cluster_runtime.calibration import (
-    ThresholdMode,
-    validate_calibration,
-)
 from runner.nodes.speaker_clustering.cluster_runtime.consolidation import (
     consolidate_hierarchically,
 )
@@ -44,9 +41,12 @@ from runner.nodes.speaker_clustering.prototypes import build_prototype_store
 from runner.nodes.speaker_clustering.shard_reader import iter_embedding_blocks
 
 
+class ThresholdMode(StrEnum):
+    EXPLORATORY = "exploratory"
+
+
 class ClusterSpeakerEmbeddingsSettings(StrictSettings):
     threshold_mode: ThresholdMode
-    calibration_artifact_id: UUID | None = None
     index_factory: str = "IVF65536_HNSW32,Flat"
     training_rows: int = Field(default=1_000_000, gt=0)
     search_probes: int = Field(default=64, gt=0)
@@ -75,16 +75,6 @@ class ClusterSpeakerEmbeddingsSettings(StrictSettings):
     def validate_threshold_contract(self) -> "ClusterSpeakerEmbeddingsSettings":
         if self.new_threshold >= self.accept_threshold:
             raise ValueError("new_threshold must be lower than accept_threshold")
-        if (
-            self.threshold_mode is ThresholdMode.CALIBRATED
-            and self.calibration_artifact_id is None
-        ):
-            raise ValueError("calibrated thresholds require calibration_artifact_id")
-        if (
-            self.threshold_mode is ThresholdMode.EXPLORATORY
-            and self.calibration_artifact_id is not None
-        ):
-            raise ValueError("exploratory thresholds cannot claim a calibration artifact")
         return self
 
 
@@ -95,7 +85,6 @@ def run_clustering_pipeline(
     check_cancel: Callable[[], None],
     report_stage: Callable[[int, str], None],
 ) -> SpeakerClusterRunRef:
-    validate_calibration(embedding_set, settings)
     run_id, completed = prepare_clustering_run(
         embedding_set,
         settings.index_factory,
