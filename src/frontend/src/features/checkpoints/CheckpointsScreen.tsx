@@ -6,7 +6,7 @@ import { SearchInput } from "@/shared/ui/SearchInput";
 import { SectionTitle } from "@/shared/ui/SectionTitle";
 import { Select } from "@/shared/ui/Select";
 import { useWorkflowSchemaQuery } from "../workflows/query";
-import { catalogItemsFromSchema, groupCatalogItems } from "./catalog";
+import { type CatalogItem, catalogItemsFromSchema, groupCatalogItems } from "./catalog";
 import { CheckpointRow } from "./CheckpointRow";
 import { groupCheckpoints } from "./logic";
 import { useCatalogDownloadMutation, useCheckpointsQuery } from "./query";
@@ -18,7 +18,15 @@ export function CheckpointsScreen() {
   const schema = useWorkflowSchemaQuery();
   const catalogDownload = useCatalogDownloadMutation();
   const groups = groupCheckpoints(checkpoints.data ?? [], query, type);
-  const catalogGroups = groupCatalogItems(schema.data ? catalogItemsFromSchema(schema.data) : []);
+  let catalogGroups: Record<string, CatalogItem[]> = {};
+  let catalogSchemaError: string | null = null;
+  if (schema.data) {
+    try {
+      catalogGroups = groupCatalogItems(catalogItemsFromSchema(schema.data));
+    } catch (error) {
+      catalogSchemaError = error instanceof Error ? error.message : "CatalogDownload schema is invalid";
+    }
+  }
 
   return (
     <div className="mx-auto max-w-[1080px] px-7 pb-16 pt-5">
@@ -83,7 +91,22 @@ export function CheckpointsScreen() {
 
       <div className="mt-6">
         <SectionTitle className="mb-3">Pretrained catalog</SectionTitle>
-        <div className="grid gap-5">
+        {schema.isLoading ? (
+          <Card className="p-6 text-sm text-txt-mute">Loading pretrained catalog...</Card>
+        ) : schema.isError ? (
+          <Card>
+            <EmptyState
+              icon="alert"
+              title="Couldn't load the pretrained catalog"
+              description={schema.error instanceof Error ? schema.error.message : "The workflow schema request failed."}
+            />
+          </Card>
+        ) : catalogSchemaError ? (
+          <Card>
+            <EmptyState icon="alert" title="Invalid pretrained catalog schema" description={catalogSchemaError} />
+          </Card>
+        ) : (
+          <div className="grid gap-5">
           {Object.entries(catalogGroups).map(([group, items]) => items.length ? (
             <section key={group} className="grid gap-2.5">
               <div className="flex items-center gap-2 text-xs font-semibold text-txt-dim">
@@ -115,7 +138,8 @@ export function CheckpointsScreen() {
               </div>
             </section>
           ) : null)}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
