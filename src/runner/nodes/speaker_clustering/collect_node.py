@@ -22,7 +22,12 @@ class CollectSpeakerEmbeddingsNode(Node):
     CATEGORY = "Speaker Clustering"
     INPUTS = {"shard": SpeakerEmbeddingShardRefPort()}
     OUTPUTS = {"embedding_set": SpeakerEmbeddingSetRefPort()}
-    BATCH_POLICY = BatchPolicy(BatchMode.DISABLED)
+    BATCH_POLICY = BatchPolicy(
+        BatchMode.MICRO_BATCH,
+        preferred_size=512,
+        max_size=2048,
+        timeout_ms=10,
+    )
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
     QUEUE_MAX_SIZE = 512
 
@@ -52,7 +57,7 @@ class CollectSpeakerEmbeddingsNode(Node):
             )
         outputs = []
         collection = None
-        for input_index, shard in enumerate(shards):
+        for input_index, shard in unique_shards(shards):
             context.check_cancel()
             with database_session() as session:
                 collection = speaker_crud.collect_embedding_shard(
@@ -92,3 +97,13 @@ class CollectSpeakerEmbeddingsNode(Node):
             f"registered {collection.stored_count}/{collection.expected_count} embedding rows",
         )
         return outputs
+
+
+def unique_shards(
+    shards: list[SpeakerEmbeddingShardRef],
+) -> list[tuple[int, SpeakerEmbeddingShardRef]]:
+    unique: dict[UUID, tuple[int, SpeakerEmbeddingShardRef]] = {}
+    for input_index, shard in enumerate(shards):
+        if shard.artifact_id not in unique:
+            unique[shard.artifact_id] = (input_index, shard)
+    return list(unique.values())
