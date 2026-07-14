@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from runner.nodes.hetzner.ds_v2_alignment import (
+    alignment_from_timestamps,
+    alignment_window,
+    validate_alignment_text,
+)
 from runner.nodes.models import Audio, AudioSegment, stable_id
 
 
@@ -112,7 +117,10 @@ def _transcript_segment(
 ) -> AudioSegment:
     text = _string_or_none(row[column]) or ""
     timestamps = _json_or_text(row["text_timestamps"]) if column == "text_parakeet" else None
-    alignment = _alignment_from_timestamps(timestamps, duration, _window_start(row))
+    alignment = None
+    if timestamps is not None:
+        alignment = alignment_from_timestamps(timestamps, alignment_window(row, row_index))
+        validate_alignment_text(text, alignment, row_index)
     remote_path = options.remote_parquet_path
     return AudioSegment(
         source_audio_id=audio_file_id,
@@ -238,39 +246,6 @@ def _json_or_text(value: Any) -> Any:
         return json.loads(stripped)
     except json.JSONDecodeError:
         return stripped
-
-
-def _window_start(row: dict[str, Any]) -> float:
-    chunk_start = _float_or_none(row["chunk_start"])
-    sample_start = _float_or_none(row["sample_start"])
-    if chunk_start is None or sample_start is None:
-        return 0.0
-    return sample_start - chunk_start
-
-
-def _alignment_from_timestamps(timestamps: Any, duration: float, window_start: float) -> list[dict[str, Any]] | None:
-    if isinstance(timestamps, dict):
-        timestamps = timestamps.get("word")
-    if not isinstance(timestamps, list):
-        return None
-    limit = duration if duration > 0 else None
-    alignment: list[dict[str, Any]] = []
-    for item in timestamps:
-        if not isinstance(item, dict):
-            continue
-        word = str(item.get("word", "")).strip()
-        if not word:
-            continue
-        shifted_start = float(item.get("start", 0.0)) - window_start
-        shifted_end = float(item.get("end", item.get("start", 0.0))) - window_start
-        if limit is not None and (shifted_start >= limit or shifted_end <= 0.0):
-            continue
-        start = max(0.0, shifted_start)
-        end = max(start, shifted_end)
-        if limit is not None:
-            end = min(end, limit)
-        alignment.append({"word": word, "start": start, "end": end})
-    return alignment or None
 
 
 def _string_or_none(value: Any) -> str | None:
