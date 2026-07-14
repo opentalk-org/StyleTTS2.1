@@ -37,7 +37,7 @@ from runner.nodes.speaker_clustering.edge_shards import iter_edge_paths, write_r
 from runner.nodes.speaker_clustering.faiss_index import FaissIndexSettings
 from runner.nodes.speaker_clustering.faiss_index import build_candidate_index_from_blocks
 from runner.nodes.speaker_clustering.microclusters import build_microcluster_labels
-from runner.nodes.speaker_clustering.prototypes import build_prototype_store
+from runner.nodes.speaker_clustering.cluster_runtime.prototypes import build_prototype_store
 from runner.nodes.speaker_clustering.shard_reader import iter_embedding_blocks
 
 

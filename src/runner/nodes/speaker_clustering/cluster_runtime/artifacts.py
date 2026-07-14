@@ -9,7 +9,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from runner.nodes.speaker_clustering.cluster_runtime.assignment import AssignmentReason
-from runner.nodes.speaker_clustering.prototypes import PrototypeStore
+from runner.nodes.speaker_clustering.cluster_runtime.prototypes import PrototypeStore
 from runner.nodes.speaker_clustering.shards import EmbeddingQuality
 from shared.db.speakers.schemas import SpeakerAssignmentOutcome
 

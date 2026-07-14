@@ -1,3 +1,5 @@
+"""Disk-backed prototype aggregation keeps corpus-sized state outside the heap."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable

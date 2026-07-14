@@ -22,7 +22,7 @@ from runner.nodes.speaker_clustering.faiss_index import (
     FaissIndexSettings,
     SpeakerCandidateIndex,
 )
-from runner.nodes.speaker_clustering.prototypes import PrototypeStore
+from runner.nodes.speaker_clustering.cluster_runtime.prototypes import PrototypeStore
 from runner.nodes.speaker_clustering.reservoir import DeterministicVectorReservoir
 from runner.nodes.speaker_clustering.shard_reader import EmbeddingBlock
 from runner.nodes.speaker_clustering.shards import EmbeddingQuality
