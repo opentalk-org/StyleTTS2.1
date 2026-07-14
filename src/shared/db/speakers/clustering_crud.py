@@ -131,6 +131,9 @@ def clear_open_clustering_artifacts(session: Session, run_id: UUID) -> list[UUID
             )
         )
     )
+    session.query(SpeakerClusteringArtifact).filter(
+        SpeakerClusteringArtifact.run_id == run_id
+    ).delete()
     session.query(SpeakerClusterSummary).filter(
         SpeakerClusterSummary.run_id == run_id
     ).delete()

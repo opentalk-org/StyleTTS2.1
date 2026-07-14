@@ -141,7 +141,7 @@ def _upload_and_register_path(
         _register(session, run_id, artifact.id, role, ordinal, row_count)
         return artifact
     except BaseException:
-        asset_crud.delete_extra_file(session, artifact.id)
+        _clear_and_delete_artifacts(session, run_id, (artifact.id,))
         raise
 
 
@@ -167,7 +167,7 @@ def _create_manifest(session: Any, run_id: UUID, prototypes: list[Any]) -> Any:
         )
         return manifest
     except BaseException:
-        asset_crud.delete_extra_file(session, manifest.id)
+        _clear_and_delete_artifacts(session, run_id, (manifest.id,))
         raise
 
 
@@ -194,9 +194,19 @@ def _persist_summaries(session: Any, run_id: UUID, paths: list[Path]) -> None:
 
 
 def _delete_registered_artifacts(session: Any, run_id: UUID) -> None:
-    artifacts = speaker_crud.list_clustering_artifacts(session, run_id)
-    for artifact in artifacts:
-        asset_crud.delete_extra_file(session, artifact.artifact_id)
+    _clear_and_delete_artifacts(session, run_id, ())
+
+
+def _clear_and_delete_artifacts(
+    session: Any, run_id: UUID, additional_ids: tuple[UUID, ...]
+) -> None:
+    artifact_ids = speaker_crud.clear_open_clustering_artifacts(session, run_id)
+    deletion_ids = [
+        *artifact_ids,
+        *(artifact_id for artifact_id in additional_ids if artifact_id not in artifact_ids),
+    ]
+    for artifact_id in deletion_ids:
+        asset_crud.delete_extra_file(session, artifact_id)
 
 
 def _register(
