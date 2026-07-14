@@ -23,6 +23,7 @@ from shared.db.audio.schemas import AudioBucketLocation, AudioCreate, AudioPartR
 from shared.db.audio.scores_crud import bulk_update_audio_scores
 from shared.db.audio.rows_crud import get_audio_files_bulk
 from shared.db.audio.references_crud import count_audio_file_references, list_audio_file_references_page
+from shared.db.audio.segment_references_crud import count_segment_references, list_segment_references_page
 from shared.db.audio.segments_crud import (
     create_segment,
     delete_segment,
