@@ -12,6 +12,7 @@ from shared.db.assets.file_store import (
     extra_file_cache_path,
     object_store,
     stored_bytes,
+    stored_path,
 )
 from shared.db.assets.models import BucketFile, Checkpoint, Config, ExtraFile
 from shared.db.assets.schemas import (
@@ -20,6 +21,7 @@ from shared.db.assets.schemas import (
     CheckpointUpdate,
     ConfigCreate,
     ExtraFileCreate,
+    ExtraFilePathCreate,
     ExtraFileUpdate,
 )
 from shared.db.common import many, one
@@ -92,10 +94,14 @@ def read_checkpoint(session: Session, checkpoint_id: UUID) -> bytes:
 
 
 def get_checkpoint_path(session: Session, checkpoint_id: UUID) -> Path:
-    return checkpoint_cache_path(one(session, Checkpoint, checkpoint_id), _object_store(session))
+    return checkpoint_cache_path(
+        one(session, Checkpoint, checkpoint_id), _object_store(session)
+    )
 
 
-def update_checkpoint(session: Session, checkpoint_id: UUID, payload: CheckpointUpdate) -> Checkpoint:
+def update_checkpoint(
+    session: Session, checkpoint_id: UUID, payload: CheckpointUpdate
+) -> Checkpoint:
     item = one(session, Checkpoint, checkpoint_id)
     item.name = payload.name
     item.type_ = payload.type_
@@ -161,6 +167,52 @@ def bulk_create_extra_files(
         raise
 
 
+def create_extra_file_from_path(
+    session: Session,
+    payload: ExtraFilePathCreate,
+    store: S3ObjectStore | None = None,
+) -> ExtraFile:
+    return bulk_create_extra_files_from_paths(session, [payload], store)[0]
+
+
+def bulk_create_extra_files_from_paths(
+    session: Session,
+    payloads: Sequence[ExtraFilePathCreate],
+    store: S3ObjectStore | None = None,
+) -> list[ExtraFile]:
+    if not payloads:
+        return []
+    resolved_store = store or _object_store(session)
+    writes = []
+    for payload in payloads:
+        stored = stored_path(payload.path)
+        item_id = uuid.uuid4()
+        item = ExtraFile(
+            id=item_id,
+            name=payload.name,
+            path=f"extra-files/{item_id}",
+            size=stored.size,
+            content_hash=stored.content_hash,
+            type_=payload.type_,
+            metadata_=payload.metadata,
+        )
+        writes.append((item, stored.path))
+    uploaded_paths = []
+    try:
+        for item, source in writes:
+            resolved_store.upload_path(item.path, source)
+            uploaded_paths.append(item.path)
+        items = [item for item, _source in writes]
+        session.add_all(items)
+        session.commit()
+        return items
+    except Exception:
+        session.rollback()
+        for path in uploaded_paths:
+            resolved_store.delete(path)
+        raise
+
+
 def get_extra_file(session: Session, extra_file_id: UUID) -> ExtraFile:
     return one(session, ExtraFile, extra_file_id)
 
@@ -170,10 +222,14 @@ def read_extra_file(session: Session, extra_file_id: UUID) -> bytes:
 
 
 def get_extra_file_path(session: Session, extra_file_id: UUID) -> Path:
-    return extra_file_cache_path(one(session, ExtraFile, extra_file_id), _object_store(session))
+    return extra_file_cache_path(
+        one(session, ExtraFile, extra_file_id), _object_store(session)
+    )
 
 
-def update_extra_file(session: Session, extra_file_id: UUID, payload: ExtraFileUpdate) -> ExtraFile:
+def update_extra_file(
+    session: Session, extra_file_id: UUID, payload: ExtraFileUpdate
+) -> ExtraFile:
     item = one(session, ExtraFile, extra_file_id)
     item.name = payload.name
     item.type_ = payload.type_

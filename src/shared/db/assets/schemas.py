@@ -52,6 +52,13 @@ class ExtraFileCreate(BaseModel):
     metadata: dict[str, Any]
 
 
+class ExtraFilePathCreate(BaseModel):
+    name: str
+    path: Path
+    type_: str
+    metadata: dict[str, Any]
+
+
 class ExtraFileUpdate(BaseModel):
     name: str
     data: bytes | None

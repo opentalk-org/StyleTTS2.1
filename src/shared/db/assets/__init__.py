@@ -1,9 +1,11 @@
 from shared.db.assets.crud import (
     bulk_create_extra_files,
+    bulk_create_extra_files_from_paths,
     create_bucket_file,
     create_checkpoint,
     create_config,
     create_extra_file,
+    create_extra_file_from_path,
     delete_checkpoint,
     delete_extra_file,
     get_bucket_file,
@@ -23,10 +25,12 @@ from shared.db.assets.crud import (
 
 __all__ = [
     "bulk_create_extra_files",
+    "bulk_create_extra_files_from_paths",
     "create_bucket_file",
     "create_checkpoint",
     "create_config",
     "create_extra_file",
+    "create_extra_file_from_path",
     "delete_checkpoint",
     "delete_extra_file",
     "get_bucket_file",

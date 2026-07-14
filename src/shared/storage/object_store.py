@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import os
+from pathlib import Path
 
 import boto3
 from botocore.client import BaseClient
@@ -19,10 +20,14 @@ class ObjectStoreConfig:
         return cls(
             bucket=os.environ.get("RUNFLOW_S3_BUCKET", "runflow"),
             folder=os.environ.get("RUNFLOW_S3_FOLDER", "/"),
-            endpoint_url=os.environ.get("RUNFLOW_S3_ENDPOINT_URL", "http://127.0.0.1:9000"),
+            endpoint_url=os.environ.get(
+                "RUNFLOW_S3_ENDPOINT_URL", "http://127.0.0.1:9000"
+            ),
             region_name=os.environ.get("RUNFLOW_S3_REGION", "us-east-1"),
             access_key_id=os.environ.get("RUNFLOW_S3_ACCESS_KEY_ID", "runflow"),
-            secret_access_key=os.environ.get("RUNFLOW_S3_SECRET_ACCESS_KEY", "runflow-secret"),
+            secret_access_key=os.environ.get(
+                "RUNFLOW_S3_SECRET_ACCESS_KEY", "runflow-secret"
+            ),
         )
 
 
@@ -40,6 +45,9 @@ class S3ObjectStore:
 
     def upload(self, path: str, data: bytes) -> None:
         self._client.put_object(Bucket=self._bucket, Key=self._key(path), Body=data)
+
+    def upload_path(self, path: str, source: Path) -> None:
+        self._client.upload_file(str(source), self._bucket, self._key(path))
 
     def test_connection(self) -> None:
         self._client.head_bucket(Bucket=self._bucket)

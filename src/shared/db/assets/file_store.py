@@ -19,6 +19,13 @@ class StoredBytes:
     content_hash: str
 
 
+@dataclass(frozen=True)
+class StoredPath:
+    path: Path
+    size: int
+    content_hash: str
+
+
 def object_store(config: ObjectStoreConfig | None = None) -> S3ObjectStore:
     return S3ObjectStore(config or ObjectStoreConfig.from_env())
 
@@ -41,7 +48,19 @@ def checkpoint_tar(folder_path: Path) -> StoredBytes:
 
 
 def stored_bytes(data: bytes) -> StoredBytes:
-    return StoredBytes(data=data, size=len(data), content_hash=hashlib.sha256(data).hexdigest())
+    return StoredBytes(
+        data=data, size=len(data), content_hash=hashlib.sha256(data).hexdigest()
+    )
+
+
+def stored_path(path: Path) -> StoredPath:
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+            size += len(chunk)
+    return StoredPath(path=path, size=size, content_hash=digest.hexdigest())
 
 
 def checkpoint_cache_path(item: Checkpoint, store: S3ObjectStore | None = None) -> Path:
@@ -89,7 +108,9 @@ def _cache_parent(target: Path) -> Path:
 
 def _assert_content(size: int, content_hash: str, data: bytes) -> None:
     assert len(data) == size, "cached asset size mismatch"
-    assert hashlib.sha256(data).hexdigest() == content_hash, "cached asset hash mismatch"
+    assert hashlib.sha256(data).hexdigest() == content_hash, (
+        "cached asset hash mismatch"
+    )
 
 
 def _extract_tar(data: bytes, target: Path) -> None:
