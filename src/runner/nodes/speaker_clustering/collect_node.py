@@ -28,7 +28,8 @@ class CollectSpeakerEmbeddingsNode(Node):
 
     def __init__(self, node_id: str | None = None, **params: Any) -> None:
         super().__init__(node_id=node_id, **params)
-        self._emitted_runs: set[UUID] = set()
+        self._run_id: UUID | None = None
+        self._emitted = False
 
     async def execute(
         self,
@@ -37,14 +38,22 @@ class CollectSpeakerEmbeddingsNode(Node):
     ) -> list[dict[str, Any]]:
         if not batch:
             raise ValueError(f"{self.id} requires at least one shard")
+        shards = [inputs["shard"] for inputs in batch]
+        assert all(isinstance(shard, SpeakerEmbeddingShardRef) for shard in shards), (
+            f"{self.id} requires SpeakerEmbeddingShardRef input"
+        )
+        if self._run_id is None:
+            self._run_id = shards[0].run_id
+        mismatched = [shard.run_id for shard in shards if shard.run_id != self._run_id]
+        if mismatched:
+            raise ValueError(
+                f"{self.id} is bound to embedding run {self._run_id}, "
+                f"received {mismatched[0]}"
+            )
         outputs = []
         collection = None
-        for input_index, inputs in enumerate(batch):
+        for input_index, shard in enumerate(shards):
             context.check_cancel()
-            shard = inputs["shard"]
-            assert isinstance(shard, SpeakerEmbeddingShardRef), (
-                f"{self.id} requires SpeakerEmbeddingShardRef input"
-            )
             with database_session() as session:
                 collection = speaker_crud.collect_embedding_shard(
                     session,
@@ -59,9 +68,9 @@ class CollectSpeakerEmbeddingsNode(Node):
                 )
             if collection.stored_count != collection.expected_count:
                 continue
-            if collection.run_id in self._emitted_runs:
+            if self._emitted:
                 continue
-            self._emitted_runs.add(collection.run_id)
+            self._emitted = True
             outputs.append(
                 {
                     "embedding_set": SpeakerEmbeddingSetRef(
