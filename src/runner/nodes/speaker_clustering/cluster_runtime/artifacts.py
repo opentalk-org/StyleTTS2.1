@@ -25,13 +25,14 @@ ASSIGNMENT_SCHEMA = pa.schema(
         pa.field("cluster_id", pa.int64()),
         pa.field("best_cluster_id", pa.int64()),
         pa.field("second_cluster_id", pa.int64()),
-        pa.field("best_score", pa.float32(), nullable=False),
-        pa.field("second_score", pa.float32(), nullable=False),
-        pa.field("margin", pa.float32(), nullable=False),
+        pa.field("best_score", pa.float32()),
+        pa.field("second_score", pa.float32()),
+        pa.field("margin", pa.float32()),
         pa.field("candidate_cluster_ids", pa.list_(pa.int64()), nullable=False),
         pa.field("candidate_scores", pa.list_(pa.float32()), nullable=False),
         pa.field("threshold_version", pa.string(), nullable=False),
         pa.field("reason", pa.string(), nullable=False),
+        pa.field("rejection_reason", pa.string()),
         pa.field("true_label", pa.string()),
     ]
 )
@@ -48,27 +49,56 @@ class AssignmentRow:
     cluster_id: int | None
     best_cluster_id: int | None
     second_cluster_id: int | None
-    best_score: float
-    second_score: float
-    margin: float
+    best_score: float | None
+    second_score: float | None
+    margin: float | None
     candidate_cluster_ids: list[int]
     candidate_scores: list[float]
     threshold_version: str
     reason: AssignmentReason
+    rejection_reason: str | None
     true_label: str | None
+
+
+@dataclass(frozen=True)
+class AssignmentOutcomeCounts:
+    accepted: int
+    provisional_new: int
+    ambiguous: int
+    rejected: int
+
+
+@dataclass(frozen=True)
+class AssignmentShardWriteResult:
+    paths: list[Path]
+    counts: AssignmentOutcomeCounts
 
 
 def write_assignment_shards(
     blocks: Iterable[Sequence[AssignmentRow]],
     output_dir: Path,
     shard_rows: int,
-) -> list[Path]:
+) -> AssignmentShardWriteResult:
     if shard_rows <= 0:
         raise ValueError(f"assignment shard_rows must be positive, got {shard_rows}")
     output_dir.mkdir(parents=True, exist_ok=True)
-    paths = []
+    paths: list[Path] = []
     pending: list[AssignmentRow] = []
+    accepted = 0
+    provisional_new = 0
+    ambiguous = 0
+    rejected = 0
     for block in blocks:
+        for row in block:
+            if row.outcome is SpeakerAssignmentOutcome.ACCEPTED:
+                accepted += 1
+            elif row.outcome is SpeakerAssignmentOutcome.PROVISIONAL_NEW:
+                provisional_new += 1
+            elif row.outcome is SpeakerAssignmentOutcome.AMBIGUOUS:
+                ambiguous += 1
+            else:
+                assert row.outcome is SpeakerAssignmentOutcome.REJECTED
+                rejected += 1
         offset = 0
         while offset < len(block):
             consumed = min(shard_rows - len(pending), len(block) - offset)
@@ -79,7 +109,15 @@ def write_assignment_shards(
                 pending = []
     if pending:
         paths.append(_write_assignment_file(pending, output_dir, len(paths)))
-    return paths
+    return AssignmentShardWriteResult(
+        paths=paths,
+        counts=AssignmentOutcomeCounts(
+            accepted=accepted,
+            provisional_new=provisional_new,
+            ambiguous=ambiguous,
+            rejected=rejected,
+        ),
+    )
 
 
 def write_prototype_shards(
@@ -134,6 +172,7 @@ def _assignment_mapping(row: AssignmentRow) -> dict[str, object]:
         "candidate_scores": row.candidate_scores,
         "threshold_version": row.threshold_version,
         "reason": row.reason.value,
+        "rejection_reason": row.rejection_reason,
         "true_label": row.true_label,
     }
 

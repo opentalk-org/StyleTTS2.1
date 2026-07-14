@@ -44,6 +44,8 @@ class CandidateScores:
             raise ValueError(
                 "candidate cluster IDs and scores must be non-empty and aligned"
             )
+        if not np.isfinite(self.scores).all() or not np.isfinite(self.best_dispersion):
+            raise ValueError("candidate scores and dispersion must be finite")
         if any(left < right for left, right in zip(self.scores, self.scores[1:])):
             raise ValueError("candidate scores must be sorted from highest to lowest")
 
@@ -54,13 +56,14 @@ class AssignmentDecision:
     cluster_id: int | None
     best_cluster_id: int | None
     second_cluster_id: int | None
-    best_score: float
-    second_score: float
-    margin: float
+    best_score: float | None
+    second_score: float | None
+    margin: float | None
     candidate_cluster_ids: list[int]
     candidate_scores: list[float]
     threshold_version: str
     reason: AssignmentReason
+    rejection_reason: str | None
 
 
 def decide(
@@ -79,6 +82,7 @@ def decide(
             None,
             policy,
             AssignmentReason.QUALITY_REJECTED,
+            rejection_reason,
         )
     if candidates is None:
         return _decision(
@@ -87,10 +91,11 @@ def decide(
             None,
             policy,
             AssignmentReason.NO_ESTABLISHED_CLUSTER,
+            None,
         )
     best_score = candidates.scores[0]
-    second_score = candidates.scores[1] if len(candidates.scores) > 1 else -1.0
-    margin = best_score - second_score
+    second_score = candidates.scores[1] if len(candidates.scores) > 1 else None
+    margin = None if second_score is None else best_score - second_score
     adjusted_threshold = min(
         1.0,
         policy.accept_threshold
@@ -100,7 +105,9 @@ def decide(
         outcome = SpeakerAssignmentOutcome.AMBIGUOUS
         cluster_id = None
         reason = AssignmentReason.SUSPICIOUS_CLUSTER
-    elif best_score >= adjusted_threshold and margin >= policy.min_margin:
+    elif best_score >= adjusted_threshold and (
+        margin is None or margin >= policy.min_margin
+    ):
         outcome = SpeakerAssignmentOutcome.ACCEPTED
         cluster_id = candidates.cluster_ids[0]
         reason = AssignmentReason.ACCEPTED
@@ -108,7 +115,7 @@ def decide(
         outcome = SpeakerAssignmentOutcome.PROVISIONAL_NEW
         cluster_id = provisional_cluster_id
         reason = AssignmentReason.BELOW_NEW_THRESHOLD
-    elif margin < policy.min_margin:
+    elif margin is not None and margin < policy.min_margin:
         outcome = SpeakerAssignmentOutcome.AMBIGUOUS
         cluster_id = None
         reason = AssignmentReason.INSUFFICIENT_MARGIN
@@ -130,6 +137,7 @@ def decide(
         candidate_scores=candidates.scores,
         threshold_version=policy.threshold_version,
         reason=reason,
+        rejection_reason=None,
     )
 
 
@@ -149,6 +157,7 @@ def _decision(
     candidates: CandidateScores | None,
     policy: AssignmentPolicy,
     reason: AssignmentReason,
+    rejection_reason: str | None,
 ) -> AssignmentDecision:
     cluster_ids = [] if candidates is None else candidates.cluster_ids
     scores = [] if candidates is None else candidates.scores
@@ -157,11 +166,12 @@ def _decision(
         cluster_id=cluster_id,
         best_cluster_id=None,
         second_cluster_id=None,
-        best_score=-1.0,
-        second_score=-1.0,
-        margin=0.0,
+        best_score=None,
+        second_score=None,
+        margin=None,
         candidate_cluster_ids=cluster_ids,
         candidate_scores=scores,
         threshold_version=policy.threshold_version,
         reason=reason,
+        rejection_reason=rejection_reason,
     )
