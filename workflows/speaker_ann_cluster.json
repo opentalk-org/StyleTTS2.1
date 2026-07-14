@@ -18,7 +18,15 @@
         "type": "ClusterSpeakerEmbeddings",
         "x": 380,
         "y": 120,
-        "params": {},
+        "params": {
+          "threshold_mode": "exploratory",
+          "threshold_version": "example-explicit-exploratory-v1",
+          "exact_edge_threshold": 0.65,
+          "max_cluster_dispersion": 0.2,
+          "accept_threshold": 0.7,
+          "min_margin": 0.1,
+          "new_threshold": 0.45
+        },
         "runtime": {}
       },
       {

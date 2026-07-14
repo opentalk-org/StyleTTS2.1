@@ -26,18 +26,11 @@ from shared.db.speakers.schemas import (
 
 def prepare_clustering_run(
     embedding_set: SpeakerEmbeddingSetRef,
-    execution_run_id: str,
-    node_id: str,
     index_factory: str,
     threshold_version: str,
     settings: dict[str, Any],
 ) -> tuple[UUID, SpeakerClusterRunRef | None]:
-    run_key = stable_id(
-        "speaker_cluster_run",
-        execution_run_id,
-        node_id,
-        embedding_set.run_id,
-    )
+    run_key = clustering_run_key(embedding_set.run_id, settings)
     with database_session() as session:
         run = speaker_crud.create_clustering_run(
             session,
@@ -56,6 +49,15 @@ def prepare_clustering_run(
         for artifact_id in stale_ids:
             asset_crud.delete_extra_file(session, artifact_id)
         return run.id, None
+
+
+def clustering_run_key(embedding_run_id: UUID, settings: dict[str, Any]) -> str:
+    canonical_settings = json.dumps(
+        settings,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return stable_id("speaker_cluster_run", embedding_run_id, canonical_settings)
 
 
 def fail_clustering_run(run_id: UUID, error: BaseException) -> None:

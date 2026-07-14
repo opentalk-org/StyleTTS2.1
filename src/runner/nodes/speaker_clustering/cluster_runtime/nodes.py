@@ -121,8 +121,6 @@ class ClusterSpeakerEmbeddingsNode(Node):
             embedding_set,
             self.settings,
             context.node_dir(self.id),
-            str(context.run_id),
-            self.id,
             context.check_cancel,
             reporter.report,
         )
