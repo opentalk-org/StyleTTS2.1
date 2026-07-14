@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from runner.nodes.assets.catalog_runtime.entries import CATALOG_ENTRIES, CatalogKey
 from runner.nodes.assets.catalog_runtime.persistence import checkpoint_payload, ensure_checkpoint_bundle, ensure_extra_file, extra_file_payload
 from runner.nodes.assets.catalog_runtime.specs import official_styletts_specs, papercup_plbert_spec, styletts2_utils_specs, vokan_styletts_spec
 from runner.nodes.assets.catalog_runtime.types import CatalogTask
@@ -13,18 +14,14 @@ from runner.nodes.assets.model_downloads import download_hf_snapshot, download_n
 
 _NEMO_ASR_KINDS = {"parakeet", "canary", "sortformer"}
 _MOS_BASE_MODEL = "facebook/wav2vec2-xls-r-300m"
-_SMART_TURN_MODEL = "pipecat-ai/smart-turn-v3"
-_SMART_TURN_FILE = "smart-turn-v3.2-cpu.onnx"
-
 _TTS_DEFAULT_REPOS = {
-    "kokoro": "hexgrad/Kokoro-82M",
-    "chatterbox": "ResembleAI/chatterbox",
-    "f5_tts": "SWivid/F5-TTS",
-    "orpheus": "unsloth/orpheus-3b-0.1-ft",
-    "dia": "nari-labs/Dia-1.6B-0626",
-    "fish_speech": "fishaudio/s2-pro",
-    "raon_opentts": "KRAFTON/Raon-OpenTTS-1B",
+    entry.item: entry.file
+    for entry in CATALOG_ENTRIES
+    if entry.catalog_key is CatalogKey.TTS_MODELS
 }
+_SMART_TURN_ENTRY = next(entry for entry in CATALOG_ENTRIES if entry.catalog_key is CatalogKey.TURN_MODELS)
+_SMART_TURN_MODEL = _SMART_TURN_ENTRY.item
+_SMART_TURN_FILE = _SMART_TURN_ENTRY.file
 
 # Per-engine snapshot filters so we only download the files each engine's ``load()`` actually reads.
 # Repos ship the same weights in several redundant formats / checkpoint variants; without a filter

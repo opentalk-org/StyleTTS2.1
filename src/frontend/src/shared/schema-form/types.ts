@@ -11,6 +11,7 @@ export type JsonSchema = {
   anyOf?: JsonSchema[];
   $ref?: string;
   $defs?: Record<string, JsonSchema>;
+  "x-catalog-items"?: unknown;
 };
 
 export type SchemaValues = Record<string, unknown>;

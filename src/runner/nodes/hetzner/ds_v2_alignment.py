@@ -5,9 +5,6 @@ from dataclasses import dataclass
 from typing import Any
 
 
-TIMESTAMP_ABS_TOLERANCE = 1e-9
-
-
 @dataclass(frozen=True)
 class AlignmentWindow:
     source_start: float
@@ -37,40 +34,37 @@ def alignment_window(row: dict[str, Any], row_index: int) -> AlignmentWindow:
 
 def alignment_from_timestamps(
     timestamps: Any,
+    text: str,
     window: AlignmentWindow,
 ) -> list[dict[str, Any]] | None:
     if isinstance(timestamps, dict):
         timestamps = timestamps["word"]
     if not isinstance(timestamps, list):
         return None
+    transcript_words = text.split()
+    if not transcript_words:
+        return None
+    timestamp_words = [str(item["word"]).strip() for item in timestamps]
+    width = len(transcript_words)
+    candidates = [
+        start
+        for start in range(len(timestamps) - width + 1)
+        if timestamp_words[start:start + width] == transcript_words
+    ]
+    if not candidates:
+        return None
+    selected_start = min(
+        candidates,
+        key=lambda start: (
+            abs(float(timestamps[start]["start"]) - window.source_start)
+            + abs(float(timestamps[start + width - 1]["end"]) - window.source_end),
+            start,
+        ),
+    )
     alignment = []
-    for item in timestamps:
+    for item in timestamps[selected_start:selected_start + width]:
         word = str(item["word"]).strip()
-        source_start = float(item["start"])
-        source_end = float(item["end"])
-        starts_at_end = source_start >= window.source_end or math.isclose(
-            source_start, window.source_end, rel_tol=0.0, abs_tol=TIMESTAMP_ABS_TOLERANCE
-        )
-        ends_at_start = source_end <= window.source_start or math.isclose(
-            source_end, window.source_start, rel_tol=0.0, abs_tol=TIMESTAMP_ABS_TOLERANCE
-        )
-        if not word or starts_at_end or ends_at_start:
-            continue
-        start = max(0.0, source_start - window.source_start)
-        end = min(window.duration, source_end - window.source_start)
+        start = min(window.duration, max(0.0, float(item["start"]) - window.source_start))
+        end = min(window.duration, max(0.0, float(item["end"]) - window.source_start))
         alignment.append({"word": word, "start": start, "end": max(start, end)})
-    return alignment or None
-
-
-def validate_alignment_text(
-    text: str,
-    alignment: list[dict[str, Any]] | None,
-    row_index: int,
-) -> None:
-    transcript = " ".join(text.split())
-    aligned = " ".join(str(entry["word"]).strip() for entry in alignment or [])
-    if aligned != transcript:
-        raise ValueError(
-            f"ds_v2 row {row_index} Parakeet alignment does not match transcript: "
-            f"transcript={transcript!r}, alignment={aligned!r}"
-        )
+    return alignment

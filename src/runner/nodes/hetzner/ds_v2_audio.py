@@ -12,7 +12,6 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from runner.nodes.hetzner.ds_v2_alignment import (
     alignment_from_timestamps,
     alignment_window,
-    validate_alignment_text,
 )
 from runner.nodes.models import Audio, AudioSegment, stable_id
 
@@ -119,8 +118,7 @@ def _transcript_segment(
     timestamps = _json_or_text(row["text_timestamps"]) if column == "text_parakeet" else None
     alignment = None
     if timestamps is not None:
-        alignment = alignment_from_timestamps(timestamps, alignment_window(row, row_index))
-        validate_alignment_text(text, alignment, row_index)
+        alignment = alignment_from_timestamps(timestamps, text, alignment_window(row, row_index))
     remote_path = options.remote_parquet_path
     return AudioSegment(
         source_audio_id=audio_file_id,

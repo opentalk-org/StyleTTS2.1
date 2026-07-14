@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchWorkflowSchema } from "@/features/workflows/api";
 import { showToast } from "@/shared/feedback/Toast";
 import { type Checkpoint, deleteCheckpoint, fetchCheckpoints, renameCheckpoint, startCatalogDownload } from "./api";
-import type { CatalogItem } from "./logic";
+import type { CatalogItem } from "./catalog";
 
 const KEY = "checkpoints";
 

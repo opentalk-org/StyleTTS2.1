@@ -5,17 +5,20 @@ import { IconButton } from "@/shared/ui/IconButton";
 import { SearchInput } from "@/shared/ui/SearchInput";
 import { SectionTitle } from "@/shared/ui/SectionTitle";
 import { Select } from "@/shared/ui/Select";
+import { useWorkflowSchemaQuery } from "../workflows/query";
+import { catalogItemsFromSchema, groupCatalogItems } from "./catalog";
 import { CheckpointRow } from "./CheckpointRow";
-import { CATALOG, groupCatalogItems, groupCheckpoints } from "./logic";
+import { groupCheckpoints } from "./logic";
 import { useCatalogDownloadMutation, useCheckpointsQuery } from "./query";
 import { useCheckpointsFilters } from "./store";
 
 export function CheckpointsScreen() {
   const { query, type, setQuery, setType } = useCheckpointsFilters();
   const checkpoints = useCheckpointsQuery();
+  const schema = useWorkflowSchemaQuery();
   const catalogDownload = useCatalogDownloadMutation();
   const groups = groupCheckpoints(checkpoints.data ?? [], query, type);
-  const catalogGroups = groupCatalogItems(CATALOG);
+  const catalogGroups = groupCatalogItems(schema.data ? catalogItemsFromSchema(schema.data) : []);
 
   return (
     <div className="mx-auto max-w-[1080px] px-7 pb-16 pt-5">

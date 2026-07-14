@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-from enum import Enum
 from typing import Any
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
+from runner.nodes.assets.catalog_runtime.entries import CatalogKey, catalog_entries_schema
 from runner.nodes.assets.catalog_runtime.tasks import run_catalog_task
 from runner.nodes.assets.checkpoints import resolve_checkpoint_ref
 from runflow.core.node import Node
@@ -15,18 +15,12 @@ from runner.nodes.datatypes import CheckpointRefPort, JsonPort
 from runner.nodes.models import CheckpointRef
 
 
-class CatalogKey(str, Enum):
-    STYLETTS2_UTILS = "styletts2_utils"
-    OFFICIAL_CHECKPOINTS = "official_checkpoints"
-    PAPERCUP_MULTILINGUAL_PL_BERT = "papercup_multilingual_pl_bert"
-    VOKAN_CHECKPOINT = "vokan_checkpoint"
-    ASR_MODELS = "asr_models"
-    MOS_MODELS = "mos_models"
-    TTS_MODELS = "tts_models"
-    TURN_MODELS = "turn_models"
-
-
 class CatalogDownloadSettings(StrictSettings):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"x-catalog-items": catalog_entries_schema()},
+    )
+
     catalog_key: CatalogKey = Field(title="Catalog")
     item: str = Field(default="", title="Requested item")
 
