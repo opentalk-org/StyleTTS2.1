@@ -73,6 +73,8 @@ def list_embedding_shards(
 
 def seal_embedding_run(session: Session, run_id: UUID) -> SpeakerEmbeddingRun:
     run = _locked_embedding_run(session, run_id)
+    if run.state != EmbeddingRunState.OPEN.value:
+        raise ValueError(f"embedding run {run_id} is {run.state}")
     if run.stored_count != run.expected_count:
         raise ValueError(
             f"cannot seal embedding run {run_id}: expected {run.expected_count}, "
