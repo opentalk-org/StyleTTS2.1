@@ -3039,6 +3039,19 @@ wheels = [
 ]
 
 [[package]]
+name = "hyperpyyaml"
+version = "1.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyyaml" },
+    { name = "ruamel-yaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/52/e3/3ac46d9a662b037f699a6948b39c8d03bfcff0b592335d5953ba0c55d453/HyperPyYAML-1.2.2.tar.gz", hash = "sha256:bdb734210d18770a262f500fe5755c7a44a5d3b91521b06e24f7a00a36ee0f87", size = 17085, upload-time = "2023-09-21T14:45:27.779Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/c9/751b6401887f4b50f9307cc1e53d287b3dc77c375c126aeb6335aff73ccb/HyperPyYAML-1.2.2-py3-none-any.whl", hash = "sha256:3c5864bdc8864b2f0fbd7bc495e7e8fdf2dfd5dd80116f72da27ca96a128bdeb", size = 16118, upload-time = "2023-09-21T14:45:25.101Z" },
+]
+
+[[package]]
 name = "identify"
 version = "2.6.19"
 source = { registry = "https://pypi.org/simple" }
@@ -7556,6 +7569,7 @@ dependencies = [
     { name = "pyworld" },
     { name = "pyyaml" },
     { name = "soundfile" },
+    { name = "speechbrain" },
     { name = "sqlalchemy" },
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux'" },
     { name = "torch", version = "2.12.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
@@ -7602,6 +7616,7 @@ requires-dist = [
     { name = "pyworld", specifier = ">=0.3" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "soundfile", specifier = ">=0.12" },
+    { name = "speechbrain", specifier = ">=1.0" },
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "torch", marker = "sys_platform != 'linux'", specifier = ">=2.3" },
     { name = "torch", marker = "sys_platform == 'linux'", specifier = ">=2.3", index = "https://download.pytorch.org/whl/cu128" },
@@ -8260,6 +8275,31 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/a4/1a799ee08fd8a037014332250912bae3a5e6777c3f1c1146b26427a9d7e1/spacy_pkuseg-1.0.1-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:ae70691212406b7d160e8b635fe90e68ac97a4f8c85485230debc646754a4df5", size = 4973832, upload-time = "2025-07-14T10:50:54.356Z" },
     { url = "https://files.pythonhosted.org/packages/74/8f/035978f90ead9bd55a8b9d890f12e2b07d2b1a25048b261ec6c6df7a9f57/spacy_pkuseg-1.0.1-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:fae8721e91bb6944a61d9102a4d25162e8f159e7b8a91222f39621afa4eb0bcd", size = 5105963, upload-time = "2025-07-14T10:50:55.877Z" },
     { url = "https://files.pythonhosted.org/packages/87/62/da5358e96ba359b977b0ed9293a8569dfc7ede329c5632c57f3d892f688f/spacy_pkuseg-1.0.1-cp313-cp313-win_amd64.whl", hash = "sha256:36f89cd2bd8757b003f96dc7622e1af3f21abda8dd86fb8a2513ce926e722265", size = 2400922, upload-time = "2025-07-14T10:50:57.418Z" },
+]
+
+[[package]]
+name = "speechbrain"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "huggingface-hub" },
+    { name = "hyperpyyaml" },
+    { name = "joblib" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "requests" },
+    { name = "scipy" },
+    { name = "sentencepiece" },
+    { name = "soundfile" },
+    { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux'" },
+    { name = "torch", version = "2.12.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
+    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
+    { name = "torchaudio", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux'" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/95/df/782cca3897a75bbeb5242026bc8f24d3c14d44ffc413c549d611e988e890/speechbrain-1.1.0.tar.gz", hash = "sha256:669ed0903c2aebc0d5daffc69fdbbfc822e1e2c094be45c8160ceecc9c763cd3", size = 1730288, upload-time = "2026-03-31T16:43:03.324Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2c/bb/4e35594c80a20017bd0e8a64f77102f33453c713bde8326cebfc2bba16e1/speechbrain-1.1.0-py3-none-any.whl", hash = "sha256:0f1bc7d5c5ce07b9ed752a9d931a4858180f825f4d079b44035a0aed645f4dd2", size = 2278632, upload-time = "2026-03-31T16:43:01.33Z" },
 ]
 
 [[package]]

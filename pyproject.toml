@@ -43,6 +43,7 @@ dependencies = [
     "pyyaml>=6.0",
     "python-multipart>=0.0.20",
     "soundfile>=0.12",
+    "speechbrain>=1.0",
     "sqlalchemy>=2.0",
     "torch>=2.3",
     "torchaudio>=2.3",
