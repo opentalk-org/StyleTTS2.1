@@ -37,9 +37,7 @@ from runner.nodes.speaker_clustering.edge_shards import (
     write_reciprocal_edge_shards,
 )
 from runner.nodes.speaker_clustering.faiss_index import FaissIndexSettings
-from runner.nodes.speaker_clustering.faiss_index import (
-    build_candidate_index_from_blocks,
-)
+from runner.nodes.speaker_clustering.faiss_index import build_candidate_index_from_blocks
 from runner.nodes.speaker_clustering.microclusters import build_microcluster_labels
 from runner.nodes.speaker_clustering.prototypes import build_prototype_store
 from runner.nodes.speaker_clustering.prototypes import consolidate_labels_on_disk
@@ -203,7 +201,9 @@ def _execute_clustering_pipeline(
         check_cancel=check_cancel,
     )
     report_stage(7, "assigning accepted, provisional, ambiguous, and rejected rows")
-    prototype_index, established = build_prototype_index(prototypes, settings)
+    prototype_index, established = build_prototype_index(
+        prototypes, settings, scratch / "prototypes" / "assignment-established.bool", check_cancel
+    )
     assignment_result = write_assignment_shards(
         assignment_blocks(
             blocks(),
@@ -217,6 +217,7 @@ def _execute_clustering_pipeline(
         scratch / "assignments",
         settings.assignment_shard_rows,
     )
+    established.close()
     assigned_count = (
         assignment_result.counts.accepted
         + assignment_result.counts.provisional_new
@@ -232,6 +233,7 @@ def _execute_clustering_pipeline(
         scratch / "prototype-shards",
         settings.prototype_shard_rows,
         settings.block_rows,
+        check_cancel,
     )
     report_stage(8, "uploading durable clustering artifacts")
     result = persist_clustering_outputs(
@@ -270,18 +272,24 @@ def _consolidate_hierarchically(
             block_rows=settings.block_rows,
             check_cancel=check_cancel,
         )
-        prototype_neighbors = prototype_neighbor_ids(prototypes, settings)
-        support_path.unlink(missing_ok=True)
-        merged_count = consolidate_labels_on_disk(
-            labels=labels,
-            edge_blocks=edges(),
-            database_path=support_path,
-            min_support_pairs=settings.min_support_pairs,
-            max_members=settings.max_cluster_members,
-            block_rows=settings.block_rows,
-            check_cancel=check_cancel,
-            prototype_neighbors=prototype_neighbors,
+        prototype_neighbors = prototype_neighbor_ids(
+            prototypes, settings, prototype_dir / "neighbors.i64",
+            prototype_dir / "neighbor-established.bool", check_cancel,
         )
+        support_path.unlink(missing_ok=True)
+        try:
+            merged_count = consolidate_labels_on_disk(
+                labels=labels,
+                edge_blocks=edges(),
+                database_path=support_path,
+                min_support_pairs=settings.min_support_pairs,
+                max_members=settings.max_cluster_members,
+                block_rows=settings.block_rows,
+                check_cancel=check_cancel,
+                prototype_neighbors=prototype_neighbors,
+            )
+        finally:
+            prototype_neighbors._mmap.close()
         del prototypes
         shutil.rmtree(prototype_dir)
         support_path.unlink(missing_ok=True)

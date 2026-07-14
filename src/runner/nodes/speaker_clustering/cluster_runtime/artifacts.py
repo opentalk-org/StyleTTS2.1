@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -125,15 +125,20 @@ def write_prototype_shards(
     output_dir: Path,
     shard_rows: int,
     scan_rows: int,
+    check_cancel: Callable[[], None] | None = None,
 ) -> list[Path]:
     if shard_rows <= 0 or scan_rows <= 0:
         raise ValueError("prototype shard_rows and scan_rows must be positive")
     output_dir.mkdir(parents=True, exist_ok=True)
     paths = []
     for start in range(0, prototypes.item_count, scan_rows):
+        if check_cancel is not None:
+            check_cancel()
         stop = min(start + scan_rows, prototypes.item_count)
         roots = np.flatnonzero(prototypes.member_counts[start:stop]) + start
         for offset in range(0, len(roots), shard_rows):
+            if check_cancel is not None:
+                check_cancel()
             selected = roots[offset : offset + shard_rows]
             path = output_dir / f"prototypes-{len(paths):08d}.parquet"
             pq.write_table(

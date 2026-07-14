@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
+from pathlib import Path
 
 import numpy as np
 
@@ -11,6 +12,11 @@ from runner.nodes.speaker_clustering.cluster_runtime.assignment import (
     AssignmentPolicy,
     CandidateScores,
     decide,
+)
+from runner.nodes.speaker_clustering.cluster_runtime.prototype_blocks import (
+    PrototypeSelection,
+    build_prototype_selection,
+    create_prototype_neighbor_ids,
 )
 from runner.nodes.speaker_clustering.faiss_index import (
     FaissIndexSettings,
@@ -25,50 +31,92 @@ from runner.nodes.speaker_clustering.shards import EmbeddingQuality
 def build_prototype_index(
     prototypes: PrototypeStore,
     settings: object,
-) -> tuple[SpeakerCandidateIndex | None, np.ndarray]:
-    established = (prototypes.member_counts >= settings.prototype_min_members) & (
-        ~prototypes.suspicious
+    selection_path: Path,
+    check_cancel: Callable[[], None],
+) -> tuple[SpeakerCandidateIndex | None, PrototypeSelection]:
+    selection = build_prototype_selection(
+        prototypes.member_counts,
+        prototypes.suspicious,
+        selection_path,
+        settings.prototype_min_members,
+        settings.block_rows,
+        check_cancel,
     )
-    return _build_index_for_mask(prototypes, established, settings), established
+    try:
+        index = _build_index_for_selection(
+            prototypes, selection, settings, check_cancel
+        )
+        return index, selection
+    except BaseException:
+        selection.close()
+        raise
 
 
 def prototype_neighbor_ids(
     prototypes: PrototypeStore,
     settings: object,
-) -> np.ndarray:
-    established = (prototypes.member_counts >= settings.min_support_pairs) & (
-        ~prototypes.suspicious
+    neighbor_path: Path,
+    selection_path: Path,
+    check_cancel: Callable[[], None],
+) -> np.memmap:
+    selection = build_prototype_selection(
+        prototypes.member_counts,
+        prototypes.suspicious,
+        selection_path,
+        settings.min_support_pairs,
+        settings.block_rows,
+        check_cancel,
     )
-    neighbors = np.full(prototypes.item_count, -1, dtype=np.int64)
-    index = _build_index_for_mask(prototypes, established, settings)
-    if index is None or index.item_count < 2:
-        return neighbors
-    search_count = min(settings.assignment_neighbors, index.item_count)
-    for row_ids, vectors in _prototype_blocks(
-        prototypes, established, settings.block_rows
-    ):
-        proposed = index.search(vectors, search_count)
-        reranked = exact_rerank(
-            vectors,
-            row_ids,
-            proposed.row_ids,
-            prototypes.vectors,
-            established,
-            settings.exact_edge_threshold,
-            keep=search_count,
+    neighbors = create_prototype_neighbor_ids(
+        neighbor_path,
+        prototypes.item_count,
+        settings.block_rows,
+        check_cancel,
+    )
+    try:
+        index = _build_index_for_selection(
+            prototypes, selection, settings, check_cancel
         )
-        valid = reranked.row_ids[:, 0] >= 0
-        neighbors[row_ids[valid]] = reranked.row_ids[valid, 0]
-    return neighbors
+        if index is None or index.item_count < 2:
+            return neighbors
+        search_count = min(settings.assignment_neighbors, index.item_count)
+        for row_ids, vectors in _prototype_blocks(
+            prototypes, selection, settings.block_rows, check_cancel
+        ):
+            check_cancel()
+            proposed = index.search(vectors, search_count)
+            check_cancel()
+            reranked = exact_rerank(
+                vectors,
+                row_ids,
+                proposed.row_ids,
+                prototypes.vectors,
+                selection.mask,
+                settings.exact_edge_threshold,
+                keep=search_count,
+            )
+            check_cancel()
+            valid = reranked.row_ids[:, 0] >= 0
+            neighbors[row_ids[valid]] = reranked.row_ids[valid, 0]
+        check_cancel()
+        neighbors.flush()
+        return neighbors
+    except BaseException:
+        neighbors._mmap.close()
+        raise
+    finally:
+        selection.close()
 
 
-def _build_index_for_mask(
+def _build_index_for_selection(
     prototypes: PrototypeStore,
-    established: np.ndarray,
+    selection: PrototypeSelection,
     settings: object,
+    check_cancel: Callable[[], None],
 ) -> SpeakerCandidateIndex | None:
-    if not np.any(established):
+    if selection.count == 0:
         return None
+    check_cancel()
     index_settings = FaissIndexSettings(
         settings.prototype_index_factory,
         settings.training_rows,
@@ -81,14 +129,18 @@ def _build_index_for_mask(
             settings.training_rows, settings.random_seed
         )
         for row_ids, vectors in _prototype_blocks(
-            prototypes, established, settings.block_rows
+            prototypes, selection, settings.block_rows, check_cancel
         ):
             reservoir.add(row_ids, vectors)
+        check_cancel()
         index.train(reservoir.result())
+        check_cancel()
     for row_ids, vectors in _prototype_blocks(
-        prototypes, established, settings.block_rows
+        prototypes, selection, settings.block_rows, check_cancel
     ):
+        check_cancel()
         index.add(row_ids, vectors)
+    check_cancel()
     return index
 
 
@@ -97,7 +149,7 @@ def assignment_blocks(
     labels: np.ndarray,
     prototypes: PrototypeStore,
     index: SpeakerCandidateIndex | None,
-    established: np.ndarray,
+    established: PrototypeSelection,
     settings: object,
     check_cancel: Callable[[], None],
 ) -> Iterator[list[AssignmentRow]]:
@@ -110,7 +162,9 @@ def assignment_blocks(
     )
     for block in blocks:
         check_cancel()
-        scores = _score_block(block, prototypes, index, established, settings)
+        scores = _score_block(
+            block, prototypes, index, established, settings, check_cancel
+        )
         rows = []
         for position, row_id in enumerate(block.row_ids):
             quality = EmbeddingQuality(str(block.qualities[position]))
@@ -135,12 +189,14 @@ def assignment_blocks(
 
 def _prototype_blocks(
     prototypes: PrototypeStore,
-    established: np.ndarray,
+    established: PrototypeSelection,
     block_rows: int,
+    check_cancel: Callable[[], None],
 ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
     for start in range(0, prototypes.item_count, block_rows):
+        check_cancel()
         stop = min(start + block_rows, prototypes.item_count)
-        row_ids = np.flatnonzero(established[start:stop]) + start
+        row_ids = np.flatnonzero(established.mask[start:stop]) + start
         if len(row_ids):
             yield row_ids, np.asarray(prototypes.vectors[row_ids], dtype=np.float32)
 
@@ -149,25 +205,29 @@ def _score_block(
     block: EmbeddingBlock,
     prototypes: PrototypeStore,
     index: SpeakerCandidateIndex | None,
-    established: np.ndarray,
+    established: PrototypeSelection,
     settings: object,
+    check_cancel: Callable[[], None],
 ) -> list[CandidateScores | None]:
     result: list[CandidateScores | None] = [None] * len(block.row_ids)
     accepted_positions = np.flatnonzero(block.accepted_mask)
     if index is None or not len(accepted_positions):
         return result
     neighbors = min(settings.assignment_neighbors, index.item_count)
+    check_cancel()
     proposed = index.search(block.embeddings[accepted_positions], neighbors)
+    check_cancel()
     reranked = exact_rerank(
         block.embeddings[accepted_positions],
         block.row_ids[accepted_positions],
         proposed.row_ids,
         prototypes.vectors,
-        established,
+        established.mask,
         -1.0,
         keep=neighbors,
         exclude_self=False,
     )
+    check_cancel()
     for output_position, block_position in enumerate(accepted_positions):
         valid = reranked.row_ids[output_position] >= 0
         cluster_ids = reranked.row_ids[output_position][valid].astype(int).tolist()
