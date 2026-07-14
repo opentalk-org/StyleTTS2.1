@@ -13,6 +13,7 @@
           "remote_parquet_path": "/home/ds_v1/000f72c2-caa7-4958-b8e8-0e7668bb9bb6_20260512T173847038808Z.parquet",
           "row_offset": 0,
           "row_limit": 1,
+          "text_column": "text_src",
           "name_prefix": "ds_v1",
           "cache_download": true,
           "download_retries": 3
@@ -25,8 +26,19 @@
         "x": 220,
         "y": 140,
         "params": {
+          "storage_mode": "stored",
           "virtual": false,
           "bulk_import_packs": true
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_audio_segments",
+        "type": "SaveAudioSegments",
+        "x": 600,
+        "y": 140,
+        "params": {
+          "mode": "replace"
         },
         "runtime": {}
       }
@@ -36,6 +48,12 @@
         "source_node": "hetzner_ds_v1_parquet",
         "source_port": "audio",
         "target_node": "save_audio_record",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "save_audio_record",
+        "source_port": "audio",
+        "target_node": "save_audio_segments",
         "target_port": "audio"
       }
     ],

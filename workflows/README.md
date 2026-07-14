@@ -85,11 +85,12 @@ and merges their word alignments without duplicating words when aligner timings 
 
 ### `ds_v1_sample_import.json` / `ds_v2_sample_import.json`
 
-Import a sample row from Hetzner `ds_v1` or from globally selected `ds_v2`
-metadata. The unified ds_v2 source discovers sorted metadata CSVs, applies its
-offset and limit across them, and derives each processed Parquet path from the
-selected metadata filename. With `import_audio` enabled it validates and attaches
-the selected bytes; the workflow then stores the audio and its segments.
+The ds_v1 workflow imports a long recording, merges its recording metadata with
+the matching ds_v2 metadata rows, and stores every transcript variant plus
+absolute Parakeet word alignment. The ds_v2 workflow discovers sorted metadata
+CSVs, applies its offset and limit across them, and derives each processed
+Parquet path from the selected metadata filename. With `import_audio` enabled it
+validates and attaches the selected bytes; both workflows store audio and segments.
 
 ### `ds_v2_metadata_import.json`
 
