@@ -4,8 +4,9 @@ import importlib
 import io
 import json
 import re
+from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import Field
@@ -15,6 +16,8 @@ from runflow.core.ports import PortMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import AudioPort
+from runner.nodes.hetzner.ds_v1_metadata import load_metadata_index, matching_samples, merge_recording_metadata
+from runner.nodes.hetzner.ds_v1_segments import segments_from_samples
 from runner.nodes.hetzner.ds_v1_storage import parquet_path
 from runner.nodes.models import Audio, stable_id
 
@@ -31,6 +34,7 @@ class HetznerDsV1ParquetAudioSourceSettings(StrictSettings):
     remote_parquet_path: str = Field(default=DEFAULT_PARQUET_PATH, title="Remote parquet path")
     row_offset: int = Field(default=0, ge=0, title="Row offset")
     row_limit: int = Field(default=1, ge=1, title="Rows to import")
+    text_column: Literal["text_src", "text_parakeet", "text_whisper", "text_canary"] = "text_src"
     name_prefix: str = Field(default="ds_v1", title="Audio name prefix")
     cache_download: bool = Field(default=True, title="Cache SFTP download")
     download_retries: int = Field(default=3, ge=1, le=10, title="SFTP retries")
@@ -38,7 +42,7 @@ class HetznerDsV1ParquetAudioSourceSettings(StrictSettings):
 
 class HetznerDsV1ParquetAudioSourceNode(Node):
     NODE_TYPE = "HetznerDsV1ParquetAudioSource"
-    DESCRIPTION = "Import audio from a ds_v1 parquet dataset of long recordings stored on a Hetzner storage box, streaming out one audio item per row. Decodes the row's Opus audio to WAV and attaches all of the row's metadata columns. Choose the remote path, row offset, and how many rows to import."
+    DESCRIPTION = "Import long ds_v1 recordings from Hetzner, merge their matching ds_v2 metadata, and attach absolute-time transcript and Parakeet alignment segments."
     CATEGORY = "Inputs"
     SETTINGS = HetznerDsV1ParquetAudioSourceSettings
     IS_INPUT = True
@@ -66,9 +70,36 @@ class HetznerDsV1ParquetAudioSourceNode(Node):
 
 
 def _load_audio_items(settings: HetznerDsV1ParquetAudioSourceSettings, context: Any) -> list[Audio]:
+    cache_dir = Path(context.cache_dir) / "hetzner"
+    context.check_cancel()
+    metadata_index = load_metadata_index(
+        settings.host,
+        settings.remote_parquet_path,
+        cache_dir,
+        settings.download_retries,
+        context.check_cancel,
+    )
     local_path = parquet_path(settings, context)
     rows = list(_iter_parquet_rows(local_path, settings.row_offset, settings.row_limit))
-    return [_audio_from_row(row, settings, absolute_index) for absolute_index, row in rows]
+    items = []
+    for absolute_index, row in rows:
+        context.check_cancel()
+        audio = _audio_from_row(row, settings, absolute_index)
+        samples = matching_samples(metadata_index, row, absolute_index)
+        items.append(
+            replace(
+                audio,
+                metadata=merge_recording_metadata(audio.metadata, samples, metadata_index.remote_path),
+                segments=segments_from_samples(
+                    audio,
+                    samples,
+                    settings.remote_parquet_path,
+                    absolute_index,
+                    settings.text_column,
+                ),
+            )
+        )
+    return items
 
 
 def _iter_parquet_rows(path: Path, row_offset: int, row_limit: int):
