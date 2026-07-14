@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from itertools import chain
 from pathlib import Path
 
 import numpy as np
@@ -25,7 +26,8 @@ class MicroclusterLabels:
         directory.mkdir(parents=True, exist_ok=True)
         return cls(directory, item_count, mode="w+")
 
-    def flush(self) -> None:
+    def flush(self, check_cancel: Callable[[], None] | None = None) -> None:
+        _check_cancel(check_cancel)
         self.values.flush()
 
 
@@ -34,10 +36,13 @@ def mutual_best_labels(
     accepted: np.ndarray,
     edge_blocks: Iterable[EdgeBlock],
 ) -> np.ndarray:
+    blocks, block_rows = _bounded_edge_blocks(edge_blocks)
     best_neighbors = np.full(item_count, -1, dtype=np.int64)
     best_scores = np.full(item_count, -np.inf, dtype=np.float32)
-    _find_best_neighbors(best_neighbors, best_scores, edge_blocks, None)
-    return _pair_labels(best_neighbors, accepted)
+    _find_best_neighbors(best_neighbors, best_scores, blocks, None)
+    labels = np.empty(item_count, dtype=np.int64)
+    _write_pair_labels(labels, best_neighbors, accepted, block_rows, None)
+    return labels
 
 
 def build_microcluster_labels(
@@ -45,8 +50,10 @@ def build_microcluster_labels(
     accepted: np.ndarray,
     edge_blocks: Iterable[EdgeBlock],
     directory: Path,
+    block_rows: int,
     check_cancel: Callable[[], None] | None = None,
 ) -> MicroclusterLabels:
+    blocks = edge_blocks
     directory.mkdir(parents=True, exist_ok=True)
     best_neighbors = np.memmap(
         directory / "best_neighbors.i64",
@@ -60,12 +67,22 @@ def build_microcluster_labels(
         mode="w+",
         shape=(item_count,),
     )
-    best_neighbors[:] = -1
-    best_scores[:] = -np.inf
-    _find_best_neighbors(best_neighbors, best_scores, edge_blocks, check_cancel)
+    _fill_blocks(best_neighbors, -1, block_rows, check_cancel)
+    _fill_blocks(best_scores, -np.inf, block_rows, check_cancel)
+    _find_best_neighbors(best_neighbors, best_scores, blocks, check_cancel)
     labels = MicroclusterLabels.create(directory, item_count)
-    labels.values[:] = _pair_labels(best_neighbors, accepted)
-    labels.flush()
+    _write_pair_labels(
+        labels.values,
+        best_neighbors,
+        accepted,
+        block_rows,
+        check_cancel,
+    )
+    _check_cancel(check_cancel)
+    best_neighbors.flush()
+    _check_cancel(check_cancel)
+    best_scores.flush()
+    labels.flush(check_cancel)
     return labels
 
 
@@ -74,14 +91,16 @@ def _find_best_neighbors(
     best_scores: np.ndarray,
     edge_blocks: Iterable[EdgeBlock],
     check_cancel: Callable[[], None] | None,
-) -> None:
+) -> int:
+    block_rows = 0
     for block in edge_blocks:
-        if check_cancel is not None:
-            check_cancel()
+        _check_cancel(check_cancel)
         sources = np.concatenate((block.left_ids, block.right_ids))
         targets = np.concatenate((block.right_ids, block.left_ids))
         scores = np.concatenate((block.exact_scores, block.exact_scores))
+        block_rows = max(block_rows, len(sources))
         _update_best(best_neighbors, best_scores, sources, targets, scores)
+    return block_rows
 
 
 def _update_best(
@@ -110,15 +129,54 @@ def _update_best(
     best_neighbors[source_ids[replace]] = candidate_neighbors[replace]
 
 
-def _pair_labels(best_neighbors: np.ndarray, accepted: np.ndarray) -> np.ndarray:
+def _write_pair_labels(
+    labels: np.ndarray,
+    best_neighbors: np.ndarray,
+    accepted: np.ndarray,
+    block_rows: int,
+    check_cancel: Callable[[], None] | None,
+) -> None:
     item_count = len(best_neighbors)
     if len(accepted) != item_count:
         raise ValueError("accepted mask and microcluster labels must have equal length")
-    row_ids = np.arange(item_count, dtype=np.int64)
-    labels = np.where(accepted, row_ids, -1)
-    valid = accepted & (best_neighbors >= 0) & (best_neighbors < item_count)
-    safe_neighbors = np.where(valid, best_neighbors, 0)
-    mutual = valid & (best_neighbors[safe_neighbors] == row_ids)
-    pair_starts = mutual & (row_ids < best_neighbors)
-    labels[best_neighbors[pair_starts]] = row_ids[pair_starts]
-    return labels
+    for start in range(0, item_count, block_rows):
+        _check_cancel(check_cancel)
+        stop = min(start + block_rows, item_count)
+        row_ids = np.arange(start, stop, dtype=np.int64)
+        labels[start:stop] = np.where(accepted[start:stop], row_ids, -1)
+    for start in range(0, item_count, block_rows):
+        _check_cancel(check_cancel)
+        stop = min(start + block_rows, item_count)
+        row_ids = np.arange(start, stop, dtype=np.int64)
+        neighbors = best_neighbors[start:stop]
+        valid = accepted[start:stop] & (neighbors >= 0) & (neighbors < item_count)
+        safe_neighbors = np.where(valid, neighbors, 0)
+        mutual = valid & (best_neighbors[safe_neighbors] == row_ids)
+        pair_starts = mutual & (row_ids < neighbors)
+        labels[neighbors[pair_starts]] = row_ids[pair_starts]
+
+
+def _fill_blocks(
+    values: np.ndarray,
+    value: int | float,
+    block_rows: int,
+    check_cancel: Callable[[], None] | None,
+) -> None:
+    for start in range(0, len(values), block_rows):
+        _check_cancel(check_cancel)
+        values[start : start + block_rows] = value
+
+
+def _bounded_edge_blocks(
+    edge_blocks: Iterable[EdgeBlock],
+) -> tuple[Iterable[EdgeBlock], int]:
+    iterator = iter(edge_blocks)
+    first = next(iterator, None)
+    if first is None:
+        return (), 1
+    return chain((first,), iterator), max(len(first.left_ids), 1)
+
+
+def _check_cancel(check_cancel: Callable[[], None] | None) -> None:
+    if check_cancel is not None:
+        check_cancel()

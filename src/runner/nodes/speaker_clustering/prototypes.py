@@ -6,6 +6,10 @@ from pathlib import Path
 
 import numpy as np
 
+from runner.nodes.speaker_clustering.cluster_runtime.prototype_blocks import (
+    finalize_prototype_statistics,
+    normalize_prototype_vectors,
+)
 from runner.nodes.speaker_clustering.cluster_runtime.support_pairs import (
     consolidate_labels as consolidate_labels,
     consolidate_labels_on_disk as consolidate_labels_on_disk,
@@ -73,19 +77,29 @@ class PrototypeStore:
         )
 
     @classmethod
-    def create(cls, directory: Path, item_count: int, dimension: int) -> PrototypeStore:
+    def create(
+        cls,
+        directory: Path,
+        item_count: int,
+        dimension: int,
+        block_rows: int,
+        check_cancel: Callable[[], None] | None,
+    ) -> PrototypeStore:
         directory.mkdir(parents=True, exist_ok=True)
         store = cls(directory, item_count, dimension, mode="w+")
-        store.vectors[:] = 0.0
-        store.member_counts[:] = 0
-        store.duration_seconds[:] = 0.0
-        store.dispersion[:] = 0.0
-        store.suspicious[:] = False
-        store.exemplar_ids[:] = -1
-        store.exemplar_scores[:] = -np.inf
+        for start in range(0, item_count, block_rows):
+            _check_cancel(check_cancel)
+            stop = min(start + block_rows, item_count)
+            store.vectors[start:stop] = 0.0
+            store.member_counts[start:stop] = 0
+            store.duration_seconds[start:stop] = 0.0
+            store.dispersion[start:stop] = 0.0
+            store.suspicious[start:stop] = False
+            store.exemplar_ids[start:stop] = -1
+            store.exemplar_scores[start:stop] = -np.inf
         return store
 
-    def flush(self) -> None:
+    def flush(self, check_cancel: Callable[[], None] | None = None) -> None:
         for values in (
             self.vectors,
             self.member_counts,
@@ -95,6 +109,7 @@ class PrototypeStore:
             self.exemplar_ids,
             self.exemplar_scores,
         ):
+            _check_cancel(check_cancel)
             values.flush()
 
 
@@ -156,9 +171,13 @@ def build_prototype_store(
     dimension: int,
     max_members: int,
     max_dispersion: float,
+    block_rows: int,
     check_cancel: Callable[[], None] | None = None,
 ) -> PrototypeStore:
-    store = PrototypeStore.create(directory, item_count, dimension)
+    _check_cancel(check_cancel)
+    store = PrototypeStore.create(
+        directory, item_count, dimension, block_rows, check_cancel
+    )
     for block in block_factory():
         if check_cancel is not None:
             check_cancel()
@@ -167,7 +186,9 @@ def build_prototype_store(
         np.add.at(store.vectors, roots, block.embeddings[valid])
         np.add.at(store.member_counts, roots, 1)
         np.add.at(store.duration_seconds, roots, block.duration_seconds[valid])
-    store.vectors[:] = _normalize_prototypes(store.vectors, store.member_counts)
+    normalize_prototype_vectors(
+        store.vectors, store.member_counts, block_rows, check_cancel
+    )
     for block in block_factory():
         if check_cancel is not None:
             check_cancel()
@@ -184,25 +205,28 @@ def build_prototype_store(
             block.row_ids[valid],
             scores,
         )
-    np.divide(
+    finalize_prototype_statistics(
         store.dispersion,
         store.member_counts,
-        out=store.dispersion,
-        where=store.member_counts > 0,
+        store.suspicious,
+        labels,
+        max_members,
+        max_dispersion,
+        block_rows,
+        check_cancel,
     )
-    store.suspicious[:] = (store.member_counts > max_members) | (
-        (store.member_counts > 0) & (store.dispersion > max_dispersion)
-    )
-    store.flush()
+    store.flush(check_cancel)
     return store
 
 
 def _normalize_prototypes(vectors: np.ndarray, counts: np.ndarray) -> np.ndarray:
     norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    normalized = np.empty_like(vectors, dtype=np.float32)
+    normalized.fill(0.0)
     return np.divide(
         vectors,
         norms,
-        out=np.zeros_like(vectors, dtype=np.float32),
+        out=normalized,
         where=(counts[:, np.newaxis] > 0) & (norms > 0.0),
     )
 
@@ -236,3 +260,8 @@ def _update_exemplars(
     )
     exemplar_scores[selected_roots[replace]] = selected_scores[replace]
     exemplar_ids[selected_roots[replace]] = selected_ids[replace]
+
+
+def _check_cancel(check_cancel: Callable[[], None] | None) -> None:
+    if check_cancel is not None:
+        check_cancel()
