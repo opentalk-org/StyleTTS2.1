@@ -8,7 +8,6 @@ from hashlib import blake2b
 from heapq import heapreplace, heappush
 from math import isfinite, log
 from struct import pack
-from uuid import UUID
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,7 +18,7 @@ from sklearn.metrics.cluster import expected_mutual_information
 
 @dataclass(frozen=True)
 class AssignmentAuditRow:
-    segment_id: UUID
+    segment_id: str
     cluster_id: int | None
     true_label: str | None
     centroid_score: float | None
@@ -28,7 +27,7 @@ class AssignmentAuditRow:
 
 @dataclass(frozen=True)
 class AuditSampleKey:
-    segment_id: UUID
+    segment_id: str
     stratum: str
 
 
@@ -162,12 +161,12 @@ def score_distribution(
 
 def deterministic_sample_ids(
     rows: Iterable[AuditSampleKey], size: int, seed: int
-) -> list[UUID]:
+) -> list[str]:
     if size < 0:
         raise ValueError("audit sample size must be non-negative")
     if size == 0:
         return []
-    by_stratum: dict[str, list[tuple[int, UUID]]] = defaultdict(list)
+    by_stratum: dict[str, list[tuple[int, str]]] = defaultdict(list)
     for row in rows:
         priority = _sample_priority(row, seed)
         heap = by_stratum[row.stratum]
@@ -180,7 +179,7 @@ def deterministic_sample_ids(
         stratum: [segment_id for _priority, segment_id in sorted(heap, reverse=True)]
         for stratum, heap in by_stratum.items()
     }
-    result: list[UUID] = []
+    result: list[str] = []
     offset = 0
     strata = sorted(ordered)
     while len(result) < size:
@@ -278,7 +277,10 @@ def _ratio(numerator: int, denominator: int) -> float | None:
 
 
 def _sample_priority(row: AuditSampleKey, seed: int) -> int:
-    payload = seed.to_bytes(16, "big", signed=True) + row.stratum.encode() + row.segment_id.bytes
+    stratum = row.stratum.encode()
+    segment_id = row.segment_id.encode()
+    payload = pack("!16sI", seed.to_bytes(16, "big", signed=True), len(stratum))
+    payload += stratum + pack("!I", len(segment_id)) + segment_id
     return int.from_bytes(blake2b(payload, digest_size=16).digest())
 
 
