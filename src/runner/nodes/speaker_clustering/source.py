@@ -4,6 +4,8 @@ from dataclasses import replace
 from typing import Any
 from uuid import UUID
 
+from pydantic import Field
+
 from runflow.core.node import Node
 from runflow.core.ports import PortMode
 from runflow.core.settings import StrictSettings
@@ -22,6 +24,7 @@ PAGE_SIZE = 1_024
 
 class SpeakerSegmentSourceSettings(StrictSettings):
     dataset_id: UUID
+    maximum_page_bytes: int = Field(default=256 * 1024 * 1024, gt=0)
 
 
 class SpeakerSegmentSource(Node):
@@ -60,6 +63,9 @@ class SpeakerSegmentSource(Node):
                 limit,
             )
             assert references, f"{self.id} expected {self.remaining_items(context)} more database segments"
+            references = bounded_reference_prefix(
+                references, self.settings.maximum_page_bytes
+            )
             audio_ids = list(dict.fromkeys(reference.audio_file_id for reference in references))
             stored = audio_crud.bulk_read_audio_files(session, audio_ids)
 
@@ -85,6 +91,26 @@ class SpeakerSegmentSource(Node):
             f"streamed {self._emitted}/{self._segment_count} stored segments",
         )
         return outputs
+
+
+def bounded_reference_prefix(
+    references: list[SegmentReference], maximum_bytes: int
+) -> list[SegmentReference]:
+    selected = []
+    selected_audio_ids = set()
+    stored_bytes = 0
+    for reference in references:
+        additional_bytes = (
+            0
+            if reference.audio_file_id in selected_audio_ids
+            else reference.audio_byte_length
+        )
+        if selected and stored_bytes + additional_bytes > maximum_bytes:
+            break
+        selected.append(reference)
+        selected_audio_ids.add(reference.audio_file_id)
+        stored_bytes += additional_bytes
+    return selected
 
 
 def _segment_audio(
