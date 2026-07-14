@@ -16,6 +16,10 @@ from runflow.runtime.output_router import INPUT_INDEX_OUTPUT
 from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AudioPort, SpeakerEmbeddingShardRefPort
 from runner.nodes.models import Audio, SpeakerEmbeddingShardRef
+from runner.nodes.speaker_clustering.embed_batches import (
+    bounded_audio_groups,
+    validate_embedding_batch,
+)
 from runner.nodes.speaker_clustering.ecapa_runtime import (
     ECAPA_EMBEDDING_DIMENSION,
     ECAPARuntime,
@@ -99,9 +103,15 @@ class ECAPASpeakerEmbedNode(Node):
         assert self._runtime is not None, f"{self.id} ECAPA model is not loaded"
         context.check_cancel()
         audios = [inputs["audio"] for inputs in batch]
-        run_id = self._ensure_run(audios[0])
+        run_id = self._ensure_run(audios)
         outputs = []
-        for group in bounded_audio_groups(audios, self.settings.maximum_batch_seconds):
+        groups = bounded_audio_groups(audios, self.settings.maximum_batch_seconds)
+        groups.extend(
+            [audio]
+            for audio in audios
+            if audio.duration > self.settings.maximum_batch_seconds
+        )
+        for group in groups:
             context.check_cancel()
             rows = self._embed_rows(group, context)
             shard_data = write_embedding_shard(rows)
@@ -122,27 +132,24 @@ class ECAPASpeakerEmbedNode(Node):
     def _model_identity(self) -> str:
         return f"{self.settings.model_source}@{self.settings.model_revision}"
 
-    def _ensure_run(self, audio: Audio) -> UUID:
-        dataset_id = UUID(str(audio.metadata["dataset_id"]))
-        expected_count = int(audio.metadata["source_segment_count"])
+    def _ensure_run(self, audios: list[Audio]) -> UUID:
+        identity = validate_embedding_batch(audios, self._dataset_id, self._expected_count)
         if self._run_id is not None:
-            assert dataset_id == self._dataset_id, "embedding batches cannot mix datasets"
-            assert expected_count == self._expected_count, "source segment count changed during embedding"
             return self._run_id
         with database_session() as session:
             run = speaker_crud.create_embedding_run(
                 session,
                 EmbeddingRunCreate(
-                    dataset_id=dataset_id,
-                    expected_count=expected_count,
+                    dataset_id=identity.dataset_id,
+                    expected_count=identity.source_segment_count,
                     dimension=ECAPA_EMBEDDING_DIMENSION,
                     model_revision=self._model_identity,
                     preprocessing_version=self.settings.preprocessing_version,
                 ),
             )
         self._run_id = run.id
-        self._dataset_id = dataset_id
-        self._expected_count = expected_count
+        self._dataset_id = identity.dataset_id
+        self._expected_count = identity.source_segment_count
         return run.id
 
     def _embed_rows(self, audios: list[Audio], context: Any) -> list[SpeakerEmbeddingRow]:
@@ -150,13 +157,22 @@ class ECAPASpeakerEmbedNode(Node):
         accepted = [
             (index, audio)
             for index, audio in enumerate(audios)
-            if audio.duration >= self.settings.minimum_duration_seconds
+            if self.settings.minimum_duration_seconds
+            <= audio.duration
+            <= self.settings.maximum_batch_seconds
         ]
         rejected = {
             index: "too_short"
             for index, audio in enumerate(audios)
             if audio.duration < self.settings.minimum_duration_seconds
         }
+        rejected.update(
+            {
+                index: "duration_exceeds_maximum_batch_seconds"
+                for index, audio in enumerate(audios)
+                if audio.duration > self.settings.maximum_batch_seconds
+            }
+        )
         prepared = None
         if accepted:
             try:
@@ -261,19 +277,3 @@ def _rejection_reason(error: Exception) -> str:
     if "bytes are required" in message:
         return "missing_audio_bytes"
     return "invalid_audio"
-
-
-def bounded_audio_groups(audios: list[Audio], maximum_seconds: float) -> list[list[Audio]]:
-    groups: list[list[Audio]] = []
-    current: list[Audio] = []
-    current_seconds = 0.0
-    for audio in audios:
-        if current and current_seconds + audio.duration > maximum_seconds:
-            groups.append(current)
-            current = []
-            current_seconds = 0.0
-        current.append(audio)
-        current_seconds += audio.duration
-    if current:
-        groups.append(current)
-    return groups

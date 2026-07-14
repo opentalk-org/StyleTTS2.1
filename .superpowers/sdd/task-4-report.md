@@ -41,3 +41,17 @@ used Nix-wrapped `uv run --with pytest`; application imports and compile checks
 used the Nix-wrapped project Python. The real SpeechBrain/model/artifact graph
 smoke remains part of Task 5, where registration, collection, and the workflow are
 implemented.
+
+## Review fixes
+
+- Oversized audio is excluded from `bounded_audio_groups`, written as an explicit
+  rejected row with `duration_exceeds_maximum_batch_seconds`, and never passed to
+  ECAPA preparation or inference.
+- Every execute item now validates `dataset_id` and `source_segment_count` against
+  the batch identity or reused embedding run before run creation or shard storage.
+- RED: `nix develop --command uv run --with pytest pytest
+  tmp_tests/test_task4_review_regressions.py -q` failed `4 failed`, demonstrating
+  the oversized singleton and both metadata fields reaching persistence.
+- GREEN: the same focused command passed `4 passed`; `git diff --check` and
+  `nix develop --command python -m compileall -q src` also passed.
+- The temporary regression test was removed per repository policy.
