@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
+from fractions import Fraction
 from hashlib import blake2b
 from heapq import heapreplace, heappush
 from math import isfinite, log
@@ -51,11 +52,11 @@ class LabeledAuditMetrics(BaseModel):
 
     labeled_count: int = Field(ge=0)
     clustered_labeled_count: int = Field(ge=0)
-    pair_precision: float = Field(ge=0.0, le=1.0)
-    pair_recall: float = Field(ge=0.0, le=1.0)
-    weighted_purity: float = Field(ge=0.0, le=1.0)
-    adjusted_rand_index: float = Field(ge=-1.0, le=1.0)
-    adjusted_mutual_info: float = Field(ge=-1.0, le=1.0)
+    pair_precision: float | None = Field(ge=0.0, le=1.0)
+    pair_recall: float | None = Field(ge=0.0, le=1.0)
+    weighted_purity: float | None = Field(ge=0.0, le=1.0)
+    adjusted_rand_index: float | None = Field(ge=-1.0, le=1.0)
+    adjusted_mutual_info: float | None = Field(ge=-1.0, le=1.0)
     fragmented_speaker_count: int = Field(ge=0)
     max_clusters_per_true_speaker: int = Field(ge=0)
     max_true_speakers_in_cluster: int = Field(ge=0)
@@ -124,7 +125,7 @@ def score_distribution(
         raise ValueError("score distribution maximum_values must be positive")
     reservoir: list[tuple[int, float]] = []
     count = 0
-    total = 0.0
+    total = Fraction(0)
     minimum = float("inf")
     maximum = float("-inf")
     for raw_value in values:
@@ -132,7 +133,7 @@ def score_distribution(
         if not isfinite(value):
             raise ValueError("audit score distribution requires finite values")
         count += 1
-        total += value
+        total += Fraction.from_float(value)
         minimum = min(minimum, value)
         maximum = max(maximum, value)
         priority = int.from_bytes(blake2b(pack("!d", value), digest_size=16).digest())
@@ -155,7 +156,7 @@ def score_distribution(
         q75=float(quantiles[3]),
         q95=float(quantiles[4]),
         maximum=maximum,
-        mean=total / count,
+        mean=float(total / count),
     )
 
 
@@ -210,9 +211,9 @@ def _distinct_counts(
 
 def _weighted_purity(
     cells: Counter[tuple[int, str]], cluster_totals: Counter[int]
-) -> float:
+) -> float | None:
     if not cluster_totals:
-        return 1.0
+        return None
     maxima: Counter[int] = Counter()
     for (cluster_id, _label), count in cells.items():
         maxima[cluster_id] = max(maxima[cluster_id], count)
@@ -223,11 +224,11 @@ def _adjusted_rand(
     cells: Counter[tuple[int, str]],
     cluster_totals: Counter[int],
     truth_totals: Counter[str],
-) -> float:
+) -> float | None:
     count = sum(cluster_totals.values())
+    if count < 2:
+        return None
     total_pairs = _pairs(count)
-    if total_pairs == 0:
-        return 1.0
     index = sum(_pairs(value) for value in cells.values())
     cluster_index = sum(_pairs(value) for value in cluster_totals.values())
     truth_index = sum(_pairs(value) for value in truth_totals.values())
@@ -240,10 +241,10 @@ def _adjusted_mutual_info(
     cells: Counter[tuple[int, str]],
     cluster_totals: Counter[int],
     truth_totals: Counter[str],
-) -> float:
+) -> float | None:
     count = sum(cluster_totals.values())
-    if count <= 1:
-        return 1.0
+    if count < 2:
+        return None
     cluster_ids = {value: index for index, value in enumerate(sorted(cluster_totals))}
     labels = {value: index for index, value in enumerate(sorted(truth_totals))}
     row_ids = [cluster_ids[cluster] for cluster, _label in cells]
@@ -272,8 +273,8 @@ def _pairs(count: int) -> int:
     return count * (count - 1) // 2
 
 
-def _ratio(numerator: int, denominator: int) -> float:
-    return 1.0 if denominator == 0 else numerator / denominator
+def _ratio(numerator: int, denominator: int) -> float | None:
+    return None if denominator == 0 else numerator / denominator
 
 
 def _sample_priority(row: AuditSampleKey, seed: int) -> int:
