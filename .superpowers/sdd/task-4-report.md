@@ -47,8 +47,8 @@ implemented.
 - Every bounded group writes one artifact and emits its shared idempotent shard
   reference once per contributing scheduler input, preserving each original
   `__input_index__` lineage association.
-- Any audio whose duration exceeds `maximum_batch_seconds` raises an actionable
-  `ValueError` before embedding-run creation, ECAPA inference, or artifact storage.
+- Any audio whose duration exceeds `maximum_batch_seconds` is stored as an explicit
+  rejected shard row and is never passed to ECAPA inference.
 - Every execute item now validates `dataset_id` and `source_segment_count` against
   the batch identity or reused embedding run before run creation or shard storage.
 - RED: `nix develop --command uv run --with pytest pytest
@@ -61,4 +61,9 @@ implemented.
   output returned only index `0`, and oversized audio reached run creation.
 - GREEN: the same focused command passed `2 passed`; a fresh Nix compile check
   and `git diff --check` passed in the same verification chain.
+- A scheduler-level regression graph with valid and oversized inputs failed RED
+  at the duration preflight before shard storage. GREEN passed `1 passed`, proving
+  accepted inference remained within the seconds bound, the oversized input was
+  stored with `duration_exceeds_maximum_batch_seconds`, and shard outputs retained
+  source input lineages 0 and 1.
 - The temporary regression test was removed per repository policy.

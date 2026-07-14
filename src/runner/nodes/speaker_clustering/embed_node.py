@@ -18,7 +18,6 @@ from runner.nodes.datatypes import AudioPort, SpeakerEmbeddingShardRefPort
 from runner.nodes.models import Audio, SpeakerEmbeddingShardRef
 from runner.nodes.speaker_clustering.embed_batches import (
     bounded_audio_groups,
-    validate_audio_durations,
     validate_embedding_batch,
 )
 from runner.nodes.speaker_clustering.ecapa_runtime import (
@@ -104,7 +103,6 @@ class ECAPASpeakerEmbedNode(Node):
         assert self._runtime is not None, f"{self.id} ECAPA model is not loaded"
         context.check_cancel()
         audios = [inputs["audio"] for inputs in batch]
-        validate_audio_durations(audios, self.settings.maximum_batch_seconds)
         run_id = self._ensure_run(audios)
         outputs = []
         input_offset = 0
@@ -162,13 +160,22 @@ class ECAPASpeakerEmbedNode(Node):
         accepted = [
             (index, audio)
             for index, audio in enumerate(audios)
-            if audio.duration >= self.settings.minimum_duration_seconds
+            if self.settings.minimum_duration_seconds
+            <= audio.duration
+            <= self.settings.maximum_batch_seconds
         ]
         rejected = {
             index: "too_short"
             for index, audio in enumerate(audios)
             if audio.duration < self.settings.minimum_duration_seconds
         }
+        rejected.update(
+            {
+                index: "duration_exceeds_maximum_batch_seconds"
+                for index, audio in enumerate(audios)
+                if audio.duration > self.settings.maximum_batch_seconds
+            }
+        )
         prepared = None
         if accepted:
             try:
