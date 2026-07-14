@@ -30,9 +30,7 @@ class WorkflowReview(Base):
         String(16), nullable=False, default=ReviewState.PENDING.value
     )
     payload: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
-    continuation: Mapped[dict[str, object] | None] = mapped_column(
-        JSONB, nullable=True
-    )
+    continuation: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     continuation_run_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)

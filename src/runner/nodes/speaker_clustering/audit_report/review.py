@@ -27,7 +27,9 @@ def speaker_review_payload(
     outcomes: ClusteringOutcomeCounts,
 ) -> ReviewPayload:
     labeled = document.metrics.labeled
-    warnings = _warnings(labeled.max_true_speakers_in_cluster, labeled.fragmented_speaker_count)
+    warnings = _warnings(
+        labeled.max_true_speakers_in_cluster, labeled.fragmented_speaker_count
+    )
     manifest = document.listening_manifest
     groups = (
         _group(
@@ -80,8 +82,12 @@ def _metrics(
         _quality_metric("pair_precision", "Pair precision", labeled.pair_precision),
         _quality_metric("weighted_purity", "Weighted purity", labeled.weighted_purity),
         _quality_metric("pair_recall", "Pair recall", labeled.pair_recall),
-        _quality_metric("adjusted_rand_index", "Adjusted Rand", labeled.adjusted_rand_index),
-        _quality_metric("adjusted_mutual_info", "Adjusted mutual info", labeled.adjusted_mutual_info),
+        _quality_metric(
+            "adjusted_rand_index", "Adjusted Rand", labeled.adjusted_rand_index
+        ),
+        _quality_metric(
+            "adjusted_mutual_info", "Adjusted mutual info", labeled.adjusted_mutual_info
+        ),
         ReviewMetric(
             key="accepted_coverage",
             label="Accepted coverage",
@@ -149,9 +155,15 @@ def _item(
     media = media_by_segment[(entry.audio_id, entry.segment_id)]
     fields = (
         ReviewField(key="cluster", label="Cluster", value=_optional(entry.cluster_id)),
-        ReviewField(key="label", label="Known speaker", value=entry.true_label or "Unknown"),
-        ReviewField(key="best_score", label="Best score", value=_score(entry.best_score)),
-        ReviewField(key="second_score", label="Second score", value=_score(entry.second_score)),
+        ReviewField(
+            key="label", label="Known speaker", value=entry.true_label or "Unknown"
+        ),
+        ReviewField(
+            key="best_score", label="Best score", value=_score(entry.best_score)
+        ),
+        ReviewField(
+            key="second_score", label="Second score", value=_score(entry.second_score)
+        ),
         ReviewField(key="margin", label="Margin", value=_score(entry.margin)),
     )
     return ReviewItem(

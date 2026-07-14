@@ -76,9 +76,7 @@ def decide_review(
     session: Session, review_id: UUID, decision: ReviewDecision
 ) -> WorkflowReview:
     item = session.scalar(
-        select(WorkflowReview)
-        .where(WorkflowReview.id == review_id)
-        .with_for_update()
+        select(WorkflowReview).where(WorkflowReview.id == review_id).with_for_update()
     )
     if item is None:
         raise KeyError(f"workflow review not found: {review_id}")

@@ -81,12 +81,13 @@ Only high-confidence members update float32 prototype sums. Ambiguous and
 low-quality segments never update prototypes. Multiple exemplars or sub-centroids
 are retained for speakers spanning channels or recording conditions.
 
-`AuditSpeakerClusters` scans persisted assignments and candidate scores to create
-a compact JSON/HTML report plus deterministic listening artifacts. It emits the
-unchanged cluster-run reference for `ApplySpeakerClusters`. Apply creates voices
-in bulk and rewrites each affected audio record's complete segment JSON exactly
-once, preserving every unrelated segment field. Ambiguous/rejected segments keep
-`voice_id=None` and an actionable assignment reason in the run artifact.
+`AuditSpeakerClusters` scans persisted assignments and candidate scores to publish
+a generic workflow review with quantitative metrics and bounded audio samples.
+Approval starts a linked `ApplySpeakerClusters` continuation exactly once. Apply
+creates voices in bulk and rewrites each affected audio record's complete segment
+JSON exactly once, preserving every unrelated segment field. Ambiguous/rejected
+segments keep `voice_id=None` and an actionable assignment reason in the run
+artifact.
 
 ## Durable data
 
