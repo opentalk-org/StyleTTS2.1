@@ -44,9 +44,11 @@ implemented.
 
 ## Review fixes
 
-- Oversized audio is excluded from `bounded_audio_groups`, written as an explicit
-  rejected row with `duration_exceeds_maximum_batch_seconds`, and never passed to
-  ECAPA preparation or inference.
+- Every bounded group writes one artifact and emits its shared idempotent shard
+  reference once per contributing scheduler input, preserving each original
+  `__input_index__` lineage association.
+- Any audio whose duration exceeds `maximum_batch_seconds` raises an actionable
+  `ValueError` before embedding-run creation, ECAPA inference, or artifact storage.
 - Every execute item now validates `dataset_id` and `source_segment_count` against
   the batch identity or reused embedding run before run creation or shard storage.
 - RED: `nix develop --command uv run --with pytest pytest
@@ -54,4 +56,9 @@ implemented.
   the oversized singleton and both metadata fields reaching persistence.
 - GREEN: the same focused command passed `4 passed`; `git diff --check` and
   `nix develop --command python -m compileall -q src` also passed.
+- A follow-up RED run of `nix develop --command uv run --with pytest pytest
+  tmp_tests/test_task4_lineage_duration_review.py -q` failed `2 failed`: grouped
+  output returned only index `0`, and oversized audio reached run creation.
+- GREEN: the same focused command passed `2 passed`; a fresh Nix compile check
+  and `git diff --check` passed in the same verification chain.
 - The temporary regression test was removed per repository policy.

@@ -41,13 +41,20 @@ def validate_embedding_batch(
     return expected
 
 
+def validate_audio_durations(audios: list[Audio], maximum_seconds: float) -> None:
+    for index, audio in enumerate(audios):
+        if audio.duration > maximum_seconds:
+            raise ValueError(
+                f"audio item {index} duration {audio.duration} exceeds "
+                f"maximum_batch_seconds {maximum_seconds}"
+            )
+
+
 def bounded_audio_groups(audios: list[Audio], maximum_seconds: float) -> list[list[Audio]]:
     groups: list[list[Audio]] = []
     current: list[Audio] = []
     current_seconds = 0.0
     for audio in audios:
-        if audio.duration > maximum_seconds:
-            continue
         if current and current_seconds + audio.duration > maximum_seconds:
             groups.append(current)
             current = []

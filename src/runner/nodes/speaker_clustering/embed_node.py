@@ -18,6 +18,7 @@ from runner.nodes.datatypes import AudioPort, SpeakerEmbeddingShardRefPort
 from runner.nodes.models import Audio, SpeakerEmbeddingShardRef
 from runner.nodes.speaker_clustering.embed_batches import (
     bounded_audio_groups,
+    validate_audio_durations,
     validate_embedding_batch,
 )
 from runner.nodes.speaker_clustering.ecapa_runtime import (
@@ -103,22 +104,26 @@ class ECAPASpeakerEmbedNode(Node):
         assert self._runtime is not None, f"{self.id} ECAPA model is not loaded"
         context.check_cancel()
         audios = [inputs["audio"] for inputs in batch]
+        validate_audio_durations(audios, self.settings.maximum_batch_seconds)
         run_id = self._ensure_run(audios)
         outputs = []
-        groups = bounded_audio_groups(audios, self.settings.maximum_batch_seconds)
-        groups.extend(
-            [audio]
-            for audio in audios
-            if audio.duration > self.settings.maximum_batch_seconds
-        )
-        for group in groups:
+        input_offset = 0
+        for group in bounded_audio_groups(audios, self.settings.maximum_batch_seconds):
             context.check_cancel()
             rows = self._embed_rows(group, context)
             shard_data = write_embedding_shard(rows)
             artifact = self._store_shard(shard_data, run_id, len(rows))
             self._processed_count += len(rows)
             self._processed_seconds += sum(audio.duration for audio in group)
-            outputs.append(self._shard_output(run_id, artifact.id, len(rows)))
+            outputs.extend(
+                self._shard_outputs(
+                    run_id,
+                    artifact.id,
+                    len(rows),
+                    range(input_offset, input_offset + len(group)),
+                )
+            )
+            input_offset += len(group)
             await context.report_progress(
                 self.id,
                 self._processed_count,
@@ -157,22 +162,13 @@ class ECAPASpeakerEmbedNode(Node):
         accepted = [
             (index, audio)
             for index, audio in enumerate(audios)
-            if self.settings.minimum_duration_seconds
-            <= audio.duration
-            <= self.settings.maximum_batch_seconds
+            if audio.duration >= self.settings.minimum_duration_seconds
         ]
         rejected = {
             index: "too_short"
             for index, audio in enumerate(audios)
             if audio.duration < self.settings.minimum_duration_seconds
         }
-        rejected.update(
-            {
-                index: "duration_exceeds_maximum_batch_seconds"
-                for index, audio in enumerate(audios)
-                if audio.duration > self.settings.maximum_batch_seconds
-            }
-        )
         prepared = None
         if accepted:
             try:
@@ -236,18 +232,25 @@ class ECAPASpeakerEmbedNode(Node):
             embedding=embedding,
         )
 
-    def _shard_output(self, run_id: UUID, artifact_id: UUID, row_count: int) -> dict[str, Any]:
-        return {
-            "shard": SpeakerEmbeddingShardRef(
-                run_id=run_id,
-                artifact_id=artifact_id,
-                row_count=row_count,
-                dimension=ECAPA_EMBEDDING_DIMENSION,
-                model_revision=self._model_identity,
-                preprocessing_version=self.settings.preprocessing_version,
-            ),
-            INPUT_INDEX_OUTPUT: 0,
-        }
+    def _shard_outputs(
+        self,
+        run_id: UUID,
+        artifact_id: UUID,
+        row_count: int,
+        input_indices: range,
+    ) -> list[dict[str, Any]]:
+        shard = SpeakerEmbeddingShardRef(
+            run_id=run_id,
+            artifact_id=artifact_id,
+            row_count=row_count,
+            dimension=ECAPA_EMBEDDING_DIMENSION,
+            model_revision=self._model_identity,
+            preprocessing_version=self.settings.preprocessing_version,
+        )
+        return [
+            {"shard": shard, INPUT_INDEX_OUTPUT: input_index}
+            for input_index in input_indices
+        ]
 
     def _store_shard(self, data: bytes, run_id: UUID, row_count: int) -> Any:
         with database_session() as session:
