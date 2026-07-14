@@ -19,7 +19,9 @@ def typed_checkpoint(value: "CheckpointRef | dict[str, Any]") -> "CheckpointRef"
     raise TypeError("expected a resolved CheckpointRef")
 
 
-def typed_assets(value: "AssetBundleRef | dict[str, Any] | None") -> "AssetBundleRef | None":
+def typed_assets(
+    value: "AssetBundleRef | dict[str, Any] | None",
+) -> "AssetBundleRef | None":
     if value is None or isinstance(value, AssetBundleRef):
         return value
     raise TypeError("expected a resolved AssetBundleRef")
@@ -162,6 +164,15 @@ class SpeakerEmbeddingSetRef:
     item_count: int
     model_revision: str
     preprocessing_version: str
+
+
+@dataclass(frozen=True)
+class SpeakerClusterRunRef:
+    run_id: UUID
+    embedding_run_id: UUID
+    assignment_artifact_ids: list[UUID]
+    prototype_artifact_id: UUID
+    index_artifact_id: UUID
 
 
 @dataclass(frozen=True)

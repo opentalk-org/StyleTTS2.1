@@ -54,3 +54,43 @@ class EmbeddingShardCollection(BaseModel):
     model_revision: str
     preprocessing_version: str
     sealed_now: bool
+
+
+class ClusteringRunState(StrEnum):
+    OPEN = "open"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class SpeakerClusterStatus(StrEnum):
+    ACCEPTED = "accepted"
+    SUSPICIOUS = "suspicious"
+
+
+class ClusteringRunCreate(BaseModel):
+    embedding_run_id: UUID
+    expected_count: int = Field(ge=0)
+    index_factory: str
+    threshold_version: str
+    settings: dict[str, Any]
+
+
+class ClusteringArtifactCreate(BaseModel):
+    artifact_id: UUID
+    role: str
+    ordinal: int = Field(ge=0)
+    row_count: int = Field(ge=0)
+
+
+class ClusterSummaryCreate(BaseModel):
+    cluster_key: str
+    member_count: int = Field(gt=0)
+    duration_seconds: float = Field(ge=0.0)
+    dispersion: float = Field(ge=0.0)
+    status: SpeakerClusterStatus
+
+
+class ClusteringRunComplete(BaseModel):
+    assignment_count: int = Field(ge=0)
+    prototype_artifact_id: UUID
+    index_artifact_id: UUID
