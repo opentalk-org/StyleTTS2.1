@@ -43,3 +43,14 @@ class EmbeddingShardRead(EmbeddingShardCreate):
     run_id: UUID
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+class EmbeddingShardCollection(BaseModel):
+    run_id: UUID
+    artifact_ids: list[UUID]
+    stored_count: int
+    expected_count: int
+    dimension: int
+    model_revision: str
+    preprocessing_version: str
+    sealed_now: bool
