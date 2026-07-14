@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from runner.nodes.speaker_clustering.candidates import CandidateMatrix
+from runner.nodes.speaker_clustering.candidates import (
+    CandidateMatrix,
+    ReciprocalCandidateLookup,
+)
 
 
 EDGE_SCHEMA = pa.schema(
@@ -32,37 +36,59 @@ class EdgeBlock:
 def iter_reciprocal_edge_blocks(
     candidates: CandidateMatrix,
     block_rows: int,
+    check_cancel: Callable[[], None] | None = None,
 ) -> Iterator[EdgeBlock]:
     if block_rows <= 0:
         raise ValueError(f"edge block_rows must be positive, got {block_rows}")
-    for start in range(0, candidates.item_count, block_rows):
-        stop = min(start + block_rows, candidates.item_count)
-        left_ids = np.arange(start, stop, dtype=np.int64)
-        forward_ids = np.asarray(candidates.row_ids[start:stop])
-        forward_scores = np.asarray(candidates.scores[start:stop])
-        valid = forward_ids >= 0
-        safe_ids = np.where(valid, forward_ids, 0)
-        reverse_ids = np.asarray(candidates.row_ids[safe_ids])
-        reverse_scores = np.asarray(candidates.scores[safe_ids])
-        matches = reverse_ids == left_ids[:, np.newaxis, np.newaxis]
-        reciprocal = np.any(matches, axis=2)
-        reverse_positions = np.argmax(matches, axis=2)
-        reverse_exact = np.take_along_axis(
-            reverse_scores,
-            reverse_positions[:, :, np.newaxis],
-            axis=2,
-        ).squeeze(axis=2)
-        accepted = valid & reciprocal & (left_ids[:, np.newaxis] < forward_ids)
-        if not np.any(accepted):
-            continue
-        left_grid = np.broadcast_to(left_ids[:, np.newaxis], forward_ids.shape)
-        block = EdgeBlock(
-            left_ids=left_grid[accepted],
-            right_ids=forward_ids[accepted],
-            exact_scores=np.minimum(forward_scores, reverse_exact)[accepted],
-            reciprocal_ranks=(reverse_positions[accepted] + 1).astype(np.int16),
+    with TemporaryDirectory(prefix="reciprocal-candidates-") as directory:
+        lookup = ReciprocalCandidateLookup.create(
+            Path(directory) / "lookup.sqlite3",
+            candidates,
+            block_rows,
+            check_cancel,
         )
-        yield _sorted_edges(block)
+        try:
+            for start in range(0, candidates.item_count, block_rows):
+                if check_cancel is not None:
+                    check_cancel()
+                stop = min(start + block_rows, candidates.item_count)
+                forward_ids = np.asarray(candidates.row_ids[start:stop])
+                forward_scores = np.asarray(candidates.scores[start:stop])
+                left_values: list[int] = []
+                right_values: list[int] = []
+                score_values: list[float] = []
+                rank_values: list[int] = []
+                for row_offset in range(stop - start):
+                    if check_cancel is not None:
+                        check_cancel()
+                    left_id = start + row_offset
+                    for forward_rank in range(candidates.neighbors):
+                        right_id = int(forward_ids[row_offset, forward_rank])
+                        if right_id < 0 or left_id >= right_id:
+                            continue
+                        reverse = lookup.get(right_id, left_id)
+                        if reverse is None:
+                            continue
+                        left_values.append(left_id)
+                        right_values.append(right_id)
+                        score_values.append(
+                            min(
+                                float(forward_scores[row_offset, forward_rank]),
+                                reverse.score,
+                            )
+                        )
+                        rank_values.append(reverse.rank)
+                if not left_values:
+                    continue
+                block = EdgeBlock(
+                    left_ids=np.asarray(left_values, dtype=np.int64),
+                    right_ids=np.asarray(right_values, dtype=np.int64),
+                    exact_scores=np.asarray(score_values, dtype=np.float32),
+                    reciprocal_ranks=np.asarray(rank_values, dtype=np.int16),
+                )
+                yield _sorted_edges(block)
+        finally:
+            lookup.close()
 
 
 def write_reciprocal_edge_shards(
@@ -70,14 +96,17 @@ def write_reciprocal_edge_shards(
     output_dir: Path,
     block_rows: int,
     shard_rows: int,
+    check_cancel: Callable[[], None] | None = None,
 ) -> list[Path]:
     if shard_rows <= 0:
         raise ValueError(f"edge shard_rows must be positive, got {shard_rows}")
     output_dir.mkdir(parents=True, exist_ok=True)
     paths = []
     ordinal = 0
-    for block in iter_reciprocal_edge_blocks(candidates, block_rows):
+    for block in iter_reciprocal_edge_blocks(candidates, block_rows, check_cancel):
         for start in range(0, len(block.left_ids), shard_rows):
+            if check_cancel is not None:
+                check_cancel()
             stop = min(start + shard_rows, len(block.left_ids))
             path = output_dir / f"edges-{ordinal:08d}.parquet"
             pq.write_table(_edge_table(block, start, stop), path, compression="zstd")
