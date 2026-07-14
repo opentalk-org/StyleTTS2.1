@@ -44,6 +44,7 @@ from runner.nodes.dataset_writeback import AddAudioToDatasetNode, AssignVoiceNod
 from runner.nodes.datatypes import register_runner_types
 from runner.nodes.hetzner import HetznerDsV1ParquetAudioSourceNode, HetznerDsV2SourceNode
 from runner.nodes.mos import BuildMosTrainingManifestNode, MosModelTrainingNode, PredictMosScoreNode
+from runner.nodes.smart_turn import SmartTurnPredictNode
 from runner.nodes.youtube_source import YouTubeAudioSourceNode
 from runner.nodes.text_generation import OpenRouterGenerateTextsNode
 from runner.nodes.text_processing import PhonemizeSegmentsNode
@@ -93,6 +94,7 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         NormalizeLoudnessNode,
         PadSilenceNode,
         PredictMosScoreNode,
+        SmartTurnPredictNode,
         AnalyzeAudioFeaturesNode,
         DatabaseStatisticsFeaturesNode,
         EmbedVoicesPcaPlotNode,
