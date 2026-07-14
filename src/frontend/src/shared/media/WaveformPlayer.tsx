@@ -10,11 +10,15 @@ export function WaveformPlayer({
   duration,
   fileName = "sample.wav",
   src,
+  clipStart = 0,
+  clipEnd,
 }: {
   seed: number;
   duration: number;
   fileName?: string;
   src?: string;
+  clipStart?: number;
+  clipEnd?: number;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -38,10 +42,21 @@ export function WaveformPlayer({
   useEffect(() => {
     const element = audioRef.current;
     if (!src || !element) return;
-    const onTime = () => setPos(element.currentTime);
+    const end = clipEnd ?? clipStart + duration;
+    const onTime = () => {
+      if (element.currentTime >= end) {
+        element.pause();
+        element.currentTime = clipStart;
+        setPlaying(false);
+        setPos(0);
+        return;
+      }
+      setPos(Math.max(0, element.currentTime - clipStart));
+    };
     const onEnd = () => {
       setPlaying(false);
       setPos(0);
+      element.currentTime = clipStart;
     };
     element.addEventListener("timeupdate", onTime);
     element.addEventListener("ended", onEnd);
@@ -49,7 +64,7 @@ export function WaveformPlayer({
       element.removeEventListener("timeupdate", onTime);
       element.removeEventListener("ended", onEnd);
     };
-  }, [src]);
+  }, [clipEnd, clipStart, duration, src]);
 
   const toggle = () => {
     if (!src) {
@@ -62,6 +77,8 @@ export function WaveformPlayer({
       element.pause();
       setPlaying(false);
     } else {
+      const end = clipEnd ?? clipStart + duration;
+      if (element.currentTime < clipStart || element.currentTime >= end) element.currentTime = clipStart;
       void element
         .play()
         .then(() => setPlaying(true))
