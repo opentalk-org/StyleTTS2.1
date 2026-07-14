@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -106,72 +105,6 @@ class CandidateMatrix:
         self.scores.flush()
 
 
-@dataclass(frozen=True)
-class ReciprocalCandidate:
-    score: float
-    rank: int
-
-
-class ReciprocalCandidateLookup:
-    def __init__(self, path: Path) -> None:
-        self.connection = sqlite3.connect(path)
-
-    @classmethod
-    def create(
-        cls,
-        path: Path,
-        candidates: CandidateMatrix,
-        block_rows: int,
-        check_cancel: Callable[[], None] | None = None,
-    ) -> ReciprocalCandidateLookup:
-        lookup = cls(path)
-        lookup.connection.execute("PRAGMA journal_mode=OFF")
-        lookup.connection.execute("PRAGMA synchronous=OFF")
-        lookup.connection.execute(
-            """
-            CREATE TABLE candidates (
-                source_id INTEGER NOT NULL,
-                target_id INTEGER NOT NULL,
-                score REAL NOT NULL,
-                rank INTEGER NOT NULL,
-                PRIMARY KEY (source_id, target_id)
-            ) WITHOUT ROWID
-            """
-        )
-        statement = "INSERT INTO candidates VALUES (?, ?, ?, ?)"
-        for start in range(0, candidates.item_count, block_rows):
-            if check_cancel is not None:
-                check_cancel()
-            stop = min(start + block_rows, candidates.item_count)
-            row_ids = np.asarray(candidates.row_ids[start:stop])
-            scores = np.asarray(candidates.scores[start:stop])
-            rows, ranks = np.nonzero(row_ids >= 0)
-            records = (
-                (
-                    start + int(row),
-                    int(row_ids[row, rank]),
-                    float(scores[row, rank]),
-                    int(rank) + 1,
-                )
-                for row, rank in zip(rows, ranks, strict=True)
-            )
-            lookup.connection.executemany(statement, records)
-        lookup.connection.commit()
-        return lookup
-
-    def get(self, source_id: int, target_id: int) -> ReciprocalCandidate | None:
-        row = self.connection.execute(
-            "SELECT score, rank FROM candidates WHERE source_id = ? AND target_id = ?",
-            (source_id, target_id),
-        ).fetchone()
-        if row is None:
-            return None
-        return ReciprocalCandidate(score=float(row[0]), rank=int(row[1]))
-
-    def close(self) -> None:
-        self.connection.close()
-
-
 def build_canonical_store(
     blocks: Iterable[EmbeddingBlock],
     directory: Path,
@@ -226,6 +159,7 @@ def exact_rerank(
     accepted: np.ndarray,
     threshold: float,
     keep: int | None = None,
+    exclude_self: bool = True,
 ) -> RankedCandidates:
     if candidate_ids.ndim != 2 or len(candidate_ids) != len(query_ids):
         raise ValueError("candidate IDs must be a matrix aligned with query IDs")
@@ -235,7 +169,8 @@ def exact_rerank(
     valid = (candidate_ids >= 0) & (candidate_ids < len(canonical_vectors))
     safe_ids = np.where(valid, candidate_ids, 0)
     valid &= np.asarray(accepted[safe_ids], dtype=np.bool_)
-    valid &= safe_ids != query_ids[:, np.newaxis]
+    if exclude_self:
+        valid &= safe_ids != query_ids[:, np.newaxis]
     queries = _normalized(query_vectors)
     candidates = _normalized_rows(
         np.asarray(canonical_vectors[safe_ids], dtype=np.float32)
