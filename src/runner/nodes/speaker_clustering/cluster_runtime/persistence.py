@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import json
 from pathlib import Path
 from typing import Any
@@ -82,23 +83,27 @@ def persist_clustering_outputs(
     index_path: Path,
     item_count: int,
     outcome_counts: ClusteringOutcomeCounts,
+    check_cancel: Callable[[], None],
 ) -> SpeakerClusterRunRef:
     with database_session() as session:
         try:
             assignments = _upload_registered_paths(
                 session, run_id, assignment_paths, "speaker_assignment_shard",
-                ClusteringArtifactRole.ASSIGNMENT,
+                ClusteringArtifactRole.ASSIGNMENT, check_cancel,
             )
             prototypes = _upload_registered_paths(
                 session, run_id, prototype_paths, "speaker_prototype_shard",
-                ClusteringArtifactRole.PROTOTYPE,
+                ClusteringArtifactRole.PROTOTYPE, check_cancel,
             )
+            check_cancel()
             index = _upload_and_register_path(
                 session, run_id, index_path, "speaker_candidate_index",
                 ClusteringArtifactRole.INDEX, 0, item_count,
             )
+            check_cancel()
             manifest = _create_manifest(session, run_id, prototypes)
-            _persist_summaries(session, run_id, prototype_paths)
+            _persist_summaries(session, run_id, prototype_paths, check_cancel)
+            check_cancel()
             speaker_crud.complete_clustering_run(
                 session, run_id, item_count, manifest.id, index.id, outcome_counts
             )
@@ -117,15 +122,18 @@ def persist_clustering_outputs(
 
 def _upload_registered_paths(
     session: Any, run_id: UUID, paths: list[Path], type_: str,
-    role: ClusteringArtifactRole,
+    role: ClusteringArtifactRole, check_cancel: Callable[[], None],
 ) -> list[Any]:
-    return [
-        _upload_and_register_path(
-            session, run_id, path, type_, role, ordinal,
-            pq.ParquetFile(path).metadata.num_rows,
+    artifacts = []
+    for ordinal, path in enumerate(paths):
+        check_cancel()
+        artifacts.append(
+            _upload_and_register_path(
+                session, run_id, path, type_, role, ordinal,
+                pq.ParquetFile(path).metadata.num_rows,
+            )
         )
-        for ordinal, path in enumerate(paths)
-    ]
+    return artifacts
 
 
 def _upload_and_register_path(
@@ -173,10 +181,16 @@ def _create_manifest(session: Any, run_id: UUID, prototypes: list[Any]) -> Any:
         raise
 
 
-def _persist_summaries(session: Any, run_id: UUID, paths: list[Path]) -> None:
+def _persist_summaries(
+    session: Any,
+    run_id: UUID,
+    paths: list[Path],
+    check_cancel: Callable[[], None],
+) -> None:
     speaker_crud.replace_cluster_summaries(session, run_id, [])
     for path in paths:
         for batch in pq.ParquetFile(path).iter_batches():
+            check_cancel()
             values = batch.to_pydict()
             payloads = [
                 ClusterSummaryCreate(

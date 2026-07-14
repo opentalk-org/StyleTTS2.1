@@ -240,6 +240,7 @@ def _execute_clustering_pipeline(
         index_path,
         embedding_set.item_count,
         ClusteringOutcomeCounts(**assignment_result.counts.__dict__),
+        check_cancel,
     )
     report_stage(9, "speaker clustering complete")
     return result
