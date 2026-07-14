@@ -75,7 +75,12 @@ class SmartTurnPredictNode(Node):
             )
         context.check_cancel()
         assert self._bundle is not None, "Smart Turn model bundle is not loaded"
-        probabilities = await asyncio.to_thread(predict_probabilities, self._bundle, waveforms)
+        probabilities = await asyncio.to_thread(
+            predict_probabilities,
+            self._bundle,
+            waveforms,
+            [audio.id for audio in audios],
+        )
         return [
             {
                 "audio": audio,

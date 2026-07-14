@@ -34,7 +34,11 @@ def load_smart_turn_bundle(checkpoint_dir: Path) -> SmartTurnBundle:
     )
 
 
-def predict_probabilities(bundle: SmartTurnBundle, waveforms: list[np.ndarray]) -> list[float]:
+def predict_probabilities(
+    bundle: SmartTurnBundle,
+    waveforms: list[np.ndarray],
+    item_ids: list[str],
+) -> list[float]:
     inputs = bundle.feature_extractor(
         waveforms,
         sampling_rate=TARGET_SAMPLE_RATE,
@@ -51,10 +55,12 @@ def predict_probabilities(bundle: SmartTurnBundle, waveforms: list[np.ndarray]) 
     ).reshape(-1)
     if probabilities.size != len(waveforms):
         raise RuntimeError(f"smart_turn_output_count_mismatch:{probabilities.size}:{len(waveforms)}")
-    if not np.isfinite(probabilities).all():
-        raise RuntimeError("smart_turn_non_finite_probability")
-    if ((probabilities < 0.0) | (probabilities > 1.0)).any():
-        raise RuntimeError("smart_turn_probability_out_of_range")
+    non_finite = np.flatnonzero(~np.isfinite(probabilities))
+    if non_finite.size:
+        raise RuntimeError(f"smart_turn_non_finite_probability:{item_ids[int(non_finite[0])]}")
+    out_of_range = np.flatnonzero((probabilities < 0.0) | (probabilities > 1.0))
+    if out_of_range.size:
+        raise RuntimeError(f"smart_turn_probability_out_of_range:{item_ids[int(out_of_range[0])]}")
     return [float(probability) for probability in probabilities]
 
 
