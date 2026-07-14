@@ -134,7 +134,7 @@ def prototype_statistics(
     scores[valid] = np.einsum(
         "bd,bd->b", normalized_vectors[valid], prototypes[labels[valid]]
     )
-    distances = 1.0 - scores
+    distances = cosine_distances(scores)
     dispersion_sums = np.zeros(item_count, dtype=np.float32)
     np.add.at(dispersion_sums, labels[valid], distances[valid])
     dispersion = np.divide(
@@ -196,7 +196,7 @@ def build_prototype_store(
         roots = labels[block.row_ids[valid]]
         vectors = _normalize_rows(block.embeddings[valid])
         scores = np.einsum("bd,bd->b", vectors, store.vectors[roots])
-        distances = 1.0 - scores
+        distances = cosine_distances(scores)
         np.add.at(store.dispersion, roots, distances)
         _update_exemplars(
             store.exemplar_ids,
@@ -233,6 +233,10 @@ def _normalize_prototypes(vectors: np.ndarray, counts: np.ndarray) -> np.ndarray
 def _normalize_rows(vectors: np.ndarray) -> np.ndarray:
     norms = np.linalg.norm(vectors, axis=1, keepdims=True)
     return np.divide(vectors, norms, out=np.zeros_like(vectors), where=norms > 0.0)
+
+
+def cosine_distances(scores: np.ndarray) -> np.ndarray:
+    return np.clip(1.0 - scores, 0.0, 2.0)
 
 
 def _update_exemplars(
