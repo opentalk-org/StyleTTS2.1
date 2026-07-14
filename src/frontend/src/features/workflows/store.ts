@@ -106,8 +106,14 @@ export const useWorkflowStore = create<WorkflowStore>((set) => ({
   }),
   autoLayout: () => set((state) => {
     if (!state.schema) return {};
+    const nodeWidths = new Map<string, number>();
+    for (const element of document.querySelectorAll<HTMLElement>("[data-workflow-node]")) {
+      const nodeId = element.dataset.workflowNode;
+      if (!nodeId) throw new Error("Rendered workflow node is missing its identifier");
+      nodeWidths.set(nodeId, element.offsetWidth);
+    }
     return {
-      graph: autoLayoutGraph(state.schema, state.graph),
+      graph: autoLayoutGraph(state.schema, state.graph, nodeWidths),
       portAnchors: {},
       viewport: { x: 0, y: 0, zoom: 1 },
       wireDraft: null,

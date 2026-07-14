@@ -12,6 +12,7 @@ from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy
 from runner.nodes.datatypes import JsonPort
 from runner.nodes.statistics.aggregate_helpers import (
+    break_histograms,
     char_bigram_matrix,
     char_trigram_extremes,
     char_unigram_counts,
@@ -171,8 +172,9 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
     acoustic_metrics_available = next(iter(acoustic_availability))
     assert acoustic_metrics_available == (computation_mode == "acoustic"), f"invalid acoustic availability for {computation_mode} mode"
     requested_count = feature_records[0]["sample_requested_count"]
+    breaks = break_histograms(file_ids, segment_records, settings.histogram_bins)
     return {
-        "version": 18,
+        "version": 19,
         "computation_mode": computation_mode,
         "acoustic_metrics_available": acoustic_metrics_available,
         "sample_scope": {
@@ -198,6 +200,7 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
         "duplicate_segments_collapsed": duplicate_collapsed,
         "phonemes_available": phonemes_available,
         "text_length_warnings": warnings,
+        **breaks,
         "duration_seconds_histogram": histogram_counts(durations, settings.histogram_bins),
         "char_count_per_file_histogram": histogram_counts([float(value) for value in char_counts], settings.histogram_bins),
         "phoneme_count_per_file_histogram": histogram_counts([float(value) for value in phoneme_counts], settings.histogram_bins),

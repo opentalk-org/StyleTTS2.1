@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from typing import Any
 
 
+TIMESTAMP_ABS_TOLERANCE = 1e-9
+
+
 @dataclass(frozen=True)
 class AlignmentWindow:
     source_start: float
@@ -45,7 +48,13 @@ def alignment_from_timestamps(
         word = str(item["word"]).strip()
         source_start = float(item["start"])
         source_end = float(item["end"])
-        if not word or source_start >= window.source_end or source_end <= window.source_start:
+        starts_at_end = source_start >= window.source_end or math.isclose(
+            source_start, window.source_end, rel_tol=0.0, abs_tol=TIMESTAMP_ABS_TOLERANCE
+        )
+        ends_at_start = source_end <= window.source_start or math.isclose(
+            source_end, window.source_start, rel_tol=0.0, abs_tol=TIMESTAMP_ABS_TOLERANCE
+        )
+        if not word or starts_at_end or ends_at_start:
             continue
         start = max(0.0, source_start - window.source_start)
         end = min(window.duration, source_end - window.source_start)

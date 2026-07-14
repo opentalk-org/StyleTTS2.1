@@ -58,7 +58,7 @@ class DsV2MetadataRows:
                         yield DsV2MetadataRow(
                             row_index,
                             remote_path,
-                            _parquet_path(row, local_path, row_index),
+                            parquet_path_from_metadata(remote_path),
                             row,
                         )
                 self.prune_cache()
@@ -119,9 +119,10 @@ def _list_metadata_files(host: str, retries: int) -> list[str]:
     )
 
 
-def _parquet_path(row: dict[str, str], metadata_path: Path, row_index: int) -> str:
-    raw = row["parquet_filename"].strip()
-    if not raw:
-        raise ValueError(f"ds_v2 metadata row {row_index} has empty parquet_filename: {metadata_path}")
-    path = PurePosixPath(raw)
-    return str(path if path.is_absolute() else PARQUET_DIRECTORY / path.name)
+def parquet_path_from_metadata(remote_metadata_path: str) -> str:
+    metadata_name = PurePosixPath(remote_metadata_path).name
+    suffix = "_metadata.csv"
+    if not metadata_name.endswith(suffix):
+        raise ValueError(f"ds_v2 metadata path must end in {suffix}: {remote_metadata_path}")
+    parquet_name = f"{metadata_name[:-len(suffix)]}.parquet"
+    return str(PARQUET_DIRECTORY / parquet_name)

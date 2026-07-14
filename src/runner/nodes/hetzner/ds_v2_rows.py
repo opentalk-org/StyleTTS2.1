@@ -1,18 +1,14 @@
 from __future__ import annotations
 
-import csv
 import hashlib
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterator
-
-import pyarrow.parquet as pq
+from typing import Any
 
 
 METADATA_DIRECTORY = PurePosixPath("/home/ds_v2_metadata")
-MAX_CACHED_PAIRS = 4
 IDENTITY_COLUMNS = ("chunk_index", "sample_index", "sample_start", "speaker_id")
 CSV_METADATA_COLUMNS = (
     "duration",
@@ -55,26 +51,6 @@ class DsV2Row:
     metadata: dict[str, str]
 
 
-def metadata_remote_path(remote_parquet_path: str) -> str:
-    parquet = PurePosixPath(remote_parquet_path)
-    if parquet.suffix != ".parquet":
-        raise ValueError(f"ds_v2 remote path must end in .parquet: {remote_parquet_path}")
-    return str(METADATA_DIRECTORY / f"{parquet.stem}_metadata.csv")
-
-
-def cached_metadata_file(
-    host: str,
-    remote_parquet_path: str,
-    cache_dir: Path,
-    retries: int,
-) -> Path:
-    remote_path = metadata_remote_path(remote_parquet_path)
-    pair_key = hashlib.sha1(remote_parquet_path.encode("utf-8")).hexdigest()[:16]
-    path = _cached_remote_file(host, remote_path, cache_dir, retries, pair_key)
-    path.touch()
-    return path
-
-
 def cached_remote_file(host: str, remote_path: str, cache_dir: Path, retries: int) -> Path:
     cache_key = hashlib.sha1(remote_path.encode("utf-8")).hexdigest()[:16]
     path = _cached_remote_file(host, remote_path, cache_dir, retries, cache_key)
@@ -88,62 +64,6 @@ def validate_metadata_headers(fieldnames: list[str] | None, metadata_path: Path)
 
 def parse_metadata_row(row: dict[str, str | None], metadata_path: Path, row_index: int) -> dict[str, str]:
     return _metadata_row(row, metadata_path, row_index)
-
-
-def load_rows(
-    host: str,
-    remote_parquet_path: str,
-    cache_dir: Path,
-    retries: int,
-    row_offset: int,
-    row_limit: int,
-) -> list[DsV2Row]:
-    remote_metadata_path = metadata_remote_path(remote_parquet_path)
-    pair_key = hashlib.sha1(remote_parquet_path.encode("utf-8")).hexdigest()[:16]
-    metadata_path = _cached_remote_file(host, remote_metadata_path, cache_dir, retries, pair_key)
-    parquet_path = _cached_remote_file(host, remote_parquet_path, cache_dir, retries, pair_key)
-    parquet_path.touch()
-    metadata_path.touch()
-    _prune_cache(cache_dir, pair_key)
-    return load_local_pair(parquet_path, metadata_path, row_offset, row_limit)
-
-
-def load_local_pair(parquet_path: Path, metadata_path: Path, row_offset: int, row_limit: int) -> list[DsV2Row]:
-    parquet = pq.ParquetFile(parquet_path)
-    required_parquet = {"audio", *IDENTITY_COLUMNS}
-    missing_parquet = sorted(required_parquet - set(parquet.schema.names))
-    if missing_parquet:
-        raise ValueError(f"Parquet missing required columns {missing_parquet}: {parquet_path}")
-
-    selected_metadata: dict[int, dict[str, str]] = {}
-    parquet_identities = _parquet_identities(parquet)
-    with metadata_path.open("r", encoding="utf-8-sig", newline="") as metadata_file:
-        reader = csv.DictReader(metadata_file)
-        _validate_headers(reader.fieldnames, metadata_path)
-        csv_count = 0
-        for row_index, csv_row in enumerate(reader):
-            parquet_row = next(parquet_identities, None)
-            if parquet_row is None:
-                raise ValueError(
-                    f"ds_v2 row count mismatch: parquet={parquet.metadata.num_rows}, csv has more rows; "
-                    f"parquet={parquet_path}, csv={metadata_path}"
-                )
-            metadata = _metadata_row(csv_row, metadata_path, row_index)
-            _validate_identity(parquet_row, metadata, parquet_path, metadata_path, row_index)
-            if row_offset <= row_index < row_offset + row_limit:
-                selected_metadata[row_index] = metadata
-            csv_count += 1
-
-    if csv_count != parquet.metadata.num_rows:
-        raise ValueError(
-            f"ds_v2 row count mismatch: parquet={parquet.metadata.num_rows}, csv={csv_count}; "
-            f"parquet={parquet_path}, csv={metadata_path}"
-        )
-    audio_by_index = _selected_audio(parquet, row_offset, row_limit)
-    return [
-        DsV2Row(index=index, audio=audio_by_index[index], metadata=metadata)
-        for index, metadata in selected_metadata.items()
-    ]
 
 
 def _cached_remote_file(host: str, remote_path: str, cache_dir: Path, retries: int, pair_key: str) -> Path:
@@ -194,16 +114,6 @@ def _sftp_error_detail(result: subprocess.CompletedProcess[str], temporary: Path
     return " | ".join(part for part in parts if part)
 
 
-def _prune_cache(cache_dir: Path, current_pair_key: str) -> None:
-    parquets = sorted(cache_dir.glob("ds_v2_*.parquet"), key=lambda path: path.stat().st_mtime, reverse=True)
-    others = [parquet for parquet in parquets if parquet.name.split("_", 3)[2] != current_pair_key]
-    for parquet in others[MAX_CACHED_PAIRS - 1:]:
-        pair_key = parquet.name.split("_", 3)[2]
-        parquet.unlink()
-        for metadata in cache_dir.glob(f"ds_v2_{pair_key}_*.csv"):
-            metadata.unlink()
-
-
 def _validate_headers(fieldnames: list[str] | None, metadata_path: Path) -> None:
     if fieldnames is None:
         raise ValueError(f"ds_v2 metadata CSV has no header: {metadata_path}")
@@ -224,11 +134,6 @@ def _metadata_row(row: dict[str, str | None], metadata_path: Path, row_index: in
     return {column: str(row[column]) for column in CSV_METADATA_COLUMNS}
 
 
-def _parquet_identities(parquet: pq.ParquetFile) -> Iterator[dict[str, Any]]:
-    for batch in parquet.iter_batches(batch_size=1024, columns=list(IDENTITY_COLUMNS)):
-        yield from batch.to_pylist()
-
-
 def _identity(row: dict[str, Any]) -> DsV2RowIdentity:
     return DsV2RowIdentity(
         chunk_index=int(row["chunk_index"]),
@@ -238,7 +143,7 @@ def _identity(row: dict[str, Any]) -> DsV2RowIdentity:
     )
 
 
-def _validate_identity(
+def validate_identity(
     parquet_row: dict[str, Any],
     metadata: dict[str, str],
     parquet_path: Path,
@@ -256,20 +161,3 @@ def _validate_identity(
                 f"parquet={parquet_value!r}, csv={metadata_value!r}; "
                 f"parquet_path={parquet_path}, csv_path={metadata_path}"
             )
-
-
-def _selected_audio(parquet: pq.ParquetFile, row_offset: int, row_limit: int) -> dict[int, bytes]:
-    selected: dict[int, bytes] = {}
-    absolute_index = 0
-    end = row_offset + row_limit
-    for batch in parquet.iter_batches(batch_size=max(1, min(64, row_limit)), columns=["audio"]):
-        for row in batch.to_pylist():
-            if row_offset <= absolute_index < end:
-                audio = row["audio"]
-                if not isinstance(audio, (bytes, bytearray)):
-                    raise ValueError(f"ds_v2 row {absolute_index} has no audio bytes")
-                selected[absolute_index] = bytes(audio)
-            absolute_index += 1
-            if absolute_index >= end:
-                return selected
-    return selected

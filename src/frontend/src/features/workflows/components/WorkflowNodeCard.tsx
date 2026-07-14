@@ -45,6 +45,7 @@ export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
 
   return (
     <article
+      data-workflow-node={node.id}
       onClick={(event) => {
         event.stopPropagation();
         selectNode(node.id, event.metaKey || event.ctrlKey || event.shiftKey);

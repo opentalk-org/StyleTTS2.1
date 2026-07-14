@@ -4,14 +4,15 @@
   "data": {
     "nodes": [
       {
-        "id": "hetzner_ds_v2_metadata",
-        "type": "HetznerDsV2MetadataSource",
+        "id": "hetzner_ds_v2",
+        "type": "HetznerDsV2Source",
         "x": -180,
         "y": 140,
         "params": {
           "host": "hetzner-storagebox",
           "row_offset": 0,
           "row_limit": null,
+          "import_audio": false,
           "text_column": "text_src",
           "name_prefix": "ds_v2",
           "download_retries": 3,
@@ -20,19 +21,23 @@
         "runtime": {}
       },
       {
-        "id": "save_external_audio",
-        "type": "SaveExternalAudioRecord",
+        "id": "save_audio_record",
+        "type": "SaveAudioRecord",
         "x": 240,
         "y": 140,
-        "params": {},
+        "params": {
+          "storage_mode": "external",
+          "virtual": true,
+          "bulk_import_packs": false
+        },
         "runtime": {}
       }
     ],
     "edges": [
       {
-        "source_node": "hetzner_ds_v2_metadata",
+        "source_node": "hetzner_ds_v2",
         "source_port": "audio",
-        "target_node": "save_external_audio",
+        "target_node": "save_audio_record",
         "target_port": "audio"
       }
     ],

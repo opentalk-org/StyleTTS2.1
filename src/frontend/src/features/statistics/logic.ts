@@ -97,6 +97,15 @@ export function audioHistogramGroups(p: StatisticsPayload): HistogramGroup[] {
         histConfig("Duration per voice", "seconds", p.voice_duration_seconds_histogram, "blue", "voices"),
       ],
     },
+    {
+      key: "breaks",
+      title: "Break annotations",
+      caption: "Explicit pause tags embedded in canonical transcript text.",
+      items: [
+        histConfig("Breaks per file", "breaks", p.break_count_per_file_histogram, "amber", "files"),
+        histConfig("Break duration", "ms", p.break_duration_ms_histogram, "amber"),
+      ],
+    },
   ];
   if (!p.acoustic_metrics_available) return groups;
 

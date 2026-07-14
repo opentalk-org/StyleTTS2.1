@@ -4,6 +4,7 @@ import { Field } from "../ui/form/Field";
 import { Toggle } from "../ui/form/Toggle";
 import { resolveSchemaRef, schemaType, textToValue, valueToText } from "./logic";
 import { SchemaMapField } from "./SchemaMapField";
+import { SchemaNumberField } from "./SchemaNumberField";
 import { SchemaObjectField } from "./SchemaObjectField";
 import type { JsonSchema, SchemaValues } from "./types";
 
@@ -44,12 +45,19 @@ export function SchemaField({ name, schema, root, value, onChange }: Props) {
       </Field>
     );
   }
+  if (type === "integer" || type === "number") {
+    return (
+      <Field label={label} hint={hint}>
+        <SchemaNumberField type={type} schema={resolved} value={value} onChange={onChange} />
+      </Field>
+    );
+  }
   return (
     <Field label={label} hint={hint}>
       <Input
         filled
         className="h-9"
-        type={type === "integer" || type === "number" ? "number" : "text"}
+        type="text"
         value={valueToText(value, resolved)}
         onChange={(event) => onChange(textToValue(event.target.value, resolved))}
       />

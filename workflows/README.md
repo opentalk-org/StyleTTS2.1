@@ -85,20 +85,18 @@ and merges their word alignments without duplicating words when aligner timings 
 
 ### `ds_v1_sample_import.json` / `ds_v2_sample_import.json`
 
-Import a sample row from a Hetzner storage-box `ds_v1` / `ds_v2` parquet file and
-save it as an audio record (v2 also saves segments and creates voices). The ds_v2
-source derives `/home/ds_v2_metadata/<parquet-stem>_metadata.csv`, validates it
-row-for-row, and uses it as the exclusive metadata source. Both files are cached;
-only the four most recently used ds_v2 pairs are retained. A missing or mismatched
-CSV fails the run.
+Import a sample row from Hetzner `ds_v1` or from globally selected `ds_v2`
+metadata. The unified ds_v2 source discovers sorted metadata CSVs, applies its
+offset and limit across them, and derives each processed Parquet path from the
+selected metadata filename. With `import_audio` enabled it validates and attaches
+the selected bytes; the workflow then stores the audio and its segments.
 
 ### `ds_v2_metadata_import.json`
 
-Discover ds_v2 metadata CSVs in `/home/ds_v2_metadata` and import their rows
-directly into PostgreSQL without downloading Parquet audio or writing object-store
-packs. Offset and limit apply across the discovered CSVs. Records are virtual,
-retain their external Parquet row location, and cannot be played until audio bytes
-are imported separately.
+Run the same unified ds_v2 source with `import_audio` disabled and the same
+`SaveAudioRecord` node in external mode. It stores metadata and transcript
+segments without downloading Parquet audio or writing object-store packs. Records
+retain the derived processed-Parquet row location and remain virtual.
 
 ### `voice_embedding_pca.json`
 

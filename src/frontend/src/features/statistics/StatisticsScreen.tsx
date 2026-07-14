@@ -19,6 +19,7 @@ import { Scatter } from "./charts/Scatter";
 import { StatTile } from "./charts/StatTile";
 import { audioHistogramGroups, audioTiles, corpusData, rateScatters, textWarnings, type CorpusTab, type HistogramConfig } from "./logic";
 import { useStatisticsActions, useStatisticsEntriesQuery, useStatisticsEntryQuery } from "./query";
+import { reconcileStatisticsEntryId } from "./selection";
 import { useStatisticsUi } from "./store";
 
 export function StatisticsScreen() {
@@ -31,14 +32,9 @@ export function StatisticsScreen() {
   const actions = useStatisticsActions();
 
   useEffect(() => {
-    if (entries.length === 0) {
-      if (entryId !== null) setEntryId(null);
-      return;
-    }
-    if (entryId === null || !entries.some((e) => e.id === entryId)) {
-      setEntryId(entries[0]!.id);
-    }
-  }, [entries, entryId]);
+    const reconciled = reconcileStatisticsEntryId(entryId, entriesQuery.data);
+    if (reconciled !== entryId) setEntryId(reconciled);
+  }, [entriesQuery.data, entryId]);
 
   const entryQuery = useStatisticsEntryQuery(entryId);
   const summary = entries.find((e) => e.id === entryId) ?? null;
@@ -84,11 +80,23 @@ export function StatisticsScreen() {
           <StatisticsEntryPicker entries={entries} value={entryId} onChange={setEntryId} />
           <div className="flex-1" />
           <ComputeStatistics />
-          <IconButton icon="trash" title="Delete" onClick={remove} />
+          <IconButton
+            icon="trash"
+            title="Delete"
+            disabled={!summary}
+            onClick={remove}
+            className="disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-txt-mute"
+          />
         </div>
       </div>
 
-      {entryQuery.isLoading || !entryQuery.data ? (
+      {entryId === null ? (
+        <EmptyState
+          icon="bar-chart"
+          title="Select a statistics entry"
+          description="Choose a saved report from the picker above to view its statistics."
+        />
+      ) : entryQuery.isLoading || !entryQuery.data ? (
         <div className="px-1 py-16 text-center text-[13px] text-txt-mute">Loading entry…</div>
       ) : (
         <StatisticsBody payload={entryQuery.data.payload} tab={tab} onTab={setTab} />

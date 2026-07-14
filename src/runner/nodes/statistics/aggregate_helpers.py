@@ -1,8 +1,12 @@
+import re
 from collections import Counter
 from math import isfinite
 from typing import Any
 
 from runner.nodes.statistics.smart_histogram import histogram_counts
+
+
+BREAK_TAG_PATTERN = re.compile(r"<break t=(\d+)>")
 
 
 def pooled_histogram(records: list[dict[str, Any]], field: str, bins: int, fallback: tuple[float, float], clip: bool = False) -> dict[str, Any]:
@@ -89,6 +93,25 @@ def _range_for(values: list[float]) -> tuple[float, float]:
 
 def finite_field_values(records: list[dict[str, Any]], field: str) -> list[float]:
     return [float(record[field]) for record in records if record[field] is not None and isfinite(float(record[field]))]
+
+
+def break_histograms(
+    file_ids: list[str],
+    segments: list[dict[str, Any]],
+    bins: int,
+) -> dict[str, dict[str, Any]]:
+    counts = {audio_id: 0 for audio_id in file_ids}
+    durations: list[float] = []
+    for segment in segments:
+        values = [int(value) for value in BREAK_TAG_PATTERN.findall(str(segment["text"]))]
+        counts[segment_audio_id(segment)] += len(values)
+        durations.extend(float(value) for value in values)
+    return {
+        "break_count_per_file_histogram": histogram_counts(
+            [float(counts[audio_id]) for audio_id in file_ids], bins
+        ),
+        "break_duration_ms_histogram": histogram_counts(durations, bins),
+    }
 
 
 def string_value(record: dict[str, Any], field: str) -> str:

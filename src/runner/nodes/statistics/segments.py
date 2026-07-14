@@ -5,14 +5,14 @@ from dataclasses import replace
 from difflib import SequenceMatcher
 from typing import Any
 
-from runner.nodes.audio_segments.alignment_merge import alignment_midpoint, merge_alignment_tracks
+from runner.nodes.audio_segments.alignment_merge import AlignmentTrack, alignment_midpoint
+from runner.nodes.audio_segments.alignment_merge import project_alignment_to_transcript
 from runner.nodes.models import Audio, AudioSegment
 
 
 DEFAULT_MODEL_PRIORITY = ("src", "canary", "parakeet", "whisper")
 
 DEFAULT_MIN_OVERLAP_RATIO = 0.5
-DEFAULT_ALIGNMENT_MATCH_WINDOW_SEC = 0.2
 
 _WHITESPACE = re.compile(r"\s+")
 _NON_WORD = re.compile(r"[^\w\s]", re.UNICODE)
@@ -115,7 +115,6 @@ def deduplicate_overlapping_segments(
     segments: list[AudioSegment],
     *,
     min_overlap_ratio: float = DEFAULT_MIN_OVERLAP_RATIO,
-    alignment_match_window_sec: float = DEFAULT_ALIGNMENT_MATCH_WINDOW_SEC,
 ) -> tuple[list[AudioSegment], int]:
     if not segments:
         return [], 0
@@ -123,7 +122,7 @@ def deduplicate_overlapping_segments(
     collapsed = 0
     for members in _overlap_clusters(segments, min_overlap_ratio):
         collapsed += len(members) - 1
-        kept.append(_consensus_segment(members, alignment_match_window_sec))
+        kept.append(_consensus_segment(members))
     kept.sort(key=lambda segment: (segment.start, segment.end))
     return kept, collapsed
 
@@ -168,15 +167,19 @@ def _overlap_ratio(left: AudioSegment, right: AudioSegment) -> float:
     return overlap / shortest
 
 
-# Least-confident cluster member still keeps this fraction of a vote, so no segment is
-# silently dropped from the consensus and a numeric majority is not overturned by a single
-# very confident model — confidence tilts the vote, it does not replace counting.
+# Confidence tilts the vote without replacing member counting.
 CONFIDENCE_WEIGHT_FLOOR = 0.7
 
 
-def _consensus_segment(members: list[AudioSegment], alignment_match_window_sec: float) -> AudioSegment:
+def _consensus_segment(members: list[AudioSegment]) -> AudioSegment:
     if len(members) == 1:
-        return members[0]
+        winner = members[0]
+        tracks = [AlignmentTrack(winner.alignment or [], preferred=True)]
+        alignment, count = project_alignment_to_transcript(
+            winner.text, winner.start, winner.end, tracks
+        )
+        metadata = {**winner.metadata, "alignment_interpolated_words": count}
+        return replace(winner, metadata=metadata, alignment=alignment)
     normals = [_normalized_text(member) for member in members]
     weights = _confidence_weights(members)
     ranked = sorted(
@@ -190,12 +193,10 @@ def _consensus_segment(members: list[AudioSegment], alignment_match_window_sec: 
     )
     winner_index = ranked[0]
     winner = members[winner_index]
-    # Similarity + confidence of every other member relative to the winner, used for both the
-    # disagreement penalty and the corroboration bonus.
+    # Peer similarity and confidence drive both disagreement penalty and corroboration bonus.
     others = [index for index in range(len(members)) if index != winner_index]
     sims = [_text_similarity(normals[winner_index], normals[index]) for index in others]
     other_confidences = [members[index].confidence for index in others]
-    # Mean text similarity of the winner to the rest of the cluster: model-agnostic, in [0, 1].
     agreement = sum(sims) / len(sims)
     metadata = {
         **winner.metadata,
@@ -215,16 +216,16 @@ def _consensus_segment(members: list[AudioSegment], alignment_match_window_sec: 
         for index, member in enumerate(members)
         if index != winner_index
     ]
-    alignment = merge_alignment_tracks(
-        [winner.alignment or [], *other_tracks],
-        alignment_match_window_sec,
+    tracks = [AlignmentTrack(winner.alignment or [], preferred=True)]
+    tracks.extend(AlignmentTrack(track) for track in other_tracks)
+    alignment, interpolated_words = project_alignment_to_transcript(
+        winner.text, winner.start, winner.end, tracks
     )
+    metadata["alignment_interpolated_words"] = interpolated_words
     return replace(winner, confidence=confidence, metadata=metadata, alignment=alignment)
 
 
-# How much a fully-confident, fully-agreeing peer can lift the score toward 1.0. Damped well
-# below 1.0 because engine confidences are not calibrated and models make correlated errors,
-# so agreement is corroborating evidence, not independent probability to be multiplied out.
+# Damping keeps correlated model agreement from saturating confidence.
 CONSENSUS_BONUS_DAMPING = 0.5
 
 
@@ -233,7 +234,6 @@ def _consensus_confidence(
 ) -> float | None:
     """Semi-normalized cluster confidence: winner score, penalized by disagreement then lifted a
     bounded amount by confident corroboration.
-
     ``base`` is the winner's acoustic score scaled by mean agreement (model-agnostic, so texts
     not matching always lowers it). On top, each *other* member that both agrees and is confident
     closes part of the remaining gap to 1.0, so a cross-checked segment outranks a lone confident

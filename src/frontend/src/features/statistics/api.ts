@@ -30,6 +30,8 @@ export type StatisticsPayload = {
   duplicate_segments_collapsed: number;
   phonemes_available: boolean;
   text_length_warnings: TextWarning[];
+  break_count_per_file_histogram: Histogram;
+  break_duration_ms_histogram: Histogram;
   duration_seconds_histogram: Histogram;
   char_count_per_file_histogram: Histogram;
   phoneme_count_per_file_histogram: Histogram;

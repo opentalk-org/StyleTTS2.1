@@ -17,13 +17,16 @@ from runner.nodes.audio_segments.writeback_helpers import (
     save_result as _save_result,
     segment_group_from_audio as _segment_group_from_audio,
 )
+from runner.nodes.audio_segments.external_record import external_output, external_payload
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
+from shared.db.audio.external_crud import bulk_create_external_audio_files
 from shared.db.audio.models import AudioFile
 from shared.db.audio.schemas import AudioCreate, AudioUpdate
 
 
 class SaveAudioRecordSettings(StrictSettings):
+    storage_mode: Literal["stored", "external"] = "stored"
     virtual: bool = False
     bulk_import_packs: bool = False
 
@@ -34,7 +37,7 @@ class SaveAudioSegmentsSettings(StrictSettings):
 
 class SaveAudioRecordNode(Node):
     NODE_TYPE = "SaveAudioRecord"
-    DESCRIPTION = "Create a new audio record in the database from incoming audio bytes, storing its duration, score, language, and prompts. Takes audio and outputs the saved audio (now pointing at the stored record) plus a save result. Use it to persist freshly generated or imported clips as fresh records. Enable bulk import packs to batch many records into large storage packs for faster large imports, or mark records virtual."
+    DESCRIPTION = "Create audio records in stored or external mode. Stored mode bulk-persists incoming bytes, optionally in large import packs. External mode bulk-persists metadata, segments, and the source Parquet reference without copying audio bytes."
     CATEGORY = "Audio"
     SETTINGS = SaveAudioRecordSettings
     INPUTS = {"audio": AudioPort()}
@@ -43,27 +46,20 @@ class SaveAudioRecordNode(Node):
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
 
     async def execute(self, batch, context):
-        audios = []
-        payloads = []
-        for inputs in batch:
-            context.check_cancel()
-            audio: Audio = inputs["audio"]
-            assert audio.data is not None, f"audio bytes are required: {audio.id}"
-            audios.append(audio)
-            payloads.append(
-                AudioCreate(
-                    name=audio.name,
-                    wav_bytes=audio.data,
-                    duration=audio.duration,
-                    score=_audio_score(audio),
-                    language=_audio_language(audio),
-                    style_prompt=audio.style_prompt,
-                    voice_prompt=audio.voice_prompt,
-                    segments=[],
-                    metadata=_audio_metadata(audio),
-                    virtual=self.settings.virtual,
-                )
+        audios: list[Audio] = [inputs["audio"] for inputs in batch]
+        if self.settings.storage_mode == "external":
+            payloads = [external_payload(audio) for audio in context.cancellable(audios)]
+            with database_session() as session:
+                inserted = bulk_create_external_audio_files(session, payloads)
+            await context.report_progress(
+                self.id,
+                len(audios),
+                len(audios),
+                f"stored {inserted} external records; skipped {len(audios) - inserted} existing",
             )
+            return [external_output(audio) for audio in audios]
+
+        payloads = [_stored_payload(audio, self.settings.virtual) for audio in context.cancellable(audios)]
         with database_session() as session:
             items = audio_crud.bulk_create_audio_files(
                 session,
@@ -193,6 +189,23 @@ def assert_unique_audio_ids(audios: list[Audio], operation: str) -> None:
 
 def _audio_metadata(audio: Audio) -> dict[str, Any]:
     return {**audio.metadata, "sample_rate": audio.sample_rate, "channels": audio.channels}
+
+
+def _stored_payload(audio: Audio, virtual: bool) -> AudioCreate:
+    if audio.data is None:
+        raise ValueError(f"stored mode requires audio bytes: {audio.audio_file_id}")
+    return AudioCreate(
+        name=audio.name,
+        wav_bytes=audio.data,
+        duration=audio.duration,
+        score=_audio_score(audio),
+        language=_audio_language(audio),
+        style_prompt=audio.style_prompt,
+        voice_prompt=audio.voice_prompt,
+        segments=[],
+        metadata=_audio_metadata(audio),
+        virtual=virtual,
+    )
 
 
 def _audio_pack_config(settings: SaveAudioRecordSettings) -> audio_crud.AudioPackConfig:

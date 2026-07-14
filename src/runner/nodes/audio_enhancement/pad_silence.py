@@ -17,7 +17,7 @@ RMS_BIN_MS = 5
 
 
 class PadSilenceSettings(StrictSettings):
-    silence_threshold: float = Field(ge=0.0, le=1.0)
+    silence_threshold_db: float = Field(ge=-80.0, le=0.0, title="Silence threshold (dBFS)")
     start_silence: int = Field(ge=0, title="Start silence (ms)")
     end_silence: int = Field(ge=0, title="End silence (ms)")
 
@@ -32,7 +32,7 @@ class PaddedAudio:
 
 class PadSilenceNode(Node):
     NODE_TYPE = "PadSilence"
-    DESCRIPTION = "Trim leading and trailing silence from an audio clip and replace it with a fixed amount of silence at each end. Takes audio in and outputs the same audio with exactly the requested start and end silence padding (in milliseconds); the silence threshold controls how quiet counts as silence. Use it to give clips uniform, controlled margins."
+    DESCRIPTION = "Trim leading and trailing silence from an audio clip and replace it with a fixed amount of silence at each end. Takes audio in and outputs the same audio with exactly the requested start and end silence padding (in milliseconds); the dBFS silence threshold controls how quiet counts as silence. Use it to give clips uniform, controlled margins."
     CATEGORY = "Audio"
     SETTINGS = PadSilenceSettings
     INPUTS = {"audio": AudioPort()}
@@ -87,7 +87,7 @@ def pad_silence_wav_bytes(
     np, sf = dependencies if dependencies is not None else _audio_dependencies()
     samples, sample_rate = sf.read(BytesIO(audio_bytes), always_2d=True, dtype="float32")
     sample_rate = int(sample_rate)
-    content = _non_silent_content(np, samples, sample_rate, settings.silence_threshold)
+    content = _non_silent_content(np, samples, sample_rate, settings.silence_threshold_db)
     start_samples = int(round(sample_rate * settings.start_silence / 1000.0))
     end_samples = int(round(sample_rate * settings.end_silence / 1000.0))
     padded = np.concatenate([
@@ -116,9 +116,10 @@ def pad_silence_wav_bytes_batch(
     ]
 
 
-def _non_silent_content(np: Any, samples: Any, sample_rate: int, threshold: float) -> Any:
+def _non_silent_content(np: Any, samples: Any, sample_rate: int, threshold_db: float) -> Any:
     if len(samples) == 0:
         return samples
+    threshold = 10.0 ** (threshold_db / 20.0)
     bin_samples = max(1, int(round(sample_rate * RMS_BIN_MS / 1000.0)))
     frame_power = np.mean(np.square(samples.astype(np.float64)), axis=1)
     bin_starts = np.arange(0, len(samples), bin_samples)

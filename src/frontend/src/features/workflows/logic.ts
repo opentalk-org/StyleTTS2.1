@@ -3,7 +3,8 @@ import type { Viewport, WorkflowDefinition, WorkflowEdge, WorkflowGraph, Workflo
 
 const LAYOUT_X = 64;
 const LAYOUT_Y = 80;
-const LAYOUT_COLUMN_GAP = 330;
+const LAYOUT_COLUMN_GAP = 64;
+const LAYOUT_NODE_MIN_WIDTH = 220;
 const LAYOUT_ROW_GAP = 52;
 const LAYOUT_PANEL_GAP = 120;
 const LAYOUT_PANEL_WIDTH = 280;
@@ -124,7 +125,7 @@ const LAYOUT_DUMMY_HEIGHT = 24;
  * graph where multi-column edges are split by routing dummies so their crossings are
  * counted too), then vertical positions pulled toward connected neighbours to
  * straighten chains. */
-export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph): WorkflowGraph {
+export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph, nodeWidths: ReadonlyMap<string, number>): WorkflowGraph {
   if (graph.nodes.length === 0) return graph;
 
   const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
@@ -285,6 +286,19 @@ export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph): W
     for (const [id, y] of top) top.set(id, y + (LAYOUT_Y - minTop));
   }
 
+  const layerX = [LAYOUT_X];
+  for (let rank = 0; rank + 1 < layerCount; rank += 1) {
+    const widths = layers[rank]!
+      .filter((id) => !isDummy.has(id))
+      .map((id) => {
+        const width = nodeWidths.get(id);
+        if (width === undefined) throw new Error(`Missing rendered width for node: ${id}`);
+        return width;
+      });
+    const layerWidth = Math.max(LAYOUT_NODE_MIN_WIDTH, ...widths);
+    layerX.push(layerX[rank]! + layerWidth + LAYOUT_COLUMN_GAP);
+  }
+
   let maxBottom = LAYOUT_Y;
   const positioned = new Map<string, WorkflowNode>();
   for (let rank = 0; rank < layerCount; rank += 1) {
@@ -292,7 +306,7 @@ export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph): W
       if (isDummy.has(id)) continue; // routing dummies reserve space but are not rendered
       const node = nodeById.get(id)!;
       const y = top.get(id) ?? LAYOUT_Y;
-      positioned.set(id, { ...node, x: LAYOUT_X + rank * LAYOUT_COLUMN_GAP, y });
+      positioned.set(id, { ...node, x: layerX[rank]!, y });
       maxBottom = Math.max(maxBottom, y + heightOf(id));
     }
   }

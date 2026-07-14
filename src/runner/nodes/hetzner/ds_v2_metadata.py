@@ -14,29 +14,31 @@ from runflow.core.ports import PortMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import AudioPort
-from runner.nodes.hetzner.ds_v2_audio import DsV2AudioOptions, speaker_name
+from runner.nodes.hetzner.ds_v2_audio import DsV2AudioOptions, audio_from_row, speaker_name
 from runner.nodes.hetzner.ds_v2_metadata_audio import audio_metadata_from_row
 from runner.nodes.hetzner.ds_v2_metadata_rows import DsV2MetadataRow, DsV2MetadataRows, load_metadata_rows
+from runner.nodes.hetzner.ds_v2_selected_rows import load_selected_audio_rows
 from runner.nodes.models import Audio
 from shared.db import database_session
 from shared.db.voices.models import Voice
 
 
-class HetznerDsV2MetadataSourceSettings(StrictSettings):
+class HetznerDsV2SourceSettings(StrictSettings):
     host: str = Field(default="hetzner-storagebox", title="SFTP host")
     row_offset: int = Field(default=0, ge=0, title="Row offset")
     row_limit: int | None = Field(default=None, ge=1, title="Rows to import")
+    import_audio: bool = Field(default=False, title="Import audio bytes")
     text_column: Literal["text_src", "text_parakeet", "text_whisper", "text_canary"] = "text_src"
     name_prefix: str = Field(default="ds_v2", title="Audio name prefix")
     download_retries: int = Field(default=3, ge=1, le=10, title="SFTP retries")
     create_voices: bool = Field(default=True, title="Create voices")
 
 
-class HetznerDsV2MetadataSourceNode(Node):
-    NODE_TYPE = "HetznerDsV2MetadataSource"
-    DESCRIPTION = "Discover ds_v2 metadata CSVs on Hetzner and import their rows as virtual audio references without downloading Parquet audio bytes. Offset and row limit apply across all discovered CSVs."
+class HetznerDsV2SourceNode(Node):
+    NODE_TYPE = "HetznerDsV2Source"
+    DESCRIPTION = "Discover ds_v2 metadata CSVs on Hetzner and import globally selected rows. Optionally download audio bytes from each row's inferred Parquet file; otherwise emit external audio references."
     CATEGORY = "Inputs"
-    SETTINGS = HetznerDsV2MetadataSourceSettings
+    SETTINGS = HetznerDsV2SourceSettings
     IS_INPUT = True
     INPUTS = {}
     OUTPUTS = {"audio": AudioPort(mode=PortMode.STREAM)}
@@ -69,8 +71,10 @@ class HetznerDsV2MetadataSourceNode(Node):
         if not rows:
             self._remaining = 0
             return []
+        context.check_cancel()
         voice_ids = _voice_ids(rows, self.settings.create_voices)
-        items = [_audio_from_source(source, self.settings, voice_ids) for source in rows]
+        items = _audio_items(rows, self.settings, voice_ids, Path(context.cache_dir) / "hetzner")
+        context.check_cancel()
         if self.settings.row_limit is None:
             self._remaining = 1
         else:
@@ -82,24 +86,38 @@ class HetznerDsV2MetadataSourceNode(Node):
             self._source.prune_cache()
 
 
-def _audio_from_source(
-    source: DsV2MetadataRow,
-    settings: HetznerDsV2MetadataSourceSettings,
+def _audio_items(
+    sources: list[DsV2MetadataRow],
+    settings: HetznerDsV2SourceSettings,
     voice_ids: dict[str, UUID],
-) -> Audio:
-    options = DsV2AudioOptions(
-        settings.host,
-        source.remote_parquet_path,
-        settings.text_column,
-        settings.name_prefix,
-    )
-    return audio_metadata_from_row(
-        source.metadata,
-        options,
-        source.index,
-        voice_ids.get(speaker_name(source.metadata)),
-        source.remote_metadata_path,
-    )
+    cache_dir: Path,
+) -> list[Audio]:
+    loaded = None
+    if settings.import_audio:
+        loaded = load_selected_audio_rows(settings.host, sources, cache_dir, settings.download_retries)
+    items = []
+    for position, source in enumerate(sources):
+        options = DsV2AudioOptions(
+            settings.host,
+            source.remote_parquet_path,
+            settings.text_column,
+            settings.name_prefix,
+        )
+        voice_id = voice_ids.get(speaker_name(source.metadata))
+        if loaded is not None:
+            row = {**source.metadata, "audio": loaded[position].audio}
+            items.append(audio_from_row(row, options, source.index, voice_id))
+        else:
+            items.append(
+                audio_metadata_from_row(
+                    source.metadata,
+                    options,
+                    source.index,
+                    voice_id,
+                    source.remote_metadata_path,
+                )
+            )
+    return items
 
 
 def _voice_ids(rows: list[DsV2MetadataRow], enabled: bool) -> dict[str, UUID]:
