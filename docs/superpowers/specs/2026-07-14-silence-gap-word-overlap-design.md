@@ -12,7 +12,7 @@ Gap bridging happens once at audio level before intervals are mapped to segments
 
 ## Word-overlap rejection
 
-For each segment with alignment, first clip a detected silence interval to the segment bounds. Intersect that clipped silence with every ordinary aligned word interval, excluding existing `<break t=N>` entries. Merge those intersections into a union so overlapping word timings are counted only once.
+`InsertSilenceBreaks` gains `word_overlap_drop_ratio`, a float setting with default `0.5` constrained to `0.0..1.0`. For each segment with alignment, first clip a detected silence interval to the segment bounds. Intersect that clipped silence with every ordinary aligned word interval, excluding existing `<break t=N>` entries. Merge those intersections into a union so overlapping word timings are counted only once.
 
 Calculate:
 
@@ -20,7 +20,7 @@ Calculate:
 word_overlap_ratio = union_intersection_duration / clipped_silence_duration
 ```
 
-Drop the silence candidate when `word_overlap_ratio > 0.5`. A ratio exactly equal to `0.5` remains eligible. Apply this rejection before boundary selection, `min_break_time`, and `drop_prob`.
+Drop the silence candidate when `word_overlap_ratio > word_overlap_drop_ratio`. A ratio exactly equal to the setting remains eligible. Setting it to `0.0` drops every interval with any word overlap; setting it to `1.0` disables overlap-based dropping. Apply this rejection before boundary selection, `min_break_time`, and `drop_prob`.
 
 ## Example
 
