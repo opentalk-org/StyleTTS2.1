@@ -17,7 +17,11 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shared.db.base import Base
-from shared.db.speakers.schemas import ClusteringRunState, EmbeddingRunState
+from shared.db.speakers.schemas import (
+    ClusteringRunState,
+    EmbeddingRunState,
+    SpeakerAuditState,
+)
 
 
 class SpeakerEmbeddingRun(Base):
@@ -171,4 +175,48 @@ class SpeakerClusterSummary(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     voice_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("voices.id", ondelete="SET NULL"), nullable=True
+    )
+
+
+class SpeakerClusterAudit(Base):
+    __tablename__ = "speaker_cluster_audits"
+    __table_args__ = (
+        CheckConstraint(
+            "(state = 'open' AND report_artifact_id IS NULL "
+            "AND listening_artifact_id IS NULL AND metrics IS NULL "
+            "AND completed_at IS NULL) OR "
+            "(state = 'completed' AND report_artifact_id IS NOT NULL "
+            "AND listening_artifact_id IS NOT NULL AND metrics IS NOT NULL "
+            "AND completed_at IS NOT NULL)",
+            name="ck_speaker_cluster_audits_completed_integrity",
+        ),
+        UniqueConstraint(
+            "cluster_run_id", "seed", name="uq_speaker_cluster_audits_run_seed"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    cluster_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("speaker_clustering_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    seed: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    state: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=SpeakerAuditState.OPEN.value
+    )
+    report_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("extra_files.id", ondelete="RESTRICT"), nullable=True
+    )
+    listening_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("extra_files.id", ondelete="RESTRICT"), nullable=True
+    )
+    metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )

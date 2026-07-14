@@ -176,6 +176,14 @@ class SpeakerClusterRunRef:
 
 
 @dataclass(frozen=True)
+class SpeakerAuditRef:
+    audit_id: UUID
+    cluster_run_id: UUID
+    report_artifact_id: UUID
+    listening_artifact_id: UUID
+
+
+@dataclass(frozen=True)
 class TrainingManifest:
     dataset_id: UUID
     audio_file_ids: list[UUID]

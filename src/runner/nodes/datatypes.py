@@ -9,6 +9,7 @@ from runner.nodes.models import (
     Audio,
     CheckpointRef,
     SaveResult,
+    SpeakerAuditRef,
     SpeakerClusterRunRef,
     SpeakerEmbeddingSetRef,
     SpeakerEmbeddingShardRef,
@@ -115,6 +116,14 @@ class SpeakerClusterRunRefPort(Port):
 
 
 @dataclass(frozen=True)
+class SpeakerAuditRefPort(Port):
+    TYPE_NAME = "SPEAKER_AUDIT_REF"
+    python_type = SpeakerAuditRef
+    color = "#0D9488"
+    description = "Completed speaker cluster audit reference"
+
+
+@dataclass(frozen=True)
 class TrainingManifestPort(Port):
     TYPE_NAME = "TRAINING_MANIFEST"
     python_type = TrainingManifest
@@ -151,6 +160,7 @@ ALL_PORT_TYPES: list[type[Port]] = [
     SpeakerEmbeddingShardRefPort,
     SpeakerEmbeddingSetRefPort,
     SpeakerClusterRunRefPort,
+    SpeakerAuditRefPort,
     TrainingManifestPort,
     TrainingResultPort,
     SynthesisResultPort,

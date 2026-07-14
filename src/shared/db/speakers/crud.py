@@ -4,6 +4,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from shared.db.speakers.audit_crud import (
+    complete_audit as complete_audit,
+    create_audit as create_audit,
+    get_audit as get_audit,
+)
 from shared.db.speakers.clustering_crud import (
     append_cluster_summaries as append_cluster_summaries,
     clear_open_clustering_artifacts as clear_open_clustering_artifacts,

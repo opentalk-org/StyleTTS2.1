@@ -62,6 +62,51 @@ class ClusteringRunState(StrEnum):
     FAILED = "failed"
 
 
+class SpeakerAuditState(StrEnum):
+    OPEN = "open"
+    COMPLETED = "completed"
+
+
+class SpeakerAuditCreate(BaseModel):
+    cluster_run_id: UUID
+    seed: int
+
+
+class SpeakerAuditScoreDistribution(BaseModel):
+    count: int = Field(ge=0)
+    sampled_count: int = Field(ge=0)
+    minimum: float | None
+    q05: float | None
+    q25: float | None
+    median: float | None
+    q75: float | None
+    q95: float | None
+    maximum: float | None
+    mean: float | None
+
+
+class SpeakerAuditLabeledMetrics(BaseModel):
+    labeled_count: int = Field(ge=0)
+    clustered_labeled_count: int = Field(ge=0)
+    pair_precision: float | None = Field(ge=0.0, le=1.0)
+    pair_recall: float | None = Field(ge=0.0, le=1.0)
+    weighted_purity: float | None = Field(ge=0.0, le=1.0)
+    adjusted_rand_index: float | None = Field(ge=-1.0, le=1.0)
+    adjusted_mutual_info: float | None = Field(ge=-1.0, le=1.0)
+    fragmented_speaker_count: int = Field(ge=0)
+    max_clusters_per_true_speaker: int = Field(ge=0)
+    max_true_speakers_in_cluster: int = Field(ge=0)
+    suspicious_cluster_ids: tuple[int, ...]
+
+
+class SpeakerAuditMetricsRecord(BaseModel):
+    labeled: SpeakerAuditLabeledMetrics
+    centroid_scores: SpeakerAuditScoreDistribution
+    second_scores: SpeakerAuditScoreDistribution
+    margins: SpeakerAuditScoreDistribution
+    pair_scores: SpeakerAuditScoreDistribution
+
+
 class SpeakerClusterStatus(StrEnum):
     ACCEPTED = "accepted"
     SUSPICIOUS = "suspicious"
