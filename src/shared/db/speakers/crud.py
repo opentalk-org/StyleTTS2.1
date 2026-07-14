@@ -4,6 +4,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from shared.db.speakers.clustering_crud import (
+    complete_clustering_run as complete_clustering_run,
+    create_clustering_run as create_clustering_run,
+    list_clustering_artifacts as list_clustering_artifacts,
+    register_clustering_artifact as register_clustering_artifact,
+    replace_cluster_summaries as replace_cluster_summaries,
+)
 from shared.db.speakers.models import SpeakerEmbeddingRun, SpeakerEmbeddingShard
 from shared.db.speakers.schemas import (
     EmbeddingRunCreate,
@@ -91,7 +98,9 @@ def collect_embedding_shard(
     if sealed_now:
         run.state = EmbeddingRunState.SEALED.value
         run.sealed_at = datetime.now(UTC)
-    artifact_ids = [shard.artifact_id for shard in list_embedding_shards(session, run_id)]
+    artifact_ids = [
+        shard.artifact_id for shard in list_embedding_shards(session, run_id)
+    ]
     session.commit()
     session.refresh(run)
     return EmbeddingShardCollection(
@@ -187,7 +196,11 @@ def _collection_result(
 def _validate_shard_identity(
     run: SpeakerEmbeddingRun, payload: EmbeddingShardCreate
 ) -> None:
-    identity = (payload.dimension, payload.model_revision, payload.preprocessing_version)
+    identity = (
+        payload.dimension,
+        payload.model_revision,
+        payload.preprocessing_version,
+    )
     expected = (run.dimension, run.model_revision, run.preprocessing_version)
     if identity != expected:
         raise ValueError("embedding shard identity does not match its run")
@@ -209,4 +222,6 @@ def _validate_duplicate(
         payload.preprocessing_version,
     )
     if stored != incoming:
-        raise ValueError(f"artifact {payload.artifact_id} is registered with different metadata")
+        raise ValueError(
+            f"artifact {payload.artifact_id} is registered with different metadata"
+        )

@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -79,10 +80,14 @@ class SpeakerEmbeddingShard(Base):
 
 class SpeakerClusteringRun(Base):
     __tablename__ = "speaker_clustering_runs"
+    __table_args__ = (
+        UniqueConstraint("run_key", name="uq_speaker_clustering_runs_run_key"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    run_key: Mapped[str] = mapped_column(Text, nullable=False)
     embedding_run_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("speaker_embedding_runs.id", ondelete="CASCADE"),
         nullable=False,
@@ -113,6 +118,10 @@ class SpeakerClusteringRun(Base):
 class SpeakerClusteringArtifact(Base):
     __tablename__ = "speaker_clustering_artifacts"
     __table_args__ = (
+        CheckConstraint(
+            "role IN ('candidate', 'assignment', 'prototype', 'index')",
+            name="ck_speaker_clustering_artifacts_role",
+        ),
         UniqueConstraint(
             "run_id", "role", "ordinal", name="uq_speaker_cluster_artifact_order"
         ),

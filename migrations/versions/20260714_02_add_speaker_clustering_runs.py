@@ -24,6 +24,7 @@ def upgrade() -> None:
     op.create_table(
         "speaker_clustering_runs",
         sa.Column("id", sa.UUID(), nullable=False),
+        sa.Column("run_key", sa.Text(), nullable=False),
         sa.Column("embedding_run_id", sa.UUID(), nullable=False),
         sa.Column("expected_count", sa.BigInteger(), nullable=False),
         sa.Column("assignment_count", sa.BigInteger(), nullable=False),
@@ -45,6 +46,7 @@ def upgrade() -> None:
             ["index_artifact_id"], ["extra_files.id"], ondelete="RESTRICT"
         ),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("run_key", name="uq_speaker_clustering_runs_run_key"),
     )
     op.create_index(
         "ix_speaker_clustering_runs_embedding_run_id",
@@ -66,6 +68,10 @@ def upgrade() -> None:
             ["artifact_id"], ["extra_files.id"], ondelete="RESTRICT"
         ),
         sa.PrimaryKeyConstraint("id"),
+        sa.CheckConstraint(
+            "role IN ('candidate', 'assignment', 'prototype', 'index')",
+            name="ck_speaker_clustering_artifacts_role",
+        ),
         sa.UniqueConstraint(
             "run_id", "role", "ordinal", name="uq_speaker_cluster_artifact_order"
         ),

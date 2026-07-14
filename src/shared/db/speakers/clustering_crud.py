@@ -1,7 +1,8 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from shared.db.speakers.models import (
@@ -13,6 +14,7 @@ from shared.db.speakers.models import (
 from shared.db.speakers.schemas import (
     ClusterSummaryCreate,
     ClusteringArtifactCreate,
+    ClusteringArtifactRole,
     ClusteringRunComplete,
     ClusteringRunCreate,
     ClusteringRunState,
@@ -23,6 +25,14 @@ from shared.db.speakers.schemas import (
 def create_clustering_run(
     session: Session, payload: ClusteringRunCreate
 ) -> SpeakerClusteringRun:
+    existing = session.scalar(
+        select(SpeakerClusteringRun).where(
+            SpeakerClusteringRun.run_key == payload.run_key
+        )
+    )
+    if existing is not None:
+        _validate_run_identity(existing, payload)
+        return existing
     embedding_run = session.get(SpeakerEmbeddingRun, payload.embedding_run_id)
     if embedding_run is None:
         raise KeyError(f"speaker embedding run not found: {payload.embedding_run_id}")
@@ -41,7 +51,19 @@ def create_clustering_run(
         state=ClusteringRunState.OPEN.value,
     )
     session.add(run)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        existing = session.scalar(
+            select(SpeakerClusteringRun).where(
+                SpeakerClusteringRun.run_key == payload.run_key
+            )
+        )
+        if existing is None:
+            raise
+        _validate_run_identity(existing, payload)
+        return existing
     session.refresh(run)
     return run
 
@@ -79,7 +101,7 @@ def register_clustering_artifact(
 def list_clustering_artifacts(
     session: Session,
     run_id: UUID,
-    role: str | None = None,
+    role: ClusteringArtifactRole | None = None,
 ) -> list[SpeakerClusteringArtifact]:
     statement = select(SpeakerClusteringArtifact).where(
         SpeakerClusteringArtifact.run_id == run_id
@@ -123,10 +145,20 @@ def complete_clustering_run(
     run = _locked_run(session, run_id)
     if run.state != ClusteringRunState.OPEN.value:
         raise ValueError(f"speaker clustering run {run_id} is {run.state}")
-    if payload.assignment_count != run.expected_count:
+    persisted_count = session.scalar(
+        select(func.coalesce(func.sum(SpeakerClusteringArtifact.row_count), 0)).where(
+            SpeakerClusteringArtifact.run_id == run_id,
+            SpeakerClusteringArtifact.role == ClusteringArtifactRole.ASSIGNMENT.value,
+        )
+    )
+    if (
+        persisted_count != payload.assignment_count
+        or payload.assignment_count != run.expected_count
+    ):
         raise ValueError(
-            f"cannot complete clustering run {run_id}: expected {run.expected_count}, "
-            f"assigned {payload.assignment_count}"
+            f"cannot complete clustering run {run_id}: persisted assignment count "
+            f"{persisted_count}, declared {payload.assignment_count}, "
+            f"expected {run.expected_count}"
         )
     run.assignment_count = payload.assignment_count
     run.prototype_artifact_id = payload.prototype_artifact_id
@@ -147,3 +179,27 @@ def _locked_run(session: Session, run_id: UUID) -> SpeakerClusteringRun:
     if run is None:
         raise KeyError(f"speaker clustering run not found: {run_id}")
     return run
+
+
+def _validate_run_identity(
+    run: SpeakerClusteringRun,
+    payload: ClusteringRunCreate,
+) -> None:
+    stored = (
+        run.embedding_run_id,
+        run.expected_count,
+        run.index_factory,
+        run.threshold_version,
+        run.settings,
+    )
+    incoming = (
+        payload.embedding_run_id,
+        payload.expected_count,
+        payload.index_factory,
+        payload.threshold_version,
+        payload.settings,
+    )
+    if stored != incoming:
+        raise ValueError(
+            f"clustering run key {payload.run_key} has different clustering identity"
+        )

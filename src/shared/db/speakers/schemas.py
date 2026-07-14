@@ -67,7 +67,22 @@ class SpeakerClusterStatus(StrEnum):
     SUSPICIOUS = "suspicious"
 
 
+class SpeakerAssignmentOutcome(StrEnum):
+    ACCEPTED = "accepted"
+    PROVISIONAL_NEW = "provisional_new"
+    AMBIGUOUS = "ambiguous"
+    REJECTED = "rejected"
+
+
+class ClusteringArtifactRole(StrEnum):
+    CANDIDATE = "candidate"
+    ASSIGNMENT = "assignment"
+    PROTOTYPE = "prototype"
+    INDEX = "index"
+
+
 class ClusteringRunCreate(BaseModel):
+    run_key: str = Field(min_length=1)
     embedding_run_id: UUID
     expected_count: int = Field(ge=0)
     index_factory: str
@@ -77,7 +92,7 @@ class ClusteringRunCreate(BaseModel):
 
 class ClusteringArtifactCreate(BaseModel):
     artifact_id: UUID
-    role: str
+    role: ClusteringArtifactRole
     ordinal: int = Field(ge=0)
     row_count: int = Field(ge=0)
 
