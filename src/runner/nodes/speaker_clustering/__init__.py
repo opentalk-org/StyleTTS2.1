@@ -1,6 +1,8 @@
 from runner.nodes.speaker_clustering.collect_node import CollectSpeakerEmbeddingsNode
-from runner.nodes.speaker_clustering.cluster_runtime.nodes import (
+from runner.nodes.speaker_clustering.cluster_runtime.audit_node import (
     AuditSpeakerClustersNode,
+)
+from runner.nodes.speaker_clustering.cluster_runtime.nodes import (
     ClusterSpeakerEmbeddingsNode,
     SpeakerEmbeddingSetSourceNode,
 )

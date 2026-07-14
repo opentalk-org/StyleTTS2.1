@@ -5,21 +5,15 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from pydantic import Field
-
 from runflow.core.node import Node
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runflow.runtime.output_router import INPUT_INDEX_OUTPUT
 from runner.nodes.datatypes import (
-    JsonPort,
     SpeakerClusterRunRefPort,
     SpeakerEmbeddingSetRefPort,
 )
-from runner.nodes.models import SpeakerClusterRunRef, SpeakerEmbeddingSetRef
-from runner.nodes.speaker_clustering.cluster_runtime.audit import (
-    audit_cluster_assignments,
-)
+from runner.nodes.models import SpeakerEmbeddingSetRef
 from runner.nodes.speaker_clustering.cluster_runtime.pipeline import (
     ClusterSpeakerEmbeddingsSettings,
     run_clustering_pipeline,
@@ -31,10 +25,6 @@ from shared.db.speakers.schemas import EmbeddingRunState
 
 class SpeakerEmbeddingSetSourceSettings(StrictSettings):
     embedding_run_id: UUID
-
-
-class AuditSpeakerClustersSettings(StrictSettings):
-    batch_rows: int = Field(default=100_000, gt=0)
 
 
 @dataclass(frozen=True)
@@ -125,31 +115,3 @@ class ClusterSpeakerEmbeddingsNode(Node):
             reporter.report,
         )
         return [{"cluster_run": result, INPUT_INDEX_OUTPUT: 0}]
-
-
-class AuditSpeakerClustersNode(Node):
-    NODE_TYPE = "AuditSpeakerClusters"
-    DESCRIPTION = "Measure false merges and same-speaker recovery when assignment truth labels exist."
-    CATEGORY = "Speaker Clustering"
-    SETTINGS = AuditSpeakerClustersSettings
-    INPUTS = {"cluster_run": SpeakerClusterRunRefPort()}
-    OUTPUTS = {"audit": JsonPort()}
-    BATCH_POLICY = BatchPolicy(BatchMode.DISABLED)
-    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=False)
-
-    async def execute(
-        self, batch: list[dict[str, Any]], context: Any
-    ) -> list[dict[str, Any]]:
-        outputs = []
-        for input_index, inputs in enumerate(batch):
-            cluster_run = inputs["cluster_run"]
-            assert isinstance(cluster_run, SpeakerClusterRunRef)
-            context.check_cancel()
-            result = await asyncio.to_thread(
-                audit_cluster_assignments,
-                cluster_run,
-                context.node_dir(self.id) / f"audit-{cluster_run.run_id}.sqlite3",
-                self.settings.batch_rows,
-            )
-            outputs.append({"audit": result, INPUT_INDEX_OUTPUT: input_index})
-        return outputs
