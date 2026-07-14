@@ -285,7 +285,7 @@ def _sqlite_rows(
 def _translate_sqlite_interrupt(
     error: sqlite3.OperationalError, check_cancel: Callable[[], None] | None
 ) -> None:
-    if str(error) == "interrupted":
+    if error.args == ("interrupted",):
         _check_cancel(check_cancel)
     raise error
 

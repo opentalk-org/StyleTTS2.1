@@ -41,6 +41,10 @@ The temporary test was removed before commit.
 - SQLite connections install a progress handler that calls `check_cancel` during
   long insert and `COUNT(DISTINCT)` VM work, and clear it in `finally` before
   closing.
+- Interrupted SQLite insert and aggregation errors now call `check_cancel`
+  outside the SQLite callback boundary. Runtime cancellation is re-raised with
+  its original exception; an interrupted SQLite error is preserved when the
+  runtime callback returns normally.
 
 Focused follow-up evidence:
 
@@ -53,6 +57,15 @@ nix develop --command uv run --frozen --with pytest python -m pytest \
 
 The follow-up suite also rechecked reciprocal prototype gating and distinct
 member support, then was removed before commit.
+
+The final interruption-translation regression ran separately and was removed:
+
+```text
+nix develop --command uv run --frozen --with pytest python -m pytest \
+  task4_interrupt_translation_temp.py -q
+...                                                                      [100%]
+3 passed, 2 warnings in 3.05s
+```
 
 ## Scope
 
