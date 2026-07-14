@@ -9,6 +9,8 @@ from runner.nodes.models import (
     Audio,
     CheckpointRef,
     SaveResult,
+    SpeakerEmbeddingSetRef,
+    SpeakerEmbeddingShardRef,
     SynthesisResult,
     TrainingManifest,
     TrainingResult,
@@ -88,6 +90,22 @@ class AssetBundlePort(Port):
 
 
 @dataclass(frozen=True)
+class SpeakerEmbeddingShardRefPort(Port):
+    TYPE_NAME = "SPEAKER_EMBEDDING_SHARD_REF"
+    python_type = SpeakerEmbeddingShardRef
+    color = "#0E7490"
+    description = "Speaker embedding shard artifact reference"
+
+
+@dataclass(frozen=True)
+class SpeakerEmbeddingSetRefPort(Port):
+    TYPE_NAME = "SPEAKER_EMBEDDING_SET_REF"
+    python_type = SpeakerEmbeddingSetRef
+    color = "#155E75"
+    description = "Sealed speaker embedding set reference"
+
+
+@dataclass(frozen=True)
 class TrainingManifestPort(Port):
     TYPE_NAME = "TRAINING_MANIFEST"
     python_type = TrainingManifest
@@ -121,6 +139,8 @@ ALL_PORT_TYPES: list[type[Port]] = [
     SaveResultPort,
     CheckpointRefPort,
     AssetBundlePort,
+    SpeakerEmbeddingShardRefPort,
+    SpeakerEmbeddingSetRefPort,
     TrainingManifestPort,
     TrainingResultPort,
     SynthesisResultPort,

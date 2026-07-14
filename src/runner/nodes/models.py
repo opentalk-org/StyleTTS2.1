@@ -145,6 +145,26 @@ class AssetBundleRef:
 
 
 @dataclass(frozen=True)
+class SpeakerEmbeddingShardRef:
+    run_id: UUID
+    artifact_id: UUID
+    row_count: int
+    dimension: int
+    model_revision: str
+    preprocessing_version: str
+
+
+@dataclass(frozen=True)
+class SpeakerEmbeddingSetRef:
+    run_id: UUID
+    artifact_ids: list[UUID]
+    dimension: int
+    item_count: int
+    model_revision: str
+    preprocessing_version: str
+
+
+@dataclass(frozen=True)
 class TrainingManifest:
     dataset_id: UUID
     audio_file_ids: list[UUID]

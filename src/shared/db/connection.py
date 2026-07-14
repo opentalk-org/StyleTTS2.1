@@ -19,6 +19,7 @@ from shared.db.jobs import models as job_models
 from shared.db.mos import models as mos_models
 from shared.db.runners import models as runner_models
 from shared.db.settings import models as settings_models
+from shared.db.speakers import models as speaker_models
 from shared.db.statistics import models as statistics_models
 from shared.db.voices import models as voice_models
 from shared.db.waveforms import models as waveform_models
