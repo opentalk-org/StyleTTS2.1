@@ -43,6 +43,7 @@ dependencies = [
     "pyworld>=0.3",
     "pyyaml>=6.0",
     "python-multipart>=0.0.20",
+    "ruamel-yaml>=0.17.28,<0.19",
     "soundfile>=0.12",
     "speechbrain>=1.0",
     "sqlalchemy>=2.0",

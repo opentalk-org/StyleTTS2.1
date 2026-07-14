@@ -25,17 +25,24 @@ sealed durable run without emitting again for later duplicates.
 
 ## Real graph
 
-`nix develop --command runflow-dev-status` confirmed the shared `runflow-dev`
-session was already running. `workflows/speaker_embedding_ecapa.json` was submitted
-through `POST /graphs/runs` as `speaker_embedding_task5_smoke`; the Nix-wrapped CLI
-reported `succeeded` with four events.
+After an empty-source registration smoke, a temporary dataset was created through
+shared CRUD with two stored 16 kHz WAV files and two segments per file. The graph
+was submitted through `POST /graphs/runs` as
+`speaker_embedding_populated_smoke_v2` and completed successfully with 66 events.
 
-The smoke dataset contains zero files (all datasets returned by `/datasets` also
-reported zero files), so this run proves graph parsing, registration, dispatch,
-and empty-source completion only. It could not exercise ECAPA batching or produce
-a sealed shard manifest. `python -m cli logs` returned 404 because an empty source
-created no node log. A populated segmented dataset and available model/GPU are
-required for the requested multi-input artifact verification.
+The real runner log records `SpeakerSegmentSource` emitting four items,
+`ECAPASpeakerEmbed` processing all four in one batch and emitting four lineage-
+preserving references, and `CollectSpeakerEmbeddings` consuming four references
+while emitting exactly one sealed-set packet. Database inspection confirmed one
+sealed run with `expected_count=4`, `stored_count=4`, one Parquet shard containing
+four 192-dimensional rows, and a 3,673-byte stored artifact. The temporary audio,
+dataset, run jobs, artifact, and fixture script were removed afterward.
+
+The first populated attempt exposed an incompatibility between HyperPyYAML 1.2.2
+and ruamel.yaml 0.19.1 (`Loader.max_depth` was absent). A focused RED test reproduced
+the loader failure. Pinning the directly used compatibility range to
+`ruamel-yaml>=0.17.28,<0.19` resolved ruamel.yaml 0.18.17; the focused test passed,
+the single shared dev session was restarted, and the populated graph then passed.
 
 ## Command caveat
 
