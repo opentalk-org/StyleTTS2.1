@@ -21,6 +21,9 @@ from shared.db.audio.pack_prune import prune_fragmented_audio_packs
 from shared.db.audio.pack_store import AudioPackConfig, ObjectStore
 from shared.db.audio.schemas import AudioBucketLocation, AudioCreate, AudioPartRead, AudioUpdate
 from shared.db.audio.scores_crud import bulk_update_audio_scores
+from shared.db.audio.speaker_assignment_crud import (
+    bulk_apply_speaker_assignments as bulk_apply_speaker_assignments,
+)
 from shared.db.audio.rows_crud import get_audio_files_bulk
 from shared.db.audio.references_crud import count_audio_file_references, list_audio_file_references_page
 from shared.db.audio.segment_references_crud import count_segment_references, list_segment_references_page

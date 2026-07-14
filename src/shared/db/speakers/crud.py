@@ -27,6 +27,10 @@ from shared.db.speakers.schemas import (
     EmbeddingShardCollection,
     EmbeddingShardCreate,
 )
+from shared.db.speakers.summary_crud import (
+    assign_cluster_summary_voices as assign_cluster_summary_voices,
+    list_cluster_summaries as list_cluster_summaries,
+)
 
 
 def create_embedding_run(
