@@ -32,7 +32,6 @@ from shared.db.speakers.schemas import (
 
 
 class AuditSpeakerClustersSettings(StrictSettings):
-    seed: int = 7
     batch_rows: int = Field(default=100_000, gt=0)
     category_limit: int = Field(default=50, gt=0, le=1000)
 
@@ -70,7 +69,7 @@ class AuditSpeakerClustersNode(Node):
             raise ValueError(f"{self.id} requires exactly one completed cluster run")
         cluster_run = batch[0]["cluster_run"]
         assert isinstance(cluster_run, SpeakerClusterRunRef)
-        completed = _prepare_audit(cluster_run, self.settings.seed)
+        completed = _prepare_audit(cluster_run, 0)
         if completed is not None:
             return [{"audit": completed, INPUT_INDEX_OUTPUT: 0}]
         paths = _assignment_paths(cluster_run)
@@ -85,7 +84,7 @@ class AuditSpeakerClustersNode(Node):
             reporter.report,
         )
         context.check_cancel()
-        audit = _persist_audit(cluster_run, self.settings.seed, result, context.check_cancel)
+        audit = _persist_audit(cluster_run, 0, result, context.check_cancel)
         return [{"audit": audit, INPUT_INDEX_OUTPUT: 0}]
 
 

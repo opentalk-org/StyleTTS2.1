@@ -7,6 +7,7 @@ import pyarrow as pa
 
 from runner.nodes.speaker_clustering.audit_metrics import (
     AssignmentAuditRow,
+    ScoreSample,
     SpeakerAuditMetrics,
     compute_labeled_metrics,
     score_distribution,
@@ -92,18 +93,24 @@ def _labeled_rows(scan: AssignmentParquetScan) -> Iterator[AssignmentAuditRow]:
             )
 
 
-def _score_values(scan: AssignmentParquetScan, column: str) -> Iterator[float]:
-    for batch in scan.batches((column,)):
-        for value in batch.column(0).to_pylist():
+def _score_values(scan: AssignmentParquetScan, column: str) -> Iterator[ScoreSample]:
+    for batch in scan.batches(("segment_id", column)):
+        segment_ids = batch.column(0).to_pylist()
+        for segment_id, value in zip(
+            segment_ids, batch.column(1).to_pylist(), strict=True
+        ):
             if value is not None:
-                yield float(value)
+                yield ScoreSample(f"{column}:{segment_id}", float(value))
 
 
-def _candidate_scores(scan: AssignmentParquetScan) -> Iterator[float]:
-    for batch in scan.batches(("candidate_scores",)):
-        for values in batch.column(0).to_pylist():
-            for value in values:
-                yield float(value)
+def _candidate_scores(scan: AssignmentParquetScan) -> Iterator[ScoreSample]:
+    for batch in scan.batches(("segment_id", "candidate_scores")):
+        segment_ids = batch.column(0).to_pylist()
+        for segment_id, values in zip(
+            segment_ids, batch.column(1).to_pylist(), strict=True
+        ):
+            for index, value in enumerate(values):
+                yield ScoreSample(f"candidate:{segment_id}:{index}", float(value))
 
 
 def _manifest_rows(scan: AssignmentParquetScan) -> Iterator[AssignmentAuditInput]:
