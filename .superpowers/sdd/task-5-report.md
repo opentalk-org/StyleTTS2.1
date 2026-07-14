@@ -25,24 +25,39 @@ sealed durable run without emitting again for later duplicates.
 
 ## Real graph
 
-After an empty-source registration smoke, a temporary dataset was created through
-shared CRUD with two stored 16 kHz WAV files and two segments per file. The graph
-was submitted through `POST /graphs/runs` as
-`speaker_embedding_populated_smoke_v2` and completed successfully with 66 events.
+The acceptance fixture used only public backend APIs: one temporary dataset, two
+uploaded 16 kHz WAV files, and two segments per file. The first populated graph
+failed consistently before inference because HyperPyYAML 1.2.2 accepts
+`ruamel.yaml>=0.17.28`, while ruamel-yaml 0.19.1's `Loader` does not initialize the
+`max_depth` attribute its composer reads. Package metadata and loader source
+confirmed the boundary, and a minimal HyperPyYAML load reproduced RED. Constraining
+ruamel-yaml to `>=0.17.28,<0.19` resolved 0.18.17 and made the same test pass.
 
-The real runner log records `SpeakerSegmentSource` emitting four items,
-`ECAPASpeakerEmbed` processing all four in one batch and emitting four lineage-
-preserving references, and `CollectSpeakerEmbeddings` consuming four references
-while emitting exactly one sealed-set packet. Database inspection confirmed one
-sealed run with `expected_count=4`, `stored_count=4`, one Parquet shard containing
-four 192-dimensional rows, and a 3,673-byte stored artifact. The temporary audio,
-dataset, run jobs, artifact, and fixture script were removed afterward.
+After restarting the single shared dev session so its runner loaded the resolved
+package, the identical graph succeeded as
+`speaker_embedding_api_verify_20260714_c` with 66 events. CLI logs and the
+persisted snapshot recorded:
 
-The first populated attempt exposed an incompatibility between HyperPyYAML 1.2.2
-and ruamel.yaml 0.19.1 (`Loader.max_depth` was absent). A focused RED test reproduced
-the loader failure. Pinning the directly used compatibility range to
-`ruamel-yaml>=0.17.28,<0.19` resolved ruamel.yaml 0.18.17; the focused test passed,
-the single shared dev session was restarted, and the populated graph then passed.
+- `SpeakerSegmentSource`: one input task and four output segments.
+- `ECAPASpeakerEmbed`: one real batch with size/input/output `4/4/4`.
+- `CollectSpeakerEmbeddings`: four deliveries of the same shard reference and
+  output counts `1, 0, 0, 0`, proving idempotency and exactly one set output.
+- Durable run `61a357a4-506f-48e7-8136-0040f4d8c9a2`: `sealed`, expected count 4,
+  stored count 4, one shard, dimension 192, artifact size 4,787 bytes.
+- Parquet result: four accepted rows in stable segment/label order,
+  `fixed_size_list<halffloat>[192]`, with round-tripped norms from `0.999994` to
+  `1.000030`.
+
+Both uploads, the dataset, generated artifact, verification jobs, and local
+WAV/Parquet files were deleted through the public APIs or local cleanup.
+
+## Collector run binding
+
+A focused temporary regression test first passed against the recovered working
+tree, then failed against commit `1101ed1` because a second run ID was accepted.
+Restoring the run-bound collector made both checks pass: mixed run IDs are
+rejected and duplicate references for the bound run emit at most once. The test
+was removed per repository policy.
 
 ## Command caveat
 
