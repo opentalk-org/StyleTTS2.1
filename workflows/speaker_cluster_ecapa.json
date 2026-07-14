@@ -1,5 +1,5 @@
 {
-  "name": "Speaker clustering — dataset segments → ECAPA → audit → accepted assignments",
+  "name": "Speaker clustering — dataset segments → ECAPA → reviewable audit",
   "hidden": false,
   "data": {
     "nodes": [
@@ -52,14 +52,6 @@
         "y": 120,
         "params": {},
         "runtime": {}
-      },
-      {
-        "id": "apply",
-        "type": "ApplySpeakerClusters",
-        "x": 1700,
-        "y": 120,
-        "params": {},
-        "runtime": {}
       }
     ],
     "edges": [
@@ -86,12 +78,6 @@
         "source_port": "cluster_run",
         "target_node": "audit",
         "target_port": "cluster_run"
-      },
-      {
-        "source_node": "audit",
-        "source_port": "audit",
-        "target_node": "apply",
-        "target_port": "audit"
       }
     ],
     "context": {

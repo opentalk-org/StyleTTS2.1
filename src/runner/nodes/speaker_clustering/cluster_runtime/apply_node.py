@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 from pydantic import Field
 
@@ -16,6 +17,7 @@ from runner.nodes.speaker_clustering.cluster_runtime.apply import apply_speaker_
 
 
 class ApplySpeakerClustersSettings(StrictSettings):
+    approved_audit_id: UUID
     audio_page_size: int = Field(default=500, gt=0, le=10_000)
     assignment_batch_rows: int = Field(default=100_000, gt=0)
 
@@ -52,6 +54,7 @@ class ApplySpeakerClustersNode(Node):
             raise ValueError(f"{self.id} requires exactly one completed speaker audit")
         audit = batch[0]["audit"]
         assert isinstance(audit, SpeakerAuditRef)
+        validate_audit_approval(audit, self.settings.approved_audit_id)
         reporter = ApplyProgressReporter(asyncio.get_running_loop(), context, self.id)
         result = await asyncio.to_thread(
             apply_speaker_audit,
@@ -63,3 +66,11 @@ class ApplySpeakerClustersNode(Node):
             reporter.report,
         )
         return [{"save_result": result, INPUT_INDEX_OUTPUT: 0}]
+
+
+def validate_audit_approval(audit: SpeakerAuditRef, approved_audit_id: UUID) -> None:
+    if audit.audit_id != approved_audit_id:
+        raise ValueError(
+            f"speaker audit {audit.audit_id} requires explicit approval by matching "
+            "approved_audit_id"
+        )
