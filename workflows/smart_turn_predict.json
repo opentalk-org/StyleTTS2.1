@@ -1,0 +1,79 @@
+{
+  "name": "Smart Turn batched completion prediction",
+  "hidden": false,
+  "data": {
+    "nodes": [
+      {
+        "id": "source",
+        "type": "AudioSource",
+        "x": 0,
+        "y": 180,
+        "params": {
+          "source": "selected",
+          "audio_file_ids": ["51d732dd-079a-47f4-8edf-e17217e0fd16"]
+        },
+        "runtime": {}
+      },
+      {
+        "id": "load",
+        "type": "LoadAudio",
+        "x": 260,
+        "y": 180,
+        "params": {"sample_rate": 16000, "channels": 1},
+        "runtime": {}
+      },
+      {
+        "id": "smart_turn_model",
+        "type": "CatalogDownload",
+        "x": 260,
+        "y": 20,
+        "params": {
+          "catalog_key": "turn_models",
+          "item": "pipecat-ai/smart-turn-v3"
+        },
+        "runtime": {}
+      },
+      {
+        "id": "smart_turn",
+        "type": "SmartTurnPredict",
+        "x": 540,
+        "y": 180,
+        "params": {},
+        "runtime": {}
+      }
+    ],
+    "edges": [
+      {
+        "source_node": "source",
+        "source_port": "audio",
+        "target_node": "load",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "load",
+        "source_port": "audio",
+        "target_node": "smart_turn",
+        "target_port": "audio"
+      },
+      {
+        "source_node": "smart_turn_model",
+        "source_port": "checkpoint",
+        "target_node": "smart_turn",
+        "target_port": "checkpoint"
+      }
+    ],
+    "context": {
+      "work_dir": "work",
+      "cache_dir": "cache",
+      "output_dir": "outputs",
+      "device": "cpu",
+      "config": {"resources": {"io": 1, "cpu_workers": 2}},
+      "input_items": []
+    },
+    "launch_source": {
+      "kind": "selected_audio",
+      "audio_file_ids": ["51d732dd-079a-47f4-8edf-e17217e0fd16"],
+      "include_virtual": false
+    }
+  }
+}

@@ -102,3 +102,10 @@ retain the derived processed-Parquet row location and remain virtual.
 
 Runs the StyleTTS style encoder over voices and plots a PCA scatter coloured by
 voice.
+
+### `smart_turn_predict.json`
+
+Loads selected audio as a batch and classifies whether each item completes a
+conversational turn with Smart Turn v3.2. Every input is preserved while the node
+exposes typed `turn_complete` and `probability` outputs. Replace the example audio
+UUID in both the source node and `launch_source` before running it locally.
