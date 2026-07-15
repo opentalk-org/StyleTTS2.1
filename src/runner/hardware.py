@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from shared.logging_setup import get_logger
 
 logger = get_logger(__name__)
@@ -8,6 +10,31 @@ logger = get_logger(__name__)
 # full physical device to concurrent nodes.
 _VRAM_HEADROOM_GB = 2.0
 _MIN_VRAM_GB = 8.0
+
+# Fraction of system RAM handed to the scheduler as its in-flight payload budget, and a
+# floor so tiny/undetectable machines still get a workable budget.
+_MEMORY_BUDGET_FRACTION = 0.5
+_MIN_MEMORY_BUDGET_MB = 512.0
+
+
+def detect_system_ram_mb() -> float | None:
+    """Total system RAM in MB, or None when it can't be read."""
+    try:
+        pages = os.sysconf("SC_PHYS_PAGES")
+        page_size = os.sysconf("SC_PAGE_SIZE")
+    except (ValueError, OSError, AttributeError):  # pragma: no cover - non-POSIX / unusual
+        return None
+    if pages <= 0 or page_size <= 0:
+        return None
+    return pages * page_size / (1024 * 1024)
+
+
+def default_memory_budget_mb() -> float:
+    """A conservative default in-flight memory budget derived from detected RAM."""
+    total = detect_system_ram_mb()
+    if total is None:
+        return _MIN_MEMORY_BUDGET_MB
+    return max(_MIN_MEMORY_BUDGET_MB, round(total * _MEMORY_BUDGET_FRACTION))
 
 
 def detect_vram_gb() -> float | None:

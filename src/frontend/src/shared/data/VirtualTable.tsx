@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { cn } from "../ui/cn";
 
@@ -17,6 +17,8 @@ export function VirtualTable({
   className,
   scrollClassName,
   pageScroll = false,
+  maxHeight,
+  scrollToIndex,
 }: {
   count: number;
   estimateRowHeight: number;
@@ -26,6 +28,10 @@ export function VirtualTable({
   className?: string;
   scrollClassName?: string;
   pageScroll?: boolean;
+  /** Cap the scroll container's height (px); rows beyond it scroll internally. Ignored with `pageScroll`. */
+  maxHeight?: number;
+  /** When this index changes, scroll it into view (centered). Use for e.g. following the active row. */
+  scrollToIndex?: number | null;
 }) {
   const [parentElement, setParentElement] = useState<HTMLDivElement | null>(null);
   const pageScrollElement = pageScroll ? parentElement?.closest("main") : null;
@@ -40,10 +46,22 @@ export function VirtualTable({
     scrollMargin,
   });
 
+  const lastScrolled = useRef<number | null>(null);
+  useEffect(() => {
+    if (pageScroll || scrollToIndex == null || scrollToIndex < 0 || scrollToIndex >= count) return;
+    if (lastScrolled.current === scrollToIndex) return;
+    lastScrolled.current = scrollToIndex;
+    virtualizer.scrollToIndex(scrollToIndex, { align: "auto" });
+  }, [pageScroll, scrollToIndex, count, virtualizer]);
+
   return (
     <div className={cn(pageScroll ? "" : "flex min-h-0 flex-col", className)}>
       {header}
-      <div ref={setParentElement} className={cn(pageScroll ? "" : "min-h-0 flex-1 overflow-y-auto", scrollClassName)}>
+      <div
+        ref={setParentElement}
+        style={pageScroll ? undefined : { maxHeight }}
+        className={cn(pageScroll ? "" : "min-h-0 flex-1 overflow-y-auto", scrollClassName)}
+      >
         <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map((item) => (
             <div

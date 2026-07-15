@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Any, ClassVar
 from uuid import UUID as PythonUUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,6 +19,10 @@ class Job(Base):
     target_runner_id: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
     claimed_runner_id: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # How many times a claimed run died mid-flight (lease expired while running). Past
+    # RUN_MAX_ATTEMPTS the job is failed instead of re-queued, so an OOM that kills the
+    # runner every attempt surfaces as an error rather than looping forever.
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     graph_request: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

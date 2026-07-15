@@ -7,7 +7,7 @@ from runflow.core.context import ExecutionContext
 from runflow.core.events import RunEvent
 from runflow.runtime.scheduler import WindowedScheduler
 from runner.graphs import GraphNodeBuildError, build_inline_graph
-from runner.hardware import apply_detected_resources
+from runner.hardware import apply_detected_resources, default_memory_budget_mb
 from runner.node_logs import NodeLogManager
 from runner.state_buffer import RunnerStateBuffer
 from shared.logging_setup import get_logger
@@ -91,8 +91,17 @@ class RunExecution:
         return sink
 
     def _context(self) -> ExecutionContext:
-        config = self.request.context.config.model_copy(
-            update={"resources": apply_detected_resources(self.request.context.config.resources)}
+        request_config = self.request.context.config
+        # Auto-fill the memory budget from detected RAM when the request left it unset,
+        # so runs get a machine-appropriate default without any per-node tuning.
+        memory_budget_mb = request_config.memory_budget_mb
+        if memory_budget_mb is None:
+            memory_budget_mb = default_memory_budget_mb()
+        config = request_config.model_copy(
+            update={
+                "resources": apply_detected_resources(request_config.resources),
+                "memory_budget_mb": memory_budget_mb,
+            }
         )
         return ExecutionContext(
             run_id=self.run_id,

@@ -169,6 +169,7 @@ export type NodeRunSnapshot = {
   queue_size: number;
   remaining_items: number | null;
   running_batches: number;
+  processing_items: number;
   latest_batch_index: number | null;
   latest_message: string;
   error: string | null;

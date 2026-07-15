@@ -20,6 +20,11 @@ class RuntimeConfig(BaseModel):
             "vram_gb": 8,
         }
     )
+    # Total in-flight host-memory budget (MB) the scheduler spreads across node queues,
+    # bounding resident payload bytes instead of item counts. None → the runner fills a
+    # value derived from detected system RAM; the scheduler falls back to a safe default
+    # if still unset. This replaces per-node queue_max_size tuning for memory safety.
+    memory_budget_mb: float | None = Field(default=None, ge=1)
 
 
 def runtime_config_defaults() -> dict[str, Any]:

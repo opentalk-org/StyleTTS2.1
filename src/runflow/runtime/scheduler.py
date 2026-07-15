@@ -14,6 +14,11 @@ from runflow.runtime.cancellation import cancellation_scope
 from runflow.runtime.input_progress import remaining_counts
 from runflow.runtime.lineage_tracker import LineageTracker
 from runflow.runtime.log_capture import route_output_to_logger
+from runflow.runtime.memory_budget import (
+    DEFAULT_TOTAL_BUDGET_BYTES,
+    WeightBudget,
+    estimate_task_bytes,
+)
 from runflow.runtime.node_manager import NodeManager
 from runflow.runtime.output_router import OutputRouter
 from runflow.runtime.resource_pool import ResourcePool
@@ -35,6 +40,8 @@ class WindowedScheduler:
         self.resource_pool = ResourcePool(limits=dict(context.config.resources))
 
         self.queues: dict[str, asyncio.Queue[Task]] = {}
+        self.budgets: dict[str, WeightBudget] = {}
+        self._task_weight: dict[int, int] = {}
         self.join_buffers: dict[str, NodeJoinBuffers] = defaultdict(NodeJoinBuffers)
         self.output_router = OutputRouter(graph, context, self.events, self.join_buffers, self._enqueue, self.lineages)
         self._active_tasks = 0
@@ -94,6 +101,14 @@ class WindowedScheduler:
             node_id: asyncio.Queue(maxsize=node.runtime.queue_max_size)
             for node_id, node in self.graph.nodes.items()
         }
+        # Spread the total in-flight memory budget across node queues so resident payload
+        # bytes are bounded regardless of item size (64x1 MB and 1x500 MB both respect it),
+        # replacing per-node queue_max_size as the memory guard. queue_max_size stays as a
+        # secondary count cap. Per-queue budget can be smaller than one big item; that's
+        # fine — WeightBudget still admits one item at a time, so it never deadlocks.
+        per_queue_budget = max(1, self._total_memory_budget_bytes() // max(1, len(self.queues)))
+        self.budgets = {node_id: WeightBudget(per_queue_budget) for node_id in self.queues}
+        self._task_weight = {}
         self.join_buffers.clear()
         self._active_tasks = 0
         self._active_condition = asyncio.Condition()
@@ -135,11 +150,24 @@ class WindowedScheduler:
         async with self._active_condition:
             self._active_tasks += 1
         self._enqueued_at[id(task)] = perf_counter()
+        weight = estimate_task_bytes(task)
+        self._task_weight[id(task)] = weight
         blocked_at = perf_counter()
+        try:
+            # Byte-budget admission first (memory backpressure), then the count-bounded put.
+            await self.budgets[node_id].acquire(weight)
+        except BaseException:
+            self._enqueued_at.pop(id(task), None)
+            self._task_weight.pop(id(task), None)
+            async with self._active_condition:
+                self._active_tasks -= 1
+                self._active_condition.notify_all()
+            raise
         try:
             await self.queues[node_id].put(task)
         except BaseException:
             self._enqueued_at.pop(id(task), None)
+            await self.budgets[node_id].release(self._task_weight.pop(id(task), 0))
             async with self._active_condition:
                 self._active_tasks -= 1
                 self._active_condition.notify_all()
@@ -176,6 +204,12 @@ class WindowedScheduler:
     def _next_batch_index(self) -> int:
         self._batch_sequence += 1
         return self._batch_sequence
+
+    def _total_memory_budget_bytes(self) -> int:
+        budget_mb = self.context.config.memory_budget_mb
+        if budget_mb is None or budget_mb <= 0:
+            return DEFAULT_TOTAL_BUDGET_BYTES
+        return int(budget_mb * 1024 * 1024)
 
     async def _worker(self, node: Node, worker_index: int, resource_priority: int) -> None:
         queue = self.queues[node.id]
@@ -236,6 +270,7 @@ class WindowedScheduler:
             finally:
                 for task in consumed_tasks:
                     self._enqueued_at.pop(id(task))
+                    await self.budgets[node.id].release(self._task_weight.pop(id(task), 0))
                     queue.task_done()
                     await self._mark_task_done(task)
 
@@ -265,7 +300,14 @@ class WindowedScheduler:
                 tasks.append(await asyncio.wait_for(queue.get(), timeout=timeout))
             except (asyncio.TimeoutError, asyncio.QueueEmpty):
                 break
-        return self.batch_planner.build_batches(tasks, batch_policy), tasks
+        # Cap each batch to the node's memory slice so a batch of big payloads shrinks
+        # below the count cap automatically (weights were already measured at enqueue).
+        budget = self.budgets.get(node.id)
+        byte_target = budget.budget_bytes if budget is not None else None
+        batches = self.batch_planner.build_batches(
+            tasks, batch_policy, weight_of=lambda task: self._task_weight.get(id(task), 0), byte_target=byte_target
+        )
+        return batches, tasks
 
     async def _enqueue_input(self, node: Node) -> None:
         await self._enqueue(

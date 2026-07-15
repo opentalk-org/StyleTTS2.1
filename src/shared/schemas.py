@@ -155,6 +155,7 @@ class NodeRunSnapshot(BaseModel):
     queue_size: int
     remaining_items: int | None
     running_batches: int
+    processing_items: int = 0
     latest_batch_index: int | None
     latest_message: str
     error: str | None

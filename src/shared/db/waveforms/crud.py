@@ -155,6 +155,22 @@ def bulk_delete_waveforms(
         session.commit()
 
 
+def purge_orphaned_waveform_packs(
+    session: Session,
+    store: ObjectStore | None = None,
+) -> list[str]:
+    statement = select(WaveformPack).where(~WaveformPack.waveforms.any()).with_for_update()
+    packs = list(session.execute(statement).scalars().all())
+    paths = [pack.path for pack in packs]
+    for pack in packs:
+        session.delete(pack)
+    session.commit()
+    resolved_store = store or _object_store(session, None)
+    for path in paths:
+        resolved_store.delete(path)
+    return paths
+
+
 def _waveform_from_audio(data: bytes) -> WaveformInput:
     try:
         return waveform_from_wav(data)

@@ -17,6 +17,7 @@ class NodeState:
     queue_size: int = 0
     remaining_items: int | None = None
     running_batches: int = 0
+    processing_items: int = 0
     latest_batch_index: int | None = None
     latest_message: str = ""
     error: str | None = None
@@ -30,6 +31,7 @@ class NodeState:
             queue_size=self.queue_size,
             remaining_items=self.remaining_items,
             running_batches=self.running_batches,
+            processing_items=self.processing_items,
             latest_batch_index=self.latest_batch_index,
             latest_message=self.latest_message,
             error=self.error,
@@ -102,9 +104,11 @@ class RunEventStore:
                 state.status = "queued"
         elif event.kind == "batch_started":
             state.running_batches += 1
+            state.processing_items += event.batch_size or 0
             state.status = "running"
         elif event.kind == "batch_completed":
             state.running_batches = max(0, state.running_batches - 1)
+            state.processing_items = max(0, state.processing_items - (event.batch_size or 0))
             state.status = "idle" if state.running_batches == 0 else "running"
             self._increment_node_counter(state, "batches_completed")
             self._add_node_counter(state, "tasks_completed", int(event.detail["input_items"]))
@@ -114,6 +118,7 @@ class RunEventStore:
             self._increment_node_counter(state, "packets_delivered")
         elif event.kind == "node_failed":
             state.running_batches = 0
+            state.processing_items = 0
             state.status = "failed"
             state.error = event.message
         elif event.kind == "node_lifecycle_failed":
@@ -136,6 +141,7 @@ class RunEventStore:
             if state.status not in ACTIVE_NODE_STATUSES and state.running_batches == 0:
                 continue
             state.running_batches = 0
+            state.processing_items = 0
             state.queue_size = 0
             state.status = status
             state.latest_message = message

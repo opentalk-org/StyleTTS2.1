@@ -32,6 +32,8 @@ export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
   const discovered = snapshot?.counters.input_items_discovered;
   const emitted = info.is_input && outputs.length === 1 ? snapshot?.counters.packets_created : undefined;
   const queued = snapshot?.queue_size ?? 0;
+  // Elements currently inside running batches (same unit as queued/done), not batch count.
+  const processing = snapshot?.processing_items ?? 0;
   const left = discovered !== undefined && emitted !== undefined
     ? Math.max(0, discovered - emitted)
     : snapshot?.remaining_items ?? "-";
@@ -95,8 +97,9 @@ export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
         </button>
       </div>
       {performance ? <NodePerformanceSummary performance={performance} /> : null}
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(92px,auto)_auto] gap-1.5 border-b border-line bg-panel-2/50 px-2.5 py-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(92px,auto)_auto] gap-1.5 border-b border-line bg-panel-2/50 px-2.5 py-2">
         <Metric label={info.is_input ? "left" : "queued"} value={info.is_input ? left : queued} tone={status} role={info.is_input ? "items" : "queue"} />
+        <Metric label="active" value={processing} tone={status} role="active" />
         <Metric label="done" value={completed} tone={status} role="state" />
         <Lifecycle
           loaded={loaded}
@@ -163,7 +166,8 @@ function nodeStatusTone(status: string | undefined): NodeStatusTone {
 }
 
 function Metric({ label, value, tone, role }: { label: string; value: number | string; tone: NodeStatusTone; role: string }) {
-  const color = role === "queue" ? "text-emerald-700" : role === "items" ? "text-blue-700" : tone === "running" ? "text-emerald-700" : tone === "failed" ? "text-red-600" : tone === "stopped" ? "text-amber-700" : "text-txt";
+  const active = role === "active" && typeof value === "number" && value > 0;
+  const color = active ? "text-amber-600" : role === "queue" ? "text-emerald-700" : role === "items" ? "text-blue-700" : tone === "running" ? "text-emerald-700" : tone === "failed" ? "text-red-600" : tone === "stopped" ? "text-amber-700" : "text-txt";
   return (
     <div className={`grid min-w-0 place-content-center gap-0.5 rounded-md border bg-panel p-1.5 text-center font-mono ${tone === "running" ? "border-emerald-400" : tone === "failed" ? "border-red-400" : tone === "stopped" ? "border-amber-400" : "border-line"}`}>
       <strong className={`overflow-hidden text-ellipsis whitespace-nowrap text-[13px] leading-none ${color}`}>{value}</strong>

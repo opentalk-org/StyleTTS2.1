@@ -3,11 +3,12 @@ from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Text, cast, desc, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import Text, cast, desc, func, or_, select, text
+from sqlalchemy.orm import Session, defer
 
 from shared.db.audio.delete_crud import bulk_delete_audio_files, delete_audio_file
 from shared.db.audio.models import AudioFile
+from shared.db.audio.pack_cleanup import purge_orphaned_audio_packs as purge_orphaned_audio_packs
 from shared.db.audio.pack_crud import (
     bulk_create_packed_audio_files,
     bulk_read_packed_audio_files,
@@ -64,14 +65,49 @@ def search_audio_files(
     sort: str,
     limit: int,
     offset: int,
-) -> tuple[Sequence[AudioFile], int]:
-    statement = select(AudioFile)
+    preview_limit: int = 8,
+) -> tuple[list[tuple[AudioFile, int, list[dict[str, Any]]]], int]:
+    """List audio files without loading their (potentially huge) ``segments`` column.
+
+    The full ``segments`` JSONB is deferred; the total segment count and a small
+    preview slice are computed in SQL so a row with thousands of aligned segments
+    costs the same as one with a handful.
+    """
+    filters = _audio_filters(query, dataset)
+    order = _audio_sort(sort)
+    segment_count = func.coalesce(func.jsonb_array_length(AudioFile.segments), 0).label("segment_count")
+    # preview_limit is caller-controlled (never user input), so inlining it in the jsonpath is safe.
+    preview_path = text(f"'$[0 to {max(preview_limit - 1, 0)}]'::jsonpath")
+    segment_preview = func.jsonb_path_query_array(AudioFile.segments, preview_path).label("segment_preview")
+
+    if sort == "segments":
+        # Ordering by segment count already forces reading every matched row's segments
+        # blob, so project the preview/count in the same pass — each blob is read once.
+        statement = select(AudioFile, segment_count, segment_preview).options(defer(AudioFile.segments))
+        for item in filters:
+            statement = statement.where(item)
+        statement = statement.order_by(order).limit(limit).offset(offset)
+    else:
+        # For cheap sorts, pick the page's ids first, THEN compute the segment preview/count
+        # for only those rows. If the jsonb projection sat directly under the ORDER BY/LIMIT,
+        # Postgres would detoast every *matched* row's (potentially huge) segments blob before
+        # the limit — turning a 100-row page into a full-table scan of TOAST.
+        page = select(AudioFile.id)
+        for item in filters:
+            page = page.where(item)
+        page = page.order_by(order).limit(limit).offset(offset).subquery()
+        statement = (
+            select(AudioFile, segment_count, segment_preview)
+            .join(page, AudioFile.id == page.c.id)
+            .options(defer(AudioFile.segments))
+            .order_by(order)
+        )
+
     count_statement = select(func.count()).select_from(AudioFile)
-    for item in _audio_filters(query, dataset):
-        statement = statement.where(item)
+    for item in filters:
         count_statement = count_statement.where(item)
-    statement = statement.order_by(_audio_sort(sort)).limit(limit).offset(offset)
-    rows = session.execute(statement).unique().scalars().all()
+
+    rows = [(row[0], row[1], list(row[2] or [])) for row in session.execute(statement).all()]
     total = session.execute(count_statement).scalar_one()
     return rows, total
 

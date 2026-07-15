@@ -55,6 +55,7 @@
           runtimeExecutableDeps = [
             pkgs.espeak-ng
             pkgs.ffmpeg-headless
+            pkgs.opusTools
             pkgs.gcc
             pkgs.cargo
             pkgs.openssl

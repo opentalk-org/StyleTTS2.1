@@ -10,12 +10,10 @@
         "y": 140,
         "params": {
           "host": "hetzner-storagebox",
-          "remote_parquet_path": "/home/ds_v1/000f72c2-caa7-4958-b8e8-0e7668bb9bb6_20260512T173847038808Z.parquet",
           "row_offset": 0,
           "row_limit": 1,
           "text_column": "text_src",
           "name_prefix": "ds_v1",
-          "cache_download": true,
           "download_retries": 3
         },
         "runtime": {}
@@ -30,7 +28,16 @@
           "virtual": false,
           "bulk_import_packs": true
         },
-        "runtime": {}
+        "runtime": {
+          "queue_max_size": 1,
+          "batch_policy": {
+            "mode": "micro_batch",
+            "preferred_size": 1,
+            "max_size": 1,
+            "timeout_ms": 0,
+            "sort_by": null
+          }
+        }
       },
       {
         "id": "save_audio_segments",
@@ -40,7 +47,16 @@
         "params": {
           "mode": "replace"
         },
-        "runtime": {}
+        "runtime": {
+          "queue_max_size": 1,
+          "batch_policy": {
+            "mode": "micro_batch",
+            "preferred_size": 1,
+            "max_size": 1,
+            "timeout_ms": 0,
+            "sort_by": null
+          }
+        }
       }
     ],
     "edges": [

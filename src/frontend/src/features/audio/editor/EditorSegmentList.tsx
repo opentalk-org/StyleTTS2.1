@@ -4,11 +4,15 @@ import { SearchInput } from "@/shared/ui/SearchInput";
 import { SegmentRow } from "../SegmentRow";
 import { useEditor } from "../editorStore";
 
+/** Cap the segments list height (px) before it scrolls internally. */
+const SEGMENTS_MAX_HEIGHT = 560;
+
 export function EditorSegmentList() {
-  const { segs, segChecked, segQuery, setQuery, setChecked, deleteChecked, addSeg } = useEditor();
+  const { segs, segChecked, segQuery, segSel, setQuery, setChecked, deleteChecked, addSeg } = useEditor();
   const query = segQuery.trim().toLowerCase();
   const visible = query ? segs.filter((segment) => segment.text.toLowerCase().includes(query) || segment.phon.toLowerCase().includes(query)) : segs;
   const allVisibleChecked = visible.length > 0 && visible.every((segment) => segChecked.includes(segment.id));
+  const activeIndex = segSel ? visible.findIndex((segment) => segment.id === segSel) : -1;
   return (
     <div className="flex flex-col rounded-[10px] border border-line bg-panel p-4">
       <div className="mb-3 flex items-center gap-3">
@@ -31,7 +35,8 @@ export function EditorSegmentList() {
         <VirtualTable
           count={visible.length}
           estimateRowHeight={72}
-          pageScroll
+          maxHeight={SEGMENTS_MAX_HEIGHT}
+          scrollToIndex={activeIndex}
           renderRow={(index) => <SegmentRow seg={visible[index]!} index={segs.indexOf(visible[index]!)} isLast={segs.indexOf(visible[index]!) === segs.length - 1} />}
         />
       ) : (

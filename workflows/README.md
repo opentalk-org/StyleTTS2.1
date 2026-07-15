@@ -85,10 +85,10 @@ and merges their word alignments without duplicating words when aligner timings 
 
 ### `ds_v1_sample_import.json` / `ds_v2_sample_import.json`
 
-The ds_v1 workflow imports a long recording, merges its recording metadata with
-the matching ds_v2 metadata rows, and stores every transcript variant plus
-absolute Parakeet word alignment. The ds_v2 workflow discovers sorted metadata
-CSVs, applies its offset and limit across them, and derives each processed
+The ds_v1 workflow discovers sorted Parquet files, applies its offset and limit
+across them, merges each long recording with the matching ds_v2 metadata rows,
+and stores every transcript variant plus absolute Parakeet word alignment. The
+ds_v2 workflow similarly discovers sorted metadata CSVs and derives each processed
 Parquet path from the selected metadata filename. With `import_audio` enabled it
 validates and attaches the selected bytes; both workflows store audio and segments.
 

@@ -29,8 +29,11 @@ async def list_audio_files(
     offset: int = Query(0, ge=0),
 ) -> AudioFilePage:
     with database_session() as session:
-        rows, total = audio_crud.search_audio_files(session, query, dataset, sort, limit, offset)
-        return AudioFilePage(rows=[audio_response(item, 8) for item in rows], total=total)
+        rows, total = audio_crud.search_audio_files(session, query, dataset, sort, limit, offset, preview_limit=8)
+        return AudioFilePage(
+            rows=[audio_list_response(item, segment_count, segment_preview) for item, segment_count, segment_preview in rows],
+            total=total,
+        )
 
 
 @router.post("/upload", response_model=AudioFileListItem, status_code=status.HTTP_201_CREATED)
@@ -300,8 +303,17 @@ async def update_audio_voice_prompt(audio_file_id: uuid.UUID, payload: AudioVoic
 
 
 def audio_response(item: AudioFile, segment_limit: int | None) -> AudioFileListItem:
-    metadata = dict(item.metadata_)
     segments = item.segments if segment_limit is None else item.segments[:segment_limit]
+    return _audio_item(item, len(item.segments), segments)
+
+
+def audio_list_response(item: AudioFile, segment_count: int, segment_preview: list[dict[str, Any]]) -> AudioFileListItem:
+    """Build a list row from SQL-computed count/preview so the deferred ``segments`` column is never loaded."""
+    return _audio_item(item, segment_count, segment_preview)
+
+
+def _audio_item(item: AudioFile, segment_count: int, segment_preview: list[dict[str, Any]]) -> AudioFileListItem:
+    metadata = dict(item.metadata_)
     return AudioFileListItem(
         id=item.id,
         name=item.name,
@@ -314,8 +326,8 @@ def audio_response(item: AudioFile, segment_limit: int | None) -> AudioFileListI
         sample_rate=_sample_rate(metadata),
         byte_length=item.byte_length,
         size_mb=f"{item.byte_length / 1024 / 1024:.1f}",
-        segments=len(item.segments),
-        segment_preview=[segment_response(segment) for segment in segments],
+        segments=segment_count,
+        segment_preview=[segment_response(segment) for segment in segment_preview],
         dataset_ids=[dataset.id for dataset in item.datasets],
         virtual=item.virtual,
         storage_kind=item.storage_kind,

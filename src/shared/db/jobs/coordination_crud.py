@@ -8,11 +8,16 @@ from sqlalchemy.orm import Session
 from shared.db.jobs.models import Job, NodeLog, RunNodeState
 from shared.db.jobs.schemas import ClaimedJob, RunnerStateFlush
 from shared.db.runners.models import Runner
-from shared.run_snapshots import stopped_run_snapshot
+from shared.run_snapshots import failed_run_snapshot, stopped_run_snapshot
 from shared.schemas import RunSnapshot
 
 
 LEASE_SECONDS = 15
+# A claimed run whose lease expires was killed with its runner (crash / OOM-kill), which
+# never runs the in-process failure path. Re-queue it a few times to ride out transient
+# restarts (dev reload drops in-flight runs), but past this many attempts fail it so a
+# genuinely fatal run — e.g. one that OOMs the runner every time — surfaces as an error.
+RUN_MAX_ATTEMPTS = 3
 RUN_NOTIFICATION_CHANNEL = "runflow_runs"
 RUNNER_NOTIFICATION_CHANNEL = "runflow_runners"
 
@@ -227,11 +232,14 @@ def _recover_expired_claims(session: Session, now: datetime) -> bool:
         Job.state.in_({"running", "stopping"}),
         Job.lease_expires_at < now,
     )
-    requeued = session.execute(
-        update(Job)
-        .where(*expired, Job.desired_state == "running")
-        .values(state="queued", claimed_runner_id=None, lease_expires_at=None, updated_at=now)
-    ).rowcount
+    running_expired = list(
+        session.execute(
+            select(Job)
+            .where(*expired, Job.desired_state == "running")
+            .with_for_update(skip_locked=True)
+        ).scalars()
+    )
+    requeued = _recover_running_jobs(running_expired, now)
     stopping_jobs = list(
         session.execute(
             select(Job)
@@ -252,3 +260,28 @@ def _recover_expired_claims(session: Session, now: datetime) -> bool:
         job.finished_at = now
         job.updated_at = now
     return requeued > 0 or bool(stopping_jobs)
+
+
+def _recover_running_jobs(jobs: list[Job], now: datetime) -> int:
+    """Re-queue crashed runs, but fail those that have exhausted their attempts."""
+    for job in jobs:
+        job.attempts += 1
+        job.updated_at = now
+        if job.attempts >= RUN_MAX_ATTEMPTS:
+            message = (
+                f"Runner terminated unexpectedly {job.attempts} times "
+                "(out of memory or crash); giving up"
+            )
+            if job.snapshot is not None:
+                snapshot = RunSnapshot.model_validate(job.snapshot)
+                job.snapshot = failed_run_snapshot(snapshot, message).model_dump(mode="json")
+            job.state = "failed"
+            job.error = message
+            job.finished_at = now
+            job.claimed_runner_id = None
+            job.lease_expires_at = None
+        else:
+            job.state = "queued"
+            job.claimed_runner_id = None
+            job.lease_expires_at = None
+    return len(jobs)

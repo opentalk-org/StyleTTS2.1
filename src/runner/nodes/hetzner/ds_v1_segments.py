@@ -118,7 +118,11 @@ def _absolute_alignment(
     if local is None:
         return None
     alignment = [
-        {**entry, "start": sample_start + float(entry["start"]), "end": sample_start + float(entry["end"])}
+        {
+            **entry,
+            "start": _snap_to_window(sample_start + float(entry["start"]), sample_start, sample_end),
+            "end": _snap_to_window(sample_start + float(entry["end"]), sample_start, sample_end),
+        }
         for entry in local
     ]
     previous_start = sample_start
@@ -129,6 +133,14 @@ def _absolute_alignment(
             raise ValueError(f"ds_v2 metadata row {row_index} produced invalid absolute alignment")
         previous_start = start
     return alignment
+
+
+def _snap_to_window(value: float, start: float, end: float) -> float:
+    if math.isclose(value, start, rel_tol=0.0, abs_tol=1e-6):
+        return start
+    if math.isclose(value, end, rel_tol=0.0, abs_tol=1e-6):
+        return end
+    return value
 
 
 def _segment_metadata(
