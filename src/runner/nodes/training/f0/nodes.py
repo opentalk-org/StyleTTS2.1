@@ -12,12 +12,12 @@ from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import CheckpointRefPort, TrainingManifestPort, TrainingResultPort
 from runner.nodes.models import TrainingManifest
 from runner.nodes.training.common.results import (
-    NoopAimRun,
     checkpoint_weight,
     publish_training_result,
     training_manifest_metadata,
     training_output_dir,
 )
+from runner.nodes.training.common.wandb_run import NoopWandbRun
 
 
 class F0TrainingSettings(StrictSettings):
@@ -61,7 +61,7 @@ def _run_f0_training(settings: F0TrainingSettings, inputs: dict[str, Any], run_i
     output_dir = training_output_dir(settings.output_checkpoint_dir, manifest, "f0")
     try:
         train_f0_model(
-            aim_run=NoopAimRun(),
+            run=NoopWandbRun(),
             train_list_path=str(manifest.metadata["train_manifest_path"]),
             val_list_path=str(manifest.metadata["validation_manifest_path"]),
             run_dir=output_dir / "run",

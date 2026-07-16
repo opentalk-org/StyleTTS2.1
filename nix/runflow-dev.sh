@@ -13,9 +13,9 @@ export VITE_BACKEND_URL="${VITE_BACKEND_URL:-http://$BACKEND_HOST:$BACKEND_PORT}
 export FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 export FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 export RUNNER_ID="${RUNNER_ID:-runner-1}"
-export AIM_REPO="${AIM_REPO:-.data/aim}"
-export AIM_HOST="${AIM_HOST:-127.0.0.1}"
-export AIM_PORT="${AIM_PORT:-43800}"
+export TRACKIO_DIR="${TRACKIO_DIR:-.data/trackio}"
+export TRACKIO_HOST="${TRACKIO_HOST:-127.0.0.1}"
+export GRADIO_SERVER_PORT="${GRADIO_SERVER_PORT:-7860}"
 export RUSTFS_DATA="${RUSTFS_DATA:-.data/rustfs}"
 export RUSTFS_VOLUMES="${RUSTFS_VOLUMES:-$RUSTFS_DATA}"
 export RUSTFS_ADDRESS="${RUSTFS_ADDRESS:-127.0.0.1:9000}"
@@ -107,10 +107,10 @@ fi
 . .venv/bin/activate
 
 # Kill any stale process still listening on a port we're about to bind. Prior dev
-# runs can leave app-tier services orphaned (e.g. an Aim UI double-forked past the
+# runs can leave app-tier services orphaned (e.g. a Trackio UI double-forked past the
 # shutdown trap); a fresh run then fails to bind, exits, and the wait -n below tears
 # the whole stack down. Only used for services that have no "reuse existing" guard
-# (backend/frontend/aim) -- Postgres/PgBouncer/RustFS are detected and reused.
+# (backend/frontend/trackio) -- Postgres/PgBouncer/RustFS are detected and reused.
 free_port() {
   local port="$1" label="${2:-port}" pids
   # `|| true` inside the substitution: when the port is free, grep matches nothing
@@ -138,7 +138,7 @@ pid_rustfs=""
 pid_backend=""
 pid_frontend=""
 pid_runners=""
-pid_aim=""
+pid_trackio=""
 
 if [ ! -s "$PGDATA/PG_VERSION" ]; then
   echo "Initializing PostgreSQL database at $PGDATA"
@@ -325,14 +325,11 @@ until python -c "from urllib.request import urlopen; urlopen('http://127.0.0.1:$
   sleep 1
 done
 
-mkdir -p "$AIM_REPO"
-if [ ! -d "$AIM_REPO/.aim" ]; then
-  aim init --repo "$AIM_REPO" || echo "aim init failed; continuing without Aim UI"
-fi
-echo "Starting Aim UI at http://$AIM_HOST:$AIM_PORT"
-free_port "$AIM_PORT" aim
-aim up --repo "$AIM_REPO" --host "$AIM_HOST" --port "$AIM_PORT" > .data/aim.log 2>&1 &
-pid_aim=$!
+mkdir -p "$TRACKIO_DIR"
+echo "Starting Trackio UI at http://$TRACKIO_HOST:$GRADIO_SERVER_PORT"
+free_port "$GRADIO_SERVER_PORT" trackio
+trackio show --host "$TRACKIO_HOST" > .data/trackio.log 2>&1 &
+pid_trackio=$!
 
 echo "Starting frontend at http://$FRONTEND_HOST:$FRONTEND_PORT"
 free_port "$FRONTEND_PORT" frontend
@@ -351,7 +348,7 @@ pid_runners=$!
 
 shutdown() {
   echo "Stopping Runflow dev services"
-  [ -z "$pid_aim" ] || kill "$pid_aim" 2>/dev/null || true
+  [ -z "$pid_trackio" ] || kill "$pid_trackio" 2>/dev/null || true
   [ -z "$pid_runners" ] || kill "$pid_runners" 2>/dev/null || true
   [ -z "$pid_frontend" ] || kill "$pid_frontend" 2>/dev/null || true
   [ -z "$pid_backend" ] || kill "$pid_backend" 2>/dev/null || true

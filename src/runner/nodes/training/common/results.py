@@ -9,11 +9,6 @@ from shared.db.assets.schemas import CheckpointCreate
 from shared.db.connection import database_session
 
 
-class NoopAimRun:
-    def track(self, *args, **kwargs) -> None:
-        return None
-
-
 def publish_training_result(
     node_type: str,
     display_name: str,

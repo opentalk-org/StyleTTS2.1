@@ -16,7 +16,7 @@ import warnings
 warnings.simplefilter('ignore')
 import os
 
-from aim import Run
+from runner.nodes.training.common.wandb_run import TrackerRun
 from runflow.runtime.cancellation import check_cancel
 from runner.nodes.training.styletts.finetune.training.meldataset import build_dataloader
 
@@ -28,7 +28,7 @@ from .utils import length_to_mask, mask_from_lens, maximum_path, get_data_path_l
 from .loading import load_ASR_models, load_F0_models, build_model, load_checkpoint, load_plbert
 from .losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss, MultiResolutionSTFTLoss
 from runner.nodes.training.styletts.finetune.checkpoint_publish import publish_finetune_epoch_bundle_from_training_config
-from runner.nodes.training.styletts.finetune.studio.finetune_aim_logger import FinetuneAimLogger
+from runner.nodes.training.styletts.finetune.studio.finetune_wandb_logger import FinetuneWandbLogger
 from runner.nodes.training.styletts.finetune.studio.val_sample_export import export_finetune_val_wavs_for_studio
 
 import logging
@@ -74,7 +74,7 @@ def _resolve_precision(precision: object) -> tuple[bool, torch.dtype | None, boo
     raise ValueError("precision_invalid")
 
 
-def train(config_path: str, *, aim_run: Run) -> None:
+def train(config_path: str, *, run: TrackerRun) -> None:
     config = yaml.safe_load(open(config_path))
     
     log_dir = config['log_dir']
@@ -131,8 +131,8 @@ def train(config_path: str, *, aim_run: Run) -> None:
                                       device=device,
                                       dataset_config={"symbols": symbols})
 
-    aim_logger = FinetuneAimLogger(
-        aim_run,
+    wandb_logger = FinetuneWandbLogger(
+        run,
         schedule_epochs_total=int(epochs),
         batches_per_epoch=max(1, len(train_dataloader)),
         diff_epoch=int(diff_epoch),
@@ -604,7 +604,7 @@ def train(config_path: str, *, aim_run: Run) -> None:
 
             iters = iters + 1
 
-            aim_logger.log_train(
+            wandb_logger.log_train(
                 epoch + 1,
                 iters,
                 {
@@ -787,8 +787,8 @@ def train(config_path: str, *, aim_run: Run) -> None:
         val_dur = loss_align / denom
         val_f0 = loss_f / denom
         if val_sample_rows:
-            aim_logger.log_val_samples(epoch + 1, iters, val_sample_rows, log_dir=log_dir)
-        aim_logger.log_val(
+            wandb_logger.log_val_samples(epoch + 1, iters, val_sample_rows, log_dir=log_dir)
+        wandb_logger.log_val(
             epoch + 1,
             iters,
             {"mel_loss": val_mel, "dur_loss": val_dur, "F0_loss": val_f0},

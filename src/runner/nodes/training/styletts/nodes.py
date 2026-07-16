@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -20,7 +19,7 @@ from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AssetBundlePort, CheckpointRefPort, TrainingManifestPort, TrainingResultPort
 from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingManifest, TrainingResult, stable_id, typed_assets, typed_checkpoint
 from runner.nodes.training.common.manifest.cleanup import remove_run_dir
-from runner.nodes.training.common.results import NoopAimRun
+from runner.nodes.training.common.wandb_run import TrackerRun, start_wandb_run
 from runner.nodes.training.styletts.finetune.node_config import build_node_config
 from shared.db.assets import crud as asset_crud
 from shared.db.connection import database_session
@@ -141,55 +140,39 @@ def _prepare_styletts_config(training_config: dict[str, Any], run_id: str) -> Pa
 def _run_styletts_train(config_path: Path) -> None:
     from runner.nodes.training.styletts.finetune.training.train_finetune import train
 
-    aim_run = _make_aim_run(config_path)
+    run = _make_wandb_run(config_path)
     try:
-        train(str(config_path), aim_run=aim_run)
+        train(str(config_path), run=run)
     finally:
-        close = getattr(aim_run, "close", None)
-        if callable(close):
-            try:
-                close()
-            except Exception:
-                logger.warning("failed to close aim run", exc_info=True)
+        try:
+            run.close()
+        except Exception:
+            logger.warning("failed to close trackio run", exc_info=True)
         release_accelerator_memory()
 
 
-def _make_aim_run(config_path: Path) -> Any:
-    """Create a real Aim run so the finetune metrics/samples reach the Aim UI.
-
-    Falls back to a no-op run if Aim is unavailable so training never fails just
-    because logging could not be initialized. The repo is taken from ``AIM_REPO``
-    (set by the dev stack) so the run lands in the same repo the UI reads."""
-    try:
-        from aim import Run
-    except ImportError:
-        logger.warning("aim not installed; training metrics will not be logged")
-        return NoopAimRun()
+def _make_wandb_run(config_path: Path) -> TrackerRun:
+    """Start a trackio run so the finetune metrics/samples reach the wandb-style
+    dashboard on the Runs page. The run name and hparams come from the config
+    published by the node; ``start_wandb_run`` targets the self-hosted trackio server
+    (``TRACKIO_SERVER_URL``) and falls back to a no-op run if trackio is unavailable."""
     try:
         styletts_yaml = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     except Exception:
         styletts_yaml = {}
     publish = styletts_yaml.get("studio_publish", {}) if isinstance(styletts_yaml, dict) else {}
     run_name = str(publish.get("run_name") or publish.get("run_id") or "styletts_finetune")
-    repo = os.environ.get("AIM_REPO") or None
-    try:
-        run = Run(repo=repo, experiment="styletts2_finetune")
-        run.name = run_name
-        run["hparams"] = {
-            "run_id": publish.get("run_id"),
-            "finetune_job_id": publish.get("finetune_job_id"),
-            "epochs": styletts_yaml.get("epochs"),
-            "batch_size": styletts_yaml.get("batch_size"),
-            "max_len": styletts_yaml.get("max_len"),
-            "precision": styletts_yaml.get("precision"),
-            "n_token": (styletts_yaml.get("model_params") or {}).get("n_token"),
-            "decoder": ((styletts_yaml.get("model_params") or {}).get("decoder") or {}).get("type"),
-        }
-        logger.info("aim run started name=%s repo=%s", run_name, repo or "<default>")
-        return run
-    except Exception:
-        logger.warning("failed to start aim run; training metrics will not be logged", exc_info=True)
-        return NoopAimRun()
+    config = {
+        "run_id": publish.get("run_id"),
+        "finetune_job_id": publish.get("finetune_job_id"),
+        "epochs": styletts_yaml.get("epochs"),
+        "batch_size": styletts_yaml.get("batch_size"),
+        "max_len": styletts_yaml.get("max_len"),
+        "precision": styletts_yaml.get("precision"),
+        "n_token": (styletts_yaml.get("model_params") or {}).get("n_token"),
+        "decoder": ((styletts_yaml.get("model_params") or {}).get("decoder") or {}).get("type"),
+    }
+    return start_wandb_run(project="styletts2_finetune", name=run_name, config=config)
 
 
 def _latest_epoch_result(run_id: str) -> TrainingResult:

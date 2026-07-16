@@ -20,7 +20,7 @@ class StorageSettingsRead(StorageSettingsPayload):
 class IntegrationSettingsPayload(BaseModel):
     hf_token: str = ""
     openrouter_token: str = ""
-    aim_url: str = "http://localhost:43800"
+    wandb_url: str = "http://localhost:7860"
 
 
 class IntegrationSettingsRead(IntegrationSettingsPayload):

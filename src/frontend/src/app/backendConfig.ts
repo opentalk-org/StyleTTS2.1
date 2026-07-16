@@ -5,11 +5,11 @@ export function defaultBackendUrl(): string {
   return window.location.origin;
 }
 
-export function defaultAimUrl(): string {
-  const configuredUrl = import.meta.env.VITE_AIM_URL;
+export function defaultWandbUrl(): string {
+  const configuredUrl = import.meta.env.VITE_WANDB_URL;
   if (configuredUrl) return configuredUrl;
-  if (import.meta.env.DEV) return "http://localhost:43800";
+  if (import.meta.env.DEV) return "http://localhost:7860";
   const url = new URL(window.location.origin);
-  url.port = "43800";
+  url.port = "7860";
   return url.toString();
 }

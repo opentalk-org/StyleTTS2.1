@@ -7,8 +7,9 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from aim import Audio, Run, Text
+import trackio
 
+from runner.nodes.training.common.wandb_run import TrackerRun
 from runner.nodes.training.styletts.finetune.studio.metrics import _metrics_for_json
 
 
@@ -32,17 +33,17 @@ def _read_wav_mono_f32(path: Path) -> tuple[np.ndarray, int] | None:
     return fl, int(rate)
 
 
-class FinetuneAimLogger:
+class FinetuneWandbLogger:
     def __init__(
         self,
-        aim_run: Run,
+        run: TrackerRun,
         *,
         schedule_epochs_total: int | None = None,
         batches_per_epoch: int | None = None,
         diff_epoch: int | None = None,
         joint_epoch: int | None = None,
     ) -> None:
-        self._aim = aim_run
+        self._run = run
         self._schedule_epochs_total = schedule_epochs_total
         self._batches_per_epoch = batches_per_epoch
         self._diff_epoch = diff_epoch
@@ -52,20 +53,20 @@ class FinetuneAimLogger:
 
     def _track_metric(self, name: str, step: int, v: Any) -> None:
         if isinstance(v, bool):
-            self._aim.track(float(v), name=name, step=step)
+            self._run.track(float(v), name=name, step=step)
             return
         if isinstance(v, (int, float)):
             fv = float(v)
             if math.isnan(fv) or math.isinf(fv):
                 return
-            self._aim.track(fv, name=name, step=step)
+            self._run.track(fv, name=name, step=step)
             return
         if isinstance(v, str):
-            self._aim.track(Text(v), name=name, step=step)
+            self._run.track(v, name=name, step=step)
             return
-        self._aim.track(Text(str(v)), name=name, step=step)
+        self._run.track(str(v), name=name, step=step)
 
-    def _emit_progress_aim(
+    def _emit_progress(
         self,
         *,
         epoch_idx0: int,
@@ -102,11 +103,11 @@ class FinetuneAimLogger:
         total_steps = max(1, total_e * spe)
         done = epoch_idx0 * spe + batch_in_epoch
         job_pct = max(1.0, min(99.0, 1.0 + 98.0 * done / total_steps))
-        self._aim.track(job_pct, name="job_progress", step=global_step)
+        self._run.track(job_pct, name="job_progress", step=global_step)
         if sps is not None and not math.isnan(sps) and not math.isinf(sps):
-            self._aim.track(float(sps), name="train/steps_per_sec", step=global_step)
+            self._run.track(float(sps), name="train/steps_per_sec", step=global_step)
         if eta_total is not None and not math.isnan(eta_total) and not math.isinf(eta_total):
-            self._aim.track(float(eta_total), name="train/eta_seconds_to_training_end", step=global_step)
+            self._run.track(float(eta_total), name="train/eta_seconds_to_training_end", step=global_step)
 
     def log_train(
         self,
@@ -131,7 +132,7 @@ class FinetuneAimLogger:
         bpe = batches_per_epoch if batches_per_epoch is not None else self._batches_per_epoch
         ste = schedule_epochs_total if schedule_epochs_total is not None else self._schedule_epochs_total
         if batch_in_epoch is not None and bpe is not None and ste is not None:
-            self._emit_progress_aim(
+            self._emit_progress(
                 epoch_idx0=int(epoch) - 1,
                 batch_in_epoch=int(batch_in_epoch),
                 global_step=int(step),
@@ -154,11 +155,11 @@ class FinetuneAimLogger:
     ) -> None:
         del epoch
         n = len(samples)
-        self._aim.track(float(n), name="val/sample_rows", step=step)
+        self._run.track(float(n), name="val/sample_rows", step=step)
         paths = [s.get("path", "") for s in samples if isinstance(s, dict)]
         if paths:
             joined = "\n".join(paths[:32])
-            self._aim.track(Text(joined), name="val/sample_paths", step=step)
+            self._run.track(joined, name="val/sample_paths", step=step)
         if log_dir is None:
             return
         base = Path(log_dir)
@@ -178,8 +179,8 @@ class FinetuneAimLogger:
                 continue
             arr, rate = blob
             name = f"val/wav_u{idx}_{role}"
-            self._aim.track(
-                Audio(arr, caption=f"{role} {wav_path.name}", rate=rate),
+            self._run.track(
+                trackio.Audio(arr, sample_rate=rate, caption=f"{role} {wav_path.name}"),
                 name=name,
                 step=step,
             )

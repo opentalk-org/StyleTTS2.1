@@ -7,14 +7,14 @@ from typing import Any
 import numpy as np
 import torch
 import torch.nn as nn
-from aim import Run
 from tqdm import tqdm
 
 from runflow.runtime.cancellation import check_cancel
+from runner.nodes.training.common.wandb_run import TrackerRun
 from runner.nodes.training.f0.impl.dataset import build_f0_dataloaders
 from runner.nodes.training.f0.impl.optimizer import build_f0_optimizer
 from runner.nodes.training.styletts.finetune.training.modules.jdc import JDCNet
-from runner.nodes.training.styletts.finetune.studio.finetune_aim_logger import FinetuneAimLogger
+from runner.nodes.training.styletts.finetune.studio.finetune_wandb_logger import FinetuneWandbLogger
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ def save_f0_checkpoint(
 
 def train_f0_model(
     *,
-    aim_run: Run,
+    run: TrackerRun,
     train_list_path: str,
     val_list_path: str,
     run_dir: Path,
@@ -107,8 +107,8 @@ def train_f0_model(
         raise ValueError("f0_val_no_batches")
 
     steps_per_epoch = len(train_loader)
-    aim_metrics = FinetuneAimLogger(
-        aim_run,
+    wandb_metrics = FinetuneWandbLogger(
+        run,
         schedule_epochs_total=epochs,
         batches_per_epoch=steps_per_epoch,
         diff_epoch=0,
@@ -175,7 +175,7 @@ def train_f0_model(
                 batch_pbar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{optimizer.param_groups[0]['lr']:.2e}")
 
                 lr = optimizer.param_groups[0]["lr"]
-                aim_metrics.log_train(
+                wandb_metrics.log_train(
                     epoch + 1,
                     global_step,
                     {
@@ -209,7 +209,7 @@ def train_f0_model(
 
             val_metrics = {f"val_{k}": float(np.mean(v)) for k, v in eval_losses.items()}
             val_metrics["val_lr"] = optimizer.param_groups[0]["lr"]
-            aim_metrics.log_val(epoch + 1, global_step, val_metrics)
+            wandb_metrics.log_val(epoch + 1, global_step, val_metrics)
 
             tr_l = float(np.mean(train_losses["loss"]))
             logger.info(

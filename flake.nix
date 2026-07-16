@@ -300,6 +300,8 @@
         "RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001"
         "AWS_ENDPOINT_URL=http://127.0.0.1:9000"
         "BACKEND_PORT=8000"
+        # Trackio training runs and the runflow-trackio dashboard share this dir.
+        "TRACKIO_DIR=/data/trackio"
         "RUNNER_ID=runner-1"
         "TAILSCALE_HOSTNAME=runflow-hub"
         # Vast.ai managed containers have no /dev/net/tun, so the hub uses
@@ -422,20 +424,16 @@
         '' + builtins.readFile ./nix/runner-launch.sh;
       };
 
-      runflowAim = pkgs.writeShellApplication {
-        name = "runflow-aim";
+      runflowTrackio = pkgs.writeShellApplication {
+        name = "runflow-trackio";
         runtimeInputs = pythonTools;
         text = (pythonEnvExports pythonRuntime) + ''
           cd ${./.}
           export PYTHONPATH="${./src}"
-          AIM_REPO="''${AIM_REPO:-/data/aim}"
-          AIM_HOST="''${AIM_HOST:-0.0.0.0}"
-          AIM_PORT="''${AIM_PORT:-43800}"
-          mkdir -p "$AIM_REPO"
-          if [ ! -d "$AIM_REPO/.aim" ]; then
-            uv run --frozen aim init --repo "$AIM_REPO" || echo "aim init failed; continuing without Aim UI"
-          fi
-          exec uv run --frozen aim up --repo "$AIM_REPO" --host "$AIM_HOST" --port "$AIM_PORT"
+          export TRACKIO_DIR="''${TRACKIO_DIR:-/data/trackio}"
+          export GRADIO_SERVER_PORT="''${GRADIO_SERVER_PORT:-7860}"
+          mkdir -p "$TRACKIO_DIR"
+          exec uv run --frozen trackio show --host "''${TRACKIO_HOST:-0.0.0.0}"
         '';
       };
 
@@ -471,7 +469,7 @@
           runflowBackend
           runflowRunner
           runnerLaunch
-          runflowAim
+          runflowTrackio
         ] ++ pythonTools;
         text = builtins.readFile ./nix/entrypoint.sh;
       };
@@ -534,7 +532,7 @@
               frontendStatic
               runflowBackend
               runflowRunner
-              runflowAim
+              runflowTrackio
               entrypoint
             ] ++ pythonRuntime.runtimeExecutableDeps ++ pythonRuntime.runtimeLibs;
 
@@ -547,7 +545,7 @@
                 "9001/tcp" = {};
                 "4222/tcp" = {};
                 "6432/tcp" = {};
-                "43800/tcp" = {};
+                "7860/tcp" = {};
               };
 
               Env = commonEnv ++ hubEnv;
@@ -559,7 +557,7 @@
           };
 
           # Slim runner-only image for remote GPU workers (Salad). Drops every
-          # server binary (postgres/pgbouncer/rustfs/backend/frontend/aim);
+          # server binary (postgres/pgbouncer/rustfs/backend/frontend/trackio);
           # keeps the ML runtime + tailscale + proxychains. Reaches the hub's
           # database and S3 services as a client over the tailnet.
           runner-image = pkgs.dockerTools.buildLayeredImage {

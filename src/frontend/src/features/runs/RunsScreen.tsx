@@ -1,9 +1,9 @@
-import { defaultAimUrl } from "@/app/backendConfig";
+import { defaultWandbUrl } from "@/app/backendConfig";
 import { useIntegrationSettingsQuery } from "@/features/settings/query";
 
 export function RunsScreen() {
   const integration = useIntegrationSettingsQuery();
-  const aimUrl = integration.data?.aim_url || defaultAimUrl();
+  const wandbUrl = integration.data?.wandb_url || defaultWandbUrl();
 
-  return <iframe src={aimUrl} title="Aim experiment tracker" className="block h-full w-full border-0" />;
+  return <iframe src={wandbUrl} title="Weights & Biases experiment tracker" className="block h-full w-full border-0" />;
 }

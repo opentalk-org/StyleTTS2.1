@@ -12,12 +12,12 @@ from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import CheckpointRefPort, JsonPort, TrainingManifestPort, TrainingResultPort
 from runner.nodes.models import TrainingManifest
 from runner.nodes.training.common.results import (
-    NoopAimRun,
     checkpoint_weight,
     publish_training_result,
     training_manifest_metadata,
     training_output_dir,
 )
+from runner.nodes.training.common.wandb_run import NoopWandbRun
 from runner.nodes.training.f0.nodes import F0TrainingSettings
 
 
@@ -60,7 +60,7 @@ def _run_asr_training(settings: AsrTrainingSettings, inputs: dict[str, Any], run
     config_path.write_text(yaml.safe_dump(effective, sort_keys=False, allow_unicode=True), encoding="utf-8")
     try:
         train_asr_model(
-            aim_run=NoopAimRun(),
+            run=NoopWandbRun(),
             train_list_path=str(manifest.metadata["train_manifest_path"]),
             val_list_path=str(manifest.metadata["validation_manifest_path"]),
             run_dir=output_dir / "run",
