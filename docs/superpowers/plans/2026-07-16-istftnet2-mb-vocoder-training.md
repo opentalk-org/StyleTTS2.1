@@ -101,7 +101,7 @@ Write PCM-16 WAVs with SoundFile, render paired mel panels with shared limits us
 
 Run the temporary test and expect the reporting test to pass.
 
-### Task 4: GAN optimization, full validation, and checkpoints
+### Task 4: GAN optimization, full validation, and final weights
 
 **Files:**
 - Create: `src/runner/nodes/training/styletts3/testing/vocoder_training/trainer.py`
@@ -109,12 +109,12 @@ Run the temporary test and expect the reporting test to pass.
 - Modify temporarily: `/tmp/test_istftnet2_training.py`
 
 **Interfaces:**
-- Produces: `TrainingConfig`, `train_batch()`, `validate_epoch()`, `save_checkpoint()`, and `train_vocoder()`.
+- Produces: `TrainingConfig`, `train_batch()`, `validate_epoch()`, and `train_vocoder()`.
 - Consumes: models, loader, validation entries, mel modules, reporter, optimizers, and CUDA device.
 
-- [ ] **Step 1: Add failing optimizer/checkpoint tests**
+- [ ] **Step 1: Add failing optimizer and persistence tests**
 
-On a small real model batch, assert finite discriminator/generator/mel/adversarial/feature metrics, changed generator and discriminator weights, frozen-state restoration after the generator step, and a checkpoint containing both models, both optimizers, epoch, and global step.
+On a small real model batch, assert finite discriminator/generator/mel/adversarial/feature metrics, changed generator and discriminator weights, frozen-state restoration after the generator step, and one final generator-weight save without periodic checkpoints.
 
 - [ ] **Step 2: Verify RED**
 
@@ -122,7 +122,7 @@ Run the temporary test and expect missing trainer interfaces.
 
 - [ ] **Step 3: Implement the train and validation loops**
 
-Compute conditioning once per batch, retain one generator forward for both updates, detach fake audio for the discriminator update, freeze discriminator parameters during the generator update, use bfloat16 autocast on CUDA, aggregate metrics, validate held-out files sequentially in full, report media, and save one resumable checkpoint per epoch plus `generator_final.pth`.
+Compute conditioning once per batch, retain one generator forward for both updates, detach fake audio for the discriminator update, freeze discriminator parameters during the generator update, use bfloat16 autocast on CUDA, aggregate metrics, validate held-out files sequentially in full, report media, and save only `generator_final.pth` after training completes.
 
 - [ ] **Step 4: Verify GREEN**
 
@@ -148,7 +148,7 @@ Run `py_compile`, the complete temporary suite, `git diff --check`, file/folder 
 
 - [ ] **Step 3: Run the real backend-connected smoke job**
 
-Run through Nix with LJSpeech dataset `022c31b6-83be-4cd6-9835-25aa3830357b`, one epoch, one train step, a tiny train subset and two validation files. Verify the checkpoint, WAV, PNG, metrics, and Aim run.
+Run through Nix with LJSpeech dataset `022c31b6-83be-4cd6-9835-25aa3830357b`, one epoch, one train step, a tiny train subset and two validation files. Verify the final weights, WAV, PNG, metrics, and Aim run.
 
 - [ ] **Step 4: Inspect parameter counts**
 
@@ -157,3 +157,34 @@ Only now print generator and discriminator parameter counts and confirm no behav
 - [ ] **Step 5: Launch the five-epoch job**
 
 Run the same module with five epochs, 16 validation files, batch size 16, and optimized worker/prefetch settings. Monitor startup through the first successful batch and report the run/output/Aim locations.
+
+### Task 6: Scheduled validation and 100-epoch run
+
+**Files:**
+- Modify: `src/runner/nodes/training/styletts3/testing/train_istftnet2_mb.py`
+- Modify: `src/runner/nodes/training/styletts3/testing/vocoder_training/trainer.py`
+- Modify temporarily: `/tmp/test_istftnet2_validation_interval.py`
+
+**Interfaces:**
+- Produces: `--validation-interval-epochs` and `is_validation_epoch(epoch, interval)`.
+- Consumes: the existing training loop, full-audio validator, final-weight writer, and Aim reporter.
+
+- [ ] **Step 1: Add a failing schedule test**
+
+Assert that interval five schedules exactly epochs `5, 10, ..., 100`, CLI parsing accepts the interval, and the default remains one.
+
+- [ ] **Step 2: Verify RED**
+
+Run the temporary test through `nix develop --command python ...` and expect the missing schedule interface to fail.
+
+- [ ] **Step 3: Implement scheduled validation**
+
+Carry the positive CLI interval into `TrainingConfig` and Aim hyperparameters. Run full-audio validation and its media/Aim reporting only when `epoch % interval == 0`; do not save periodic checkpoints.
+
+- [ ] **Step 4: Smoke and verify**
+
+Run a six-epoch, one-step-per-epoch backend smoke job with interval five. Assert that no checkpoint directory exists, validation media exists only for epoch five, and the final generator exists, then remove the temporary test.
+
+- [ ] **Step 5: Launch and monitor the 100-epoch job**
+
+Run LJSpeech with 100 epochs, 16 validation utterances, batch size 16, eight spawned workers, and validation interval five. Monitor it to completion and verify no periodic checkpoints, 20 validation epoch directories, the final generator, and Aim metrics/media.

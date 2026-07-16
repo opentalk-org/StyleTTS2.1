@@ -4,10 +4,9 @@
 
 Build a standalone Python trainer for the experimental plain `ISTFTNet2MB`
 generator and `WaveUNetDiscriminator`. The trainer reads the LJSpeech WAVs
-stored by the backend, trains on 8192-sample crops for five epochs, validates on
-16 full utterances, saves validation media every epoch, and reports metrics and
-media to the backend Aim repository. The StyleTTS3 workflow node remains out of
-scope.
+stored by the backend, trains on 8192-sample crops, validates on 16 full
+utterances at a configurable epoch interval, and reports metrics and media to
+the backend Aim repository. The StyleTTS3 workflow node remains out of scope.
 
 ## Data flow
 
@@ -62,9 +61,11 @@ parameters are frozen during the generator update.
 
 ## Validation, persistence, and Aim
 
-Every epoch reports mean training and validation losses, learning rates, examples
-per second, and audio samples per second. Validation includes multi-resolution mel
-L1, waveform L1, adversarial, feature-matching, and discriminator losses.
+Every epoch reports mean training losses, learning rates, examples per second,
+and audio samples per second. Scheduled validation epochs also report
+multi-resolution mel L1, waveform L1, adversarial, feature-matching, and
+discriminator losses. The validation interval defaults to one epoch; the
+100-epoch long run uses an interval of five epochs.
 
 For every validation utterance and epoch, the trainer writes:
 
@@ -75,9 +76,8 @@ The same scalar metrics, all 16 audio pairs, and all 16 mel images are logged to
 Aim run in `AIM_REPO`. Aim initialization failures are errors because logging is a
 required output, not an optional convenience.
 
-Each epoch writes a resumable checkpoint containing generator, discriminator,
-optimizers, epoch, and global step. Completion also writes a generator-only final
-checkpoint.
+The trainer does not write periodic checkpoints. Completion writes only the
+generator weights to `generator_final.pth`.
 
 ## CLI and verification
 
@@ -85,10 +85,10 @@ The entry point is a directly runnable Python module beside the experimental mod
 files. Required options identify the dataset and output directory; batching and
 worker controls are explicit. Normal execution uses five epochs and 16 validation
 utterances. Smoke mode limits the training subset, validation subset, epoch count,
-and optimizer steps while exercising the same data, model, loss, checkpoint, media,
+and optimizer steps while exercising the same data, model, loss, final weights, media,
 and Aim paths.
 
 Temporary tests cover crop-only reads, mel/output alignment, multi-resolution loss,
-optimizer loss flow, full-audio exports, and checkpoint contents. They are removed
+optimizer loss flow, full-audio exports, and final-weight persistence. They are removed
 before completion. The real smoke run is launched through Nix. Parameter counts are
 checked only after behavioral verification.
