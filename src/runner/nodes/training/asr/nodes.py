@@ -17,7 +17,7 @@ from runner.nodes.training.common.results import (
     training_manifest_metadata,
     training_output_dir,
 )
-from runner.nodes.training.common.wandb_run import NoopWandbRun
+from runner.nodes.training.common.mlflow_run import start_mlflow_run
 from runner.nodes.training.f0.nodes import F0TrainingSettings
 
 
@@ -58,9 +58,14 @@ def _run_asr_training(settings: AsrTrainingSettings, inputs: dict[str, Any], run
     config_path = output_dir / "effective_asr_config.yml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(yaml.safe_dump(effective, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    tracker = start_mlflow_run(
+        experiment="asr_training",
+        name=f"{settings.display_name}-{run_id}",
+        config=settings.model_dump(mode="json"),
+    )
     try:
         train_asr_model(
-            run=NoopWandbRun(),
+            run=tracker,
             train_list_path=str(manifest.metadata["train_manifest_path"]),
             val_list_path=str(manifest.metadata["validation_manifest_path"]),
             run_dir=output_dir / "run",
@@ -75,6 +80,7 @@ def _run_asr_training(settings: AsrTrainingSettings, inputs: dict[str, Any], run
             num_workers=settings.dataloader_workers,
         )
     finally:
+        tracker.close()
         release_accelerator_memory()
     write_asr_bundle_artifacts(bundle_dir=output_dir, effective_config=effective)
     return publish_training_result(

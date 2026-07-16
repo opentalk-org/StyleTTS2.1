@@ -20,6 +20,8 @@ def tasks_for_outputs(
     batch: list[Task],
     outputs: list[dict[str, Any]],
 ) -> list[Task]:
+    if not outputs:
+        return []
     associations = [INPUT_INDEX_OUTPUT in output for output in outputs]
     if any(associations):
         if not all(associations):

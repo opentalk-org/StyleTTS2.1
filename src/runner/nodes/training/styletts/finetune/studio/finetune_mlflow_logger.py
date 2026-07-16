@@ -2,38 +2,14 @@ from __future__ import annotations
 
 import math
 import time
-import wave
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-import trackio
-
-from runner.nodes.training.common.wandb_run import TrackerRun
+from runner.nodes.training.common.mlflow_run import TrackerRun
 from runner.nodes.training.styletts.finetune.studio.metrics import _metrics_for_json
 
 
-def _read_wav_mono_f32(path: Path) -> tuple[np.ndarray, int] | None:
-    try:
-        with wave.open(str(path), "rb") as wf:
-            ch = wf.getnchannels()
-            sw = wf.getsampwidth()
-            rate = wf.getframerate()
-            n = wf.getnframes()
-            raw = wf.readframes(n)
-    except (wave.Error, OSError, EOFError):
-        return None
-    if sw != 2 or ch < 1 or rate < 1:
-        return None
-    pcm = np.frombuffer(raw, dtype=np.int16)
-    if ch > 1:
-        frames = pcm.reshape(-1, ch)
-        pcm = frames.mean(axis=1).astype(np.int16)
-    fl = pcm.astype(np.float32) / 32768.0
-    return fl, int(rate)
-
-
-class FinetuneWandbLogger:
+class FinetuneMlflowLogger:
     def __init__(
         self,
         run: TrackerRun,
@@ -153,34 +129,25 @@ class FinetuneWandbLogger:
         *,
         log_dir: str | Path | None = None,
     ) -> None:
-        del epoch
         n = len(samples)
         self._run.track(float(n), name="val/sample_rows", step=step)
-        paths = [s.get("path", "") for s in samples if isinstance(s, dict)]
+        paths = [sample["path"] for sample in samples]
         if paths:
             joined = "\n".join(paths[:32])
             self._run.track(joined, name="val/sample_paths", step=step)
         if log_dir is None:
             return
         base = Path(log_dir)
-        for s in samples:
-            if not isinstance(s, dict):
-                continue
-            role = s.get("role", "")
-            relp = s.get("path", "")
-            idx = s.get("index", "0")
+        for sample in samples:
+            role = sample["role"]
+            relp = sample["path"]
+            idx = sample["index"]
             if role not in ("gt", "pred") or not relp or not str(relp).lower().endswith(".wav"):
                 continue
             wav_path = base / relp
             if not wav_path.is_file():
                 continue
-            blob = _read_wav_mono_f32(wav_path)
-            if blob is None:
-                continue
-            arr, rate = blob
-            name = f"val/wav_u{idx}_{role}"
-            self._run.track(
-                trackio.Audio(arr, sample_rate=rate, caption=f"{role} {wav_path.name}"),
-                name=name,
-                step=step,
+            self._run.log_artifact(
+                wav_path,
+                artifact_path=f"validation/epoch_{epoch:05d}/step_{step:09d}/sample_{idx}/{role}",
             )

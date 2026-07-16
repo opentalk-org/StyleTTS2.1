@@ -5,8 +5,8 @@ export function defaultBackendUrl(): string {
   return window.location.origin;
 }
 
-export function defaultWandbUrl(): string {
-  const configuredUrl = import.meta.env.VITE_WANDB_URL;
+export function defaultMlflowUrl(): string {
+  const configuredUrl = import.meta.env.VITE_MLFLOW_URL;
   if (configuredUrl) return configuredUrl;
   if (import.meta.env.DEV) return "http://localhost:7860";
   const url = new URL(window.location.origin);

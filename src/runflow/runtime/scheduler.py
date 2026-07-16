@@ -8,23 +8,24 @@ from runflow.core.context import ExecutionContext
 from runflow.core.graph import Graph
 from runflow.core.node import Node
 from runflow.core.task import Task
-from runflow.planning.batch_planner import BatchPlanner
 from runflow.planning.graph_validator import GraphValidator
+from runflow.runtime.batch_collector import BatchCollector
 from runflow.runtime.cancellation import cancellation_scope
 from runflow.runtime.input_progress import remaining_counts
+from runflow.runtime.join_builder import NodeJoinBuffers
 from runflow.runtime.lineage_tracker import LineageTracker
 from runflow.runtime.log_capture import route_output_to_logger
 from runflow.runtime.memory_budget import (
     DEFAULT_TOTAL_BUDGET_BYTES,
     WeightBudget,
-    estimate_task_bytes,
 )
 from runflow.runtime.node_manager import NodeManager
 from runflow.runtime.output_router import OutputRouter
 from runflow.runtime.resource_pool import ResourcePool
-from runflow.runtime.join_builder import NodeJoinBuffers
 from runflow.runtime.scheduler_events import SchedulerEventEmitter
+from runflow.runtime.scheduling import TaskAdmission
 from runflow.runtime.topology import topological_nodes
+
 
 class WindowedScheduler:
     def __init__(self, graph: Graph, context: ExecutionContext):
@@ -34,22 +35,20 @@ class WindowedScheduler:
         self.validator = GraphValidator()
         self.events = SchedulerEventEmitter(context)
         self.lineages = LineageTracker(self.events)
-        self.batch_planner = BatchPlanner()
         self.node_manager = NodeManager(context)
 
         self.resource_pool = ResourcePool(limits=dict(context.config.resources))
 
         self.queues: dict[str, asyncio.Queue[Task]] = {}
         self.budgets: dict[str, WeightBudget] = {}
-        self._task_weight: dict[int, int] = {}
         self.join_buffers: dict[str, NodeJoinBuffers] = defaultdict(NodeJoinBuffers)
         self.output_router = OutputRouter(graph, context, self.events, self.join_buffers, self._enqueue, self.lineages)
-        self._active_tasks = 0
         self._active_condition: asyncio.Condition | None = None
+        self._admission: TaskAdmission | None = None
+        self._batch_collector: BatchCollector | None = None
         self._workers: list[asyncio.Task] = []
         self._worker_errors: list[BaseException] = []
         self._batch_sequence = 0
-        self._enqueued_at: dict[int, float] = {}
 
     def run(self) -> None:
         asyncio.run(self.arun())
@@ -108,14 +107,27 @@ class WindowedScheduler:
         # fine — WeightBudget still admits one item at a time, so it never deadlocks.
         per_queue_budget = max(1, self._total_memory_budget_bytes() // max(1, len(self.queues)))
         self.budgets = {node_id: WeightBudget(per_queue_budget) for node_id in self.queues}
-        self._task_weight = {}
         self.join_buffers.clear()
-        self._active_tasks = 0
         self._active_condition = asyncio.Condition()
+        self._admission = TaskAdmission(
+            self.context,
+            self._active_condition,
+            self.queues,
+            self.budgets,
+        )
+        self._batch_collector = BatchCollector(
+            self.graph,
+            self.context,
+            self._active_condition,
+            self.queues,
+            self.budgets,
+            self._admission.task_weights,
+            self._admission.active_by_node,
+            self._admission.blocked_by_node,
+        )
         self._workers = []
         self._worker_errors = []
         self._batch_sequence = 0
-        self._enqueued_at = {}
 
         for priority, node in enumerate(topological_nodes(self.graph)):
             self._workers.append(asyncio.create_task(self._worker(node, 0, priority), name=f"{node.id}:0"))
@@ -144,53 +156,19 @@ class WindowedScheduler:
             raise ExceptionGroup("Scheduler worker failures", errors)
 
     async def _enqueue(self, node_id: str, task: Task) -> float:
-        self.context.check_cancel()
-        if self._active_condition is None:
-            raise RuntimeError("Scheduler is not running")
-        async with self._active_condition:
-            self._active_tasks += 1
-        self._enqueued_at[id(task)] = perf_counter()
-        weight = estimate_task_bytes(task)
-        self._task_weight[id(task)] = weight
-        blocked_at = perf_counter()
-        try:
-            # Byte-budget admission first (memory backpressure), then the count-bounded put.
-            await self.budgets[node_id].acquire(weight)
-        except BaseException:
-            self._enqueued_at.pop(id(task), None)
-            self._task_weight.pop(id(task), None)
-            async with self._active_condition:
-                self._active_tasks -= 1
-                self._active_condition.notify_all()
-            raise
-        try:
-            await self.queues[node_id].put(task)
-        except BaseException:
-            self._enqueued_at.pop(id(task), None)
-            await self.budgets[node_id].release(self._task_weight.pop(id(task), 0))
-            async with self._active_condition:
-                self._active_tasks -= 1
-                self._active_condition.notify_all()
-            raise
-        blocked_ms = (perf_counter() - blocked_at) * 1000
+        if self._admission is None:
+            raise RuntimeError("Scheduler task admission is not initialized")
+        blocked_ms = await self._admission.enqueue(node_id, task)
         await self.events.task_enqueued(node_id, task, self.queues[node_id].qsize())
         return blocked_ms
 
-    async def _mark_task_done(self, task: Task) -> None:
-        if self._active_condition is None:
-            raise RuntimeError("Scheduler is not running")
-        async with self._active_condition:
-            self._active_tasks -= 1
-            if self._active_tasks <= 0:
-                self._active_condition.notify_all()
-        if self.lineages.tracks(task.lineage_id):
-            await self.lineages.finish_task(task.lineage_id)
-
     async def _wait_until_idle(self) -> None:
-        if self._active_condition is None:
+        if self._active_condition is None or self._admission is None:
             raise RuntimeError("Scheduler is not running")
         async with self._active_condition:
-            await self._active_condition.wait_for(lambda: self._active_tasks == 0 or bool(self._worker_errors))
+            await self._active_condition.wait_for(
+                lambda: self._admission.active_total == 0 or bool(self._worker_errors)
+            )
         self.context.check_cancel()
         self._raise_worker_errors()
 
@@ -214,8 +192,9 @@ class WindowedScheduler:
     async def _worker(self, node: Node, worker_index: int, resource_priority: int) -> None:
         queue = self.queues[node.id]
         while True:
-            first = await queue.get()
-            batches, consumed_tasks = await self._collect_batches(node, first, queue)
+            if self._batch_collector is None:
+                raise RuntimeError("Scheduler batch collector is not initialized")
+            batches, consumed_tasks = await self._batch_collector.collect(node)
             await self.events.queue_depth(node.id, queue.qsize())
 
             try:
@@ -224,7 +203,12 @@ class WindowedScheduler:
                     batch = batches.pop(0)
                     batch_index = self._next_batch_index()
                     batch_started_at = perf_counter()
-                    queue_wait_ms = sum(batch_started_at - self._enqueued_at[id(task)] for task in batch) * 1000 / len(batch)
+                    if self._admission is None:
+                        raise RuntimeError("Scheduler task admission is not initialized")
+                    queue_wait_ms = sum(
+                        batch_started_at - self._admission.enqueued_at[id(task)]
+                        for task in batch
+                    ) * 1000 / len(batch)
                     await self.events.batch_started(node, worker_index, batch_index, batch, queue_wait_ms)
                     resource_wait_started_at = perf_counter()
                     async with self.resource_pool.lease(resource_policy, resource_priority):
@@ -269,10 +253,11 @@ class WindowedScheduler:
                 raise
             finally:
                 for task in consumed_tasks:
-                    self._enqueued_at.pop(id(task))
-                    await self.budgets[node.id].release(self._task_weight.pop(id(task), 0))
-                    queue.task_done()
-                    await self._mark_task_done(task)
+                    if self._admission is None:
+                        raise RuntimeError("Scheduler task admission is not initialized")
+                    await self._admission.complete(task)
+                    if self.lineages.tracks(task.lineage_id):
+                        await self.lineages.finish_task(task.lineage_id)
 
     async def _execute_node(self, node: Node, inputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         def run_execute() -> list[dict[str, Any]]:
@@ -280,34 +265,6 @@ class WindowedScheduler:
                 return asyncio.run(node.execute(inputs, self.context))
 
         return await asyncio.to_thread(run_execute)
-
-    async def _collect_batches(self, node: Node, first: Task, queue: asyncio.Queue[Task]) -> tuple[list[list[Task]], list[Task]]:
-        tasks = [first]
-        batch_policy = node.runtime.batch_policy.to_policy()
-        target_size = min(batch_policy.max_size, batch_policy.preferred_size)
-        timeout = batch_policy.timeout_ms / 1000.0
-
-        while len(tasks) < target_size:
-            try:
-                if timeout > 0:
-                    tasks.append(await asyncio.wait_for(queue.get(), timeout=timeout))
-                else:
-                    tasks.append(queue.get_nowait())
-            except (asyncio.TimeoutError, asyncio.QueueEmpty):
-                break
-        while timeout > 0 and len(tasks) < node.runtime.queue_max_size:
-            try:
-                tasks.append(await asyncio.wait_for(queue.get(), timeout=timeout))
-            except (asyncio.TimeoutError, asyncio.QueueEmpty):
-                break
-        # Cap each batch to the node's memory slice so a batch of big payloads shrinks
-        # below the count cap automatically (weights were already measured at enqueue).
-        budget = self.budgets.get(node.id)
-        byte_target = budget.budget_bytes if budget is not None else None
-        batches = self.batch_planner.build_batches(
-            tasks, batch_policy, weight_of=lambda task: self._task_weight.get(id(task), 0), byte_target=byte_target
-        )
-        return batches, tasks
 
     async def _enqueue_input(self, node: Node) -> None:
         await self._enqueue(

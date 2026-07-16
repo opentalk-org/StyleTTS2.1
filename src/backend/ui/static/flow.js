@@ -151,7 +151,7 @@ function nodeMetrics(nodeId) {
   if (!snapshot) return { queued: 0, remainingItems: 0, running: 0, completed: 0, received: 0, failed: false, loaded: false, status: "idle" };
   const discovered = snapshot.counters.input_items_discovered;
   const completed = discovered === undefined
-    ? snapshot.counters.tasks_completed || 0
+    ? snapshot.counters.items_completed || snapshot.counters.tasks_completed || 0
     : Math.min(discovered, snapshot.counters.packets_created || Math.max(0, discovered - (snapshot.remaining_items || 0)));
   const remainingItems = discovered === undefined ? snapshot.remaining_items || 0 : discovered - completed;
   return {

@@ -7,15 +7,16 @@ export PGBOUNCER_PORT="${PGBOUNCER_PORT:-6432}"
 export POSTGRES_DB="${POSTGRES_DB:-runflow}"
 export POSTGRES_USER="${POSTGRES_USER:-runflow}"
 export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-runflow}"
+export MLFLOW_DATABASE="${MLFLOW_DATABASE:-mlflow}"
+export MLFLOW_HOST="${MLFLOW_HOST:-127.0.0.1}"
+export MLFLOW_PORT="${MLFLOW_PORT:-7860}"
+export MLFLOW_TRACKING_URI="${MLFLOW_TRACKING_URI:-http://127.0.0.1:$MLFLOW_PORT}"
 export BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 export BACKEND_PORT="${BACKEND_PORT:-8001}"
 export VITE_BACKEND_URL="${VITE_BACKEND_URL:-http://$BACKEND_HOST:$BACKEND_PORT}"
 export FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 export FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 export RUNNER_ID="${RUNNER_ID:-runner-1}"
-export TRACKIO_DIR="${TRACKIO_DIR:-.data/trackio}"
-export TRACKIO_HOST="${TRACKIO_HOST:-127.0.0.1}"
-export GRADIO_SERVER_PORT="${GRADIO_SERVER_PORT:-7860}"
 export RUSTFS_DATA="${RUSTFS_DATA:-.data/rustfs}"
 export RUSTFS_VOLUMES="${RUSTFS_VOLUMES:-$RUSTFS_DATA}"
 export RUSTFS_ADDRESS="${RUSTFS_ADDRESS:-127.0.0.1:9000}"
@@ -107,10 +108,10 @@ fi
 . .venv/bin/activate
 
 # Kill any stale process still listening on a port we're about to bind. Prior dev
-# runs can leave app-tier services orphaned (e.g. a Trackio UI double-forked past the
+# runs can leave app-tier services orphaned (e.g. an MLflow UI worker past the
 # shutdown trap); a fresh run then fails to bind, exits, and the wait -n below tears
 # the whole stack down. Only used for services that have no "reuse existing" guard
-# (backend/frontend/trackio) -- Postgres/PgBouncer/RustFS are detected and reused.
+# (backend/frontend/mlflow) -- Postgres/PgBouncer/RustFS are detected and reused.
 free_port() {
   local port="$1" label="${2:-port}" pids
   # `|| true` inside the substitution: when the port is free, grep matches nothing
@@ -138,7 +139,7 @@ pid_rustfs=""
 pid_backend=""
 pid_frontend=""
 pid_runners=""
-pid_trackio=""
+pid_mlflow=""
 
 if [ ! -s "$PGDATA/PG_VERSION" ]; then
   echo "Initializing PostgreSQL database at $PGDATA"
@@ -189,6 +190,12 @@ if ! psql -h "$PGHOST" -p "$PGPORT" -d postgres -tAc \
   "SELECT 1 FROM pg_database WHERE datname = '$POSTGRES_DB'" \
   | grep -q 1; then
   createdb -h "$PGHOST" -p "$PGPORT" -O "$POSTGRES_USER" "$POSTGRES_DB"
+fi
+
+if ! psql -h "$PGHOST" -p "$PGPORT" -d postgres -tAc \
+  "SELECT 1 FROM pg_database WHERE datname = '$MLFLOW_DATABASE'" \
+  | grep -q 1; then
+  createdb -h "$PGHOST" -p "$PGPORT" -O "$POSTGRES_USER" "$MLFLOW_DATABASE"
 fi
 
 cat > "$pgbouncer_userlist" <<EOF
@@ -325,11 +332,34 @@ until python -c "from urllib.request import urlopen; urlopen('http://127.0.0.1:$
   sleep 1
 done
 
-mkdir -p "$TRACKIO_DIR"
-echo "Starting Trackio UI at http://$TRACKIO_HOST:$GRADIO_SERVER_PORT"
-free_port "$GRADIO_SERVER_PORT" trackio
-trackio show --host "$TRACKIO_HOST" > .data/trackio.log 2>&1 &
-pid_trackio=$!
+export MLFLOW_BACKEND_STORE_URI="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGPORT/$MLFLOW_DATABASE"
+export MLFLOW_ARTIFACTS_DESTINATION="s3://$RUSTFS_BUCKET/mlflow"
+export MLFLOW_S3_ENDPOINT_URL="$AWS_ENDPOINT_URL"
+echo "Starting MLflow UI at http://$MLFLOW_HOST:$MLFLOW_PORT"
+free_port "$MLFLOW_PORT" mlflow
+supervise mlflow --port "$MLFLOW_PORT" mlflow server \
+  --host "$MLFLOW_HOST" \
+  --port "$MLFLOW_PORT" \
+  --backend-store-uri "$MLFLOW_BACKEND_STORE_URI" \
+  --artifacts-destination "$MLFLOW_ARTIFACTS_DESTINATION" \
+  --allowed-hosts "localhost:*,127.0.0.1:*" \
+  --x-frame-options NONE > .data/mlflow.log 2>&1 &
+pid_mlflow=$!
+
+mlflow_wait=0
+until python -c "from urllib.request import urlopen; urlopen('http://127.0.0.1:$MLFLOW_PORT/health', timeout=1).read()" >/dev/null 2>&1; do
+  if ! kill -0 "$pid_mlflow" 2>/dev/null; then
+    echo "MLflow supervisor exited before becoming ready"
+    exit 1
+  fi
+  mlflow_wait=$((mlflow_wait + 1))
+  if [ "$mlflow_wait" -ge 120 ]; then
+    echo "MLflow not healthy after ${mlflow_wait}s"
+    cat .data/mlflow.log
+    exit 1
+  fi
+  sleep 1
+done
 
 echo "Starting frontend at http://$FRONTEND_HOST:$FRONTEND_PORT"
 free_port "$FRONTEND_PORT" frontend
@@ -348,7 +378,7 @@ pid_runners=$!
 
 shutdown() {
   echo "Stopping Runflow dev services"
-  [ -z "$pid_trackio" ] || kill "$pid_trackio" 2>/dev/null || true
+  [ -z "$pid_mlflow" ] || kill "$pid_mlflow" 2>/dev/null || true
   [ -z "$pid_runners" ] || kill "$pid_runners" 2>/dev/null || true
   [ -z "$pid_frontend" ] || kill "$pid_frontend" 2>/dev/null || true
   [ -z "$pid_backend" ] || kill "$pid_backend" 2>/dev/null || true
@@ -361,6 +391,7 @@ shutdown() {
 trap shutdown EXIT INT TERM
 wait_pids=()
 [ -z "$pid_backend" ] || wait_pids+=("$pid_backend")
+[ -z "$pid_mlflow" ] || wait_pids+=("$pid_mlflow")
 [ -z "$pid_frontend" ] || wait_pids+=("$pid_frontend")
 [ -z "$pid_runners" ] || wait_pids+=("$pid_runners")
 [ -z "$pid_rustfs" ] || wait_pids+=("$pid_rustfs")

@@ -17,7 +17,7 @@ from runner.nodes.training.common.results import (
     training_manifest_metadata,
     training_output_dir,
 )
-from runner.nodes.training.common.wandb_run import NoopWandbRun
+from runner.nodes.training.common.mlflow_run import start_mlflow_run
 
 
 class F0TrainingSettings(StrictSettings):
@@ -59,9 +59,14 @@ def _run_f0_training(settings: F0TrainingSettings, inputs: dict[str, Any], run_i
 
     manifest: TrainingManifest = inputs["training_manifest"]
     output_dir = training_output_dir(settings.output_checkpoint_dir, manifest, "f0")
+    tracker = start_mlflow_run(
+        experiment="f0_training",
+        name=f"{settings.display_name}-{run_id}",
+        config=settings.model_dump(mode="json"),
+    )
     try:
         train_f0_model(
-            run=NoopWandbRun(),
+            run=tracker,
             train_list_path=str(manifest.metadata["train_manifest_path"]),
             val_list_path=str(manifest.metadata["validation_manifest_path"]),
             run_dir=output_dir / "run",
@@ -77,6 +82,7 @@ def _run_f0_training(settings: F0TrainingSettings, inputs: dict[str, Any], run_i
             num_workers=settings.num_workers,
         )
     finally:
+        tracker.close()
         release_accelerator_memory()
     validate_f0_checkpoint_folder(output_dir)
     return publish_training_result(

@@ -37,9 +37,7 @@ export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
   const left = discovered !== undefined && emitted !== undefined
     ? Math.max(0, discovered - emitted)
     : snapshot?.remaining_items ?? "-";
-  const completed = info.is_input && discovered !== undefined && typeof left === "number"
-    ? Math.max(0, discovered - left)
-    : snapshot?.counters.tasks_completed ?? snapshot?.counters.packets_created ?? 0;
+  const completed = snapshot?.counters.items_completed ?? snapshot?.counters.tasks_completed ?? 0;
   const loaded = snapshot?.loaded ? "loaded" : "unloaded";
   const status = nodeStatusTone(snapshot?.status);
   const performance = snapshot ? servicePerformance(snapshot) : undefined;

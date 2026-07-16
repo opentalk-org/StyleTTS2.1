@@ -242,8 +242,6 @@ exhaling
 llm prompts describing samples.
 ### Do
 laughs
-laughs harder
-starts laughing
 breath
 wheezing
 whispers
@@ -254,18 +252,15 @@ clear throat
 yawn
 sighs
 exhales
-sarcastic
 curious
 chuckles
-excited
 crying
 snorts
-mischievously
 swallows
 moan
 gulps
-sings
-woo
+
+woo,ummm,ohhh,hhmmm, wwwmm - vocalization + classifier of exact phonemes i will merge it into transcript
 
 
 
@@ -318,6 +313,68 @@ models:
 - text -> voice model
 - text -> style model
 
+all modules:
+- AudioEncoder
+- Generator
+- Decoder
+- DurationPredictor
+- LatentFlowModel
+- PhonemeAligner
+- PhonemeEncoder - phoneme bert initialization
+- TextEncoder - bert initialization
 
-trick:
-- language agnostic -> language classifier on voice with negative gradient
+- StyleEncoder
+- Generator
+- Decoder
+
+- F0Extractor (+ other models to get all features)
+- FeatureLinear (linear layer)
+
+DurationPredictor is normalizing flow.
+
+LatentFlowMode model: diffusion forcing + shorctut models + flow matching + local cross attention inside model with tokens + cnn
+
+The flow model is cnn, it accept input x_t, t (0.0 - 1.0) per every token, 
+
+phonemes -PhonemeEncoder> text embeddings + text pool vector (mean)
+
+audio mel -AudioEncoder> z -StyleEncoder 1> voice embedding
+audio mel -AudioEncoder> z -StyleEncoder 2> style embedding
+
+voice prompt -TextEncoder> voice embedding
+style prompt -TextEncoder> style embedding
+
+pre and post encoders for audio and text: text -PhonemeEncoder> vectors -linear> mean, audio -AudioEncoder> vectors -Linear> mean 
+
+text embeddings + style vector + voice vector + text pool vector + pre/post vectors (apply to first/last n phonemes) -DurationPredictor> durations
+
+text embeddings duplicated + text embeddings for local cross attention + style vector + voice vector + text pool vector + pre/post vectors (apply to first / last n phonemes) -LatentFlowModel> z
+
+each conditioning (text embedding, style, voice, text pool, pre/post vectors have drop chance during training, so cfg is possible). noise -> z; conditioning works by conv channel concat at some layer + adaLN-Zero.
+
+audio mel -AudioEncoder> z, z_std -Linear> z + [f0, N] -Decoder> h + [f0] -Generator> audio
+
+z -Linear> [f0, N]
+
+losses:
+
+- mel/full spectogram losses at different scales (recon_loss)
+- GAN wave unet discriminator 9600 samples (gen_loss, disc_loss)
+- f0_loss, N_loss - f0 mse loss, N mse loss, f0 go from f0 extraction model, N is the same as styletts2 so from log of norm of mel spectogram or something like that.
+- KL loss for encoder latent (kl_loss)
+- flow matching losses for flow model 1 and 2 (shortcut models and diffusion forcing setup) (dur_flow_loss - log duration prediction, main_flow_loss)
+- phoneme aligner loss (align_s2s_loss - phoneme/time alignment loss cross entropy, align_mono_loss - hard alignment loss so soft and hard match, align_ctc_loss - obvious)
+- slm discriminator (finetuning - slm_disc_loss, slm_gen_loss)
+
+- voice encoder require that 2 audio of the same person have equal voice vector and different have the same (contrastive loss, GE2E loss) + ugmented time stretch, pitch shift, audio gain.
+- style encoder (the same audio, different cuts of it with distance weight - the same embedding, different random audio == different vector - contrastive loss, GE2E loss)
+- style encoder GAN (it classify if 2 vectors come from the same speaker, negative gradient from classifier so it doesn't contain info about speaker)
+- mean f0, N, std of f0, std of N linear classifier from style vector.
+- reencoding consistency loss (style -diffusion> generated latent audio -StyleEncoder> style)
+
+- voice / style loss, mse: (audio style - text style)^2 / maybe diffusion loss - two losses: voice_loss and style_loss - different training stage, can be trained after model.
+
+Stages:
+- AudioEncoder + Generator + All features + Decoder training + GANs
+- everything except above (up to latents from audioencoder training)
+- e2e finetuning.

@@ -27,4 +27,4 @@ class IntegrationSettings(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     hf_token: Mapped[str] = mapped_column(Text, nullable=False, default="")
     openrouter_token: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    wandb_url: Mapped[str] = mapped_column(Text, nullable=False, default="http://localhost:7860")
+    mlflow_url: Mapped[str] = mapped_column(Text, nullable=False, default="http://localhost:7860")

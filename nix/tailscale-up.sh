@@ -79,7 +79,7 @@ tailscale --socket="$sock" status || true
 
 # In userspace mode the netstack does not route inbound tailnet connections to
 # local listeners, so expose the requested ports with raw TCP forwarders. This
-# is how the hub publishes PostgreSQL, PgBouncer, and RustFS to peers.
+# is how the hub publishes PostgreSQL, PgBouncer, MLflow, and RustFS to peers.
 if [ -n "${TAILSCALE_SERVE_PORTS:-}" ]; then
   for port in $TAILSCALE_SERVE_PORTS; do
     echo "tailscale-up: serving tcp/$port over the tailnet (-> 127.0.0.1:$port)"

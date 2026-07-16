@@ -36,7 +36,7 @@ export type IntegrationSettings = {
   id: string;
   hf_token: string;
   openrouter_token: string;
-  wandb_url: string;
+  mlflow_url: string;
 };
 
 export type IntegrationSettingsPayload = Omit<IntegrationSettings, "id">;

@@ -33,7 +33,7 @@ const DEFAULT_STORAGE_FORM: StorageSettingsPayload = {
 const DEFAULT_INTEGRATION_FORM: IntegrationSettingsPayload = {
   hf_token: "",
   openrouter_token: "",
-  wandb_url: "http://localhost:7860",
+  mlflow_url: "http://localhost:7860",
 };
 
 function createSettingsForm(backendUrl: string): SettingsForm {
@@ -52,7 +52,7 @@ function storageFormFromSettings(settings: StorageSettings): StorageSettingsPayl
 }
 
 function integrationFormFromSettings(settings: IntegrationSettings): IntegrationSettingsPayload {
-  return { hf_token: settings.hf_token, openrouter_token: settings.openrouter_token, wandb_url: settings.wandb_url };
+  return { hf_token: settings.hf_token, openrouter_token: settings.openrouter_token, mlflow_url: settings.mlflow_url };
 }
 
 function storageFormsMatch(first: StorageSettingsPayload, second: StorageSettingsPayload): boolean {
@@ -67,7 +67,7 @@ function storageFormsMatch(first: StorageSettingsPayload, second: StorageSetting
 function integrationFormsMatch(first: IntegrationSettingsPayload, second: IntegrationSettingsPayload): boolean {
   return first.hf_token === second.hf_token
     && first.openrouter_token === second.openrouter_token
-    && first.wandb_url === second.wandb_url;
+    && first.mlflow_url === second.mlflow_url;
 }
 
 function settingsFormsMatch(first: SettingsForm, second: SettingsForm): boolean {
@@ -216,14 +216,14 @@ export function SettingsScreen() {
           />
         </SettingsRow>
       </SettingsSection>
-      <SettingsSection title="Weights & Biases">
-        <SettingsRow title="URL" desc="Address of the Weights & Biases experiment tracker shown on the Runs page. Leave blank to use the deployment default.">
+      <SettingsSection title="MLflow">
+        <SettingsRow title="URL" desc="Address of the MLflow experiment tracker shown on the Runs page. Leave blank to use the deployment default.">
           <Input
             filled
             placeholder="http://localhost:7860"
             className="h-9 w-[260px] font-mono"
-            value={form.integration.wandb_url}
-            onChange={(e) => setIntegration("wandb_url", e.target.value)}
+            value={form.integration.mlflow_url}
+            onChange={(e) => setIntegration("mlflow_url", e.target.value)}
           />
         </SettingsRow>
       </SettingsSection>

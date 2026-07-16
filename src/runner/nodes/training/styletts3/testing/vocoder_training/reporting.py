@@ -7,10 +7,14 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import torch
-import trackio
 from matplotlib.figure import Figure
 
-from runner.nodes.training.common.wandb_run import TrackerRun
+from runner.nodes.training.common.mlflow_run import TrackerRun
+from runner.nodes.training.styletts3.testing.vocoder_training.artifact_upload import (
+    ArtifactUploadQueue,
+)
+
+ARTIFACT_UPLOAD_WORKERS = 8
 
 
 class EpochReporter:
@@ -19,9 +23,13 @@ class EpochReporter:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.run = run
         self.sample_rate = sample_rate
+        self.artifact_uploads = ArtifactUploadQueue(run, ARTIFACT_UPLOAD_WORKERS)
 
     def track_train(self, metrics: Mapping[str, float], global_step: int, epoch: int) -> None:
         self._track_metrics("train", metrics, global_step, epoch)
+
+    def track_system(self, metrics: Mapping[str, float], global_step: int, epoch: int) -> None:
+        self._track_metrics("system", metrics, global_step, epoch)
 
     def track_validation(
         self,
@@ -29,6 +37,7 @@ class EpochReporter:
         global_step: int,
         epoch: int,
     ) -> None:
+        self.artifact_uploads.flush()
         self._track_metrics("validation", metrics, global_step, epoch)
 
     def save_validation_item(
@@ -53,26 +62,22 @@ class EpochReporter:
         sf.write(pred_path, prediction_array, self.sample_rate, subtype="PCM_16")
         _save_mel_image(image_path, ground_truth_mel, prediction_mel)
 
-        self.run.track(
-            trackio.Audio(ground_truth_array, sample_rate=self.sample_rate, caption=f"epoch {epoch} validation {index} ground truth"),
-            name=f"validation/audio/{index:02d}/gt",
-            step=global_step,
-            epoch=epoch,
+        artifact_path = f"validation/epoch_{epoch:05d}/step_{global_step:09d}/sample_{index:02d}"
+        self.artifact_uploads.enqueue(
+            gt_path,
+            artifact_path=f"{artifact_path}/ground_truth",
         )
-        self.run.track(
-            trackio.Audio(prediction_array, sample_rate=self.sample_rate, caption=f"epoch {epoch} validation {index} prediction"),
-            name=f"validation/audio/{index:02d}/pred",
-            step=global_step,
-            epoch=epoch,
+        self.artifact_uploads.enqueue(
+            pred_path,
+            artifact_path=f"{artifact_path}/prediction",
         )
-        self.run.track(
-            trackio.Image(str(image_path), caption=f"epoch {epoch} validation {index} log-mels"),
-            name=f"validation/mel/{index:02d}",
-            step=global_step,
-            epoch=epoch,
+        self.artifact_uploads.enqueue(
+            image_path,
+            artifact_path=f"{artifact_path}/mel",
         )
 
     def close(self) -> None:
+        self.artifact_uploads.close()
         self.run.close()
 
     def _track_metrics(
@@ -82,14 +87,11 @@ class EpochReporter:
         global_step: int,
         epoch: int,
     ) -> None:
+        prefixed: dict[str, float] = {}
         for name, value in metrics.items():
             assert math.isfinite(value), f"non-finite {prefix}/{name}: {value}"
-            self.run.track(
-                value,
-                name=f"{prefix}/{name}",
-                step=global_step,
-                epoch=epoch,
-            )
+            prefixed[f"{prefix}/{name}"] = value
+        self.run.track_metrics(prefixed, step=global_step, epoch=epoch)
 
 
 def _audio_array(waveform: torch.Tensor) -> np.ndarray:

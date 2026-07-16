@@ -112,6 +112,7 @@ class RunEventStore:
             state.status = "idle" if state.running_batches == 0 else "running"
             self._increment_node_counter(state, "batches_completed")
             self._add_node_counter(state, "tasks_completed", int(event.detail["input_items"]))
+            self._add_node_counter(state, "items_completed", int(event.detail["completed_items"]))
         elif event.kind == "packet_created":
             self._increment_node_counter(state, "packets_created")
         elif event.kind == "packet_delivered":

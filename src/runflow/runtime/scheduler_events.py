@@ -111,6 +111,7 @@ class SchedulerEventEmitter:
         outputs: list[dict[str, Any]],
         timings: dict[str, float],
     ) -> None:
+        completed_items = len(outputs) if node.IS_INPUT else len(batch)
         await self.context.emit_event(
             "batch_completed",
             message=f"{node.id} completed batch {batch_index}",
@@ -118,7 +119,12 @@ class SchedulerEventEmitter:
             worker_index=worker_index,
             batch_index=batch_index,
             batch_size=len(batch),
-            detail={"input_items": len(batch), "output_items": len(outputs), **timings},
+            detail={
+                "input_items": len(batch),
+                "output_items": len(outputs),
+                "completed_items": completed_items,
+                **timings,
+            },
         )
 
     async def node_failed(self, node: Node, worker_index: int, error: Exception) -> None:

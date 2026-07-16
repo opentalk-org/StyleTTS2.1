@@ -10,12 +10,16 @@ from runflow.core.node import Node
 from runflow.core.ports import PortMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
-from runner.nodes.asr.audio import extract_wav_range, wav_info
 from runner.nodes.audio_segments.writeback_helpers import audio_segment_from_dict
 from runner.nodes.datatypes import AudioPort
-from runner.nodes.models import Audio, AudioRecordRef, stable_id
+from runner.nodes.models import Audio, AudioRecordRef, AudioSegment, stable_id
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
+from shared.db.audio.ranges import (
+    SegmentReadRequest,
+    WavClip,
+    bulk_read_wav_segments,
+)
 from shared.db.audio.segment_references_crud import SegmentCursor, SegmentReference
 
 
@@ -63,20 +67,36 @@ class SpeakerSegmentSource(Node):
                 limit,
             )
             assert references, f"{self.id} expected {self.remaining_items(context)} more database segments"
-            references = bounded_reference_prefix(
+            references = bounded_clip_prefix(
                 references, self.settings.maximum_page_bytes
             )
-            audio_ids = list(dict.fromkeys(reference.audio_file_id for reference in references))
-            stored = audio_crud.bulk_read_audio_files(session, audio_ids)
+            stored_segments = [_stored_segment(reference) for reference in references]
+            clips = bulk_read_wav_segments(
+                session,
+                [
+                    SegmentReadRequest(
+                        reference.audio_file_id,
+                        segment.start,
+                        segment.end,
+                    )
+                    for reference, segment in zip(
+                        references, stored_segments, strict=True
+                    )
+                ],
+                self.settings.maximum_page_bytes,
+            )
 
         outputs = []
-        for reference in references:
+        for reference, stored_segment, clip in zip(
+            references, stored_segments, clips, strict=True
+        ):
             context.check_cancel()
             outputs.append(
                 {
                     "audio": _segment_audio(
                         reference,
-                        stored[reference.audio_file_id],
+                        stored_segment,
+                        clip,
                         self._segment_count,
                         self.settings.dataset_id,
                     )
@@ -93,33 +113,34 @@ class SpeakerSegmentSource(Node):
         return outputs
 
 
-def bounded_reference_prefix(
+def bounded_clip_prefix(
     references: list[SegmentReference], maximum_bytes: int
 ) -> list[SegmentReference]:
     selected = []
-    selected_audio_ids = set()
-    stored_bytes = 0
+    output_bytes = 0
     for reference in references:
-        additional_bytes = (
-            0
-            if reference.audio_file_id in selected_audio_ids
-            else reference.audio_byte_length
-        )
-        if selected and stored_bytes + additional_bytes > maximum_bytes:
+        clip_bytes = _estimated_clip_bytes(reference)
+        if selected and output_bytes + clip_bytes > maximum_bytes:
             break
         selected.append(reference)
-        selected_audio_ids.add(reference.audio_file_id)
-        stored_bytes += additional_bytes
+        output_bytes += clip_bytes
     return selected
 
 
-def _segment_audio(
-    reference: SegmentReference,
-    wav_bytes: bytes,
-    source_count: int,
-    dataset_id: UUID,
-) -> Audio:
-    source_ref = AudioRecordRef(
+def _estimated_clip_bytes(reference: SegmentReference) -> int:
+    start = float(reference.segment["start"])
+    end = float(reference.segment["end"])
+    duration = max(0.0, end - start)
+    bytes_per_second = reference.audio_byte_length / reference.audio_duration
+    return max(44, int(round(duration * bytes_per_second)))
+
+
+def _stored_segment(reference: SegmentReference) -> AudioSegment:
+    return audio_segment_from_dict(_source_ref(reference), reference.segment)
+
+
+def _source_ref(reference: SegmentReference) -> AudioRecordRef:
+    return AudioRecordRef(
         audio_file_id=reference.audio_file_id,
         name=reference.audio_name,
         duration=reference.audio_duration,
@@ -127,9 +148,15 @@ def _segment_audio(
         virtual=reference.audio_virtual,
         metadata=reference.audio_metadata,
     )
-    stored_segment = audio_segment_from_dict(source_ref, reference.segment)
-    info = wav_info(wav_bytes)
-    clip_bytes = extract_wav_range(wav_bytes, stored_segment.start, stored_segment.end, info)
+
+
+def _segment_audio(
+    reference: SegmentReference,
+    stored_segment: AudioSegment,
+    clip: WavClip,
+    source_count: int,
+    dataset_id: UUID,
+) -> Audio:
     duration = stored_segment.duration
     segment = replace(
         stored_segment,
@@ -147,9 +174,9 @@ def _segment_audio(
     return Audio(
         audio_file_id=reference.audio_file_id,
         name=segment.name,
-        data=clip_bytes,
-        sample_rate=int(info["sample_rate"]),
-        channels=int(info["channels"]),
+        data=clip.data,
+        sample_rate=clip.sample_rate,
+        channels=clip.channels,
         start=0.0,
         end=duration,
         confidence=segment.confidence if segment.confidence is not None else 1.0,
@@ -163,7 +190,7 @@ def _segment_audio(
             "source_segment_count": source_count,
             "dataset_id": str(dataset_id),
         },
-        byte_length=len(clip_bytes),
+        byte_length=len(clip.data),
         virtual=reference.audio_virtual,
         style_prompt=reference.style_prompt,
         voice_prompt=reference.voice_prompt,

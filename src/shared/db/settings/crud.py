@@ -44,7 +44,7 @@ def update_integration_settings(session: Session, payload: IntegrationSettingsPa
     item = get_integration_settings(session)
     item.hf_token = payload.hf_token
     item.openrouter_token = payload.openrouter_token
-    item.wandb_url = payload.wandb_url
+    item.mlflow_url = payload.mlflow_url
     session.commit()
     session.refresh(item)
     return item

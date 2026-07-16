@@ -278,6 +278,8 @@
         "POSTGRES_PASSWORD=runflow"
         "POSTGRES_PORT=5432"
         "PGBOUNCER_PORT=6432"
+        "MLFLOW_DATABASE=mlflow"
+        "MLFLOW_PORT=7860"
         "RUSTFS_ACCESS_KEY=runflow"
         "RUSTFS_SECRET_KEY=runflow-secret"
         "RUSTFS_BUCKET=runflow"
@@ -300,15 +302,15 @@
         "RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001"
         "AWS_ENDPOINT_URL=http://127.0.0.1:9000"
         "BACKEND_PORT=8000"
-        # Trackio training runs and the runflow-trackio dashboard share this dir.
-        "TRACKIO_DIR=/data/trackio"
+        "MLFLOW_HOST=0.0.0.0"
+        "MLFLOW_TRACKING_URI=http://127.0.0.1:7860"
         "RUNNER_ID=runner-1"
         "TAILSCALE_HOSTNAME=runflow-hub"
         # Vast.ai managed containers have no /dev/net/tun, so the hub uses
         # userspace tailscale and exposes its services to the tailnet with
         # `tailscale serve --tcp` (raw TCP passthrough) on these ports.
         "TAILSCALE_USERSPACE=1"
-        "TAILSCALE_SERVE_PORTS=5432 6432 9000"
+        "TAILSCALE_SERVE_PORTS=5432 6432 7860 9000"
       ];
 
       # Runner-only: the hub name it dials over the tailnet, plus userspace
@@ -424,16 +426,20 @@
         '' + builtins.readFile ./nix/runner-launch.sh;
       };
 
-      runflowTrackio = pkgs.writeShellApplication {
-        name = "runflow-trackio";
+      runflowMlflow = pkgs.writeShellApplication {
+        name = "runflow-mlflow";
         runtimeInputs = pythonTools;
         text = (pythonEnvExports pythonRuntime) + ''
           cd ${./.}
           export PYTHONPATH="${./src}"
-          export TRACKIO_DIR="''${TRACKIO_DIR:-/data/trackio}"
-          export GRADIO_SERVER_PORT="''${GRADIO_SERVER_PORT:-7860}"
-          mkdir -p "$TRACKIO_DIR"
-          exec uv run --frozen trackio show --host "''${TRACKIO_HOST:-0.0.0.0}"
+          export MLFLOW_S3_ENDPOINT_URL="''${MLFLOW_S3_ENDPOINT_URL:-''${AWS_ENDPOINT_URL:-http://127.0.0.1:9000}}"
+          exec uv run --frozen mlflow server \
+            --host "''${MLFLOW_HOST:-0.0.0.0}" \
+            --port "''${MLFLOW_PORT:-7860}" \
+            --backend-store-uri "''${MLFLOW_BACKEND_STORE_URI}" \
+            --artifacts-destination "''${MLFLOW_ARTIFACTS_DESTINATION}" \
+            --allowed-hosts "''${MLFLOW_ALLOWED_HOSTS:-localhost:*,127.0.0.1:*,100.*,''${TAILSCALE_HOSTNAME:-runflow-hub}:*,*.ts.net:*}" \
+            --x-frame-options NONE
         '';
       };
 
@@ -469,7 +475,7 @@
           runflowBackend
           runflowRunner
           runnerLaunch
-          runflowTrackio
+          runflowMlflow
         ] ++ pythonTools;
         text = builtins.readFile ./nix/entrypoint.sh;
       };
@@ -532,7 +538,7 @@
               frontendStatic
               runflowBackend
               runflowRunner
-              runflowTrackio
+              runflowMlflow
               entrypoint
             ] ++ pythonRuntime.runtimeExecutableDeps ++ pythonRuntime.runtimeLibs;
 
@@ -557,7 +563,7 @@
           };
 
           # Slim runner-only image for remote GPU workers (Salad). Drops every
-          # server binary (postgres/pgbouncer/rustfs/backend/frontend/trackio);
+          # server binary (postgres/pgbouncer/rustfs/backend/frontend/mlflow);
           # keeps the ML runtime + tailscale + proxychains. Reaches the hub's
           # database and S3 services as a client over the tailnet.
           runner-image = pkgs.dockerTools.buildLayeredImage {

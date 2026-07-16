@@ -19,7 +19,7 @@ from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AssetBundlePort, CheckpointRefPort, TrainingManifestPort, TrainingResultPort
 from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingManifest, TrainingResult, stable_id, typed_assets, typed_checkpoint
 from runner.nodes.training.common.manifest.cleanup import remove_run_dir
-from runner.nodes.training.common.wandb_run import TrackerRun, start_wandb_run
+from runner.nodes.training.common.mlflow_run import TrackerRun, start_mlflow_run
 from runner.nodes.training.styletts.finetune.node_config import build_node_config
 from shared.db.assets import crud as asset_crud
 from shared.db.connection import database_session
@@ -140,22 +140,19 @@ def _prepare_styletts_config(training_config: dict[str, Any], run_id: str) -> Pa
 def _run_styletts_train(config_path: Path) -> None:
     from runner.nodes.training.styletts.finetune.training.train_finetune import train
 
-    run = _make_wandb_run(config_path)
+    run = _make_mlflow_run(config_path)
     try:
         train(str(config_path), run=run)
     finally:
         try:
             run.close()
         except Exception:
-            logger.warning("failed to close trackio run", exc_info=True)
+            logger.warning("failed to close MLflow run", exc_info=True)
         release_accelerator_memory()
 
 
-def _make_wandb_run(config_path: Path) -> TrackerRun:
-    """Start a trackio run so the finetune metrics/samples reach the wandb-style
-    dashboard on the Runs page. The run name and hparams come from the config
-    published by the node; ``start_wandb_run`` targets the self-hosted trackio server
-    (``TRACKIO_SERVER_URL``) and falls back to a no-op run if trackio is unavailable."""
+def _make_mlflow_run(config_path: Path) -> TrackerRun:
+    """Start an MLflow run named from the training configuration."""
     try:
         styletts_yaml = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     except Exception:
@@ -172,7 +169,7 @@ def _make_wandb_run(config_path: Path) -> TrackerRun:
         "n_token": (styletts_yaml.get("model_params") or {}).get("n_token"),
         "decoder": ((styletts_yaml.get("model_params") or {}).get("decoder") or {}).get("type"),
     }
-    return start_wandb_run(project="styletts2_finetune", name=run_name, config=config)
+    return start_mlflow_run(experiment="styletts2_finetune", name=run_name, config=config)
 
 
 def _latest_epoch_result(run_id: str) -> TrainingResult:

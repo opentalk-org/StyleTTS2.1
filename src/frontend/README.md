@@ -76,7 +76,7 @@ npm run build    # tsc --noEmit && vite build
 
 - **Workflows** and **Jobs** tabs — empty placeholders (later passes); only the
   nav entries are wired.
-- **Runs** / **Cluster** — framed iframe placeholders (Trackio / Ray dashboards).
+- **Runs** / **Cluster** — framed iframe placeholders (MLflow / Ray dashboards).
 - Real charts data and backend wiring are stubbed. The segment-editor timeline
   is windowed (minimap navigation), lays out overlapping segments in stacked
   lanes, and supports drag-to-move and edge-resize of segment start/end.

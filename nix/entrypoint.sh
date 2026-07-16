@@ -7,6 +7,10 @@ export PGBOUNCER_PORT="${PGBOUNCER_PORT:-6432}"
 export POSTGRES_DB="${POSTGRES_DB:-runflow}"
 export POSTGRES_USER="${POSTGRES_USER:-runflow}"
 export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-runflow}"
+export MLFLOW_DATABASE="${MLFLOW_DATABASE:-mlflow}"
+export MLFLOW_HOST="${MLFLOW_HOST:-0.0.0.0}"
+export MLFLOW_PORT="${MLFLOW_PORT:-7860}"
+export MLFLOW_TRACKING_URI="${MLFLOW_TRACKING_URI:-http://127.0.0.1:$MLFLOW_PORT}"
 export RUSTFS_DATA="${RUSTFS_DATA:-/data/rustfs}"
 export RUSTFS_VOLUMES="${RUSTFS_VOLUMES:-$RUSTFS_DATA}"
 export RUSTFS_ADDRESS="${RUSTFS_ADDRESS:-0.0.0.0:9000}"
@@ -28,6 +32,9 @@ export BACKEND_PORT="${BACKEND_PORT:-8000}"
 export DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGBOUNCER_PORT/$POSTGRES_DB"
 export RUNFLOW_PGBOUNCER_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGBOUNCER_PORT/$POSTGRES_DB"
 export RUNFLOW_NOTIFY_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGPORT/$POSTGRES_DB"
+export MLFLOW_BACKEND_STORE_URI="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGPORT/$MLFLOW_DATABASE"
+export MLFLOW_ARTIFACTS_DESTINATION="s3://$RUSTFS_BUCKET/mlflow"
+export MLFLOW_S3_ENDPOINT_URL="$AWS_ENDPOINT_URL"
 
 # Join the self-hosted Headscale tailnet as the hub so remote runners can reach
 # this box's PostgreSQL/PgBouncer/RustFS. Vast.ai containers have no /dev/net/tun, so
@@ -36,7 +43,7 @@ export RUNFLOW_NOTIFY_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRE
 # path working unchanged.
 export TAILSCALE_HOSTNAME="${TAILSCALE_HOSTNAME:-runflow-hub}"
 export TAILSCALE_USERSPACE="${TAILSCALE_USERSPACE:-1}"
-export TAILSCALE_SERVE_PORTS="${TAILSCALE_SERVE_PORTS:-$PGPORT $PGBOUNCER_PORT 9000}"
+export TAILSCALE_SERVE_PORTS="${TAILSCALE_SERVE_PORTS:-$PGPORT $PGBOUNCER_PORT $MLFLOW_PORT 9000}"
 tailscale-up
 
 pgbouncer_dir=/tmp/pgbouncer
@@ -88,6 +95,12 @@ if ! psql -h "$PGHOST" -p "$PGPORT" -d postgres -tAc \
   "SELECT 1 FROM pg_database WHERE datname = '$POSTGRES_DB'" \
   | grep -q 1; then
   createdb -h "$PGHOST" -p "$PGPORT" -O "$POSTGRES_USER" "$POSTGRES_DB"
+fi
+
+if ! psql -h "$PGHOST" -p "$PGPORT" -d postgres -tAc \
+  "SELECT 1 FROM pg_database WHERE datname = '$MLFLOW_DATABASE'" \
+  | grep -q 1; then
+  createdb -h "$PGHOST" -p "$PGPORT" -O "$POSTGRES_USER" "$MLFLOW_DATABASE"
 fi
 
 cat > "$pgbouncer_userlist" <<EOF
@@ -145,6 +158,19 @@ if ! aws --endpoint-url "$AWS_ENDPOINT_URL" s3api head-bucket \
     --bucket "$RUSTFS_BUCKET" >/dev/null
 fi
 
+echo "Starting MLflow UI on port $MLFLOW_PORT"
+runflow-mlflow > /tmp/mlflow.log 2>&1 &
+pid_mlflow=$!
+
+until python -c "from urllib.request import urlopen; urlopen('http://127.0.0.1:$MLFLOW_PORT/health', timeout=1).read()" >/dev/null 2>&1; do
+  if ! kill -0 "$pid_mlflow" 2>/dev/null; then
+    echo "MLflow exited before becoming ready"
+    cat /tmp/mlflow.log
+    exit 1
+  fi
+  sleep 1
+done
+
 echo "Starting Runflow backend"
 runflow-backend &
 pid_backend=$!
@@ -161,17 +187,13 @@ echo "Starting Runflow runners"
 runflow-runner-launch &
 pid_runners=$!
 
-echo "Starting Trackio UI on port ${GRADIO_SERVER_PORT:-7860}"
-runflow-trackio &
-pid_trackio=$!
-
 shutdown() {
   echo "Stopping services"
-  kill "$pid_backend" "$pid_runners" "$pid_trackio" 2>/dev/null || true
+  kill "$pid_backend" "$pid_runners" "$pid_mlflow" 2>/dev/null || true
   sleep 1
   kill "$pid_rustfs" "$pid_pgbouncer" 2>/dev/null || true
   pg_ctl -D "$PGDATA" stop -m fast || true
 }
 
 trap shutdown EXIT INT TERM
-wait -n "$pid_backend" "$pid_runners" "$pid_rustfs" "$pid_pgbouncer"
+wait -n "$pid_backend" "$pid_runners" "$pid_mlflow" "$pid_rustfs" "$pid_pgbouncer"

@@ -13,10 +13,10 @@ from runflow.runtime.cancellation import check_cancel
 from runner.nodes.training.asr.impl.config_load import blank_index_from_config
 from runner.nodes.training.asr.impl.dataset import build_asr_dataloaders
 from runner.nodes.training.asr.impl.optimizer import build_asr_optimizer
-from runner.nodes.training.common.wandb_run import TrackerRun
+from runner.nodes.training.common.mlflow_run import TrackerRun
 from runner.nodes.training.styletts.finetune.training.asr_train_models import init_ASR_model_from_config, load_ASR_models
 from runner.nodes.text.runtime.symbols import build_word_index_dictionary
-from runner.nodes.training.styletts.finetune.studio.finetune_wandb_logger import FinetuneWandbLogger
+from runner.nodes.training.styletts.finetune.studio.finetune_mlflow_logger import FinetuneMlflowLogger
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ def train_asr_model(
         raise ValueError("asr_val_no_batches")
 
     steps_per_epoch = len(train_loader)
-    wandb_metrics = FinetuneWandbLogger(
+    mlflow_metrics = FinetuneMlflowLogger(
         run,
         schedule_epochs_total=epochs,
         batches_per_epoch=steps_per_epoch,
@@ -179,7 +179,7 @@ def train_asr_model(
                 lr = optimizer.param_groups[0]["lr"]
                 batch_pbar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{lr:.2e}")
 
-                wandb_metrics.log_train(
+                mlflow_metrics.log_train(
                     epoch + 1,
                     global_step,
                     {
@@ -228,7 +228,7 @@ def train_asr_model(
 
             val_metrics = {f"val_{k}": float(np.mean(v)) for k, v in eval_losses.items()}
             val_metrics["val_lr"] = optimizer.param_groups[0]["lr"]
-            wandb_metrics.log_val(epoch + 1, global_step, val_metrics)
+            mlflow_metrics.log_val(epoch + 1, global_step, val_metrics)
 
             tr_l = float(np.mean(train_losses["loss"]))
             logger.info(
