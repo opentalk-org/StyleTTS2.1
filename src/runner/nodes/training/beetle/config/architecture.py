@@ -201,6 +201,8 @@ class ArchitectureConfig(StrictConfigModel):
     def validate_audio_rates(self) -> "ArchitectureConfig":
         if self.posterior.downsample_rate != 2:
             raise ValueError("posterior downsample_rate must equal 2")
+        if self.posterior.downsample_kernel_size != 4:
+            raise ValueError("posterior downsample_kernel_size must equal 4")
         if self.feature.upsample_rate != 2:
             raise ValueError("feature upsample_rate must equal 2")
         return self
