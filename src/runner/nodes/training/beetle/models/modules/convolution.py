@@ -152,3 +152,90 @@ class DilatedResidualStack(nn.Module):
         for block in self.blocks:
             features = block(features, mask)
         return features * mask
+
+
+class ResBlock1D(nn.Module):
+    def __init__(
+        self,
+        channels: int,
+        kernel_size: int,
+        dilations: tuple[int, ...],
+    ) -> None:
+        super().__init__()
+        self.convs1 = nn.ModuleList(
+            nn.Conv1d(
+                channels,
+                channels,
+                kernel_size,
+                dilation=dilation,
+                padding=same_padding(kernel_size, dilation),
+            )
+            for dilation in dilations
+        )
+        self.convs2 = nn.ModuleList(
+            nn.Conv1d(
+                channels,
+                channels,
+                kernel_size,
+                padding=same_padding(kernel_size, 1),
+            )
+            for _ in dilations
+        )
+
+    def forward(self, features: Tensor) -> Tensor:
+        for first, second in zip(self.convs1, self.convs2, strict=True):
+            residual = first(F.leaky_relu(features, negative_slope=0.1))
+            residual = second(F.leaky_relu(residual, negative_slope=0.1))
+            features = features + residual
+        return features
+
+
+class FrequencyShuffleBlock(nn.Module):
+    def __init__(self, channels: int) -> None:
+        super().__init__()
+        if channels % 2:
+            raise ValueError("frequency shuffle channels must be even")
+        self.channels = channels
+        half_channels = channels // 2
+        self.convs = nn.Sequential(
+            nn.LeakyReLU(0.1),
+            nn.Conv2d(half_channels, channels, 3, padding=1),
+            nn.LeakyReLU(0.1),
+            nn.Conv2d(channels, half_channels, 3, padding=1),
+        )
+
+    def forward(self, features: Tensor) -> Tensor:
+        batch, channels, frequency, frames = features.shape
+        if channels != self.channels:
+            raise ValueError("frequency shuffle input channels do not match block")
+        shuffled = features.view(batch, 2, channels // 2, frequency, frames)
+        shuffled = shuffled.transpose(1, 2).reshape(
+            batch,
+            channels,
+            frequency,
+            frames,
+        )
+        skip, active = shuffled.chunk(2, dim=1)
+        return torch.cat((skip, self.convs(active)), dim=1)
+
+
+class FrequencyUpsample(nn.Module):
+    def __init__(
+        self,
+        input_channels: int,
+        output_channels: int,
+        frequency_kernel_size: int,
+        frequency_padding: int = 1,
+    ) -> None:
+        super().__init__()
+        self.convolution = nn.ConvTranspose2d(
+            input_channels,
+            output_channels,
+            (frequency_kernel_size, 3),
+            stride=(2, 1),
+            padding=(frequency_padding, 1),
+        )
+
+    def forward(self, features: Tensor) -> Tensor:
+        activated = F.leaky_relu(features, negative_slope=0.1)
+        return self.convolution(activated)

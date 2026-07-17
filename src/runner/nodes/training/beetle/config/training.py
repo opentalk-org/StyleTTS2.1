@@ -69,6 +69,22 @@ class RuntimeConfig(StrictConfigModel):
     log_every_steps: int = Field(gt=0)
 
 
+class ComplexityConfig(StrictConfigModel):
+    minimum_inference_parameters: int = Field(gt=0)
+    maximum_inference_parameters: int = Field(gt=0)
+    latent_audio_max_gflops_per_second: float = Field(gt=0)
+    benchmark_seconds: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_parameter_bounds(self) -> "ComplexityConfig":
+        if self.minimum_inference_parameters >= self.maximum_inference_parameters:
+            raise ValueError(
+                "minimum_inference_parameters must be below "
+                "maximum_inference_parameters"
+            )
+        return self
+
+
 class ValidationConfig(StrictConfigModel):
     every_steps: int = Field(gt=0)
     sample_count: int = Field(gt=0)
@@ -82,6 +98,7 @@ class CheckpointConfig(StrictConfigModel):
 class BeetleConfig(StrictConfigModel):
     audio: AudioConfig
     architecture: ArchitectureConfig
+    complexity: ComplexityConfig
     data: DataConfig
     runtime: RuntimeConfig
     validation: ValidationConfig

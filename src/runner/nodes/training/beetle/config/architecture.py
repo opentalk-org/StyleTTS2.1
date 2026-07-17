@@ -1,5 +1,3 @@
-from math import prod
-
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -80,28 +78,46 @@ class DecoderConfig(StrictConfigModel):
 
 class GeneratorConfig(StrictConfigModel):
     input_channels: int = Field(gt=0)
-    initial_channels: int = Field(gt=0)
-    upsample_rates: tuple[int, ...] = Field(min_length=1)
-    upsample_kernel_sizes: tuple[int, ...] = Field(min_length=1)
+    frame_channels: int = Field(gt=0)
+    temporal_channels: int = Field(gt=0)
+    temporal_upsample_rate: int = Field(gt=0)
+    temporal_upsample_kernel_size: int = Field(gt=1)
     resblock_kernel_sizes: tuple[int, ...] = Field(min_length=1)
     resblock_dilations: tuple[tuple[int, ...], ...] = Field(min_length=1)
+    initial_frequency_bins: int = Field(gt=0)
+    frequency_upsample_kernel_sizes: tuple[int, ...] = Field(min_length=1)
     harmonic_count: int = Field(gt=0)
     subbands: int = Field(gt=0)
     istft_n_fft: int = Field(gt=0)
     istft_hop_length: int = Field(gt=0)
+    source_n_fft: int = Field(gt=0)
+    source_hop_length: int = Field(gt=0)
 
     @model_validator(mode="after")
     def validate_generator_geometry(self) -> "GeneratorConfig":
-        if len(self.upsample_rates) != len(self.upsample_kernel_sizes):
-            raise ValueError("upsample rates and kernels must have equal lengths")
         if len(self.resblock_kernel_sizes) != len(self.resblock_dilations):
             raise ValueError("each resblock kernel needs a dilation sequence")
+        if len(self.frequency_upsample_kernel_sizes) != 3:
+            raise ValueError("iSTFTNet2-MB requires three frequency upsampling stages")
+        if self.temporal_channels % 4:
+            raise ValueError("generator temporal_channels must be divisible by four")
         if self.istft_n_fft % self.subbands != 0:
             raise ValueError("istft_n_fft must be divisible by subbands")
+        frequency_bins = self.initial_frequency_bins
+        last_stage = len(self.frequency_upsample_kernel_sizes) - 1
+        for index, kernel_size in enumerate(self.frequency_upsample_kernel_sizes):
+            padding = 0 if index == last_stage else 1
+            frequency_bins = (frequency_bins - 1) * 2 - 2 * padding + kernel_size
+        if frequency_bins != self.istft_n_fft // 2 + 3:
+            raise ValueError("frequency upsampling must provide two iSTFT guard bins")
+        if self.output_hop() % self.source_hop_length:
+            raise ValueError("source_hop_length must divide output hop")
+        if self.output_hop() // self.source_hop_length != self.temporal_upsample_rate:
+            raise ValueError("harmonic-source frames must match temporal upsampling")
         return self
 
     def output_hop(self) -> int:
-        return prod(self.upsample_rates) * self.istft_hop_length
+        return self.temporal_upsample_rate * self.istft_hop_length * self.subbands
 
 
 class PhonemeConfig(StrictConfigModel):

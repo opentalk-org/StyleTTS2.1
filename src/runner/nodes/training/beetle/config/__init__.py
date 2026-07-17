@@ -9,6 +9,7 @@ from .load import config_fingerprint, load_config
 from .training import (
     BeetleConfig,
     CheckpointConfig,
+    ComplexityConfig,
     LossWeights,
     OptimizerConfig,
     RuntimeConfig,
@@ -21,6 +22,7 @@ __all__ = [
     "AudioConfig",
     "BeetleConfig",
     "CheckpointConfig",
+    "ComplexityConfig",
     "ConditionDropoutConfig",
     "ConditioningConfig",
     "DataConfig",
