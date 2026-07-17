@@ -51,6 +51,16 @@ def sample_flow_training_case(
         )
         < base_case_probability
     )
+    if 0 < base_case_probability < 1 and mask.sum() >= 2:
+        flat_mask = mask.flatten()
+        flat_base = is_base.flatten()
+        valid_indices = torch.nonzero(flat_mask, as_tuple=False).flatten()
+        valid_base = flat_base.masked_select(flat_mask)
+        if not torch.any(valid_base):
+            flat_base[valid_indices[0]] = True
+        if torch.all(valid_base):
+            flat_base[valid_indices[-1]] = False
+        is_base = flat_base.view_as(is_base)
     continuous_time = torch.rand(
         scalar_shape,
         dtype=latent.dtype,

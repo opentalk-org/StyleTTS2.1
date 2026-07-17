@@ -106,6 +106,9 @@ all logging, validation, checkpoints, and loss weights by optimizer step.
 Validation saves stage-appropriate audio samples and typed metadata. Checkpoints
 include model, optimizer, scaler, EMA, discriminator, accumulated gradients,
 sampler cursor, and RNG state so every stage resumes without losing a step.
+Mixed Stage 2 flow batches always contain both analytic base tokens and EMA
+shortcut tokens when at least two valid tokens exist, keeping their separately
+weighted losses active in the same optimizer step.
 
 ## Budgets
 

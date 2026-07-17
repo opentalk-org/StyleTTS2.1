@@ -138,10 +138,10 @@
 - Produces: `Stage2Models`, `build_stage2_models(config, stage1)`, `Stage2LossInput`, `Stage2LossOutput`, and `compute_stage2_losses()`.
 - Consumes: every Stage 2 model/loss and frozen Stage 1 AudioEncoder.
 
-- [ ] Create one mixed synthetic batch containing all conditioning combinations and grouped style/voice views. Compute every approved Stage 2 loss in one forward/backward pass.
-- [ ] Assert Stage 1 AudioEncoder, Decoder, Generator, FeatureLinear, discriminators, and prompt TextEncoder have no gradients; every intended Stage 2 parameter has finite gradients.
-- [ ] Implement typed model/loss composition with no raw dictionary outputs and no missing-weight defaults.
-- [ ] Run parameter reporting and tune only configuration widths/depths until inference-time Beetle modules total 100M–150M, excluding TextEncoder and training-only modules.
-- [ ] Run the complete temporary Stage 2 suite; expect PASS, then remove `/tmp/test_beetle_stage2.py` with `apply_patch`.
-- [ ] Run compileall, line counts, and `git diff --check`; expect success.
+- [x] Create one mixed synthetic batch containing all conditioning combinations and grouped style/voice views. Compute every approved Stage 2 loss in one forward/backward pass.
+- [x] Assert Stage 1 AudioEncoder, Decoder, Generator, FeatureLinear, discriminators, and prompt TextEncoder have no gradients; every intended Stage 2 parameter has finite gradients.
+- [x] Implement typed model/loss composition with no raw dictionary outputs and no missing-weight defaults.
+- [x] Run parameter reporting and tune only configuration widths/depths until inference-time Beetle modules total 100M–150M, excluding TextEncoder and training-only modules.
+- [x] Run the complete temporary Stage 2 suite; expect PASS. Keep temporary verification outside the repository.
+- [x] Run compileall, line counts, and `git diff --check`; expect success.
 - [ ] Commit: `git commit -m 'feat: complete beetle stage2 models'`.

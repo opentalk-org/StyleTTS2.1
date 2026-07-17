@@ -6,6 +6,22 @@ from ..models.model import Stage1Models, Stage1Synthesis
 from ..models.modules.audio import AcousticFeatures
 from .acoustic import masked_f0_mse, masked_kl_standard_normal, masked_n_mse
 from .adversarial import discriminator_step_loss, generator_step_loss
+from .stage2 import (
+    Stage2LossInput,
+    Stage2LossOutput,
+    Stage2LossWeights,
+    compute_stage2_losses,
+)
+
+__all__ = [
+    "Stage1Losses",
+    "Stage1LossWeights",
+    "Stage2LossInput",
+    "Stage2LossOutput",
+    "Stage2LossWeights",
+    "compute_stage1_losses",
+    "compute_stage2_losses",
+]
 
 
 @dataclass(frozen=True)

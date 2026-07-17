@@ -18,11 +18,12 @@ def base_flow_loss(prediction: Tensor, target: Tensor, mask: Tensor) -> Tensor:
 
 
 def shortcut_loss(
-    online_model: nn.Module,
+    prediction: Tensor,
     ema_model: nn.Module,
     sample: FlowTrainingSample,
     conditions: ProjectedConditions,
-    mask: Tensor,
+    model_mask: Tensor,
+    loss_mask: Tensor,
     minimum_steps: int,
 ) -> Tensor:
     if minimum_steps <= 1 or minimum_steps & (minimum_steps - 1):
@@ -40,23 +41,15 @@ def shortcut_loss(
             sample.time,
             query_step,
             conditions,
-            mask,
+            model_mask,
         )
-        midpoint = (sample.state + half_step * first_velocity) * mask
+        midpoint = (sample.state + half_step * first_velocity) * model_mask
         second_velocity = ema_model(
             midpoint,
             sample.time + half_step,
             query_step,
             conditions,
-            mask,
+            model_mask,
         )
         shortcut_target = (first_velocity + second_velocity) / 2
-        target = torch.where(sample.step == 0, sample.velocity, shortcut_target)
-    prediction = online_model(
-        sample.state,
-        sample.time,
-        sample.step,
-        conditions,
-        mask,
-    )
-    return base_flow_loss(prediction, target.detach(), mask)
+    return base_flow_loss(prediction, shortcut_target.detach(), loss_mask)
