@@ -8,7 +8,7 @@ from shared.db.assets import crud as asset_crud
 from shared.db.connection import database_session
 
 from ..config import BeetleConfig, config_fingerprint, load_config
-from ..data import DatabaseSegmentIndex
+from ..data import DatabaseSegmentIndex, ValidationLoader, ValidationSource
 from ..models.modules.aligner import PhonemeAligner
 from ..models.modules.alignment_backbone import StyleTTSAlignerBackbone
 from ..models.modules.audio import F0Extractor
@@ -96,6 +96,7 @@ class RunPreparation:
     config: BeetleConfig
     config_fingerprint: str
     index: DatabaseSegmentIndex
+    validation: ValidationSource
     checkpoint_manager: CheckpointManager
     resume: CheckpointPayload | None
 
@@ -122,6 +123,11 @@ def prepare_run(
         StageKind.STAGE3: 3,
     }[stage]
     index.report.require(stage_number, config.data.sentence_probability)
+    validation = ValidationLoader.from_database(config).load_source(
+        stage_number,
+        config.validation.audio_file_ids,
+    )
+    callbacks.check_cancel()
     manager = CheckpointManager(output_path / "checkpoints")
     resume = manager.load(resume_path) if resume_path is not None else None
     if resume is not None:
@@ -131,4 +137,12 @@ def prepare_run(
             fingerprint,
             index.fingerprint,
         )
-    return RunPreparation(stage, config, fingerprint, index, manager, resume)
+    return RunPreparation(
+        stage,
+        config,
+        fingerprint,
+        index,
+        validation,
+        manager,
+        resume,
+    )

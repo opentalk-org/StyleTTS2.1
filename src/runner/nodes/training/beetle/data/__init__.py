@@ -19,6 +19,13 @@ from .records import (
     WordBoundary,
 )
 from .sampling import ContinuousBatchPlanner, PlannerState, derive_seed
+from .validation import ValidationLoader
+from .validation_types import (
+    StoredValidationAudio,
+    ValidationRecording,
+    ValidationSegment,
+    ValidationSource,
+)
 
 __all__ = [
     "BeetleBatch",
@@ -40,6 +47,11 @@ __all__ = [
     "SegmentKey",
     "StagePools",
     "WordBoundary",
+    "StoredValidationAudio",
+    "ValidationLoader",
+    "ValidationRecording",
+    "ValidationSegment",
+    "ValidationSource",
     "derive_seed",
     "build_data_pipeline",
 ]
