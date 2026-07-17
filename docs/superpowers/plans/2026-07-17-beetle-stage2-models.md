@@ -64,14 +64,14 @@
 - Modify temporarily: `/tmp/test_beetle_stage2.py`
 
 **Interfaces:**
-- Produces: verified flow transforms, `DurationPredictor.log_prob(log_duration, condition, mask)`, `DurationPredictor.sample(condition, mask, generator)`, and `duration_flow_loss()`.
+- Produces: verified flow transforms, `DurationPredictor.log_prob(duration, condition, mask, generator)`, `DurationPredictor.sample(condition, mask, generator)`, and `duration_flow_loss()`. Likelihood input is positive discrete duration; variational dequantization and the log transform belong inside the predictor.
 - Consumes: conventions locked in `papers/duration-flow.md`; implementation must cite those sections.
 
-- [ ] Add an audit test that refuses to import duration code unless the research note contains source commit and exact log-determinant convention.
-- [ ] Add transform property tests: forward then reverse reconstructs valid values within tolerance, summed forward/reverse log determinants cancel, masked tokens are identity, and finite-difference Jacobians match analytic log determinants for a tiny tensor.
-- [ ] Add NLL tests against a manually computed base-density/change-of-variables case and verify padding does not change normalized loss.
-- [ ] Implement only the verified Piper/VITS transform sequence and reverse path; do not replace it with Gaussian regression.
-- [ ] Run property, likelihood, sampling, and backward tests; expect PASS and positive sampled durations after the documented inverse transform.
+- [x] Add an audit test that refuses to import duration code unless the research note contains source commit and exact log-determinant convention.
+- [x] Add transform property tests: forward then reverse reconstructs valid values within tolerance, summed forward/reverse log determinants cancel, masked tokens are identity, and finite-difference Jacobians match analytic log determinants for a tiny tensor.
+- [x] Add NLL tests against a manually computed base-density/change-of-variables case and verify padding does not change normalized loss.
+- [x] Implement only the verified Piper/VITS transform sequence and reverse path; do not replace it with Gaussian regression.
+- [x] Run property, likelihood, sampling, and backward tests; expect PASS and positive sampled durations after the documented inverse transform.
 - [ ] Commit: `git commit -m 'feat: add beetle duration flow'`.
 
 ### Task 4: LatentFlowModel and merged flow objectives

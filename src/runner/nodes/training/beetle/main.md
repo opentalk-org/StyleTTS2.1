@@ -18,8 +18,10 @@ callbacks without rewriting training behavior.
 - `Generator`: separate style-free iSTFTNet2-MB generator using the current
   native-hop-300 temporal, harmonic-source, 1D/2D, multiband iSTFT, and PQMF
   geometry.
-- `DurationPredictor`: Piper/VITS conditional normalizing flow, including
-  likelihood and reverse sampling paths.
+- `DurationPredictor`: Piper/VITS conditional normalizing flow with variational
+  dequantization of positive integer durations, exact likelihood, and reverse
+  sampling paths. Sampling converts the returned log-duration with
+  `ceil(exp(log_duration))` and masks padding before alignment expansion.
 - `LatentFlowModel`: temporal CNN combining flow matching, diffusion forcing,
   and shortcut training. It receives `x_t`, independent tokenwise `t`, shortcut
   step `d`, masks, AdaLN conditioning, and condition-token concatenation at
