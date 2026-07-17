@@ -214,5 +214,5 @@ class Stage2Trainer:
 
 
 def _named_frozen_modules(models: Stage2Models) -> tuple[tuple[str, nn.Module], ...]:
-    names = ("audio_encoder", "f0_extractor", "aligner", "text_encoder")
+    names = ("audio_encoder", "f0_extractor", "text_encoder")
     return tuple(zip(names, frozen_stage2_modules(models), strict=True))

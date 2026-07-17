@@ -104,8 +104,12 @@ architecture:
     base_case_probability: 0.75
     ema_decay: 0.999
   aligner:
-    checkpoint_asset_id: styletts2-aligner
+    checkpoint_asset_id: 00000000-0000-0000-0000-000000000000
+    checkpoint_filename: epoch_00080.pth
     hidden_channels: 256
+    layer_count: 6
+    token_embedding_channels: 256
+    frame_reduction: 2
     blank_id: 0
   text_encoder:
     pretrained_model: bert-base-multilingual-cased

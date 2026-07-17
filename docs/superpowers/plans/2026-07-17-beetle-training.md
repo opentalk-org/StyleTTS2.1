@@ -100,7 +100,11 @@ src/runner/nodes/training/beetle/
 │   ├── stage1.py
 │   ├── stage2.py
 │   ├── stage3.py
-│   └── runtime.py
+│   ├── runtime.py
+│   └── execution/
+│       ├── __init__.py
+│       ├── stages.py
+│       └── support.py
 └── scripts/
     ├── __init__.py
     ├── common.py

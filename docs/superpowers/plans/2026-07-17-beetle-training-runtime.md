@@ -150,6 +150,7 @@
 
 **Files:**
 - Create: `src/runner/nodes/training/beetle/training/runtime.py`
+- Create: `src/runner/nodes/training/beetle/training/execution/`
 - Create: `src/runner/nodes/training/beetle/scripts/__init__.py`
 - Create: `src/runner/nodes/training/beetle/scripts/common.py`
 - Create: `src/runner/nodes/training/beetle/scripts/train_stage1.py`
@@ -162,13 +163,13 @@
 - Produces: `prepare_run(stage, config_path, output_path, resume_path)`, `run_stage(...)`, and three `main(argv)` entry points.
 - Consumes: strict config, database preflight/index, model bundles, stage trainers, callbacks, and checkpoints.
 
-- [ ] Test each CLI parser with required config/output arguments and optional resume; reject unknown keys and any configuration containing an epoch field.
-- [ ] Test an empty database/index preflight exits with stage-specific eligibility counts before monkeypatched model constructors can run.
-- [ ] Implement assembly order: load/fingerprint config, build/fingerprint compact data index, validate stage eligibility and checkpoint, then load local-only phoneme BERT resources, allocate models/optimizers, and start the continuous loop.
-- [ ] Keep `prepare_run()` data/checkpoint-only so empty-data preflight completes before local phoneme BERT or any other model allocation.
-- [ ] Implement signal-driven cancellation and concise step/loss/checkpoint logging through `StandaloneCallbacks`.
-- [ ] Document exact Nix launch commands, database requirements, stage dependencies, resume behavior, absence of validation, parameter-count exclusions, and the future callback-only Runflow adapter seam.
-- [ ] Run CLI and assembly tests through Nix; expect PASS.
+- [x] Test each CLI parser with required config/output arguments and optional resume; reject unknown keys and any configuration containing an epoch field.
+- [x] Test an empty database/index preflight exits with stage-specific eligibility counts before monkeypatched model constructors can run.
+- [x] Implement assembly order: load/fingerprint config, build/fingerprint compact data index, validate stage eligibility and checkpoint, then load local-only phoneme BERT resources, allocate models/optimizers, and start the continuous loop.
+- [x] Keep `prepare_run()` data/checkpoint-only so empty-data preflight completes before local phoneme BERT or any other model allocation.
+- [x] Implement signal-driven cancellation and concise step/loss/checkpoint logging through `StandaloneCallbacks`.
+- [x] Document exact Nix launch commands, database requirements, stage dependencies, resume behavior, absence of validation, parameter-count exclusions, and the future callback-only Runflow adapter seam.
+- [x] Run CLI and assembly tests through Nix; expect PASS.
 - [ ] Commit: `git commit -m 'feat: add beetle training scripts'`.
 
 ### Task 9: Integrated verification and cleanup

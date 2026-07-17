@@ -26,7 +26,8 @@ callbacks without rewriting training behavior.
   and shortcut training. It receives `x_t`, independent tokenwise `t`, shortcut
   step `d`, masks, AdaLN conditioning, and condition-token concatenation at
   configured layers.
-- `PhonemeAligner`: StyleTTS2-compatible pretrained aligner.
+- `PhonemeAligner`: StyleTTS2-compatible pretrained aligner loaded from the
+  configured checkpoint-folder UUID and filename through shared asset CRUD.
 - `PhonemeEncoder`: custom BERT loaded with its tokenizer from one configured
   local directory. No additional phoneme transformer family is added.
 - `LatentPhonemeEncoder`, `DurationPhonemeEncoder`, and
@@ -103,10 +104,12 @@ There is no Wave-U-Net, WavLM/SLM discriminator, or invented model family.
 1. Train AudioEncoder, FeatureLinear, Decoder, Generator, and both current
    StyleTTS discriminator families.
 2. Freeze Stage 1 and train the phoneme/context encoders, style/voice encoders,
-   DurationPredictor, LatentFlowModel, and aligner objectives against posterior
-   latents. Decoder, Generator, FeatureLinear, and discriminators are unused.
+   DurationPredictor, LatentFlowModel, and the pretrained PhonemeAligner against
+   posterior latents. Decoder, Generator, FeatureLinear, and discriminators are
+   unused.
 3. End-to-end fine-tuning with differentiable latent generation. Train both
-   current discriminator families in this stage.
+   current discriminator families and continue fine-tuning the PhonemeAligner
+   in this stage.
 
 Stage 3 runs two audio paths per batch: posterior reconstruction and one-step
 text-conditioned shortcut generation from noise. Both paths use the same

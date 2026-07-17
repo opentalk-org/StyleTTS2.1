@@ -119,13 +119,14 @@ class Stage2Models(nn.Module):
             self.latent_flow,
         )
         training_modules = (
+            self.aligner,
             self.style_speaker_classifier,
             self.style_statistics_head,
             self.voice_ge2e,
             self.style_ge2e,
         )
         inference, inference_ids = _parameter_count(inference_modules)
-        helper, helper_ids = _parameter_count((self.aligner, self.f0_extractor))
+        helper, helper_ids = _parameter_count((self.f0_extractor,))
         training, training_ids = _parameter_count(training_modules)
         text, text_ids = _parameter_count((self.text_encoder,))
         categories = (inference_ids, helper_ids, training_ids, text_ids)
@@ -152,7 +153,6 @@ def build_stage2_models(
     ):
         raise ValueError("text BERT hidden width does not match text configuration")
     stage1.requires_grad_(False)
-    dependencies.aligner.requires_grad_(False)
     text_encoder = TextEncoder(
         dependencies.text_bert,
         architecture.text_encoder.projection_channels,

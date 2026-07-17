@@ -265,7 +265,6 @@ class Stage3Trainer(Stage1Trainer):
     def _frozen_modules(self) -> tuple[nn.Module, ...]:
         return (
             self.models.f0_extractor,
-            self.stage2_models.aligner,
             self.stage2_models.text_encoder,
         )
 
@@ -276,7 +275,6 @@ class Stage3Trainer(Stage1Trainer):
             for name, module in named_trainable_stage2_modules(self.stage2_models)
         )
         helpers = (
-            ("aligner", StateKind.FROZEN_MODEL, self.stage2_models.aligner),
             ("text_encoder", StateKind.FROZEN_MODEL, self.stage2_models.text_encoder),
             ("latent_flow", StateKind.EMA, self.ema_latent_flow),
         )

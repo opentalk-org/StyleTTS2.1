@@ -56,12 +56,12 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
             posterior = models.audio_encoder(
                 values.mel, values.frame_mask, target_generator
             )
-            alignment = models.aligner(
-                values.mel,
-                values.frame_mask,
-                values.phoneme_ids,
-                values.phoneme_mask,
-            )
+        alignment = models.aligner(
+            values.mel,
+            values.frame_mask,
+            values.phoneme_ids,
+            values.phoneme_mask,
+        )
         phoneme = models.phoneme_encoder(values.phoneme_ids, values.phoneme_mask)
         duration_tokens = models.duration_phoneme_encoder(phoneme.tokens, phoneme.mask)
         duration_nll = models.duration_predictor.log_prob(

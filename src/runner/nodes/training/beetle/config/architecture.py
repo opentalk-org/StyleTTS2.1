@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -201,8 +203,12 @@ class LatentFlowConfig(StrictConfigModel):
 
 
 class AlignerConfig(StrictConfigModel):
-    checkpoint_asset_id: str = Field(min_length=1)
+    checkpoint_asset_id: UUID
+    checkpoint_filename: str = Field(min_length=1)
     hidden_channels: int = Field(gt=0)
+    layer_count: int = Field(gt=0)
+    token_embedding_channels: int = Field(gt=0)
+    frame_reduction: int = Field(gt=0)
     blank_id: int = Field(ge=0)
 
 

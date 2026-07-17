@@ -22,6 +22,7 @@ from .checkpoint import (
     restore_named_states,
     validate_resume_fingerprints,
 )
+from .execution import RuntimeCallbacks, run_stage
 from .loop import LoopIntervals, StageTrainer, TrainingPipeline, run_continuously
 from .optimizer import (
     OptimizerSet,
@@ -30,7 +31,13 @@ from .optimizer import (
     learning_rate_schedule,
     loss_weight_schedule,
 )
-from .runtime import PhonemeResources, load_phoneme_resources
+from .runtime import (
+    PhonemeResources,
+    RunPreparation,
+    TextResources,
+    load_phoneme_resources,
+    prepare_run,
+)
 from .stage1 import Stage1Trainer, build_stage1_optimizers
 from .stage2 import (
     Stage2InputBuilder,
@@ -70,6 +77,8 @@ __all__ = [
     "ProgressEvent",
     "PhonemeResources",
     "RngState",
+    "RunPreparation",
+    "RuntimeCallbacks",
     "StageKind",
     "Stage1Trainer",
     "Stage2InputBuilder",
@@ -86,6 +95,7 @@ __all__ = [
     "TrainingMetric",
     "TrainingPipeline",
     "TrainingPhase",
+    "TextResources",
     "capture_gradients",
     "capture_named_state",
     "capture_rng_state",
@@ -96,11 +106,13 @@ __all__ = [
     "learning_rate_schedule",
     "loss_weight_schedule",
     "load_phoneme_resources",
+    "prepare_run",
     "restore_checkpoint_gradients",
     "restore_gradients",
     "restore_named_states",
     "restore_rng_state",
     "run_continuously",
+    "run_stage",
     "validate_resume_fingerprints",
     "DefaultStage2InputBuilder",
 ]

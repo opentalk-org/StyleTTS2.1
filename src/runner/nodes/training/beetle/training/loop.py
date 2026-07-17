@@ -13,6 +13,8 @@ from .callbacks import (
 from .checkpoint import CheckpointManager, CheckpointPayload
 from .state import LoopState, StageKind, TrainingPhase
 
+_CHECKPOINT_MEDIA_TYPE = "application/vnd.beetle.checkpoint"
+
 
 @dataclass(frozen=True)
 class LoopIntervals:
@@ -86,7 +88,8 @@ def run_continuously(
     except CancellationRequested:
         state = trainer.loop_state()
         payload = trainer.checkpoint_payload(state, pipeline.state_dict())
-        checkpoint_manager.save(payload)
+        path = checkpoint_manager.save(payload)
+        callbacks.publish_artifact(path, _CHECKPOINT_MEDIA_TYPE)
         return state
 
 
@@ -192,7 +195,8 @@ def _complete_step_work(
         _announce(trainer, callbacks, state, ())
         complete = replace(state, phase=TrainingPhase.CHECKPOINT_COMPLETE)
         payload = trainer.checkpoint_payload(complete, pipeline.state_dict())
-        checkpoint_manager.save(payload)
+        path = checkpoint_manager.save(payload)
+        callbacks.publish_artifact(path, _CHECKPOINT_MEDIA_TYPE)
         _announce(trainer, callbacks, complete, ())
         state = complete
     ready = replace(state, phase=TrainingPhase.READY)

@@ -184,6 +184,7 @@ def trainable_stage2_modules(models: Stage2Models) -> tuple[nn.Module, ...]:
         models.condition_bank,
         models.duration_predictor,
         models.latent_flow,
+        models.aligner,
         models.style_speaker_classifier,
         models.style_statistics_head,
         models.voice_ge2e,
@@ -205,6 +206,7 @@ def named_trainable_stage2_modules(
         "condition_bank",
         "duration_predictor",
         "latent_flow",
+        "aligner",
         "style_speaker_classifier",
         "style_statistics_head",
         "voice_ge2e",
@@ -217,7 +219,6 @@ def frozen_stage2_modules(models: Stage2Models) -> tuple[nn.Module, ...]:
     return (
         models.audio_encoder,
         models.f0_extractor,
-        models.aligner,
         models.text_encoder,
     )
 

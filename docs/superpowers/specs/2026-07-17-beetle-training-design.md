@@ -109,6 +109,11 @@ widths because the measured compute is below the approved ceiling. The final
 Beetle implementation is measured independently; reference measurements are
 context, not proof that the implementation passes.
 
+A BERT-base-shaped synthetic phoneme checkpoint with 178 tokens produces a
+complete Beetle inference count of 198,488,767, exceeding the 150M target by
+48,488,767. Runtime reports the actual local checkpoint result; the custom BERT
+must be smaller for the complete model to meet the target.
+
 ### Text, context, duration, and latent generation
 
 - `PhonemeEncoder` wraps a custom BERT loaded from a configured local
@@ -135,8 +140,9 @@ context, not proof that the implementation passes.
   per-token noise levels `t`, per-token shortcut steps `d`, masks, and projected
   conditioning tokens.
 - `PhonemeAligner` is initialized from the StyleTTS2-compatible pretrained
-  aligner and produces soft attention, CTC logits, and monotonic hard
-  alignment.
+  aligner stored as a checkpoint-folder UUID plus explicit filename through
+  shared asset CRUD. It produces soft attention, CTC logits, and monotonic hard
+  alignment and is fine-tuned by the Stage 2/3 aligner objectives.
 - `F0Extractor` is the frozen StyleTTS2-compatible pitch model. `N` is
   normalized log mel-frame energy.
 
