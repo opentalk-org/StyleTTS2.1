@@ -8,6 +8,7 @@ from torch import Tensor, nn
 
 from ....config.architecture import LatentFlowConfig
 from ..conditioning import AdaLNZero1d, ProjectedConditions
+from ..conditioning_inputs import CONDITION_SOURCE_NAMES
 
 
 @dataclass(frozen=True)
@@ -172,7 +173,10 @@ class LatentFlowModel(nn.Module):
             )
             for index in range(config.layer_count)
         )
-        concat_channels = config.hidden_channels + 8 * config.condition_channels
+        concat_channels = (
+            config.hidden_channels
+            + len(CONDITION_SOURCE_NAMES) * config.condition_channels
+        )
         self.concat_projections = nn.ModuleDict(
             {
                 str(index): nn.Conv1d(concat_channels, config.hidden_channels, 1)

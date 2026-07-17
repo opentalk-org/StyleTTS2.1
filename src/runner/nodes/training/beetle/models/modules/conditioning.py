@@ -5,47 +5,25 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 
 from ...config.architecture import ConditionDropoutConfig
+from .conditioning_inputs import (
+    CONDITION_SOURCE_NAMES,
+    ConditionChannels,
+    ConditionInputs,
+    ConditionKeep,
+    ConditionVectors,
+)
 
-
-@dataclass(frozen=True)
-class ConditionInputs:
-    phoneme: Tensor
-    style: Tensor
-    voice: Tensor
-    pooled_phoneme: Tensor
-    pre_text: Tensor
-    post_text: Tensor
-    pre_audio: Tensor
-    post_audio: Tensor
-
-    @classmethod
-    def from_shared(cls, value: Tensor) -> "ConditionInputs":
-        return cls(value, value, value, value, value, value, value, value)
-
-
-@dataclass(frozen=True)
-class ConditionChannels:
-    phoneme: int
-    style: int
-    voice: int
-    pooled_phoneme: int
-    pre_text: int
-    post_text: int
-    pre_audio: int
-    post_audio: int
-
-    @classmethod
-    def from_shared(cls, channels: int) -> "ConditionChannels":
-        return cls(
-            channels,
-            channels,
-            channels,
-            channels,
-            channels,
-            channels,
-            channels,
-            channels,
-        )
+__all__ = [
+    "AdaLNZero1d",
+    "CONDITION_SOURCE_NAMES",
+    "ConditionBank",
+    "ConditionChannels",
+    "ConditionInputs",
+    "ConditionKeep",
+    "ConditionVectors",
+    "MaskedAttentivePool1d",
+    "ProjectedConditions",
+]
 
 
 @dataclass(frozen=True)
@@ -58,6 +36,7 @@ class ProjectedConditions:
     post_text: Tensor
     pre_audio: Tensor
     post_audio: Tensor
+    language: Tensor
 
     def combined(self) -> Tensor:
         return (
@@ -69,6 +48,7 @@ class ProjectedConditions:
             + self.post_text
             + self.pre_audio
             + self.post_audio
+            + self.language
         )
 
     def concatenated(self) -> Tensor:
@@ -82,6 +62,7 @@ class ProjectedConditions:
                 self.post_text,
                 self.pre_audio,
                 self.post_audio,
+                self.language,
             ),
             dim=1,
         )
@@ -114,62 +95,79 @@ class ConditionBank(nn.Module):
                     ("post_text", input_channels.post_text),
                     ("pre_audio", input_channels.pre_audio),
                     ("post_audio", input_channels.post_audio),
+                    ("language", input_channels.language),
                 )
             }
         )
 
-    def _project(
-        self,
-        name: str,
-        tokens: Tensor,
+    @staticmethod
+    def _sample_keep(
+        batch_size: int,
+        device: torch.device,
         probability: float,
         generator: torch.Generator,
     ) -> Tensor:
-        keep = (
+        return (
             torch.rand(
-                tokens.shape[0],
+                batch_size,
                 1,
                 1,
-                device=tokens.device,
+                device=device,
                 generator=generator,
             )
             >= probability
         )
-        return self.projectors[name](tokens, keep)
+
+    def sample_keep(
+        self,
+        batch_size: int,
+        device: torch.device,
+        probabilities: ConditionDropoutConfig,
+        generator: torch.Generator,
+    ) -> ConditionKeep:
+        return ConditionKeep(
+            phoneme=self._sample_keep(
+                batch_size, device, probabilities.phoneme_embedding, generator
+            ),
+            style=self._sample_keep(
+                batch_size, device, probabilities.style, generator
+            ),
+            voice=self._sample_keep(
+                batch_size, device, probabilities.voice, generator
+            ),
+            pooled_phoneme=self._sample_keep(
+                batch_size, device, probabilities.pooled_phoneme, generator
+            ),
+            pre_text=self._sample_keep(
+                batch_size, device, probabilities.pre_text, generator
+            ),
+            post_text=self._sample_keep(
+                batch_size, device, probabilities.post_text, generator
+            ),
+            pre_audio=self._sample_keep(
+                batch_size, device, probabilities.pre_audio, generator
+            ),
+            post_audio=self._sample_keep(
+                batch_size, device, probabilities.post_audio, generator
+            ),
+            language=self._sample_keep(
+                batch_size, device, probabilities.language, generator
+            ),
+        )
 
     def forward(
         self,
         inputs: ConditionInputs,
-        probabilities: ConditionDropoutConfig,
-        generator: torch.Generator,
+        keep: ConditionKeep,
     ) -> ProjectedConditions:
         return ProjectedConditions(
-            phoneme=self._project(
-                "phoneme",
-                inputs.phoneme,
-                probabilities.phoneme_embedding,
-                generator,
-            ),
-            style=self._project("style", inputs.style, probabilities.style, generator),
-            voice=self._project("voice", inputs.voice, probabilities.voice, generator),
-            pooled_phoneme=self._project(
-                "pooled_phoneme",
-                inputs.pooled_phoneme,
-                probabilities.pooled_phoneme,
-                generator,
-            ),
-            pre_text=self._project(
-                "pre_text", inputs.pre_text, probabilities.pre_text, generator
-            ),
-            post_text=self._project(
-                "post_text", inputs.post_text, probabilities.post_text, generator
-            ),
-            pre_audio=self._project(
-                "pre_audio", inputs.pre_audio, probabilities.pre_audio, generator
-            ),
-            post_audio=self._project(
-                "post_audio", inputs.post_audio, probabilities.post_audio, generator
-            ),
+            **{
+                name: self.projectors[name](
+                    getattr(inputs, name),
+                    getattr(keep, name),
+                )
+                for name in CONDITION_SOURCE_NAMES
+            }
         )
 
 

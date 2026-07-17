@@ -9,6 +9,17 @@ from .conditioning import MaskedAttentivePool1d
 from .convolution import DilatedResidualStack
 
 
+class LanguageEmbedding(nn.Module):
+    def __init__(self, language_count: int, embedding_channels: int) -> None:
+        super().__init__()
+        self.embedding = nn.Embedding(language_count, embedding_channels)
+
+    def forward(self, language_ids: Tensor) -> Tensor:
+        if language_ids.ndim != 1:
+            raise ValueError("language IDs must have shape [B]")
+        return self.embedding(language_ids)
+
+
 class EmbeddingEncoder(nn.Module):
     def __init__(self, config: EmbeddingEncoderConfig) -> None:
         super().__init__()

@@ -168,6 +168,7 @@ class ConditionDropoutConfig(StrictConfigModel):
     post_text: float = Field(ge=0, le=1)
     pre_audio: float = Field(ge=0, le=1)
     post_audio: float = Field(ge=0, le=1)
+    language: float = Field(ge=0, le=1)
 
 
 class ConditioningConfig(StrictConfigModel):

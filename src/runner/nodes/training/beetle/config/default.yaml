@@ -85,6 +85,7 @@ architecture:
       post_text: 0.75
       pre_audio: 0.75
       post_audio: 0.75
+      language: 0.01
   duration_flow:
     condition_channels: 256
     hidden_channels: 256
