@@ -129,8 +129,8 @@ class BatchCollator:
             post_audio=post_audio,
             phoneme_ids=_ids(self.phoneme_tokenizer, item.phonemes),
             text_ids=_ids(self.text_tokenizer, item.text),
-            pre_text_ids=_ids(self.text_tokenizer, item.pre_text),
-            post_text_ids=_ids(self.text_tokenizer, item.post_text),
+            pre_text_ids=_ids(self.phoneme_tokenizer, item.pre_text),
+            post_text_ids=_ids(self.phoneme_tokenizer, item.post_text),
             style_prompt_ids=_ids(self.text_tokenizer, item.style_prompt or ""),
             voice_prompt_ids=_ids(self.text_tokenizer, item.voice_prompt or ""),
         )

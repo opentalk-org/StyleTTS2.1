@@ -65,6 +65,7 @@ class Stage2Models(nn.Module):
     def __init__(
         self,
         audio_encoder: nn.Module,
+        f0_extractor: nn.Module,
         phoneme_encoder: PhonemeEncoder,
         latent_phoneme_encoder: LatentPhonemeEncoder,
         duration_phoneme_encoder: DurationPhonemeEncoder,
@@ -84,6 +85,7 @@ class Stage2Models(nn.Module):
     ) -> None:
         super().__init__()
         self.audio_encoder = audio_encoder
+        self.f0_extractor = f0_extractor
         self.phoneme_encoder = phoneme_encoder
         self.latent_phoneme_encoder = latent_phoneme_encoder
         self.duration_phoneme_encoder = duration_phoneme_encoder
@@ -123,7 +125,7 @@ class Stage2Models(nn.Module):
             self.style_ge2e,
         )
         inference, inference_ids = _parameter_count(inference_modules)
-        helper, helper_ids = _parameter_count((self.aligner,))
+        helper, helper_ids = _parameter_count((self.aligner, self.f0_extractor))
         training, training_ids = _parameter_count(training_modules)
         text, text_ids = _parameter_count((self.text_encoder,))
         categories = (inference_ids, helper_ids, training_ids, text_ids)
@@ -174,6 +176,7 @@ def build_stage2_models(
     )
     return Stage2Models(
         audio_encoder=stage1.audio_encoder,
+        f0_extractor=stage1.f0_extractor,
         phoneme_encoder=PhonemeEncoder(
             dependencies.albert,
             architecture.phoneme.projection_channels,

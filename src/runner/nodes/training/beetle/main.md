@@ -75,6 +75,12 @@ Training cuts are 1–45 seconds and balance sentence and mid-sentence targets.
 Pre/post audio or text context is cut by the dataset pipeline and may be absent.
 Style and voice grouped views support the approved contrastive and GE2E losses.
 Different condition combinations are mixed within normal batches.
+Reconstruction examples provide the target style/voice conditioning and
+style-statistics targets; independently sampled grouped views provide the
+contrastive and GE2E batches, so their different batch shapes are never
+conflated. Stage 2 uses the frozen Stage 1 AudioEncoder and F0 extractor for
+these targets and updates the latent-flow EMA exactly once after each completed
+online optimizer step.
 
 ## Losses
 

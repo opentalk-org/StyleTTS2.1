@@ -31,6 +31,14 @@ from .optimizer import (
     loss_weight_schedule,
 )
 from .stage1 import Stage1Trainer, Stage1Validator, build_stage1_optimizers
+from .stage2 import (
+    Stage2InputBuilder,
+    Stage2Trainer,
+    Stage2Validator,
+    build_latent_flow_ema,
+    build_stage2_optimizer,
+)
+from .stage2_inputs import DefaultStage2InputBuilder, SpeakerIndex
 from .state import (
     LoopState,
     NamedGradient,
@@ -63,12 +71,16 @@ __all__ = [
     "StageKind",
     "Stage1Trainer",
     "Stage1Validator",
+    "Stage2InputBuilder",
+    "Stage2Trainer",
+    "Stage2Validator",
     "StageTrainer",
     "StateKind",
     "StateTarget",
     "StepSchedule",
     "ScheduledOptimizer",
     "StandaloneCallbacks",
+    "SpeakerIndex",
     "TrainingCallbacks",
     "TrainingMetric",
     "TrainingPipeline",
@@ -77,6 +89,8 @@ __all__ = [
     "capture_named_state",
     "capture_rng_state",
     "build_stage1_optimizers",
+    "build_latent_flow_ema",
+    "build_stage2_optimizer",
     "learning_rate_schedule",
     "loss_weight_schedule",
     "restore_checkpoint_gradients",
@@ -85,4 +99,5 @@ __all__ = [
     "restore_rng_state",
     "run_continuously",
     "validate_resume_fingerprints",
+    "DefaultStage2InputBuilder",
 ]

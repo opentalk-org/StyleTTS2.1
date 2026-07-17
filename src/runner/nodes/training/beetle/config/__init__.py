@@ -13,6 +13,7 @@ from .training import (
     LossWeights,
     OptimizerConfig,
     RuntimeConfig,
+    Stage2ObjectiveConfig,
     StageConfig,
     ValidationConfig,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "LossWeights",
     "OptimizerConfig",
     "RuntimeConfig",
+    "Stage2ObjectiveConfig",
     "StageConfig",
     "ValidationConfig",
     "config_fingerprint",

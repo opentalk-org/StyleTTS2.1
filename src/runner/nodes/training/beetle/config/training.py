@@ -95,6 +95,13 @@ class CheckpointConfig(StrictConfigModel):
     keep_last: int = Field(gt=0)
 
 
+class Stage2ObjectiveConfig(StrictConfigModel):
+    contrastive_temperature: float = Field(gt=0)
+    reversal_scale: float = Field(ge=0)
+    consistency_cosine_weight: float = Field(ge=0)
+    consistency_mse_weight: float = Field(ge=0)
+
+
 class BeetleConfig(StrictConfigModel):
     audio: AudioConfig
     architecture: ArchitectureConfig
@@ -103,6 +110,7 @@ class BeetleConfig(StrictConfigModel):
     runtime: RuntimeConfig
     validation: ValidationConfig
     checkpoint: CheckpointConfig
+    stage2_objective: Stage2ObjectiveConfig
     stage1: StageConfig
     stage2: StageConfig
     stage3: StageConfig

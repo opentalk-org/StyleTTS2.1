@@ -154,6 +154,11 @@ validation:
 checkpoint:
   every_steps: 1000
   keep_last: 5
+stage2_objective:
+  contrastive_temperature: 0.2
+  reversal_scale: 0.1
+  consistency_cosine_weight: 1.0
+  consistency_mse_weight: 1.0
 stage1: &stage1
   batch_size: 16
   accumulation_steps: 1

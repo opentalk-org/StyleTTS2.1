@@ -70,12 +70,14 @@ class Stage2LossInput:
     alignment: AlignerOutput
     phonemes: Tensor
     frame_mask: Tensor
-    style_latent: Tensor
-    voice_latent: Tensor
-    generated_latent: Tensor
-    embedding_mask: Tensor
-    voice_ids: Tensor
-    recording_ids: Tensor
+    target_latent_mask: Tensor
+    target_style: Tensor
+    style_view_latent: Tensor
+    style_view_mask: Tensor
+    voice_view_latent: Tensor
+    voice_view_mask: Tensor
+    voice_group_ids: Tensor
+    style_group_ids: Tensor
     style_positive_weights: Tensor
     speaker_ids: Tensor
     statistics_target: AcousticStatistics
@@ -134,18 +136,21 @@ def compute_stage2_losses(
     ema_latent_flow: nn.Module,
     inputs: Stage2LossInput,
 ) -> Stage2LossOutput:
-    style = models.style_encoder(inputs.style_latent, inputs.embedding_mask)
-    voice = models.voice_encoder(inputs.voice_latent, inputs.embedding_mask)
-    generated_style = models.style_encoder(
-        inputs.generated_latent,
-        inputs.embedding_mask,
-    )
+    style_views = models.style_encoder(inputs.style_view_latent, inputs.style_view_mask)
+    voice_views = models.voice_encoder(inputs.voice_view_latent, inputs.voice_view_mask)
     prediction = models.latent_flow(
         inputs.flow_sample.state,
         inputs.flow_sample.time,
         inputs.flow_sample.step,
         inputs.conditions,
         inputs.latent_mask,
+    )
+    generated_latent = (
+        inputs.flow_sample.state + (1 - inputs.flow_sample.time) * prediction
+    ) * inputs.latent_mask
+    generated_style = models.style_encoder(
+        generated_latent,
+        inputs.target_latent_mask,
     )
     base_mask = inputs.latent_mask & (inputs.flow_sample.step == 0)
     shortcut_mask = inputs.latent_mask & (inputs.flow_sample.step > 0)
@@ -157,8 +162,10 @@ def compute_stage2_losses(
         inputs.align_blank_id,
         inputs.align_frame_reduction,
     )
-    speaker_logits = models.style_speaker_classifier(style, inputs.reversal_scale)
-    statistics = models.style_statistics_head(style)
+    speaker_logits = models.style_speaker_classifier(
+        inputs.target_style, inputs.reversal_scale
+    )
+    statistics = models.style_statistics_head(inputs.target_style)
     return Stage2LossOutput(
         duration_flow=duration_flow_loss(inputs.duration_nll, inputs.phoneme_mask),
         latent_flow=base_flow_loss(
@@ -179,18 +186,18 @@ def compute_stage2_losses(
         align_mono=alignment.mono,
         align_ctc=alignment.ctc,
         voice_contrastive=supervised_contrastive_loss(
-            voice,
-            inputs.voice_ids,
+            voice_views,
+            inputs.voice_group_ids,
             inputs.contrastive_temperature,
         ),
-        voice_ge2e=models.voice_ge2e(voice, inputs.voice_ids),
+        voice_ge2e=models.voice_ge2e(voice_views, inputs.voice_group_ids),
         style_contrastive=supervised_contrastive_loss(
-            style,
-            inputs.recording_ids,
+            style_views,
+            inputs.style_group_ids,
             inputs.contrastive_temperature,
             inputs.style_positive_weights,
         ),
-        style_ge2e=models.style_ge2e(style, inputs.recording_ids),
+        style_ge2e=models.style_ge2e(style_views, inputs.style_group_ids),
         style_speaker_adversarial=speaker_adversarial_loss(
             speaker_logits,
             inputs.speaker_ids,
@@ -198,7 +205,7 @@ def compute_stage2_losses(
         style_statistics=style_statistics_loss(statistics, inputs.statistics_target),
         style_reencoding=embedding_consistency_loss(
             generated_style,
-            style.detach(),
+            inputs.target_style.detach(),
             inputs.consistency_cosine_weight,
             inputs.consistency_mse_weight,
         ),

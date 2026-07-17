@@ -154,8 +154,8 @@ class DatabaseBatchSource:
     ) -> FetchedExample:
         target = current[plan.key]
         text, phonemes = _target_text(target, plan)
-        pre_text = _context_text(current, plan.pre_context)
-        post_text = _context_text(current, plan.post_context)
+        pre_text = _context_phonemes(current, plan.pre_context)
+        post_text = _context_phonemes(current, plan.post_context)
         item = self.index.records[plan.key]
         return FetchedExample(
             plan=plan,
@@ -217,15 +217,15 @@ def _target_text(segment: dict[str, Any], plan: PlannedExample) -> tuple[str, st
     return " ".join(words), " ".join(phonemes)
 
 
-def _context_text(current: dict[SegmentKey, dict[str, Any]], context) -> str:
+def _context_phonemes(current: dict[SegmentKey, dict[str, Any]], context) -> str:
     if context is None:
         return ""
     segment = current[context.key]
     alignment = segment["alignment"] if "alignment" in segment and segment["alignment"] else []
     if alignment:
-        words = alignment[context.word_start:context.word_end]
-        return " ".join(str(item["word"]) for item in words)
-    return str(segment["text"])
+        phonemes = str(segment["phon"]).split()
+        return " ".join(phonemes[context.word_start:context.word_end])
+    return str(segment["phon"])
 
 
 def _fetched_group(
