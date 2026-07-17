@@ -53,11 +53,12 @@ class FeatureConfig(StrictConfigModel):
 class DecoderConfig(StrictConfigModel):
     latent_channels: int = Field(gt=0)
     hidden_channels: int = Field(gt=0)
+    residual_channels: int = Field(gt=0)
     generator_channels: int = Field(gt=0)
-    block_count: int = Field(gt=0)
-    kernel_size: int = Field(gt=1)
-    dilation_cycle: tuple[int, ...] = Field(min_length=1)
+    decode_block_count: int = Field(gt=0)
     dropout: float = Field(ge=0, lt=1)
+    f0_smoothing_kernel_sizes: tuple[int, ...] = Field(min_length=1)
+    n_smoothing_kernel_sizes: tuple[int, ...] = Field(min_length=1)
 
 
 class GeneratorConfig(StrictConfigModel):
