@@ -193,7 +193,9 @@ def _pad_waveforms(values: tuple[Tensor, ...]) -> tuple[Tensor, Tensor]:
 
 def _pad_mels(values: tuple[Tensor, ...]) -> tuple[Tensor, Tensor]:
     lengths = torch.tensor([value.shape[-1] for value in values], dtype=torch.long)
-    output = torch.zeros(len(values), values[0].shape[0], int(lengths.max()))
+    maximum = int(lengths.max())
+    even_maximum = maximum + maximum % 2
+    output = torch.zeros(len(values), values[0].shape[0], even_maximum)
     for index, value in enumerate(values):
         output[index, :, : value.shape[-1]] = value
     return output, lengths

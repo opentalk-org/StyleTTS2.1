@@ -11,6 +11,8 @@ architecture:
     mel_channels: 80
     latent_channels: 192
     hidden_channels: 256
+    downsample_rate: 2
+    downsample_kernel_size: 4
     kernel_size: 5
     dilation_cycle: [1, 2, 4, 8, 16]
     cycles: 3
@@ -19,6 +21,7 @@ architecture:
     log_scale_max: 2.0
   feature:
     latent_channels: 192
+    upsample_rate: 2
   decoder:
     latent_channels: 192
     hidden_channels: 512

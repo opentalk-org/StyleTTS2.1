@@ -29,6 +29,8 @@ class PosteriorEncoderConfig(StrictConfigModel):
     mel_channels: int = Field(gt=0)
     latent_channels: int = Field(gt=0)
     hidden_channels: int = Field(gt=0)
+    downsample_rate: int = Field(default=2, gt=0)
+    downsample_kernel_size: int = Field(default=4, gt=1)
     kernel_size: int = Field(gt=1)
     dilation_cycle: tuple[int, ...] = Field(min_length=1)
     cycles: int = Field(gt=0)
@@ -45,6 +47,7 @@ class PosteriorEncoderConfig(StrictConfigModel):
 
 class FeatureConfig(StrictConfigModel):
     latent_channels: int = Field(gt=0)
+    upsample_rate: int = Field(default=2, gt=0)
 
 
 class DecoderConfig(StrictConfigModel):
@@ -193,6 +196,14 @@ class ArchitectureConfig(StrictConfigModel):
     latent_flow: LatentFlowConfig
     aligner: AlignerConfig
     text_encoder: TextEncoderConfig
+
+    @model_validator(mode="after")
+    def validate_audio_rates(self) -> "ArchitectureConfig":
+        if self.posterior.downsample_rate != 2:
+            raise ValueError("posterior downsample_rate must equal 2")
+        if self.feature.upsample_rate != 2:
+            raise ValueError("feature upsample_rate must equal 2")
+        return self
 
     @model_validator(mode="after")
     def validate_channels(self) -> "ArchitectureConfig":
