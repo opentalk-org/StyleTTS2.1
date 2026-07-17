@@ -4,12 +4,17 @@ from torch.nn import functional as F
 
 
 class MaskedAttentivePool1d(nn.Module):
-    def __init__(self, input_channels: int, output_channels: int) -> None:
+    def __init__(
+        self,
+        input_channels: int,
+        attention_channels: int,
+        output_channels: int,
+    ) -> None:
         super().__init__()
         self.attention = nn.Sequential(
-            nn.Conv1d(input_channels, input_channels, 1),
+            nn.Conv1d(input_channels, attention_channels, 1),
             nn.Tanh(),
-            nn.Conv1d(input_channels, 1, 1),
+            nn.Conv1d(attention_channels, 1, 1),
         )
         self.output = nn.Linear(input_channels * 2, output_channels)
 

@@ -20,6 +20,7 @@ class ContextAudioEncoder(nn.Module):
         )
         self.pool = MaskedAttentivePool1d(
             config.hidden_channels,
+            config.hidden_channels,
             config.output_channels,
         )
 
