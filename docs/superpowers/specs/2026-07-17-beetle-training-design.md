@@ -111,7 +111,15 @@ context, not proof that the implementation passes.
 
 ### Text, context, duration, and latent generation
 
-- `PhonemeEncoder` is ALBERT without an invented encoder family.
+- `PhonemeEncoder` wraps a custom BERT loaded from a configured local
+  directory. The same directory supplies its tokenizer. Loading is local-only;
+  Beetle does not compare checkpoint vocabulary or hidden-width metadata
+  against separate expected values.
+- `architecture.phoneme_token_count` is the only phoneme vocabulary-size
+  setting and defaults to 178. The data/tokenization contract and
+  StyleTTS2-compatible aligner construction consume this value. Phoneme and
+  aligner sub-configurations do not duplicate it. Strict checkpoint loading and
+  normal tensor indexing remain responsible for surfacing incompatible files.
 - `LatentPhonemeEncoder`, `DurationPhonemeEncoder`, and
   `ContextPhonemeEncoder` are separate residual CNN projections.
 - `ContextAudioEncoder` receives audio immediately before or after the target
@@ -232,9 +240,10 @@ Load Stage 1. AudioEncoder runs frozen under `no_grad` to produce target
 latents. Decoder, Generator, FeatureLinear, and acoustic discriminators are not
 used for training updates.
 
-Train ALBERT and the phoneme/context projections, ContextAudioEncoder,
-DurationPredictor, LatentFlowModel plus EMA, PhonemeAligner, StyleEncoder,
-VoiceEncoder, the style speaker classifier, and the style-statistics head.
+Train the custom phoneme BERT and the phoneme/context projections,
+ContextAudioEncoder, DurationPredictor, LatentFlowModel plus EMA,
+PhonemeAligner, StyleEncoder, VoiceEncoder, the style speaker classifier, and
+the style-statistics head.
 Losses are:
 
 - duration normalizing-flow negative log likelihood over aligned log duration;
