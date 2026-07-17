@@ -63,6 +63,7 @@ class FetchedExample:
     style_prompt: str | None
     voice_prompt: str | None
     voice_id: str | None
+    language: str
 
 
 @dataclass(frozen=True)
@@ -169,6 +170,7 @@ class DatabaseBatchSource:
             style_prompt=item.style_prompt,
             voice_prompt=item.voice_prompt,
             voice_id=item.voice_id,
+            language=item.language,
         )
 
 

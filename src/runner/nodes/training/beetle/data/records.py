@@ -170,6 +170,7 @@ class BeetleBatch:
     mel: Tensor
     phoneme_ids: Tensor
     text_input_ids: Tensor
+    language_ids: Tensor
     alignments: Tensor
     durations: Tensor
     pre_audio: Tensor
@@ -221,6 +222,10 @@ class BeetleBatch:
             raise TypeError("frame_mask must be bool")
         if self.phoneme_ids.dtype != torch.long:
             raise TypeError("phoneme_ids must be int64")
+        if self.language_ids.shape != (batch_size,):
+            raise ValueError("language_ids must have shape [B]")
+        if self.language_ids.dtype != torch.long:
+            raise TypeError("language_ids must be int64")
 
     def to(self, device: torch.device) -> "BeetleBatch":
         values = {}
@@ -243,6 +248,7 @@ class BeetleBatch:
             mel=zeros(batch_size, 80, frames),
             phoneme_ids=zeros(batch_size, phonemes, dtype=torch.long),
             text_input_ids=zeros(batch_size, texts, dtype=torch.long),
+            language_ids=zeros(batch_size, dtype=torch.long),
             alignments=zeros(batch_size, phonemes, frames),
             durations=zeros(batch_size, phonemes),
             pre_audio=zeros(batch_size, 1, audio_context),

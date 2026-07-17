@@ -61,6 +61,7 @@ def build_data_pipeline(
             phoneme_tokenizer,
             text_tokenizer,
             config.data.augmentation,
+            config.architecture.language.values,
         ),
     )
     return BoundedBatchPrefetcher(
