@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import torch
 from torch import Tensor, nn
-from transformers import AlbertModel, BertModel
+from transformers import BertModel
 
 from ...config.architecture import ContextConfig, PhonemeConfig
 from .conditioning import MaskedAttentivePool1d
@@ -17,15 +17,15 @@ class PhonemeEncoding:
 
 
 class PhonemeEncoder(nn.Module):
-    def __init__(self, albert: AlbertModel, output_channels: int) -> None:
+    def __init__(self, bert: BertModel, output_channels: int) -> None:
         super().__init__()
-        self.albert = albert
-        self.projection = nn.Conv1d(albert.config.hidden_size, output_channels, 1)
+        self.bert = bert
+        self.projection = nn.Conv1d(bert.config.hidden_size, output_channels, 1)
 
     def forward(self, input_ids: Tensor, mask: Tensor) -> PhonemeEncoding:
         if input_ids.shape != mask.shape:
             raise ValueError("phoneme ids and mask must have equal shapes")
-        encoded = self.albert(
+        encoded = self.bert(
             input_ids=input_ids,
             attention_mask=mask,
             return_dict=True,

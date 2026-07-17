@@ -7,7 +7,7 @@ implementation evidence. They are not imported by Beetle at runtime.
 
 | Project | URL | Source commit | License | Purpose |
 | --- | --- | --- | --- | --- |
-| StyleTTS2 | https://github.com/yl4579/StyleTTS2 | `5cedc71c333f8d8b8551ca59378bdcc7af4c9529` | MIT | ALBERT, aligner, F0, GAN, and acoustic-loss reference |
+| StyleTTS2 | https://github.com/yl4579/StyleTTS2 | `5cedc71c333f8d8b8551ca59378bdcc7af4c9529` | MIT | BERT, aligner, F0, GAN, and acoustic-loss reference |
 | Piper | https://github.com/rhasspy/piper | `73c04d81d5590ecc46e522de3601ce7fb29fc2be` | MIT | VITS posterior encoder and stochastic duration-flow reference |
 
 ## Papers

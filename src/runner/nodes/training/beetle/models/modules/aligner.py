@@ -25,18 +25,17 @@ class PhonemeAligner(nn.Module):
         self,
         backbone: nn.Module,
         config: AlignerConfig,
-        backbone_vocabulary_size: int,
+        token_count: int,
         frame_reduction: int,
     ) -> None:
         super().__init__()
-        if backbone_vocabulary_size != config.vocabulary_size:
-            raise ValueError("aligner backbone vocabulary does not match configuration")
-        if config.blank_id >= config.vocabulary_size:
+        if config.blank_id >= token_count:
             raise ValueError("aligner blank id is outside the vocabulary")
         if frame_reduction <= 0:
             raise ValueError("aligner frame reduction must be positive")
         self.backbone = backbone
         self.config = config
+        self.token_count = token_count
         self.frame_reduction = frame_reduction
 
     def load_checkpoint(self, checkpoint_path: Path) -> None:
@@ -79,7 +78,7 @@ class PhonemeAligner(nn.Module):
         if ctc_logits.shape != (
             mel.shape[0],
             reduced_frames,
-            self.config.vocabulary_size,
+            self.token_count,
         ):
             raise ValueError(
                 "aligner CTC output does not match frame or vocabulary shape"
@@ -87,7 +86,7 @@ class PhonemeAligner(nn.Module):
         max_phonemes = phonemes.shape[1]
         if (
             s2s_logits.shape[0] != mel.shape[0]
-            or s2s_logits.shape[2] != self.config.vocabulary_size
+            or s2s_logits.shape[2] != self.token_count
         ):
             raise ValueError(
                 "aligner sequence output does not match batch or vocabulary"

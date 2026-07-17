@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from torch import nn
-from transformers import AlbertModel, BertModel
+from transformers import BertModel
 
 from ..config import BeetleConfig
 from ..losses.embeddings import GE2ELoss
@@ -27,7 +27,7 @@ from .modules.text import (
 
 @dataclass(frozen=True)
 class Stage2Dependencies:
-    albert: AlbertModel
+    phoneme_bert: BertModel
     text_bert: BertModel
     aligner: PhonemeAligner
 
@@ -147,13 +147,6 @@ def build_stage2_models(
 ) -> Stage2Models:
     architecture = config.architecture
     if (
-        dependencies.albert.config.hidden_size
-        != architecture.phoneme.albert_hidden_channels
-    ):
-        raise ValueError("ALBERT hidden width does not match phoneme configuration")
-    if dependencies.albert.config.vocab_size != architecture.phoneme.vocabulary_size:
-        raise ValueError("ALBERT vocabulary does not match phoneme configuration")
-    if (
         dependencies.text_bert.config.hidden_size
         != architecture.text_encoder.hidden_channels
     ):
@@ -178,7 +171,7 @@ def build_stage2_models(
         audio_encoder=stage1.audio_encoder,
         f0_extractor=stage1.f0_extractor,
         phoneme_encoder=PhonemeEncoder(
-            dependencies.albert,
+            dependencies.phoneme_bert,
             architecture.phoneme.projection_channels,
         ),
         latent_phoneme_encoder=LatentPhonemeEncoder(architecture.phoneme),
