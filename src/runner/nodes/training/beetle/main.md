@@ -113,6 +113,10 @@ Inference-time Beetle modules target 100M–150M parameters. TextEncoder, frozen
 helpers, discriminators, and other training-only modules are excluded; only
 training-only modules may be excluded.
 
+The current default-width construction reports 120,416,447 inference
+parameters with the configured 2,048-token ALBERT vocabulary, including the
+42,382,092 Stage 1 inference parameters. It is within the approved range.
+
 The complete latent-to-audio path has no separate parameter ceiling but must be
 below 15 GFLOPs per generated second. The canonical report uses batch one,
 evaluation mode, 40 latent frames to 80 hop-300 frames and 24,000 output samples,

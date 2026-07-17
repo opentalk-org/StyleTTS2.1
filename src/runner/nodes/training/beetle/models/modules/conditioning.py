@@ -24,6 +24,31 @@ class ConditionInputs:
 
 
 @dataclass(frozen=True)
+class ConditionChannels:
+    phoneme: int
+    style: int
+    voice: int
+    pooled_phoneme: int
+    pre_text: int
+    post_text: int
+    pre_audio: int
+    post_audio: int
+
+    @classmethod
+    def from_shared(cls, channels: int) -> "ConditionChannels":
+        return cls(
+            channels,
+            channels,
+            channels,
+            channels,
+            channels,
+            channels,
+            channels,
+            channels,
+        )
+
+
+@dataclass(frozen=True)
 class ProjectedConditions:
     phoneme: Tensor
     style: Tensor
@@ -75,20 +100,20 @@ class ConditionProjector(nn.Module):
 
 
 class ConditionBank(nn.Module):
-    def __init__(self, input_channels: int, common_channels: int) -> None:
+    def __init__(self, input_channels: ConditionChannels, common_channels: int) -> None:
         super().__init__()
         self.projectors = nn.ModuleDict(
             {
-                name: ConditionProjector(input_channels, common_channels)
-                for name in (
-                    "phoneme",
-                    "style",
-                    "voice",
-                    "pooled_phoneme",
-                    "pre_text",
-                    "post_text",
-                    "pre_audio",
-                    "post_audio",
+                name: ConditionProjector(channels, common_channels)
+                for name, channels in (
+                    ("phoneme", input_channels.phoneme),
+                    ("style", input_channels.style),
+                    ("voice", input_channels.voice),
+                    ("pooled_phoneme", input_channels.pooled_phoneme),
+                    ("pre_text", input_channels.pre_text),
+                    ("post_text", input_channels.post_text),
+                    ("pre_audio", input_channels.pre_audio),
+                    ("post_audio", input_channels.post_audio),
                 )
             }
         )
