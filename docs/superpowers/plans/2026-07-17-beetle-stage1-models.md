@@ -65,9 +65,11 @@
 
 **Files:**
 - Modify: `src/runner/nodes/training/beetle/models/generator.py`
+- Modify: `src/runner/nodes/training/beetle/models/modules/convolution.py`
 - Modify: `src/runner/nodes/training/beetle/models/modules/source.py`
 - Modify: `src/runner/nodes/training/beetle/models/modules/istft.py`
 - Create: `src/runner/nodes/training/beetle/models/complexity.py`
+- Modify: `src/runner/nodes/training/beetle/config/__init__.py`
 - Modify: `src/runner/nodes/training/beetle/config/training.py`
 - Modify: `src/runner/nodes/training/beetle/config/default.yaml`
 - Modify temporarily: `/tmp/test_beetle_stage1.py`
