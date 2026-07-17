@@ -1,13 +1,11 @@
 from dataclasses import dataclass
-from typing import Protocol
-
 import torch
 from torch import Tensor, nn
 
 from ..config.training import OptimizerConfig, Precision, StageConfig
 from ..losses.composition import Stage1LossWeights
 from ..models.model import Stage1Models
-from .callbacks import TrainingCallbacks, TrainingMetric
+from .callbacks import TrainingMetric
 from .checkpoint import LossScheduleState, LossWeight
 from .optimizer import (
     OptimizerSet,
@@ -16,14 +14,6 @@ from .optimizer import (
     learning_rate_schedule,
     loss_weight_schedule,
 )
-
-
-class Stage1Validator(Protocol):
-    def run(
-        self,
-        optimizer_step: int,
-        callbacks: TrainingCallbacks,
-    ) -> tuple[TrainingMetric, ...]: ...
 
 
 @dataclass(frozen=True)

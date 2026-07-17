@@ -117,14 +117,11 @@ two fake paths share one discriminator backward/update, so adversarial training
 is not applied through a duplicate optimizer step.
 
 There are no epochs. Each script samples the dataset continuously and schedules
-all logging, validation, checkpoints, and loss weights by optimizer step.
-Validation saves stage-appropriate audio samples and typed metadata. Checkpoints
-include model, optimizer, scaler, EMA, discriminator, accumulated gradients,
-sampler cursor, and RNG state so every stage resumes without losing a step.
-Validation IDs are selected once, kept in checkpoint state, and preserved in
-the same order across resume. Each due optimizer step atomically publishes a
-`validation/step_<step>/` folder containing PCM WAV outputs, tensor diagnostics,
-and a strict `record.json` with stage, source IDs, artifact roles, and metrics.
+all logging, checkpoints, and loss weights by optimizer step. There is no
+validation pass, validation split, validation cadence, or validation artifact
+generation. Checkpoints include model, optimizer, scaler, EMA, discriminator,
+accumulated gradients, sampler cursor, and RNG state so every stage resumes
+without losing a step.
 Mixed Stage 2 flow batches always contain both analytic base tokens and EMA
 shortcut tokens when at least two valid tokens exist, keeping their separately
 weighted losses active in the same optimizer step.
@@ -140,6 +137,10 @@ with the aligner. The custom BERT checkpoint defines its own internal width and
 parameter count; training preflight reports the actual loaded total and reports
 when it exceeds the approved range. Stage 1 contributes 42,382,092 inference
 parameters before the custom BERT and Stage 2 inference modules are loaded.
+A BERT-base-shaped synthetic checkpoint with 178 tokens produces 198,488,767
+inference parameters, which exceeds the 150M ceiling by 48,488,767. Meeting the
+target therefore requires a smaller custom local BERT; startup reports the
+actual loaded result.
 
 The complete latent-to-audio path has no separate parameter ceiling but must be
 below 15 GFLOPs per generated second. The canonical report uses batch one,

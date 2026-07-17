@@ -32,7 +32,7 @@ beetle/
 │   ├── complexity.py       # inference profiling and limits
 │   └── modules/            # model implementations and internal layers
 ├── losses/                 # focused loss implementations
-├── training/               # reusable trainers, state, validation, callbacks
+├── training/               # reusable trainers, state, checkpoints, callbacks
 ├── scripts/
 │   ├── train_stage1.py
 │   ├── train_stage2.py
@@ -294,29 +294,16 @@ weights, generated audio, or run outputs.
 There is no epoch concept. Each stage continuously cycles through eligible
 sampling pools until cancellation. At the end of a deterministic permutation,
 the sampler increments `cycle_index`, reshuffles, and continues. Learning-rate,
-loss, logging, checkpoint, and validation schedules use optimizer steps only.
-
-Validation runs when `optimizer_step % validation_every_steps == 0`. A fixed
-validation selection is persisted for comparable results across resumes.
-Outputs are saved below `validation/step_<optimizer_step>/` as WAV files plus
-typed JSON metadata:
-
-- Stage 1 saves reference audio, posterior reconstruction, predicted F0/N, and
-  reconstruction metrics.
-- Stage 2 saves reference audio, complete text-conditioned synthesis through
-  frozen Stage 1 decoding, duration/alignment visualizations, and latent-flow
-  metrics.
-- Stage 3 saves reference, posterior reconstruction, end-to-end synthesis, and
-  complete acoustic, discriminator, duration, alignment, flow, style, and voice
-  metrics.
+loss, logging, and checkpoint schedules use optimizer steps only. Training
+performs no validation pass and creates no validation samples or artifacts.
 
 ## Exact resume and lifecycle adapters
 
 Every checkpoint contains all model and discriminator states, EMA, optimizers,
 schedulers, AMP scalers, optimizer and accumulation microsteps, accumulated
 gradients, Python/NumPy/Torch CPU/CUDA RNG states, sampler cycle/permutation and
-next-batch position, data-index fingerprint, loss-schedule state, configuration
-fingerprint, and fixed validation selection.
+next-batch position, data-index fingerprint, loss-schedule state, and
+configuration fingerprint.
 
 Augmentation, cutting, context selection, conditioning dropout, and generative
 noise derive deterministic seeds from stage, cycle, batch, sample ID, and view
@@ -325,8 +312,8 @@ checkpoint resumes at the exact next microbatch. Graceful cancellation writes
 an atomic checkpoint before exit. Abrupt termination resumes exactly from the
 latest successful atomic checkpoint; checkpoint frequency is configurable.
 
-The core receives cancellation, progress, metrics, validation-artifact, and
-checkpoint callbacks. CLI callbacks are implemented now. A future node maps
+The core receives cancellation, progress, metrics, artifact, and checkpoint
+callbacks. CLI callbacks are implemented now. A future node maps
 these to `context.check_cancel()`, `context.report_progress()`, shared CRUD, and
 artifact publication without changing training behavior.
 

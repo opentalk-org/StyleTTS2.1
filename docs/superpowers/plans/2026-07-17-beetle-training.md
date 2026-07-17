@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the complete configurable Beetle model, database data pipeline, three continuously running training scripts, exact checkpoint resume, and stage-specific validation artifacts.
+**Goal:** Build the complete configurable Beetle model, database data pipeline, three continuously running training scripts, and exact checkpoint resume without a validation pass.
 
 **Architecture:** A strict configuration and research layer feeds a database-native bulk data pipeline, explicit PyTorch models, focused losses, and one callback-driven continuous trainer. The three CLI scripts compose stage-specific model/loss/optimizer sets; a future Runflow node supplies adapters without changing core behavior.
 
@@ -100,7 +100,6 @@ src/runner/nodes/training/beetle/
 │   ├── stage1.py
 │   ├── stage2.py
 │   ├── stage3.py
-│   ├── validation.py
 │   └── runtime.py
 └── scripts/
     ├── __init__.py

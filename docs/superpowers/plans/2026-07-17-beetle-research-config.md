@@ -4,7 +4,7 @@
 
 **Goal:** Establish pinned primary references, verified duration/latent-flow mathematics, and strict configuration contracts before model implementation.
 
-**Architecture:** Reference repositories and paper extracts are local evidence, while concise Markdown derivations lock the equations used later. Split Pydantic modules validate fixed model geometry, data selection, loss schedules, runtime limits, and step-based validation without importing training code.
+**Architecture:** Reference repositories and paper extracts are local evidence, while concise Markdown derivations lock the equations used later. Split Pydantic modules validate fixed model geometry, data selection, loss schedules, runtime limits, and step-based checkpointing without importing training code.
 
 **Tech Stack:** Git shallow clones, arXiv PDFs, `pdftotext`, Python 3.12, Pydantic v2, PyYAML, hashlib, Nix.
 
@@ -82,10 +82,10 @@
 - Modify temporarily: `/tmp/test_beetle_config.py`
 
 **Interfaces:**
-- Produces: `BeetleConfig`, `StageConfig`, `LossWeights`, `OptimizerConfig`, `RuntimeConfig`, `ValidationConfig`, `CheckpointConfig`, `load_config(path)`, and `config_fingerprint(config)`.
+- Produces: `BeetleConfig`, `StageConfig`, `LossWeights`, `OptimizerConfig`, `RuntimeConfig`, `CheckpointConfig`, `load_config(path)`, and `config_fingerprint(config)`.
 - Consumes: config types from Task 3.
 
-- [ ] Add failing tests asserting the default YAML has three stages, no key containing `epoch`, positive `validation_every_steps`, separate Stage 1/3 discriminator settings, all named loss weights, and a stable SHA-256 fingerprint independent of YAML key order.
+- [ ] Add failing tests asserting the default YAML has three stages, no key containing `epoch` or validation configuration, positive checkpoint cadence, separate Stage 1/3 discriminator settings, all named loss weights, and a stable SHA-256 fingerprint independent of YAML key order.
 - [ ] Run the focused tests; expect missing training/load modules.
 - [ ] Implement strict nested models, canonical `model_dump(mode="json")` serialization, SHA-256 fingerprinting, and YAML loading that reports the exact invalid field path.
 - [ ] Run all config tests and `nix develop --command python -c 'from runner.nodes.training.beetle.config import load_config; print(load_config(...))'`; expect PASS and a validated config.

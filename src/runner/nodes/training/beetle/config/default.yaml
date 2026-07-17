@@ -146,9 +146,6 @@ runtime:
   seed: 1234
   device: cuda
   log_every_steps: 100
-validation:
-  every_steps: 5000
-  sample_count: 8
 checkpoint:
   every_steps: 1000
   keep_last: 5

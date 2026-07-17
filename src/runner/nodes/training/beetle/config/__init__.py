@@ -15,7 +15,6 @@ from .training import (
     RuntimeConfig,
     Stage2ObjectiveConfig,
     StageConfig,
-    ValidationConfig,
 )
 
 __all__ = [
@@ -33,7 +32,6 @@ __all__ = [
     "RuntimeConfig",
     "Stage2ObjectiveConfig",
     "StageConfig",
-    "ValidationConfig",
     "config_fingerprint",
     "load_config",
 ]

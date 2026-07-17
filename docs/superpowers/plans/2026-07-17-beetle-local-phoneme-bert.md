@@ -33,12 +33,12 @@
 - Produces: `ArchitectureConfig.phoneme_token_count: int`, `PhonemeConfig.model_path: str`.
 - Removes: `PhonemeConfig.vocabulary_size`, `PhonemeConfig.albert_hidden_channels`, and `AlignerConfig.vocabulary_size`.
 
-- [ ] Add a failing temporary config test that asserts the default has `phoneme_token_count == 178`, uses a non-empty local `phoneme.model_path`, and no longer exposes either duplicated vocabulary field or `albert_hidden_channels`.
-- [ ] Run `nix develop --command uv run --no-sync --with pytest python -m pytest -q /tmp/test_beetle_config.py`; expect the new assertions to fail against the ALBERT/2,048-token configuration.
-- [ ] Add `phoneme_token_count: int = Field(gt=1)` to `ArchitectureConfig`; replace `PhonemeConfig.pretrained_model` and ALBERT-specific fields with `model_path: str = Field(min_length=1)`; remove `AlignerConfig.vocabulary_size`.
-- [ ] Set `architecture.phoneme_token_count: 178` and `architecture.phoneme.model_path: src/runner/nodes/training/beetle/files/phoneme_bert` in `default.yaml`; update `main.md` to state the local BERT and sole token-count contract without claiming checkpoint validation.
-- [ ] Re-run the focused config tests and expect PASS.
-- [ ] Commit the production changes with `git commit -m 'refactor: configure local beetle phoneme bert'`.
+- [x] Add a failing temporary config test that asserts the default has `phoneme_token_count == 178`, uses a non-empty local `phoneme.model_path`, and no longer exposes either duplicated vocabulary field or `albert_hidden_channels`.
+- [x] Run `nix develop --command uv run --no-sync --with pytest python -m pytest -q /tmp/test_beetle_config.py`; expect the new assertions to fail against the ALBERT/2,048-token configuration.
+- [x] Add `phoneme_token_count: int = Field(gt=1)` to `ArchitectureConfig`; replace `PhonemeConfig.pretrained_model` and ALBERT-specific fields with `model_path: str = Field(min_length=1)`; remove `AlignerConfig.vocabulary_size`.
+- [x] Set `architecture.phoneme_token_count: 178` and `architecture.phoneme.model_path: src/runner/nodes/training/beetle/files/phoneme_bert` in `default.yaml`; update `main.md` to state the local BERT and sole token-count contract without claiming checkpoint validation.
+- [x] Re-run the focused config tests and expect PASS.
+- [x] Commit the production changes with `git commit -m 'refactor: configure local beetle phoneme bert'`.
 
 ### Task 2: BERT-backed phoneme model composition
 
@@ -52,12 +52,12 @@
 - Produces: `PhonemeEncoder(bert: BertModel, output_channels: int)` and `Stage2Dependencies.phoneme_bert: BertModel`.
 - Consumes: the BERT's own `config.hidden_size` for the projection width and performs no separate vocabulary/width comparison.
 
-- [ ] Replace temporary ALBERT fixtures with tiny `BertConfig`/`BertModel` fixtures and assert gradients reach `PhonemeEncoder.bert`, masked tokens remain zero, and pooled output geometry is unchanged.
-- [ ] Add a bundle test whose BERT config deliberately differs from any removed expected-width field and assert `build_stage2_models()` accepts it without explicit metadata validation.
-- [ ] Run the focused Stage 2 tests and expect failure because the implementation still requires `AlbertModel`, `.albert`, and `Stage2Dependencies.albert`.
-- [ ] Change imports and typed fields to `BertModel`, rename stable responsibility fields to `.bert` and `.phoneme_bert`, remove ALBERT vocabulary/hidden-width checks, and continue deriving the projection input from `bert.config.hidden_size`.
-- [ ] Run the focused Stage 2, bundle, Stage 2 runtime, and structure tests; expect PASS.
-- [ ] Commit with `git commit -m 'refactor: use bert for beetle phonemes'`.
+- [x] Replace temporary ALBERT fixtures with tiny `BertConfig`/`BertModel` fixtures and assert gradients reach `PhonemeEncoder.bert`, masked tokens remain zero, and pooled output geometry is unchanged.
+- [x] Add a bundle test whose BERT config deliberately differs from any removed expected-width field and assert `build_stage2_models()` accepts it without explicit metadata validation.
+- [x] Run the focused Stage 2 tests and expect failure because the implementation still requires `AlbertModel`, `.albert`, and `Stage2Dependencies.albert`.
+- [x] Change imports and typed fields to `BertModel`, rename stable responsibility fields to `.bert` and `.phoneme_bert`, remove ALBERT vocabulary/hidden-width checks, and continue deriving the projection input from `bert.config.hidden_size`.
+- [x] Run the focused Stage 2, bundle, Stage 2 runtime, and structure tests; expect PASS.
+- [x] Commit with `git commit -m 'refactor: use bert for beetle phonemes'`.
 
 ### Task 3: Local-only phoneme resource loading
 
@@ -71,13 +71,13 @@
 - `PhonemeResources` contains `model: BertModel` and `tokenizer: BertTokenizerFast`.
 - Consumes: a local Transformers directory; both loaders receive `local_files_only=True`.
 
-- [ ] Add a failing temporary test that monkeypatches `BertModel.from_pretrained` and `BertTokenizerFast.from_pretrained`, calls `load_phoneme_resources(Path('/models/phoneme-bert'))`, and asserts both receive that path plus `local_files_only=True` and that no vocabulary comparison occurs.
-- [ ] Run `nix develop --command uv run --no-sync --with pytest python -m pytest -q /tmp/test_beetle_runtime.py`; expect import failure because `training/runtime.py` does not exist.
-- [ ] Implement the frozen `PhonemeResources` dataclass and local-only loader without path probing, fallback downloads, vocabulary checks, or hidden-width checks; export both through `training/__init__.py`.
-- [ ] Run the runtime test and all `/tmp/test_beetle_*.py` tests; expect PASS.
-- [ ] Run Ruff and compileall over `src/runner/nodes/training/beetle`; expect exit zero.
-- [ ] Run the parameter report with the available synthetic BERT fixture; record the count and explicitly report any result above 150M.
-- [ ] Commit with `git commit -m 'feat: load local beetle phoneme bert'`.
+- [x] Add a failing temporary test that monkeypatches `BertModel.from_pretrained` and `BertTokenizerFast.from_pretrained`, calls `load_phoneme_resources(Path('/models/phoneme-bert'))`, and asserts both receive that path plus `local_files_only=True` and that no vocabulary comparison occurs.
+- [x] Run `nix develop --command uv run --no-sync --with pytest python -m pytest -q /tmp/test_beetle_runtime.py`; expect import failure because `training/runtime.py` does not exist.
+- [x] Implement the frozen `PhonemeResources` dataclass and local-only loader without path probing, fallback downloads, vocabulary checks, or hidden-width checks; export both through `training/__init__.py`.
+- [x] Run the runtime test and all `/tmp/test_beetle_*.py` tests; expect PASS.
+- [x] Run Ruff and compileall over `src/runner/nodes/training/beetle`; expect exit zero.
+- [x] Run the parameter report with the available synthetic BERT fixture; record the count and explicitly report any result above 150M.
+- [x] Commit with `git commit -m 'feat: load local beetle phoneme bert'`.
 
 ### Task 4: Resume the standalone training runtime
 
@@ -88,6 +88,6 @@
 - Consumes: `load_phoneme_resources()` during model allocation after database/checkpoint preflight.
 - Produces: an updated Task 8 assembly order that loads the local phoneme BERT only after eligibility and resume validation.
 
-- [ ] Update the existing runtime plan so `prepare_run()` remains data/checkpoint-only and model allocation uses `PhonemeResources` afterward.
-- [ ] Verify the runtime plan contains no ALBERT/2,048-token references and retains the Python-script/future-callback-node seam.
+- [x] Update the existing runtime plan so `prepare_run()` remains data/checkpoint-only and model allocation uses `PhonemeResources` afterward.
+- [x] Verify the runtime plan contains no ALBERT/2,048-token references and retains the Python-script/future-callback-node seam.
 - [ ] Commit with `git commit -m 'docs: update beetle runtime for local bert'`.

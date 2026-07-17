@@ -19,7 +19,7 @@ from .checkpoint import GradientTarget, NamedModuleGradients, StateKind
 from .loop import LoopIntervals
 from .optimizer import OptimizerSet
 from .stage1 import Stage1Trainer
-from .stage1_setup import Stage1Validator, tensor_metric
+from .stage1_setup import tensor_metric
 from .stage2_setup import (
     Stage2InputBuilder,
     Stage3Schedules,
@@ -58,7 +58,6 @@ class Stage3Trainer(Stage1Trainer):
         data_fingerprint: str,
         initial_loop: LoopState,
         input_builder: Stage2InputBuilder,
-        validator: Stage1Validator,
     ) -> None:
         if stage2.audio_encoder is not stage1.audio_encoder:
             raise ValueError("Stage 3 requires one shared audio encoder")
@@ -74,7 +73,6 @@ class Stage3Trainer(Stage1Trainer):
             config_fingerprint,
             data_fingerprint,
             initial_loop,
-            validator,
         )
         self.stage2_models = stage2.to(device).train()
         self.ema_latent_flow = ema_latent_flow.to(device).requires_grad_(False).eval()

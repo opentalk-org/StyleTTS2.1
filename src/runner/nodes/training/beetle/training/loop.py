@@ -17,13 +17,11 @@ from .state import LoopState, StageKind, TrainingPhase
 @dataclass(frozen=True)
 class LoopIntervals:
     log_every_steps: int
-    validation_every_steps: int
     checkpoint_every_steps: int
 
     def __post_init__(self) -> None:
         values = (
             self.log_every_steps,
-            self.validation_every_steps,
             self.checkpoint_every_steps,
         )
         if min(values) <= 0:
@@ -56,12 +54,6 @@ class StageTrainer(Protocol):
 
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]: ...
 
-    def validate(
-        self,
-        optimizer_step: int,
-        callbacks: TrainingCallbacks,
-    ) -> tuple[TrainingMetric, ...]: ...
-
     def checkpoint_payload(
         self,
         loop: LoopState,
@@ -84,12 +76,10 @@ def run_continuously(
                 continue
             if state.phase in (
                 TrainingPhase.OPTIMIZER_COMPLETE,
-                TrainingPhase.VALIDATING,
-                TrainingPhase.VALIDATION_COMPLETE,
                 TrainingPhase.CHECKPOINTING,
             ):
                 _complete_step_work(
-                    trainer, pipeline, callbacks, checkpoint_manager, state.phase
+                    trainer, pipeline, callbacks, checkpoint_manager
                 )
                 continue
             _run_batch(pipeline, trainer, callbacks, checkpoint_manager)
@@ -184,7 +174,6 @@ def _complete_accumulation(
         pipeline,
         callbacks,
         checkpoint_manager,
-        TrainingPhase.OPTIMIZER_COMPLETE,
     )
 
 
@@ -193,23 +182,8 @@ def _complete_step_work(
     pipeline: TrainingPipeline,
     callbacks: TrainingCallbacks,
     checkpoint_manager: CheckpointManager,
-    resume_phase: TrainingPhase,
 ) -> None:
     state = trainer.loop_state()
-    validation_due = _is_due(
-        state.optimizer_step, trainer.intervals.validation_every_steps
-    )
-    validation_complete = resume_phase in (
-        TrainingPhase.VALIDATION_COMPLETE,
-        TrainingPhase.CHECKPOINTING,
-    )
-    if validation_due and not validation_complete:
-        state = replace(state, phase=TrainingPhase.VALIDATING)
-        _announce(trainer, callbacks, state, ())
-        metrics = trainer.validate(state.optimizer_step, callbacks)
-        _validate_metrics(metrics)
-        state = replace(state, phase=TrainingPhase.VALIDATION_COMPLETE)
-        _announce(trainer, callbacks, state, metrics)
     checkpoint_due = _is_due(
         state.optimizer_step, trainer.intervals.checkpoint_every_steps
     )

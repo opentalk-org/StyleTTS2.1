@@ -30,11 +30,11 @@ from .optimizer import (
     learning_rate_schedule,
     loss_weight_schedule,
 )
-from .stage1 import Stage1Trainer, Stage1Validator, build_stage1_optimizers
+from .runtime import PhonemeResources, load_phoneme_resources
+from .stage1 import Stage1Trainer, build_stage1_optimizers
 from .stage2 import (
     Stage2InputBuilder,
     Stage2Trainer,
-    Stage2Validator,
     build_latent_flow_ema,
     build_stage2_optimizer,
 )
@@ -51,20 +51,9 @@ from .state import (
     restore_gradients,
     restore_rng_state,
 )
-from .validation import (
-    ArtifactKind,
-    ValidationArtifact,
-    ValidationOutput,
-    ValidationRecord,
-    ValidationSample,
-    ValidationSelection,
-    run_stage_validation,
-    select_validation_items,
-)
 
 __all__ = [
     "ArtifactEvent",
-    "ArtifactKind",
     "CHECKPOINT_VERSION",
     "CancellationRequested",
     "CheckpointManager",
@@ -79,13 +68,12 @@ __all__ = [
     "NamedState",
     "OptimizerSet",
     "ProgressEvent",
+    "PhonemeResources",
     "RngState",
     "StageKind",
     "Stage1Trainer",
-    "Stage1Validator",
     "Stage2InputBuilder",
     "Stage2Trainer",
-    "Stage2Validator",
     "Stage3Trainer",
     "StageTrainer",
     "StateKind",
@@ -98,11 +86,6 @@ __all__ = [
     "TrainingMetric",
     "TrainingPipeline",
     "TrainingPhase",
-    "ValidationArtifact",
-    "ValidationOutput",
-    "ValidationRecord",
-    "ValidationSample",
-    "ValidationSelection",
     "capture_gradients",
     "capture_named_state",
     "capture_rng_state",
@@ -112,13 +95,12 @@ __all__ = [
     "build_stage3_optimizers",
     "learning_rate_schedule",
     "loss_weight_schedule",
+    "load_phoneme_resources",
     "restore_checkpoint_gradients",
     "restore_gradients",
     "restore_named_states",
     "restore_rng_state",
     "run_continuously",
-    "run_stage_validation",
-    "select_validation_items",
     "validate_resume_fingerprints",
     "DefaultStage2InputBuilder",
 ]

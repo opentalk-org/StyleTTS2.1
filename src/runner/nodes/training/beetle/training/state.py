@@ -21,8 +21,6 @@ class TrainingPhase(StrEnum):
     GENERATOR_BACKWARD = "generator_backward"
     GENERATOR_COMPLETE = "generator_complete"
     OPTIMIZER_COMPLETE = "optimizer_complete"
-    VALIDATING = "validating"
-    VALIDATION_COMPLETE = "validation_complete"
     CHECKPOINTING = "checkpointing"
     CHECKPOINT_COMPLETE = "checkpoint_complete"
 
@@ -36,7 +34,6 @@ class LoopState:
     sampler_cursor: int
     cycle: int
     batch_index: int
-    validation_ids: tuple[str, ...]
 
     def __post_init__(self) -> None:
         counters = (

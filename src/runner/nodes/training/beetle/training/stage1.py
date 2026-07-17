@@ -15,7 +15,7 @@ from ..losses.acoustic import (
 from ..losses.adversarial import discriminator_step_loss, generator_step_loss
 from ..losses.composition import Stage1LossWeights
 from ..models.model import Stage1Models, Stage1Synthesis
-from .callbacks import TrainingCallbacks, TrainingMetric
+from .callbacks import TrainingMetric
 from .checkpoint import (
     CHECKPOINT_VERSION,
     CheckpointPayload,
@@ -32,7 +32,6 @@ from .loop import LoopIntervals
 from .optimizer import OptimizerSet
 from .stage1_setup import (
     Stage1Schedules,
-    Stage1Validator,
     build_stage1_optimizers,
     tensor_metric,
 )
@@ -44,7 +43,7 @@ from .state import (
     restore_rng_state,
 )
 
-__all__ = ["Stage1Trainer", "Stage1Validator", "build_stage1_optimizers"]
+__all__ = ["Stage1Trainer", "build_stage1_optimizers"]
 
 
 class Stage1Trainer:
@@ -62,7 +61,6 @@ class Stage1Trainer:
         config_fingerprint: str,
         data_fingerprint: str,
         initial_loop: LoopState,
-        validator: Stage1Validator,
     ) -> None:
         if initial_loop.stage is not self.stage:
             raise ValueError("Stage 1 trainer requires a Stage 1 loop state")
@@ -75,7 +73,6 @@ class Stage1Trainer:
         self.config_fingerprint = config_fingerprint
         self.data_fingerprint = data_fingerprint
         self._loop = initial_loop
-        self.validator = validator
         self.schedules = Stage1Schedules.from_config(stage_config)
         self.accumulation_steps = stage_config.accumulation_steps
 
@@ -163,13 +160,6 @@ class Stage1Trainer:
 
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:
         return self.optimizers.step(optimizer_step)
-
-    def validate(
-        self,
-        optimizer_step: int,
-        callbacks: TrainingCallbacks,
-    ) -> tuple[TrainingMetric, ...]:
-        return self.validator.run(optimizer_step, callbacks)
 
     def checkpoint_payload(
         self,

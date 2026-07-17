@@ -9,7 +9,6 @@ from ..config.training import OptimizerConfig, Precision, StageConfig
 from ..losses.stage2 import Stage2LossInput, Stage2LossWeights
 from ..models.model import Stage1Models
 from ..models.stage2 import Stage2Models
-from .callbacks import TrainingCallbacks, TrainingMetric
 from .checkpoint import LossScheduleState, LossWeight
 from .optimizer import (
     OptimizerSet,
@@ -45,14 +44,6 @@ class Stage2InputBuilder(Protocol):
         batch: object,
         loop: LoopState,
     ) -> Stage2LossInput: ...
-
-
-class Stage2Validator(Protocol):
-    def run(
-        self,
-        optimizer_step: int,
-        callbacks: TrainingCallbacks,
-    ) -> tuple[TrainingMetric, ...]: ...
 
 
 @dataclass(frozen=True)

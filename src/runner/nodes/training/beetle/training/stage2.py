@@ -8,7 +8,7 @@ from ..data.prefetch import DataPipelineState
 from ..data.records import BeetleBatch
 from ..losses.stage2 import compute_stage2_losses
 from ..models.stage2 import Stage2Models
-from .callbacks import TrainingCallbacks, TrainingMetric
+from .callbacks import TrainingMetric
 from .checkpoint import (
     CHECKPOINT_VERSION,
     CheckpointPayload,
@@ -27,7 +27,6 @@ from .stage1_setup import tensor_metric
 from .stage2_setup import (
     Stage2InputBuilder,
     Stage2Schedules,
-    Stage2Validator,
     build_latent_flow_ema,
     build_stage2_optimizer,
     frozen_stage2_modules,
@@ -45,7 +44,6 @@ from .state import (
 __all__ = [
     "Stage2InputBuilder",
     "Stage2Trainer",
-    "Stage2Validator",
     "build_latent_flow_ema",
     "build_stage2_optimizer",
 ]
@@ -67,7 +65,6 @@ class Stage2Trainer:
         data_fingerprint: str,
         initial_loop: LoopState,
         input_builder: Stage2InputBuilder,
-        validator: Stage2Validator,
     ) -> None:
         if initial_loop.stage is not self.stage:
             raise ValueError("Stage 2 trainer requires a Stage 2 loop state")
@@ -83,7 +80,6 @@ class Stage2Trainer:
         self.data_fingerprint = data_fingerprint
         self._loop = initial_loop
         self.input_builder = input_builder
-        self.validator = validator
         self.schedules = Stage2Schedules.from_config(stage_config)
         self.accumulation_steps = stage_config.accumulation_steps
 
@@ -133,13 +129,6 @@ class Stage2Trainer:
             self.models.latent_flow.config.ema_decay,
         )
         return metrics
-
-    def validate(
-        self,
-        optimizer_step: int,
-        callbacks: TrainingCallbacks,
-    ) -> tuple[TrainingMetric, ...]:
-        return self.validator.run(optimizer_step, callbacks)
 
     def checkpoint_payload(
         self,

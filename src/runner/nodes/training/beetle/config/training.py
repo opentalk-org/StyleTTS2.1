@@ -85,11 +85,6 @@ class ComplexityConfig(StrictConfigModel):
         return self
 
 
-class ValidationConfig(StrictConfigModel):
-    every_steps: int = Field(gt=0)
-    sample_count: int = Field(gt=0)
-
-
 class CheckpointConfig(StrictConfigModel):
     every_steps: int = Field(gt=0)
     keep_last: int = Field(gt=0)
@@ -108,7 +103,6 @@ class BeetleConfig(StrictConfigModel):
     complexity: ComplexityConfig
     data: DataConfig
     runtime: RuntimeConfig
-    validation: ValidationConfig
     checkpoint: CheckpointConfig
     stage2_objective: Stage2ObjectiveConfig
     stage1: StageConfig
