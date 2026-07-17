@@ -14,6 +14,11 @@ prompt `TextEncoder`, frozen helper models, discriminators, and other
 training-only modules. Prompt-to-style and prompt-to-voice training is outside
 the three stages.
 
+The latent-to-audio path has a separate compute ceiling, not a parameter
+ceiling. It must remain below 15 GFLOPs per generated second. Parameter count is
+still reported; a roughly 35M-parameter full-width decoder/generator path is
+acceptable when it satisfies the compute ceiling.
+
 ## Package structure
 
 Implementation lives mainly in `src/runner/nodes/training/beetle/`:
@@ -53,22 +58,51 @@ an arbitrary network graph.
 The style-free reconstruction path is:
 
 ```text
-mel -> AudioEncoder -> z -> Decoder(z, F0, N) -> h -> Generator(h, F0) -> waveform
+mel[T] -> AudioEncoder -> z[T/2]
+z -> FeatureLinear -> F0/N[T]
+z, F0, N -> Decoder -> h[T], prepared F0[T]
+h, prepared F0 -> Generator -> waveform[T*300]
 ```
 
 - `AudioEncoder` is a Piper/VITS-inspired dilated residual posterior encoder.
-  It returns posterior mean, log scale, and sampled latent `z`.
-- `FeatureLinear` predicts frame-level F0 and normalized log-energy `N` from
-  `z`.
-- `Decoder` transforms `z`, F0, and `N` into frame-rate synthesis features. It
-  has no style input.
+  It downsamples the hop-300 mel sequence by exactly two and returns posterior
+  mean, log scale, and sampled half-rate latent `z`. Collation pads full-rate
+  frame counts to an even length and retains the true mask and sample length.
+- `FeatureLinear` applies its framewise projection to `z`, then deterministic
+  linear interpolation by two produces full-rate F0 and normalized log-energy
+  `N` tracks. Training targets remain at hop 300.
+- `Decoder` is a style-free adaptation of the current
+  `StyleTTSISTFTNet2MBDecoder`'s StyleTTS2 `DecoderBackbone`. It preserves the
+  full-width encode/decode topology, stride-two F0/N projections, repeated
+  latent/F0/N injection, and final temporal upsampling. AdaIN is replaced by
+  learned, style-independent instance normalization. It returns typed
+  full-rate synthesis features and the prepared F0 used by the Generator.
 - `Generator` is a style-free multiband iSTFTNet2-MB waveform synthesizer with
   F0 harmonic excitation and a 300-sample output hop.
 
 StyleTTS2 nests its generator inside `Decoder`; Beetle keeps Decoder and
-Generator separate while preserving their conceptual order. Style and voice
-affect synthesized latents through `LatentFlowModel`, not the audio decoder or
-generator.
+Generator separate while preserving its tensor geometry and conceptual order.
+Style and voice affect synthesized half-rate latents through `LatentFlowModel`,
+not the audio decoder or generator. Duration and alignment targets consumed by
+the latent path are expressed at the half-rate latent clock; waveform and F0/N
+targets stay at the hop-300 full-rate clock.
+
+### Latent-to-audio complexity gate
+
+Complexity preflight profiles `FeatureLinear`, `Decoder`, and `Generator`
+together in evaluation mode with batch size one. The canonical benchmark uses
+40 half-rate latent frames and produces 80 hop-300 frames, or exactly one second
+at 24 kHz. FLOPs use `torch.utils.flop_counter.FlopCounterMode`, matching the
+repository convention where a multiply-accumulate counts as two operations.
+The report contains total parameters, total FLOPs, generated seconds, normalized
+GFLOPs per output second, and an explicit over-budget flag. Preflight fails
+before training when normalized compute is at least 15 GFLOPs per second.
+
+The unchanged current StyleTTS3 reference measures 35.223M parameters and
+4.054 GFLOPs for this benchmark. Beetle may retain comparable full decoder
+widths because the measured compute is below the approved ceiling. The final
+Beetle implementation is measured independently; reference measurements are
+context, not proof that the implementation passes.
 
 ### Text, context, duration, and latent generation
 
@@ -292,7 +326,9 @@ silently skipped.
 Temporary verification run through `nix develop --command` covers model tensor
 and mask contracts, normalizing-flow inversion and log determinants, analytic
 flow/shortcut targets, mixed conditioning within batches, all loss backward
-passes, optimizer ownership, parameter count, all three CLI preflights, and
-save/resume equivalence against an uninterrupted synthetic run. Temporary tests
-are removed before completion because repository policy forbids committed tests
-unless explicitly requested.
+passes, optimizer ownership, parameter count, the latent-to-audio complexity
+gate, all three CLI preflights, and save/resume equivalence against an
+uninterrupted synthetic run. Complexity verification asserts the exact
+half-rate/full-rate/output geometry and fails a deliberately oversized test
+configuration. Temporary tests are removed before completion because repository
+policy forbids committed tests unless explicitly requested.
