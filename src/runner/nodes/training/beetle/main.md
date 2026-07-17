@@ -20,8 +20,10 @@ callbacks without rewriting training behavior.
   geometry.
 - `DurationPredictor`: Piper/VITS conditional normalizing flow with variational
   dequantization of positive integer durations, exact likelihood, and reverse
-  sampling paths. Sampling converts the returned log-duration with
-  `ceil(exp(log_duration))` and masks padding before alignment expansion.
+  sampling paths. Its existing per-token linear input projection receives the
+  complete condition set at phoneme rate. Sampling converts the returned
+  log-duration with `ceil(exp(log_duration))` and masks padding before alignment
+  expansion.
 - `LatentFlowModel`: temporal CNN combining flow matching, diffusion forcing,
   and shortcut training. It receives `x_t`, independent tokenwise `t`, shortcut
   step `d`, masks, AdaLN conditioning, and condition-token concatenation at
@@ -36,6 +38,9 @@ callbacks without rewriting training behavior.
   context may be another speaker.
 - `StyleEncoder` and `VoiceEncoder`: separate encoders over AudioEncoder
   latents.
+- `LanguageEmbedding`: one learned vector per entry in the explicit ordered
+  language configuration. The same selected vector conditions duration and
+  latent generation.
 - `TextEncoder`: multilingual BERT for future style/voice prompts. It is not
   trained in the current three stages and is excluded from the parameter target.
 - `F0Extractor`: frozen StyleTTS2-compatible pitch model.
@@ -53,17 +58,23 @@ Alignment and duration supervision remain at the full hop-300 clock. Expanded
 phoneme conditioning is padded to even length and pairwise pooled before the
 half-rate LatentFlowModel. This avoids per-phoneme rounding drift.
 
-Phoneme embeddings, pooled phoneme vectors, style, voice, and pre/post text or
-audio context each start with their own linear projection. Style, voice, and
-pooled vectors are repeated across tokens. Conditions drive both AdaLN and
-explicit token concatenation at configured CNN layers. Boundary conditions are
-applied to the first or last `k` phonemes, with `k` sampled uniformly from 1 to
-32.
+Duration prediction and latent flow receive the same nine condition sources:
+phoneme features, pooled phoneme vectors, style, voice, pre/post text context,
+pre/post audio context, and language. Duration uses phoneme-rate phoneme
+features, repeats every vector across phoneme tokens, concatenates the raw
+sources, and applies its existing linear input projection. Latent flow uses
+alignment-expanded latent-rate phoneme features; every source starts with its
+own linear projection, including language. Projected latent conditions drive
+both AdaLN and explicit token concatenation at configured CNN layers. Boundary
+conditions use the first or last `k` context phonemes, with `k` sampled
+uniformly from 1 to 32.
 
 Condition dropout is independent per sample and source and uses exact zero
 tensors so arbitrary condition combinations can coexist in one batch. Initial
-dropout is 1% for phoneme embeddings and 75% for pre/post context. Boundary
-context availability is decided by dataset cutting before model dropout.
+dropout is 1% for phoneme embeddings and language and 75% for pre/post context.
+One source keep decision is shared by the phoneme-rate and latent-rate paths for
+each sample. Boundary context availability is decided by dataset cutting before
+model dropout.
 
 ## Data source
 
@@ -72,6 +83,10 @@ audio storage kind, waveform packs, JSONB segment payloads, alignments,
 phonemes, transcripts, voice labels, and optional prompts follow the exact
 shared schema. The loader builds a compact index, then bulk-prefetches current
 segment JSON and deduplicated waveform ranges with bounded decoded bytes.
+The configured language list is ordered and defines checkpoint-stable embedding
+IDs. Audio rows with a missing language or a value absent from that list are
+rejected before every stage pool is built; language is included in the dataset
+fingerprint. Normal batches may mix any configured language IDs.
 
 Training cuts are 1–45 seconds and balance sentence and mid-sentence targets.
 Pre/post audio or text context is cut by the dataset pipeline and may be absent.
@@ -140,8 +155,8 @@ with the aligner. The custom BERT checkpoint defines its own internal width and
 parameter count; training preflight reports the actual loaded total and reports
 when it exceeds the approved range. Stage 1 contributes 42,382,092 inference
 parameters before the custom BERT and Stage 2 inference modules are loaded.
-A BERT-base-shaped synthetic checkpoint with 178 tokens produces 198,488,767
-inference parameters, which exceeds the 150M ceiling by 48,488,767. Meeting the
+A BERT-base-shaped synthetic checkpoint with 178 tokens produces 199,603,199
+inference parameters, which exceeds the 150M ceiling by 49,603,199. Meeting the
 target therefore requires a smaller custom local BERT; startup reports the
 actual loaded result.
 

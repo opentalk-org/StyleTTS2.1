@@ -8,8 +8,12 @@ and atomic checkpoints use optimizer steps.
 
 The YAML `data.selection.dataset_id` must identify a PostgreSQL dataset. The
 index reads segment references through shared CRUD and accepts packed,
-non-virtual audio with 1–45 second target segments. Stages 2 and 3 additionally
-require text, phonemes, voice labels, aligned word boundaries, enough distinct
+non-virtual audio with 1–45 second target segments. Every row must have a
+language present in the explicit ordered `architecture.language.values` list;
+missing and unconfigured values are rejected before stage pools are built. The
+configured order defines checkpoint-stable embedding IDs and supports
+mixed-language batches. Stages 2 and 3 additionally require text, phonemes,
+voice labels, aligned word boundaries, enough distinct
 voices for the configured voice groups, and enough recordings for style groups.
 Empty or ineligible data fails before any model is loaded.
 
@@ -69,11 +73,18 @@ next exact state boundary and write a final atomic checkpoint.
 ## Runtime reports
 
 Startup reports the complete inference parameter count after loading the custom
-BERT. A BERT-base-shaped 178-token fixture measures 198,488,767 parameters,
-48,488,767 above the configured 150M ceiling, so the local BERT must be smaller
+BERT. A BERT-base-shaped 178-token fixture measures 199,603,199 parameters,
+49,603,199 above the configured 150M ceiling, so the local BERT must be smaller
 to meet the target. The report excludes prompt TextEncoder, frozen helpers,
 discriminators, and training-only heads. The latent-to-audio path is profiled
 and must remain strictly below 15 GFLOPs per generated second.
+
+One learned vector represents each configured language. Duration prediction and
+latent flow receive that same vector together with phoneme, pooled phoneme,
+style, voice, and pre/post text/audio conditions. Duration consumes the complete
+set at phoneme rate through its existing linear input projection; latent flow
+projects each source independently at latent rate for AdaLN and configured
+concatenation layers. Per-source dropout decisions are shared between rates.
 
 The reusable execution package depends only on callback protocols. A future
 Runflow node can map cancellation, progress, and artifact callbacks to node
