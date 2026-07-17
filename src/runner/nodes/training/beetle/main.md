@@ -150,3 +150,5 @@ below 15 GFLOPs per generated second. The canonical report uses batch one,
 evaluation mode, 40 latent frames to 80 hop-300 frames and 24,000 output samples,
 with PyTorch `FlopCounterMode` counting one MAC as two FLOPs. Parameter count is
 always reported. Training preflight reports and rejects an over-budget path.
+The current Beetle latent-to-audio implementation measures 31,364,748
+parameters and 3.942411 GFLOPs per generated second on that canonical profile.

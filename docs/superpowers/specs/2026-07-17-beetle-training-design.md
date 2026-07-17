@@ -109,6 +109,10 @@ widths because the measured compute is below the approved ceiling. The final
 Beetle implementation is measured independently; reference measurements are
 context, not proof that the implementation passes.
 
+The implemented Beetle `FeatureLinear` + style-free `Decoder` + separate
+`Generator` path measures 31,364,748 parameters and 3.942411 GFLOPs per
+generated second on the same canonical profile, below the 15 GFLOPs ceiling.
+
 A BERT-base-shaped synthetic phoneme checkpoint with 178 tokens produces a
 complete Beetle inference count of 198,488,767, exceeding the 150M target by
 48,488,767. Runtime reports the actual local checkpoint result; the custom BERT
