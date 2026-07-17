@@ -2,76 +2,86 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement and verify the style-free latent audio encoder, F0/N projection, Decoder, multiband iSTFTNet2-MB Generator, current StyleTTS discriminators, and Stage 1 losses.
+**Goal:** Implement the half-rate posterior path, full-width style-free StyleTTS2 DecoderBackbone, separate iSTFTNet2-MB Generator, current StyleTTS discriminators, Stage 1 losses, and measured complexity gate.
 
-**Architecture:** A VITS/Piper-inspired posterior encoder produces frame latents; a style-free residual decoder transforms latents with predicted F0/N; a separate harmonic multiband generator synthesizes hop-300 waveforms. Focused losses wrap current StyleTTS GAN behavior without adding discriminator families.
+**Architecture:** Hop-300 mel frames are padded to even length and encoded to a half-rate latent. FeatureLinear upsamples F0/N by two; the style-free decoder preserves the current four-block StyleTTS2 topology and restores full rate before the separate native-hop-300 generator. Model preflight measures the complete latent-to-audio path with the repository FLOP counter.
 
-**Tech Stack:** Python 3.12, PyTorch, torchaudio, current StyleTTS3 iSTFTNet2-MB and StyleTTS discriminator references, Nix.
+**Tech Stack:** Python 3.12, PyTorch, torchaudio, current StyleTTS3 iSTFTNet2-MB and discriminator references, Nix.
 
 ## Global Constraints
 
 - Decoder and Generator are separate and receive no style input.
-- Generator output length is exactly latent frames multiplied by 300 samples.
-- Reuse current StyleTTS multi-period and multi-resolution spectrogram discriminators; do not add Wave-U-Net or SLM models.
-- Keep fixed topology with configured dimensions and every file below 300 lines.
-- Use temporary CPU tests under `/tmp`; do not start a CUDA training job.
+- The decoder consumes `L` latent frames and returns `2L` synthesis frames; the Generator returns `2L * 300` samples.
+- Preserve the current DecoderBackbone encode/decode count, stride-two F0/N conditioning, repeated residual conditioning, and full default widths.
+- Latent-to-audio complexity is batch one, eval mode, 40 latent frames to one second at 24 kHz, using `FlopCounterMode` where one MAC is two FLOPs.
+- Report parameters but reject only normalized compute at or above 15 GFLOPs per generated second.
+- Reuse only current StyleTTS multi-period and multi-resolution spectrogram discriminators.
+- Keep fixed topology with configured dimensions, every file below 300 lines, and temporary CPU tests under `/tmp`.
 
 ---
 
-### Task 1: Convolution blocks, posterior encoder, and F0/N head
+### Task 1: Half-rate posterior and full-rate F0/N
 
 **Files:**
-- Create: `src/runner/nodes/training/beetle/models/modules/__init__.py`
-- Create: `src/runner/nodes/training/beetle/models/modules/convolution.py`
-- Create: `src/runner/nodes/training/beetle/models/audio_encoder.py`
-- Create: `src/runner/nodes/training/beetle/models/features.py`
-- Create temporarily: `/tmp/test_beetle_stage1.py`
-
-**Interfaces:**
-- Produces: `DilatedResidualStack`, `AudioPosterior(mean, log_scale, latent)`, `AudioEncoder.forward(mel, mask)`, `FeatureLinear.forward(z, mask) -> AcousticFeatures(f0, n)`, and frozen `F0Extractor.forward(waveform, lengths)`.
-- Consumes: architecture/audio config from the foundation plan.
-
-- [ ] Write failing tests with mel `(2, 80, 17)` and unequal masks. Assert posterior tensors `(2, latent_channels, 17)`, masked positions are zero, reparameterization is deterministic with a supplied generator, and FeatureLinear returns finite F0/N tracks `(2, 17)`.
-- [ ] Run `nix develop --command pytest -q /tmp/test_beetle_stage1.py`; expect import failure.
-- [ ] Implement gated dilated residual blocks with weight normalization, mask application after every residual operation, posterior projection to `2 * latent_channels`, clamped log scale from config, and explicit reparameterization.
-- [ ] Implement one framewise linear projection with named F0/N outputs plus a strict adapter for the configured StyleTTS2-compatible pitch checkpoint; no style conditioning or hidden fallback.
-- [ ] Re-run tests and a backward pass through `latent.mean() + f0.mean() + n.mean()`; expect PASS, finite predictor gradients, and no F0Extractor gradients.
-- [ ] Commit: `git commit -m 'feat: add beetle audio encoder'`.
-
-### Task 2: Style-free latent Decoder
-
-**Files:**
-- Create: `src/runner/nodes/training/beetle/models/decoder.py`
+- Modify: `src/runner/nodes/training/beetle/config/architecture.py`
+- Modify: `src/runner/nodes/training/beetle/config/default.yaml`
+- Modify: `src/runner/nodes/training/beetle/data/collate.py`
+- Modify: `src/runner/nodes/training/beetle/models/audio_encoder.py`
+- Modify: `src/runner/nodes/training/beetle/models/features.py`
 - Modify temporarily: `/tmp/test_beetle_stage1.py`
 
 **Interfaces:**
-- Produces: `Decoder.forward(z, f0, n, mask) -> Tensor[B, generator_channels, T]`.
-- Consumes: `DilatedResidualStack` and configured latent/decoder channels.
+- Produces: `AudioPosterior(mean, log_scale, latent, mask)` at half rate and `FeatureLinear.forward(latent, latent_mask, frame_mask) -> AcousticFeatures(f0, n)` at full rate.
+- Consumes: even padded mel `[B, 80, 2L]`, full mask `[B, 1, 2L]`, and explicit rate `2` from strict config.
 
-- [ ] Add failing shape/mask tests and inspect `inspect.signature(Decoder.forward)` to assert it contains no style argument.
-- [ ] Assert changing only F0 or `N` changes valid output while identical masked suffixes remain zero.
-- [ ] Implement bias-free F0/N projections, concatenation with `z`, residual encode/decode blocks, and a final generator-channel projection at unchanged frame rate.
-- [ ] Re-run focused tests; expect output `(2, generator_channels, 17)` and finite backward gradients.
-- [ ] Commit: `git commit -m 'feat: add style-free beetle decoder'`.
+- [ ] Add a failing collator/model test with source mel lengths `18` and `17`, even padded mel `(2, 80, 18)`, posterior shape `(2, 192, 9)`, F0/N shape `(2, 18)`, zero padded suffix, and reproducible sampling from equal generators; a batch whose longest source has 17 frames must pad to 18.
+- [ ] Run `nix develop --command uv run --with pytest python -m pytest -q /tmp/test_beetle_stage1.py -k 'posterior or feature'`; expect shape assertions to fail against the frame-preserving implementation.
+- [ ] Make mel padding round the batch maximum up to an even frame count, change the posterior input projection to configured stride-two convolution, derive the latent mask by pairwise validity, and keep mask application after every posterior residual operation.
+- [ ] Keep one framewise latent-to-F0/N linear projection, apply deterministic linear interpolation by two, and mask the full-rate outputs after interpolation.
+- [ ] Re-run the focused tests and backward through posterior mean plus F0/N; expect PASS, finite trainable gradients, and no gradients in the frozen F0 extractor.
+- [ ] Commit the task files with `git commit -m 'feat: add half-rate beetle posterior path'`.
 
-### Task 3: Harmonic multiband iSTFT Generator
+### Task 2: Full-width style-free DecoderBackbone
 
 **Files:**
-- Create: `src/runner/nodes/training/beetle/models/modules/source.py`
-- Create: `src/runner/nodes/training/beetle/models/modules/istft.py`
-- Create: `src/runner/nodes/training/beetle/models/generator.py`
+- Modify: `src/runner/nodes/training/beetle/config/architecture.py`
+- Modify: `src/runner/nodes/training/beetle/config/default.yaml`
+- Modify: `src/runner/nodes/training/beetle/models/modules/convolution.py`
+- Replace: `src/runner/nodes/training/beetle/models/decoder.py`
 - Modify temporarily: `/tmp/test_beetle_stage1.py`
 
 **Interfaces:**
-- Produces: `HarmonicSource`, `MultiBandISTFT`, `Generator.forward(features, f0, mask) -> Tensor[B, 1, T*300]`.
-- Consumes: explicit iSTFTNet2-MB geometry and Stage 1 Decoder output.
+- Produces: `DecoderOutput(features, f0, mask)` and `Decoder.forward(latent, f0, n, latent_mask, frame_mask) -> DecoderOutput`.
+- Consumes: latent `[B, 192, L]`, full-rate F0/N `[B, 2L]`, latent mask `[B,1,L]`, and full mask `[B,1,2L]`.
 
-- [ ] Add failing tests for intermediate temporal/frequency shapes, exact hop-300 length for odd/even frame counts, deterministic harmonic phase with supplied generator, finite waveform, and no style parameter.
-- [ ] Implement F0 harmonic excitation, configured temporal upsampling, 1D multi-receptive-field blocks, 2D shuffle/frequency upsampling, complex subband spectra, subband iSTFT, and multiband synthesis.
-- [ ] Assert frequency bins, subband count, and final waveform length inside forward paths so invalid configuration fails at the responsible layer.
-- [ ] Run generator forward/backward CPU tests; expect PASS with gradients in source and spectral branches.
-- [ ] Compare tensor geometry against the current StyleTTS3 paper-profile implementation without importing testing-only model classes at runtime.
-- [ ] Commit: `git commit -m 'feat: add beetle multiband generator'`.
+- [ ] Add failing tests that require no style argument, four decode blocks, default hidden width `1024`, residual width `64`, output width `512`, stride-two F0/N projections, and exact `L -> 2L` output.
+- [ ] Add behavior tests proving F0 and N independently affect valid output, padded full-rate frames remain zero, training smoothing preserves shapes, and evaluation returns the original prepared F0.
+- [ ] Implement a style-free residual block matching `AdainResBlk1d`: learned affine instance normalization, leaky-ReLU, dropout, weight-normalized convolutions, normalized shortcut addition, and optional nearest/depthwise-transposed-convolution upsampling.
+- [ ] Implement the reference topology: encode `latent+F0+N`, project latent residual to 64 channels, reinject latent residual/F0/N before every decode block, and upsample only in the final block.
+- [ ] Re-run focused forward/backward tests; expect features `(2,512,18)`, finite gradients, and exact masks.
+- [ ] Commit the task files with `git commit -m 'feat: match beetle decoder backbone'`.
+
+### Task 3: Native iSTFTNet2-MB Generator and complexity gate
+
+**Files:**
+- Modify: `src/runner/nodes/training/beetle/models/generator.py`
+- Modify: `src/runner/nodes/training/beetle/models/modules/source.py`
+- Modify: `src/runner/nodes/training/beetle/models/modules/istft.py`
+- Create: `src/runner/nodes/training/beetle/models/complexity.py`
+- Modify: `src/runner/nodes/training/beetle/config/training.py`
+- Modify: `src/runner/nodes/training/beetle/config/default.yaml`
+- Modify temporarily: `/tmp/test_beetle_stage1.py`
+
+**Interfaces:**
+- Produces: `Generator.forward(features, f0, mask, generator) -> Tensor[B,1,T*300]`, `ComplexityReport`, `profile_latent_audio()`, and `require_complexity_budget()`.
+- Consumes: `DecoderOutput`, `FeatureLinear`, canonical 40-frame latent input, and `ComplexityConfig(minimum_inference_parameters=100000000, maximum_inference_parameters=150000000, latent_audio_max_gflops_per_second=15.0, benchmark_seconds=1.0)`.
+
+- [ ] Add generator tests for exact current 128/64 temporal geometry, 4/8/16/33 frequency bins, four subbands, deterministic harmonic phase, and 24,000 samples from 80 synthesis frames.
+- [ ] Add a failing preflight test asserting finite positive parameter/FLOP totals, one generated second, normalized GFLOPs, and explicit rejection when the configured ceiling equals the measured result.
+- [ ] Keep the current iSTFTNet2-MB temporal, MRF, shuffle, frequency-upsample, multiband iSTFT, and PQMF geometry while removing only style-dependent source normalization.
+- [ ] Profile `FeatureLinear -> Decoder -> Generator` under `torch.no_grad()`, eval mode, and `FlopCounterMode(display=False)`; normalize total FLOPs by generated waveform seconds.
+- [ ] Run the real default profile through Nix; expect less than `15.0` GFLOPs/s. If it exceeds, report the measured modules and stop instead of silently shrinking the approved full-width topology.
+- [ ] Commit the task files with `git commit -m 'feat: add beetle audio complexity gate'`.
 
 ### Task 4: Stage 1 losses and discriminator adapter
 
@@ -83,16 +93,16 @@
 - Modify temporarily: `/tmp/test_beetle_stage1.py`
 
 **Interfaces:**
-- Produces: `build_styletts_discriminators(config)`, `AcousticLosses`, `AdversarialLosses`, `multiscale_reconstruction_loss`, and existing-objective discriminator/generator/feature losses.
-- Consumes: current StyleTTS `MultiPeriodDiscriminator`, `MultiResSpecDiscriminator`, and approved audio geometry.
+- Produces: `StyleTTSDiscriminators`, `build_styletts_discriminators()`, masked acoustic losses, LSGAN discriminator/generator losses, and feature matching.
+- Consumes: only current `MultiPeriodDiscriminator` and `MultiResSpecDiscriminator` families.
 
-- [ ] Add tests that assert the builder returns exactly those two discriminator types and no Wave-U-Net/WavLM module. Record real/fake logits and feature maps for finite separate discriminator and generator losses.
-- [ ] Add acoustic tests for masked KL, voiced-frame F0 MSE, valid-frame N MSE, and configured multi-resolution mel/STFT loss; padding changes must not affect values.
-- [ ] Implement thin typed adapters around current StyleTTS objectives and focused acoustic reductions normalized by valid element count.
-- [ ] Run separate discriminator and generator backward tests; discriminator detach rules must prevent generator gradients on the discriminator step and permit them on the generator step.
-- [ ] Commit: `git commit -m 'feat: add beetle acoustic and gan losses'`.
+- [ ] Add failing tests that assert exactly those two discriminator families and no Wave-U-Net, WavLM, or SLM module.
+- [ ] Add hand-calculated masked KL, voiced F0 MSE, N MSE, multiresolution reconstruction, detach-boundary, and separate backward tests.
+- [ ] Implement thin typed discriminator adapters and the current StyleTTS LSGAN/feature-matching equations; normalize acoustic reductions by valid element count.
+- [ ] Run focused loss tests; expect finite discriminator gradients only on its step and generator waveform gradients only on its step.
+- [ ] Commit the task files with `git commit -m 'feat: add beetle acoustic and gan losses'`.
 
-### Task 5: Stage 1 bundle and integrated synthetic step
+### Task 5: Stage 1 composition and synthetic step
 
 **Files:**
 - Create: `src/runner/nodes/training/beetle/models/__init__.py`
@@ -101,13 +111,12 @@
 - Modify temporarily: `/tmp/test_beetle_stage1.py`
 
 **Interfaces:**
-- Produces: `Stage1Models`, `build_stage1_models(config)`, `Stage1LossInput`, `Stage1LossOutput`, `compute_stage1_losses()` and `parameter_report()`.
-- Consumes: every model/loss from Tasks 1–4.
+- Produces: `Stage1Models`, `build_stage1_models()`, typed Stage 1 loss inputs/outputs, `compute_stage1_losses()`, and categorized parameter reporting.
+- Consumes: all Stage 1 models, losses, strict weights, and complexity report.
 
-- [ ] Add a synthetic batch test for the exact chain `mel -> AudioEncoder -> FeatureLinear -> Decoder -> Generator`, then compute every Stage 1 loss and perform separate discriminator/generator optimizer steps.
-- [ ] Assert all configured trainable Stage 1 modules receive finite gradients, frozen F0 extraction receives none, and output length equals input mel frames times 300.
-- [ ] Implement typed bundles and named loss output fields; reject missing loss weights rather than using defaults.
-- [ ] Add parameter reporting split into inference, frozen helper, and training-only totals.
-- [ ] Run the full temporary Stage 1 suite; expect PASS, then remove `/tmp/test_beetle_stage1.py` with `apply_patch`.
-- [ ] Run compileall, file line counts, and `git diff --check`; expect success and files below 300 lines.
-- [ ] Commit: `git commit -m 'feat: complete beetle stage1 models'`.
+- [ ] Add one synthetic test for `mel[18] -> latent[9] -> decoder[18] -> waveform[5400]`, every Stage 1 loss, and separate discriminator/generator optimizer steps.
+- [ ] Assert every intended trainable module receives finite gradients, frozen F0 extraction receives none, padding does not affect losses, and complexity preflight passes.
+- [ ] Implement typed bundles and named loss outputs; missing loss weights fail rather than defaulting.
+- [ ] Report inference, frozen-helper, and training-only parameter totals without applying a Stage 1 parameter ceiling.
+- [ ] Run the full temporary Stage 1 suite, compileall, Ruff, line counts, folder counts, and `git diff --check`; remove `/tmp/test_beetle_stage1.py` with `apply_patch` after PASS.
+- [ ] Commit the task files with `git commit -m 'feat: complete beetle stage1 models'`.

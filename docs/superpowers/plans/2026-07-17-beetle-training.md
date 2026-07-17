@@ -63,6 +63,7 @@ src/runner/nodes/training/beetle/
 │   ├── features.py
 │   ├── decoder.py
 │   ├── generator.py
+│   ├── complexity.py
 │   ├── phoneme.py
 │   ├── context.py
 │   ├── embeddings.py
@@ -117,7 +118,8 @@ src/runner/nodes/training/beetle/
 - [ ] Temporary tests pass through Nix and are removed.
 - [ ] A synthetic uninterrupted run and save/resume run produce equivalent next-step state for all three stages.
 - [ ] Stage 3 updates both current StyleTTS discriminator families.
-- [ ] Parameter reporting places inference-time Beetle modules within 100M–120M, excluding TextEncoder and training-only models.
+- [ ] Parameter reporting places inference-time Beetle modules within 100M–150M, excluding TextEncoder and training-only models.
+- [ ] Latent-to-audio preflight reports parameters and remains below 15 GFLOPs per generated second using the canonical one-second benchmark.
 - [ ] All three CLIs validate config and report empty-dataset eligibility without loading model weights.
 - [ ] `find src/runner/nodes/training/beetle -type f -printf '%s\n' | awk '{s+=$1} END {print s}'` reports less than 20 GB.
 - [ ] `git diff --check` passes and unrelated dirty files remain untouched.

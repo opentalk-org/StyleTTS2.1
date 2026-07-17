@@ -86,7 +86,7 @@
 - Produces: `Stage1Trainer` implementing the `StageTrainer` protocol.
 - Consumes: Stage 1 models/losses, both discriminator families, `BeetleBatch`, optimizer groups, AMP scaler, and loss schedules.
 
-- [ ] Run one synthetic step and assert AudioEncoder, FeatureLinear, Decoder, and Generator update from KL/F0/N/reconstruction/adversarial/feature-matching losses; F0 targets come from the frozen extractor and N targets from normalized log mel-frame energy.
+- [ ] Run one synthetic step and assert 18 mel frames produce 9 AudioEncoder frames, 18 FeatureLinear/Decoder frames, and 5400 waveform samples while KL/F0/N/reconstruction/adversarial/feature-matching losses update the intended modules; F0 targets come from the frozen extractor and N targets from normalized log mel-frame energy.
 - [ ] Assert multi-period and multi-resolution spectrogram discriminator parameters both update from detached real/fake audio and generator gradients do not enter the discriminator update.
 - [ ] Implement separated discriminator and generator passes, gradient accumulation, scheduled weights, clipping, scaler handling, and typed metric output.
 - [ ] Save/reload mid-accumulation and assert the next Stage 1 update equals uninterrupted execution.
@@ -183,6 +183,6 @@
 - [ ] Run all three synthetic trainers once uninterrupted and once with save/resume; compare next-step tensors, optimizer/scaler/EMA/discriminator state, sampler position, RNG state, metrics, and validation selection.
 - [ ] Run `nix develop --command python -m compileall -q src/runner/nodes/training/beetle`; expect exit 0.
 - [ ] Run file/folder limit checks and the master-plan byte-count command; expect project-owned files below 300 lines, project-owned folders below 16 files, and total size below 20 GB.
-- [ ] Run inference parameter reporting; expect 100M–120M excluding TextEncoder, frozen helpers, discriminators, and training-only heads.
+- [ ] Run inference parameter reporting; expect 100M–150M excluding TextEncoder, frozen helpers, discriminators, and training-only heads.
 - [ ] Remove the temporary test with `apply_patch`, run `git diff --check`, and inspect `git status --short` to confirm unrelated dirty files were untouched.
 - [ ] Commit: `git commit -m 'feat: complete beetle training baseline'`.

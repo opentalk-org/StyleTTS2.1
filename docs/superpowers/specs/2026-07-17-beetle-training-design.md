@@ -2,7 +2,7 @@
 
 ## Purpose and scope
 
-Beetle is a configurable 100M–120M parameter text-to-speech model trained in
+Beetle is a configurable 100M–150M parameter text-to-speech model trained in
 three standalone Python stages. The initial delivery is scripts plus strict
 configuration, not a Runflow node. Training logic must remain independent of
 CLI and Runflow lifecycle details so a later node can supply database
@@ -83,9 +83,10 @@ h, prepared F0 -> Generator -> waveform[T*300]
 StyleTTS2 nests its generator inside `Decoder`; Beetle keeps Decoder and
 Generator separate while preserving its tensor geometry and conceptual order.
 Style and voice affect synthesized half-rate latents through `LatentFlowModel`,
-not the audio decoder or generator. Duration and alignment targets consumed by
-the latent path are expressed at the half-rate latent clock; waveform and F0/N
-targets stay at the hop-300 full-rate clock.
+not the audio decoder or generator. Phoneme alignment and duration supervision
+stay at the hop-300 full-rate clock. Expanded phoneme conditioning is padded to
+an even full-rate length and pairwise pooled before it enters the half-rate
+latent flow. Waveform and F0/N targets also stay at the hop-300 full-rate clock.
 
 ### Latent-to-audio complexity gate
 

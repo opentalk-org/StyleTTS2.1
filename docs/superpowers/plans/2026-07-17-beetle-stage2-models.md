@@ -16,6 +16,7 @@
 - Use AdaLN plus token concatenation at explicit configured CNN layers.
 - Do not implement duration or latent losses until research-note audit passes.
 - Prompt TextEncoder is implemented but excluded from all three current optimizers.
+- Alignment and DurationPredictor supervision remain at hop 300; pairwise pooling converts expanded phoneme conditioning to the half-rate latent clock.
 - Keep every file below 300 lines and use temporary CPU tests under `/tmp`.
 
 ---
@@ -89,6 +90,7 @@
 - [ ] Add analytic tests for the documented conditional path: constructed `x_t` and velocity equal hand calculations for different `t` at every token; padding and independently noised tokens are handled exactly.
 - [ ] Add shortcut tests asserting `d=0` uses the base target, nonzero dyadic `d` uses two EMA half steps, EMA outputs are detached, and loss gradients enter only the online model.
 - [ ] Add conditioning tests that inspect hooks at configured layers and prove projected token concatenation plus AdaLN are both active; mixed source dropout must work per sample.
+- [ ] Assert full-rate hard alignment is padded to even length and pairwise pooled to exactly the AudioEncoder latent length without per-phoneme duration rounding.
 - [ ] Implement explicit residual CNN blocks, time/step embeddings, configured concat locations, masked velocity output, EMA bootstrap target, and one/multi-step integration from the verified notes.
 - [ ] Run finite loss/backward and one-vs-two-half-step synthetic consistency tests; expect PASS.
 - [ ] Commit: `git commit -m 'feat: add beetle latent shortcut flow'`.
@@ -140,7 +142,7 @@
 - [ ] Create one mixed synthetic batch containing all conditioning combinations and grouped style/voice views. Compute every approved Stage 2 loss in one forward/backward pass.
 - [ ] Assert Stage 1 AudioEncoder, Decoder, Generator, FeatureLinear, discriminators, and prompt TextEncoder have no gradients; every intended Stage 2 parameter has finite gradients.
 - [ ] Implement typed model/loss composition with no raw dictionary outputs and no missing-weight defaults.
-- [ ] Run parameter reporting and tune only configuration widths/depths until inference-time Beetle modules total 100M–120M, excluding TextEncoder and training-only modules.
+- [ ] Run parameter reporting and tune only configuration widths/depths until inference-time Beetle modules total 100M–150M, excluding TextEncoder and training-only modules.
 - [ ] Run the complete temporary Stage 2 suite; expect PASS, then remove `/tmp/test_beetle_stage2.py` with `apply_patch`.
 - [ ] Run compileall, line counts, and `git diff --check`; expect success.
 - [ ] Commit: `git commit -m 'feat: complete beetle stage2 models'`.
