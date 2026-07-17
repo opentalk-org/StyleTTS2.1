@@ -86,12 +86,12 @@
 - Produces: `LatentFlowModel.forward(x_t, t, d, conditions, mask)`, `FlowTrainingSample`, `sample_flow_training_case()`, `base_flow_loss()`, `shortcut_loss()`, and `integrate_latent_flow()`.
 - Consumes: `ConditionBank`, AdaLN-Zero, verified `papers/latent-flow.md`, and an EMA model supplied by training runtime.
 
-- [ ] Add analytic tests for the documented conditional path: constructed `x_t` and velocity equal hand calculations for different `t` at every token; padding and independently noised tokens are handled exactly.
-- [ ] Add shortcut tests asserting `d=0` uses the base target, nonzero dyadic `d` uses two EMA half steps, EMA outputs are detached, and loss gradients enter only the online model.
-- [ ] Add conditioning tests that inspect hooks at configured layers and prove projected token concatenation plus AdaLN are both active; mixed source dropout must work per sample.
-- [ ] Assert full-rate hard alignment is padded to even length and pairwise pooled to exactly the AudioEncoder latent length without per-phoneme duration rounding.
-- [ ] Implement explicit residual CNN blocks, time/step embeddings, configured concat locations, masked velocity output, EMA bootstrap target, and one/multi-step integration from the verified notes.
-- [ ] Run finite loss/backward and one-vs-two-half-step synthetic consistency tests; expect PASS.
+- [x] Add analytic tests for the documented conditional path: constructed `x_t` and velocity equal hand calculations for different `t` at every token; padding and independently noised tokens are handled exactly.
+- [x] Add shortcut tests asserting `d=0` uses the base target, nonzero dyadic `d` uses two EMA half steps, EMA outputs are detached, and loss gradients enter only the online model.
+- [x] Add conditioning tests that inspect hooks at configured layers and prove projected token concatenation plus AdaLN are both active; mixed source dropout must work per sample.
+- [x] Assert full-rate hard alignment is padded to even length and pairwise pooled to exactly the AudioEncoder latent length without per-phoneme duration rounding.
+- [x] Implement explicit residual CNN blocks, time/step embeddings, configured concat locations, masked velocity output, EMA bootstrap target, and one/multi-step integration from the verified notes.
+- [x] Run finite loss/backward and one-vs-two-half-step synthetic consistency tests; expect PASS.
 - [ ] Commit: `git commit -m 'feat: add beetle latent shortcut flow'`.
 
 ### Task 5: PhonemeAligner and alignment losses

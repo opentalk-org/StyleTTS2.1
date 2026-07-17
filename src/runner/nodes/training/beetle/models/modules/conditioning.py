@@ -46,6 +46,21 @@ class ProjectedConditions:
             + self.post_audio
         )
 
+    def concatenated(self) -> Tensor:
+        return torch.cat(
+            (
+                self.phoneme,
+                self.style,
+                self.voice,
+                self.pooled_phoneme,
+                self.pre_text,
+                self.post_text,
+                self.pre_audio,
+                self.post_audio,
+            ),
+            dim=1,
+        )
+
 
 class ConditionProjector(nn.Module):
     def __init__(self, input_channels: int, output_channels: int) -> None:
@@ -85,13 +100,16 @@ class ConditionBank(nn.Module):
         probability: float,
         generator: torch.Generator,
     ) -> Tensor:
-        keep = torch.rand(
-            tokens.shape[0],
-            1,
-            1,
-            device=tokens.device,
-            generator=generator,
-        ) >= probability
+        keep = (
+            torch.rand(
+                tokens.shape[0],
+                1,
+                1,
+                device=tokens.device,
+                generator=generator,
+            )
+            >= probability
+        )
         return self.projectors[name](tokens, keep)
 
     def forward(
@@ -139,9 +157,16 @@ class AdaLNZero1d(nn.Module):
         nn.init.zeros_(self.modulation.bias)
 
     def forward(self, features: Tensor, condition: Tensor, mask: Tensor) -> Tensor:
-        if features.ndim != 3 or mask.shape != (features.shape[0], 1, features.shape[2]):
+        if features.ndim != 3 or mask.shape != (
+            features.shape[0],
+            1,
+            features.shape[2],
+        ):
             raise ValueError("AdaLN requires [B,C,T] features and [B,1,T] mask")
-        if condition.shape[0] != features.shape[0] or condition.shape[2] != features.shape[2]:
+        if (
+            condition.shape[0] != features.shape[0]
+            or condition.shape[2] != features.shape[2]
+        ):
             raise ValueError("AdaLN condition must match batch and token dimensions")
         numeric_mask = mask.to(dtype=features.dtype)
         normalized = F.layer_norm(
@@ -169,7 +194,11 @@ class MaskedAttentivePool1d(nn.Module):
         self.output = nn.Linear(input_channels * 2, output_channels)
 
     def forward(self, features: Tensor, mask: Tensor) -> Tensor:
-        if features.ndim != 3 or mask.shape != (features.shape[0], 1, features.shape[2]):
+        if features.ndim != 3 or mask.shape != (
+            features.shape[0],
+            1,
+            features.shape[2],
+        ):
             raise ValueError("attentive pooling requires [B,C,T] and [B,1,T]")
         if torch.any(mask.sum(dim=2) == 0):
             raise ValueError("attentive pooling requires a valid token per item")
