@@ -170,7 +170,7 @@
 - [x] Implement signal-driven cancellation and concise step/loss/checkpoint logging through `StandaloneCallbacks`.
 - [x] Document exact Nix launch commands, database requirements, stage dependencies, resume behavior, absence of validation, parameter-count exclusions, and the future callback-only Runflow adapter seam.
 - [x] Run CLI and assembly tests through Nix; expect PASS.
-- [ ] Commit: `git commit -m 'feat: add beetle training scripts'`.
+- [x] Commit: `git commit -m 'feat: add beetle training scripts'`.
 
 ### Task 9: Integrated verification and cleanup
 
@@ -182,9 +182,9 @@
 - Produces: a reviewed baseline ready for direct CLI use and later node adaptation.
 - Consumes: every preceding linked plan.
 
-- [ ] Run all three synthetic trainers once uninterrupted and once with save/resume; compare next-step tensors, optimizer/scaler/EMA/discriminator state, sampler position, RNG state, and metrics.
-- [ ] Run `nix develop --command python -m compileall -q src/runner/nodes/training/beetle`; expect exit 0.
-- [ ] Run file/folder limit checks and the master-plan byte-count command; expect project-owned files below 300 lines, project-owned folders below 16 files, and total size below 20 GB.
-- [ ] Run inference parameter reporting; expect 100M–150M excluding TextEncoder, frozen helpers, discriminators, and training-only heads.
-- [ ] Keep the temporary tests in `/tmp`, run `git diff --check`, and inspect `git status --short` to confirm unrelated dirty files were untouched.
+- [x] Run all three synthetic trainers once uninterrupted and once with save/resume; compare next-step tensors, optimizer/scaler/EMA/discriminator state, sampler position, RNG state, and metrics.
+- [x] Run `nix develop --command python -m compileall -q src/runner/nodes/training/beetle`; expect exit 0.
+- [x] Run file/folder limit checks and the master-plan byte-count command; expect project-owned files below 300 lines, project-owned folders below 16 files, and total size below 20 GB.
+- [ ] Run inference parameter reporting; the BERT-base-shaped fixture reports 198,488,767, so a smaller custom local BERT is required for the 100M–150M target.
+- [x] Keep the temporary tests in `/tmp`, run scoped `git diff --check`, and inspect `git status --short` to confirm unrelated dirty files were untouched.
 - [ ] Commit: `git commit -m 'feat: complete beetle training baseline'`.
