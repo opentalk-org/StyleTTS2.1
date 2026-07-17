@@ -1,0 +1,8 @@
+/external/
+/files/
+/runs/
+**/__pycache__/
+*.ckpt
+*.pt
+*.pth
+*.safetensors

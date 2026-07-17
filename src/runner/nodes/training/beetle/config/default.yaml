@@ -1,0 +1,202 @@
+audio:
+  sample_rate: 24000
+  n_fft: 2048
+  win_length: 1200
+  hop_length: 300
+  mel_channels: 80
+  f_min: 0.0
+  f_max: 12000.0
+architecture:
+  posterior:
+    mel_channels: 80
+    latent_channels: 192
+    hidden_channels: 256
+    kernel_size: 5
+    dilation_cycle: [1, 2, 4, 8, 16]
+    cycles: 3
+    dropout: 0.1
+    log_scale_min: -7.0
+    log_scale_max: 2.0
+  feature:
+    latent_channels: 192
+  decoder:
+    latent_channels: 192
+    hidden_channels: 512
+    generator_channels: 512
+    block_count: 8
+    kernel_size: 3
+    dilation_cycle: [1, 3, 9, 27]
+    dropout: 0.1
+  generator:
+    input_channels: 512
+    initial_channels: 512
+    upsample_rates: [5, 5, 3]
+    upsample_kernel_sizes: [10, 10, 6]
+    resblock_kernel_sizes: [3, 7, 11]
+    resblock_dilations: [[1, 3, 5], [1, 3, 5], [1, 3, 5]]
+    harmonic_count: 8
+    subbands: 4
+    istft_n_fft: 16
+    istft_hop_length: 4
+  phoneme:
+    pretrained_model: albert-base-v2
+    vocabulary_size: 2048
+    albert_hidden_channels: 768
+    projection_channels: 256
+    cnn_hidden_channels: 384
+    cnn_layers: 5
+    cnn_kernel_size: 3
+    dropout: 0.1
+  context:
+    hidden_channels: 384
+    output_channels: 256
+    layers: 5
+    kernel_size: 3
+    dropout: 0.1
+  embeddings:
+    input_channels: 192
+    hidden_channels: 384
+    embedding_channels: 256
+    attention_channels: 128
+    layers: 6
+    speaker_classes: 4096
+  conditioning:
+    common_channels: 256
+    boundary_k_min: 1
+    boundary_k_max: 32
+    concat_layers: [2, 5, 8, 11]
+    dropout:
+      phoneme_embedding: 0.01
+      style: 0.1
+      voice: 0.1
+      pooled_phoneme: 0.1
+      pre_text: 0.75
+      post_text: 0.75
+      pre_audio: 0.75
+      post_audio: 0.75
+  duration_flow:
+    condition_channels: 256
+    hidden_channels: 256
+    flow_count: 4
+    posterior_flow_count: 4
+    convolution_layers: 3
+    kernel_size: 3
+    spline_bins: 10
+    spline_tail_bound: 5.0
+    dropout: 0.1
+  latent_flow:
+    latent_channels: 192
+    hidden_channels: 512
+    condition_channels: 256
+    time_embedding_channels: 128
+    layer_count: 12
+    kernel_size: 3
+    dilation_cycle: [1, 2, 4, 8, 16, 32]
+    minimum_steps: 128
+    base_case_probability: 0.75
+    ema_decay: 0.999
+  aligner:
+    checkpoint_asset_id: styletts2-aligner
+    vocabulary_size: 2048
+    hidden_channels: 256
+    blank_id: 0
+  text_encoder:
+    pretrained_model: bert-base-multilingual-cased
+    hidden_channels: 768
+    projection_channels: 256
+data:
+  selection:
+    dataset_id: 00000000-0000-0000-0000-000000000000
+    audio_file_ids: []
+  minimum_seconds: 1.0
+  maximum_seconds: 45.0
+  sentence_probability: 0.5
+  prefetch:
+    page_size: 2000
+    planned_batches: 8
+    decoded_bytes: 2147483648
+    worker_count: 2
+  grouping:
+    duration_boundaries_seconds: [2.0, 4.0, 8.0, 16.0, 32.0, 45.0]
+    voices_per_batch: 8
+    utterances_per_voice: 2
+    recordings_per_batch: 8
+    cuts_per_recording: 2
+  augmentation:
+    time_stretch_min: 0.9
+    time_stretch_max: 1.1
+    pitch_shift_min_semitones: -2.0
+    pitch_shift_max_semitones: 2.0
+    gain_min_db: -6.0
+    gain_max_db: 6.0
+runtime:
+  seed: 1234
+  device: cuda
+  log_every_steps: 100
+validation:
+  every_steps: 5000
+  sample_count: 8
+checkpoint:
+  every_steps: 1000
+  keep_last: 5
+stage1: &stage1
+  batch_size: 16
+  accumulation_steps: 1
+  precision: bfloat16
+  generator_optimizer: &generator_optimizer
+    learning_rate: 0.0002
+    beta1: 0.8
+    beta2: 0.99
+    epsilon: 0.000000001
+    weight_decay: 0.0001
+    warmup_steps: 1000
+    decay_steps: 1000000
+    minimum_learning_rate_ratio: 0.1
+    maximum_gradient_norm: 10.0
+  discriminator_optimizer: &discriminator_optimizer
+    learning_rate: 0.0002
+    beta1: 0.8
+    beta2: 0.99
+    epsilon: 0.000000001
+    weight_decay: 0.0001
+    warmup_steps: 1000
+    decay_steps: 1000000
+    minimum_learning_rate_ratio: 0.1
+    maximum_gradient_norm: 10.0
+  losses: &all_losses
+    encoder_kl: {value: 1.0, start_step: 0, warmup_steps: 0}
+    f0: {value: 1.0, start_step: 0, warmup_steps: 0}
+    n: {value: 1.0, start_step: 0, warmup_steps: 0}
+    reconstruction: {value: 45.0, start_step: 0, warmup_steps: 0}
+    discriminator: {value: 1.0, start_step: 0, warmup_steps: 1000}
+    generator_adversarial: {value: 1.0, start_step: 0, warmup_steps: 1000}
+    feature_matching: {value: 2.0, start_step: 0, warmup_steps: 1000}
+    duration_flow: {value: 1.0, start_step: 0, warmup_steps: 0}
+    latent_flow: {value: 1.0, start_step: 0, warmup_steps: 0}
+    shortcut: {value: 1.0, start_step: 0, warmup_steps: 0}
+    align_s2s: {value: 1.0, start_step: 0, warmup_steps: 0}
+    align_mono: {value: 1.0, start_step: 0, warmup_steps: 0}
+    align_ctc: {value: 1.0, start_step: 0, warmup_steps: 0}
+    voice_contrastive: {value: 1.0, start_step: 0, warmup_steps: 0}
+    voice_ge2e: {value: 1.0, start_step: 0, warmup_steps: 0}
+    style_contrastive: {value: 1.0, start_step: 0, warmup_steps: 0}
+    style_ge2e: {value: 1.0, start_step: 0, warmup_steps: 0}
+    style_speaker_adversarial: {value: 0.1, start_step: 0, warmup_steps: 1000}
+    style_statistics: {value: 1.0, start_step: 0, warmup_steps: 0}
+    style_reencoding: {value: 1.0, start_step: 0, warmup_steps: 0}
+stage2:
+  <<: *stage1
+  batch_size: 32
+  generator_optimizer:
+    <<: *generator_optimizer
+    learning_rate: 0.0001
+  discriminator_optimizer: null
+stage3:
+  <<: *stage1
+  batch_size: 8
+  generator_optimizer:
+    <<: *generator_optimizer
+    learning_rate: 0.00005
+  discriminator_optimizer:
+    <<: *discriminator_optimizer
+    learning_rate: 0.00005
