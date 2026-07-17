@@ -13,9 +13,8 @@ import torch
 from torchaudio.functional import resample
 from torch.utils.data import DataLoader, IterableDataset, get_worker_info
 
-from runner.nodes.training.styletts3.testing.vocoder_training.geometry import (
-    SAMPLE_RATE,
-    SEGMENT_SAMPLES,
+from runner.nodes.training.styletts3.testing.vocoder_training.profiles import (
+    SignalGeometry,
 )
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
@@ -38,15 +37,24 @@ class AudioSplits:
     validation: list[AudioEntry]
 
 
+def read_full_audio(entry: AudioEntry, signal: SignalGeometry) -> torch.Tensor:
+    frames, sample_rate = sf.read(entry.path, dtype="float32", always_2d=True)
+    assert sample_rate == signal.sample_rate, f"validation sample rate changed: {entry.path}"
+    return torch.from_numpy(np.mean(frames, axis=1, dtype=np.float32))
+
+
 def inspect_audio_entries(
     sources: list[tuple[UUID, Path]],
-    minimum_frames: int = SEGMENT_SAMPLES,
+    signal: SignalGeometry,
+    minimum_frames: int,
 ) -> list[AudioEntry]:
     entries: list[AudioEntry] = []
     for audio_id, path in sources:
         info = sf.info(path)
-        if info.samplerate != SAMPLE_RATE:
-            raise ValueError(f"{path} has sample rate {info.samplerate}; expected {SAMPLE_RATE}")
+        if info.samplerate != signal.sample_rate:
+            raise ValueError(
+                f"{path} has sample rate {info.samplerate}; expected {signal.sample_rate}"
+            )
         if info.frames >= minimum_frames:
             entries.append(AudioEntry(audio_id, path, info.frames))
     return entries
@@ -55,13 +63,19 @@ def inspect_audio_entries(
 class StreamingCropDataset(IterableDataset[torch.Tensor]):
     """Stream every fixed-size window while opening each source file once per epoch."""
 
-    def __init__(self, entries: list[AudioEntry], shuffle_buffer_size: int) -> None:
+    def __init__(
+        self,
+        entries: list[AudioEntry],
+        shuffle_buffer_size: int,
+        segment_samples: int,
+    ) -> None:
         self.entries = entries
         self.shuffle_buffer_size = shuffle_buffer_size
+        self.segment_samples = segment_samples
         self.epoch = 0
 
     def __len__(self) -> int:
-        return sum(math.ceil(entry.frames / SEGMENT_SAMPLES) for entry in self.entries)
+        return sum(math.ceil(entry.frames / self.segment_samples) for entry in self.entries)
 
     def __iter__(self) -> Iterator[torch.Tensor]:
         worker = get_worker_info()
@@ -79,7 +93,7 @@ class StreamingCropDataset(IterableDataset[torch.Tensor]):
         )
         buffer: list[torch.Tensor] = []
         for entry in worker_entries:
-            for segment in _stream_entry(entry):
+            for segment in _stream_entry(entry, self.segment_samples):
                 if len(buffer) < self.shuffle_buffer_size:
                     buffer.append(segment)
                     continue
@@ -111,17 +125,17 @@ def balanced_entry_shards(
     return [[entries[index] for index in indices] for indices in shard_indices]
 
 
-def _stream_entry(entry: AudioEntry) -> Iterator[torch.Tensor]:
-    complete_blocks, remainder = divmod(entry.frames, SEGMENT_SAMPLES)
+def _stream_entry(entry: AudioEntry, segment_samples: int) -> Iterator[torch.Tensor]:
+    complete_blocks, remainder = divmod(entry.frames, segment_samples)
     with sf.SoundFile(entry.path) as wav_file:
         for _ in range(complete_blocks):
-            frames = wav_file.read(SEGMENT_SAMPLES, dtype="float32", always_2d=True)
-            assert frames.shape[0] == SEGMENT_SAMPLES, f"short sequential read: {entry.path}"
+            frames = wav_file.read(segment_samples, dtype="float32", always_2d=True)
+            assert frames.shape[0] == segment_samples, f"short sequential read: {entry.path}"
             yield torch.from_numpy(np.mean(frames, axis=1, dtype=np.float32))
         if remainder:
-            wav_file.seek(entry.frames - SEGMENT_SAMPLES)
-            frames = wav_file.read(SEGMENT_SAMPLES, dtype="float32", always_2d=True)
-            assert frames.shape[0] == SEGMENT_SAMPLES, f"short tail read: {entry.path}"
+            wav_file.seek(entry.frames - segment_samples)
+            frames = wav_file.read(segment_samples, dtype="float32", always_2d=True)
+            assert frames.shape[0] == segment_samples, f"short tail read: {entry.path}"
             yield torch.from_numpy(np.mean(frames, axis=1, dtype=np.float32))
 
 
@@ -129,8 +143,9 @@ def build_train_loader(
     entries: list[AudioEntry],
     batch_size: int,
     workers: int,
+    signal: SignalGeometry,
 ) -> DataLoader[torch.Tensor]:
-    dataset = StreamingCropDataset(entries, SHUFFLE_BUFFER_SIZE)
+    dataset = StreamingCropDataset(entries, SHUFFLE_BUFFER_SIZE, signal.segment_samples)
     if workers == 0:
         return DataLoader(
             dataset,
@@ -156,6 +171,7 @@ def prepare_backend_audio(
     cache_dir: Path,
     validation_samples: int,
     max_train_items: int | None,
+    signal: SignalGeometry,
 ) -> AudioSplits:
     references = _list_dataset_references(dataset_id)
     if len(references) <= validation_samples:
@@ -168,15 +184,19 @@ def prepare_backend_audio(
         train_references = train_references[:max_train_items]
 
     selected = train_references + validation_references
-    _cache_backend_wavs(selected, cache_dir)
-    train_sources = [(reference.id, _cache_path(cache_dir, reference.id)) for reference in train_references]
-    validation_sources = [
-        (reference.id, _cache_path(cache_dir, reference.id)) for reference in validation_references
+    _cache_backend_wavs(selected, cache_dir, signal)
+    train_sources = [
+        (reference.id, _cache_path(cache_dir, reference.id, signal))
+        for reference in train_references
     ]
-    train = inspect_audio_entries(train_sources)
-    validation = inspect_audio_entries(validation_sources, minimum_frames=1)
+    validation_sources = [
+        (reference.id, _cache_path(cache_dir, reference.id, signal))
+        for reference in validation_references
+    ]
+    train = inspect_audio_entries(train_sources, signal, signal.segment_samples)
+    validation = inspect_audio_entries(validation_sources, signal, minimum_frames=1)
     if not train:
-        raise ValueError(f"no training WAV is at least {SEGMENT_SAMPLES} samples")
+        raise ValueError(f"no training WAV is at least {signal.segment_samples} samples")
     return AudioSplits(train, validation)
 
 
@@ -200,9 +220,17 @@ def _list_dataset_references(dataset_id: UUID) -> list[AudioFileReference]:
     return references
 
 
-def _cache_backend_wavs(references: list[AudioFileReference], cache_dir: Path) -> None:
+def _cache_backend_wavs(
+    references: list[AudioFileReference],
+    cache_dir: Path,
+    signal: SignalGeometry,
+) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
-    missing_ids = [reference.id for reference in references if not _cache_path(cache_dir, reference.id).is_file()]
+    missing_ids = [
+        reference.id
+        for reference in references
+        if not _cache_path(cache_dir, reference.id, signal).is_file()
+    ]
     if not missing_ids:
         return
     with database_session() as session:
@@ -214,16 +242,16 @@ def _cache_backend_wavs(references: list[AudioFileReference], cache_dir: Path) -
         with database_session() as session:
             wavs = audio_crud.bulk_read_audio_files(session, audio_ids)
         for audio_id, wav_bytes in wavs.items():
-            _write_cached_wav(wav_bytes, _cache_path(cache_dir, audio_id))
+            _write_cached_wav(wav_bytes, _cache_path(cache_dir, audio_id, signal), signal)
 
 
-def _write_cached_wav(wav_bytes: bytes, path: Path) -> None:
+def _write_cached_wav(wav_bytes: bytes, path: Path, signal: SignalGeometry) -> None:
     frames, source_rate = sf.read(io.BytesIO(wav_bytes), dtype="float32", always_2d=True)
     mono = torch.from_numpy(np.mean(frames, axis=1, dtype=np.float32))
-    if source_rate != SAMPLE_RATE:
-        mono = resample(mono, source_rate, SAMPLE_RATE)
-    sf.write(path, mono.numpy(), SAMPLE_RATE, subtype="FLOAT")
+    if source_rate != signal.sample_rate:
+        mono = resample(mono, source_rate, signal.sample_rate)
+    sf.write(path, mono.numpy(), signal.sample_rate, subtype="FLOAT")
 
 
-def _cache_path(cache_dir: Path, audio_id: UUID) -> Path:
-    return cache_dir / f"{audio_id}-{SAMPLE_RATE}.wav"
+def _cache_path(cache_dir: Path, audio_id: UUID, signal: SignalGeometry) -> Path:
+    return cache_dir / f"{audio_id}-{signal.sample_rate}.wav"

@@ -73,9 +73,16 @@ class MlflowRun:
         self._client = client
         self._run_id = run_id
         self._last_epoch_step: tuple[int, int] | None = None
+        self._last_logged_step: int | None = None
         self._pending: list[PendingOperation] = []
 
     def track(self, value: object, name: str, step: int, epoch: int | None = None) -> None:
+        if step != self._last_logged_step:
+            operation = self._client.log_metric(
+                self._run_id, "step", float(step), step=step, synchronous=False
+            )
+            self._queue(operation)
+            self._last_logged_step = step
         epoch_step = None if epoch is None else (epoch, step)
         if epoch_step is not None and epoch_step != self._last_epoch_step:
             operation = self._client.log_metric(
@@ -97,6 +104,9 @@ class MlflowRun:
     ) -> None:
         timestamp = int(time.time() * 1000)
         batch = [Metric(name, float(value), timestamp, step) for name, value in metrics.items()]
+        if step != self._last_logged_step:
+            batch.append(Metric("step", float(step), timestamp, step))
+            self._last_logged_step = step
         epoch_step = None if epoch is None else (epoch, step)
         if epoch_step is not None and epoch_step != self._last_epoch_step:
             batch.append(Metric("epoch", float(epoch), timestamp, step))

@@ -1,48 +1,27 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchaudio.functional import melscale_fbanks
 
-from runner.nodes.training.styletts3.testing.vocoder_training.geometry import (
-    MEL_CHANNELS,
-    MEL_FMAX,
-    MEL_FMIN,
-    SAMPLE_RATE,
-    SYNTHESIS_HOP,
-)
-
-
-@dataclass(frozen=True)
-class MelResolution:
-    n_fft: int
-    win_length: int
-    hop_length: int
-    n_mels: int = MEL_CHANNELS
-
-
-CONDITIONING_RESOLUTION = MelResolution(2048, 1200, 300)
-LOSS_RESOLUTIONS = (
-    MelResolution(1024, 600, 120),
-    MelResolution(2048, 1200, 240),
-    MelResolution(512, 240, 50),
+from runner.nodes.training.styletts3.testing.vocoder_training.profiles import (
+    MelGeometry,
+    SignalGeometry,
 )
 
 
 class LogMelSpectrogram(nn.Module):
-    def __init__(self, resolution: MelResolution) -> None:
+    def __init__(self, resolution: MelGeometry, sample_rate: int) -> None:
         super().__init__()
         self.resolution = resolution
         window = torch.hann_window(resolution.win_length)
         mel_basis = melscale_fbanks(
             n_freqs=resolution.n_fft // 2 + 1,
-            f_min=MEL_FMIN,
-            f_max=MEL_FMAX,
+            f_min=resolution.fmin,
+            f_max=resolution.fmax,
             n_mels=resolution.n_mels,
-            sample_rate=SAMPLE_RATE,
+            sample_rate=sample_rate,
             norm="slaney",
             mel_scale="slaney",
         ).transpose(0, 1)
@@ -68,21 +47,22 @@ class LogMelSpectrogram(nn.Module):
 
 
 class MultiResolutionMelLoss(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, signal: SignalGeometry) -> None:
         super().__init__()
-        self.transforms = nn.ModuleList(LogMelSpectrogram(item) for item in LOSS_RESOLUTIONS)
+        self.transforms = nn.ModuleList(
+            LogMelSpectrogram(item, signal.sample_rate) for item in signal.reconstruction
+        )
 
     def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         losses = [F.l1_loss(transform(prediction), transform(target)) for transform in self.transforms]
         return torch.stack(losses).mean()
 
 
-def conditioning_mel() -> LogMelSpectrogram:
-    return LogMelSpectrogram(CONDITIONING_RESOLUTION)
+def conditioning_mel(signal: SignalGeometry) -> LogMelSpectrogram:
+    return LogMelSpectrogram(signal.conditioning, signal.sample_rate)
 
 
-def pad_to_hop(waveform: torch.Tensor, hop: int = SYNTHESIS_HOP) -> tuple[torch.Tensor, int]:
+def pad_to_hop(waveform: torch.Tensor, hop: int) -> tuple[torch.Tensor, int]:
     original_length = waveform.shape[-1]
     right_padding = (-original_length) % hop
     return F.pad(waveform, (0, right_padding)), original_length
-
