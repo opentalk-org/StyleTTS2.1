@@ -30,6 +30,7 @@ from .optimizer import (
     learning_rate_schedule,
     loss_weight_schedule,
 )
+from .stage1 import Stage1Trainer, Stage1Validator, build_stage1_optimizers
 from .state import (
     LoopState,
     NamedGradient,
@@ -60,6 +61,8 @@ __all__ = [
     "ProgressEvent",
     "RngState",
     "StageKind",
+    "Stage1Trainer",
+    "Stage1Validator",
     "StageTrainer",
     "StateKind",
     "StateTarget",
@@ -73,6 +76,7 @@ __all__ = [
     "capture_gradients",
     "capture_named_state",
     "capture_rng_state",
+    "build_stage1_optimizers",
     "learning_rate_schedule",
     "loss_weight_schedule",
     "restore_checkpoint_gradients",

@@ -7,7 +7,7 @@ from torch import Tensor, nn
 
 from ..config.training import OptimizerConfig, ScheduledWeight
 from .callbacks import TrainingMetric
-from .checkpoint import NamedState, StateKind, capture_named_state
+from .checkpoint import NamedState, StateKind, StateTarget, capture_named_state
 
 
 @dataclass(frozen=True)
@@ -145,6 +145,17 @@ class OptimizerSet:
                 capture_named_state(group.name, StateKind.OPTIMIZER, group.optimizer),
                 capture_named_state(group.name, StateKind.SCHEDULER, group.schedule),
                 capture_named_state(group.name, StateKind.SCALER, group.scaler),
+            )
+        )
+
+    def state_targets(self) -> tuple[StateTarget, ...]:
+        return tuple(
+            target
+            for group in self.groups
+            for target in (
+                StateTarget(group.name, StateKind.OPTIMIZER, group.optimizer),
+                StateTarget(group.name, StateKind.SCHEDULER, group.schedule),
+                StateTarget(group.name, StateKind.SCALER, group.scaler),
             )
         )
 
