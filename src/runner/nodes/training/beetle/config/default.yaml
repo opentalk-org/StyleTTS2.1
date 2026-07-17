@@ -115,6 +115,7 @@ data:
     page_size: 2000
     planned_batches: 8
     decoded_bytes: 2147483648
+    maximum_full_read_bytes: 67108864
     worker_count: 2
   grouping:
     duration_boundaries_seconds: [2.0, 4.0, 8.0, 16.0, 32.0, 45.0]
