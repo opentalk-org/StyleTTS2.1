@@ -78,7 +78,7 @@
 - Produces: `Generator.forward(features, f0, mask, generator) -> Tensor[B,1,T*300]`, `ComplexityReport`, `profile_latent_audio()`, and `require_complexity_budget()`.
 - Consumes: `DecoderOutput`, `FeatureLinear`, canonical 40-frame latent input, and `ComplexityConfig(minimum_inference_parameters=100000000, maximum_inference_parameters=150000000, latent_audio_max_gflops_per_second=15.0, benchmark_seconds=1.0)`.
 
-- [ ] Add generator tests for exact current 128/64 temporal geometry, 4/8/16/33 frequency bins, four subbands, deterministic harmonic phase, and 24,000 samples from 80 synthesis frames.
+- [ ] Add generator tests for exact current 128/64 temporal geometry, native 4/8/16/31 frequency bins, four subbands, deterministic harmonic phase, and 24,000 samples from 80 synthesis frames.
 - [ ] Add a failing preflight test asserting finite positive parameter/FLOP totals, one generated second, normalized GFLOPs, and explicit rejection when the configured ceiling equals the measured result.
 - [ ] Keep the current iSTFTNet2-MB temporal, MRF, shuffle, frequency-upsample, multiband iSTFT, and PQMF geometry while removing only style-dependent source normalization.
 - [ ] Profile `FeatureLinear -> Decoder -> Generator` under `torch.no_grad()`, eval mode, and `FlopCounterMode(display=False)`; normalize total FLOPs by generated waveform seconds.

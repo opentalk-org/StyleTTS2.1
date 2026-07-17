@@ -78,7 +78,6 @@ class Generator(nn.Module):
             config.temporal_channels // 4,
             config.subbands * 2,
             third_kernel,
-            frequency_padding=0,
         )
         self.harmonic_features = HarmonicSourceFeatures(config, sample_rate)
         self.source_projection = nn.Conv1d(
@@ -146,7 +145,7 @@ class Generator(nn.Module):
         features = self.frequency_up_1(features)
         features = self.frequency_up_2(features)
         features = self.frequency_up_3(features)
-        guard_bins = self.config.istft_n_fft // 2 + 3
-        if features.shape[2] != guard_bins:
-            raise ValueError("frequency path did not reach configured guard bins")
-        return features[:, :, 1:-1]
+        frequency_bins = self.config.istft_n_fft // 2 + 1
+        if features.shape[2] != frequency_bins:
+            raise ValueError("frequency path did not reach configured iSTFT bins")
+        return features

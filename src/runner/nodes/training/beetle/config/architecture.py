@@ -104,12 +104,10 @@ class GeneratorConfig(StrictConfigModel):
         if self.istft_n_fft % self.subbands != 0:
             raise ValueError("istft_n_fft must be divisible by subbands")
         frequency_bins = self.initial_frequency_bins
-        last_stage = len(self.frequency_upsample_kernel_sizes) - 1
-        for index, kernel_size in enumerate(self.frequency_upsample_kernel_sizes):
-            padding = 0 if index == last_stage else 1
-            frequency_bins = (frequency_bins - 1) * 2 - 2 * padding + kernel_size
-        if frequency_bins != self.istft_n_fft // 2 + 3:
-            raise ValueError("frequency upsampling must provide two iSTFT guard bins")
+        for kernel_size in self.frequency_upsample_kernel_sizes:
+            frequency_bins = (frequency_bins - 1) * 2 - 2 + kernel_size
+        if frequency_bins != self.istft_n_fft // 2 + 1:
+            raise ValueError("frequency upsampling must match the iSTFT bins")
         if self.output_hop() % self.source_hop_length:
             raise ValueError("source_hop_length must divide output hop")
         if self.output_hop() // self.source_hop_length != self.temporal_upsample_rate:

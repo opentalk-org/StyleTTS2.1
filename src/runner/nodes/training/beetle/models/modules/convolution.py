@@ -225,7 +225,6 @@ class FrequencyUpsample(nn.Module):
         input_channels: int,
         output_channels: int,
         frequency_kernel_size: int,
-        frequency_padding: int = 1,
     ) -> None:
         super().__init__()
         self.convolution = nn.ConvTranspose2d(
@@ -233,7 +232,7 @@ class FrequencyUpsample(nn.Module):
             output_channels,
             (frequency_kernel_size, 3),
             stride=(2, 1),
-            padding=(frequency_padding, 1),
+            padding=(1, 1),
         )
 
     def forward(self, features: Tensor) -> Tensor:
