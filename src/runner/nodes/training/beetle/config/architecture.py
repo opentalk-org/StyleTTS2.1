@@ -60,6 +60,23 @@ class DecoderConfig(StrictConfigModel):
     f0_smoothing_kernel_sizes: tuple[int, ...] = Field(min_length=1)
     n_smoothing_kernel_sizes: tuple[int, ...] = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def validate_smoothing_kernels(self) -> "DecoderConfig":
+        fields = (
+            ("f0_smoothing_kernel_sizes", self.f0_smoothing_kernel_sizes),
+            ("n_smoothing_kernel_sizes", self.n_smoothing_kernel_sizes),
+        )
+        for field, kernels in fields:
+            invalid = any(
+                kernel < 0 or (kernel != 0 and kernel % 2 == 0)
+                for kernel in kernels
+            )
+            if invalid:
+                raise ValueError(
+                    f"{field} must contain only zero or positive odd integers"
+                )
+        return self
+
 
 class GeneratorConfig(StrictConfigModel):
     input_channels: int = Field(gt=0)

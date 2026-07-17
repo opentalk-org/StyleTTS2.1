@@ -85,6 +85,8 @@ class StyleFreeResidualBlock(nn.Module):
 
         residual = F.leaky_relu(self.norm1(features, input_mask), negative_slope=0.2)
         residual = self.resample(residual)
+        if self.upsample:
+            residual = residual * numeric_output_mask
         residual = self.conv1(self.dropout(residual)) * numeric_output_mask
         residual = F.leaky_relu(
             self.norm2(residual, output_mask),
