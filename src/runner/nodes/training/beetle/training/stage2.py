@@ -31,7 +31,8 @@ from .stage2_setup import (
     build_latent_flow_ema,
     build_stage2_optimizer,
     frozen_stage2_modules,
-    trainable_stage2_modules,
+    named_trainable_stage2_modules,
+    update_latent_flow_ema,
 )
 from .state import (
     LoopState,
@@ -126,7 +127,7 @@ class Stage2Trainer:
 
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:
         metrics = self.optimizers.step(optimizer_step)
-        _update_ema(
+        update_latent_flow_ema(
             self.ema_latent_flow,
             self.models.latent_flow,
             self.models.latent_flow.config.ema_decay,
@@ -189,7 +190,7 @@ class Stage2Trainer:
     def _state_modules(self) -> tuple[tuple[str, StateKind, nn.Module], ...]:
         trainable = tuple(
             (name, StateKind.MODEL, module)
-            for name, module in _named_trainable_modules(self.models)
+            for name, module in named_trainable_stage2_modules(self.models)
         )
         frozen = tuple(
             (name, StateKind.FROZEN_MODEL, module)
@@ -213,53 +214,16 @@ class Stage2Trainer:
     def _gradients(self) -> tuple[NamedModuleGradients, ...]:
         return tuple(
             NamedModuleGradients(name, capture_gradients(module))
-            for name, module in _named_trainable_modules(self.models)
+            for name, module in named_trainable_stage2_modules(self.models)
         )
 
     def _gradient_targets(self) -> tuple[GradientTarget, ...]:
         return tuple(
             GradientTarget(name, module)
-            for name, module in _named_trainable_modules(self.models)
+            for name, module in named_trainable_stage2_modules(self.models)
         )
-
-
-def _named_trainable_modules(models: Stage2Models) -> tuple[tuple[str, nn.Module], ...]:
-    names = (
-        "phoneme_encoder",
-        "latent_phoneme_encoder",
-        "duration_phoneme_encoder",
-        "context_phoneme_encoder",
-        "context_audio_encoder",
-        "style_encoder",
-        "voice_encoder",
-        "condition_bank",
-        "duration_predictor",
-        "latent_flow",
-        "style_speaker_classifier",
-        "style_statistics_head",
-        "voice_ge2e",
-        "style_ge2e",
-    )
-    modules = trainable_stage2_modules(models)
-    return tuple(zip(names, modules, strict=True))
 
 
 def _named_frozen_modules(models: Stage2Models) -> tuple[tuple[str, nn.Module], ...]:
     names = ("audio_encoder", "f0_extractor", "aligner", "text_encoder")
     return tuple(zip(names, frozen_stage2_modules(models), strict=True))
-
-
-@torch.no_grad()
-def _update_ema(ema: nn.Module, online: nn.Module, decay: float) -> None:
-    ema_parameters = dict(ema.named_parameters())
-    online_parameters = dict(online.named_parameters())
-    if ema_parameters.keys() != online_parameters.keys():
-        raise ValueError("EMA and online latent-flow parameters do not match")
-    for name, ema_parameter in ema_parameters.items():
-        ema_parameter.mul_(decay).add_(online_parameters[name], alpha=1 - decay)
-    ema_buffers = dict(ema.named_buffers())
-    online_buffers = dict(online.named_buffers())
-    if ema_buffers.keys() != online_buffers.keys():
-        raise ValueError("EMA and online latent-flow buffers do not match")
-    for name, ema_buffer in ema_buffers.items():
-        ema_buffer.copy_(online_buffers[name])

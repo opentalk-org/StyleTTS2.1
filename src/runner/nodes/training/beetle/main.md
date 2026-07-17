@@ -107,6 +107,14 @@ There is no Wave-U-Net, WavLM/SLM discriminator, or invented model family.
 3. End-to-end fine-tuning with differentiable latent generation. Train both
    current discriminator families in this stage.
 
+Stage 3 runs two audio paths per batch: posterior reconstruction and one-step
+text-conditioned shortcut generation from noise. Both paths use the same
+style-free Decoder followed by the separate Generator. Their F0, `N`, mel,
+generator-adversarial, and feature-matching losses are averaged into the
+existing Stage 1 terms, while the full Stage 2 objective remains active. The
+two fake paths share one discriminator backward/update, so adversarial training
+is not applied through a duplicate optimizer step.
+
 There are no epochs. Each script samples the dataset continuously and schedules
 all logging, validation, checkpoints, and loss weights by optimizer step.
 Validation saves stage-appropriate audio samples and typed metadata. Checkpoints

@@ -121,13 +121,13 @@
 - Produces: `Stage3Trainer` implementing `StageTrainer`.
 - Consumes: loaded Stage 1/2 inference models, latent-flow EMA, both discriminator families, posterior and text-conditioned paths, and every Stage 1/2 loss.
 
-- [ ] Construct a joint batch and assert posterior reconstruction and text-conditioned shortcut synthesis both pass through the style-free Decoder then separate Generator.
-- [ ] Assert every intended inference module updates, prompt TextEncoder remains excluded, and both discriminator families update in Stage 3.
-- [ ] Assert the composed objective contains every Stage 1 and Stage 2 named loss with configured step weights and no duplicated adversarial update.
-- [ ] Implement ordered discriminator, posterior-generator, and conditional-generator work with correct detach boundaries and shared accumulation semantics.
-- [ ] Save/reload mid-accumulation and assert the next Stage 3 model, discriminator, optimizer, scaler, sampler, and EMA states equal uninterrupted execution.
-- [ ] Run Stage 3 runtime tests through Nix; expect PASS.
-- [ ] Commit: `git commit -m 'feat: add beetle stage3 trainer'`.
+- [x] Construct a joint batch and assert posterior reconstruction and text-conditioned shortcut synthesis both pass through the style-free Decoder then separate Generator.
+- [x] Assert every intended inference module updates, prompt TextEncoder remains excluded, and both discriminator families update in Stage 3.
+- [x] Assert the composed objective contains every Stage 1 and Stage 2 named loss with configured step weights and no duplicated adversarial update.
+- [x] Implement ordered discriminator, posterior-generator, and conditional-generator work with correct detach boundaries and shared accumulation semantics.
+- [x] Save/reload mid-accumulation and assert the next Stage 3 model, discriminator, optimizer, scaler, sampler, and EMA states equal uninterrupted execution.
+- [x] Run Stage 3 runtime tests through Nix; expect PASS.
+- [x] Commit: `git commit -m 'feat: add beetle stage3 trainer'`.
 
 ### Task 7: Fixed validation selection and artifacts
 

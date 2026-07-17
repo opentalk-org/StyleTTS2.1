@@ -39,6 +39,7 @@ from .stage2 import (
     build_stage2_optimizer,
 )
 from .stage2_inputs import DefaultStage2InputBuilder, SpeakerIndex
+from .stage3 import Stage3Trainer, build_stage3_optimizers
 from .state import (
     LoopState,
     NamedGradient,
@@ -74,6 +75,7 @@ __all__ = [
     "Stage2InputBuilder",
     "Stage2Trainer",
     "Stage2Validator",
+    "Stage3Trainer",
     "StageTrainer",
     "StateKind",
     "StateTarget",
@@ -91,6 +93,7 @@ __all__ = [
     "build_stage1_optimizers",
     "build_latent_flow_ema",
     "build_stage2_optimizer",
+    "build_stage3_optimizers",
     "learning_rate_schedule",
     "loss_weight_schedule",
     "restore_checkpoint_gradients",

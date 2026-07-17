@@ -20,7 +20,7 @@ from .stage2_features import (
     group_ids,
     style_weights,
 )
-from .state import LoopState, StageKind
+from .state import LoopState
 
 
 class SpeakerIndex(Protocol):
@@ -246,7 +246,7 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
     def _generator(self, loop: LoopState, label: str) -> torch.Generator:
         seed = derive_seed(
             self.config.runtime.seed,
-            StageKind.STAGE2,
+            loop.stage,
             loop.cycle,
             loop.batch_index,
             label,
