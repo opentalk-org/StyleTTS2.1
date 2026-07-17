@@ -90,4 +90,4 @@
 
 - [x] Update the existing runtime plan so `prepare_run()` remains data/checkpoint-only and model allocation uses `PhonemeResources` afterward.
 - [x] Verify the runtime plan contains no ALBERT/2,048-token references and retains the Python-script/future-callback-node seam.
-- [ ] Commit with `git commit -m 'docs: update beetle runtime for local bert'`.
+- [x] Commit with `git commit -m 'docs: update beetle runtime for local bert'`.
