@@ -17,12 +17,12 @@ from ..models.stage2 import Stage2Models
 from .callbacks import TrainingMetric
 from .checkpoint import GradientTarget, NamedModuleGradients, StateKind
 from .loop import LoopIntervals
+from .loss_schedules import Stage3Schedules
 from .optimizer import OptimizerSet
 from .stage1 import Stage1Trainer
 from .stage1_setup import tensor_metric
 from .stage2_setup import (
     Stage2InputBuilder,
-    Stage3Schedules,
     build_stage3_optimizers,
     named_trainable_stage2_modules,
     trainable_stage2_modules,

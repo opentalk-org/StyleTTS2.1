@@ -22,11 +22,11 @@ from .checkpoint import (
     validate_resume_fingerprints,
 )
 from .loop import LoopIntervals
+from .loss_schedules import Stage2Schedules
 from .optimizer import OptimizerSet
 from .stage1_setup import tensor_metric
 from .stage2_setup import (
     Stage2InputBuilder,
-    Stage2Schedules,
     build_latent_flow_ema,
     build_stage2_optimizer,
     frozen_stage2_modules,
