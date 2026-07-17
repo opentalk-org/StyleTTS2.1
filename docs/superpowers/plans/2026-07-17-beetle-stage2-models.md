@@ -105,10 +105,10 @@
 - Produces: `AlignerOutput(ctc_logits, s2s_logits, soft_alignment, hard_alignment, durations)` and `AlignmentLosses(s2s, mono, ctc)`.
 - Consumes: StyleTTS-compatible pretrained aligner modules, phoneme/mel lengths, monotonic alignment search.
 
-- [ ] Build a tiny fake aligner test and assert soft alignment normalization, monotonic hard path, durations summing to valid mel frames, CTC blank handling, and padding-independent losses.
-- [ ] Implement a strict wrapper that loads the configured checkpoint, exposes typed outputs, and fails on vocabulary/checkpoint mismatch before training.
-- [ ] Implement sequence CE, soft-vs-hard monotonic loss, and CTC with exact masks and normalized denominators.
-- [ ] Run forward/backward tests; expect PASS with actionable failures for impossible length pairs.
+- [x] Build a tiny fake aligner test and assert soft alignment normalization, monotonic hard path, durations summing to valid mel frames, CTC blank handling, and padding-independent losses.
+- [x] Implement a strict wrapper that loads the configured checkpoint, exposes typed outputs, and fails on vocabulary/checkpoint mismatch before training.
+- [x] Implement sequence CE, soft-vs-hard monotonic loss, and CTC with exact masks and normalized denominators.
+- [x] Run forward/backward tests; expect PASS with actionable failures for impossible length pairs.
 - [ ] Commit: `git commit -m 'feat: add beetle phoneme alignment'`.
 
 ### Task 6: Style/voice metric and consistency losses
