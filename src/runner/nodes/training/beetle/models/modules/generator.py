@@ -2,14 +2,13 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from ..config.architecture import GeneratorConfig
-from .modules.convolution import (
+from ...config.architecture import GeneratorConfig
+from .convolution import (
     FrequencyShuffleBlock,
     FrequencyUpsample,
     ResBlock1D,
 )
-from .modules.istft import MultiBandISTFT
-from .modules.source import HarmonicSourceFeatures
+from .vocoder import HarmonicSourceFeatures, MultiBandISTFT
 
 
 class Generator(nn.Module):

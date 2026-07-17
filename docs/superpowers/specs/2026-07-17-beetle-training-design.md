@@ -27,8 +27,10 @@ Implementation lives mainly in `src/runner/nodes/training/beetle/`:
 beetle/
 ├── config/                 # strict YAML configuration
 ├── data/                   # database index, sampling, decoding, collators
-├── models/                 # complete task-level models
-│   └── modules/            # reusable neural-network building blocks
+├── models/                 # portable model package
+│   ├── model.py            # public model composition and builders
+│   ├── complexity.py       # inference profiling and limits
+│   └── modules/            # model implementations and internal layers
 ├── losses/                 # focused loss implementations
 ├── training/               # reusable trainers, state, validation, callbacks
 ├── scripts/
@@ -40,10 +42,12 @@ beetle/
 └── papers/                 # primary papers, extracted text, implementation notes
 ```
 
-Files stay below 300 lines and folders below 16 files. `models/modules/`
-contains residual CNN blocks, AdaLN-Zero conditioning, invertible transforms,
-masked pooling, normalization, harmonic excitation, and multiband iSTFT
-building blocks. `models/` contains only complete named models.
+Files stay below 300 lines and folders below 16 files. The lowercase `models/`
+package follows the shallow StyleTTS2 layout: `model.py` is the public
+composition entry point, while `models/modules/` owns complete network
+implementations and their internal layers. Large duration and latent-flow
+implementations may use lowercase subpackages under `models/modules/`.
+Losses, data access, and training lifecycle code remain outside `models/`.
 
 ## Architecture
 

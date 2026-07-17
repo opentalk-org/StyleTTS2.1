@@ -5,7 +5,7 @@ from typing import Protocol
 import torch
 from torch import Tensor, nn
 
-from ..models.discriminators import (
+from ..models.modules.discriminators import (
     DiscriminatorEvaluation,
     StyleTTSDiscriminatorOutput,
 )

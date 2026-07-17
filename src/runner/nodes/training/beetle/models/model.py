@@ -5,11 +5,10 @@ from torch import Tensor, nn
 
 from ..config import BeetleConfig
 from ..losses.acoustic import MultiResolutionReconstructionLoss
-from .audio_encoder import AudioEncoder, AudioPosterior
-from .decoder import Decoder, DecoderOutput
-from .discriminators import StyleTTSDiscriminators, build_styletts_discriminators
-from .features import AcousticFeatures, F0Extractor, FeatureLinear
-from .generator import Generator
+from .modules.audio import AcousticFeatures, AudioEncoder, AudioPosterior, F0Extractor, FeatureLinear
+from .modules.decoder import Decoder, DecoderOutput
+from .modules.discriminators import StyleTTSDiscriminators, build_styletts_discriminators
+from .modules.generator import Generator
 
 
 @dataclass(frozen=True)

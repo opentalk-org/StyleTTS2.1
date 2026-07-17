@@ -6,8 +6,8 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.nn.utils.parametrizations import weight_norm
 
-from ..config.architecture import DecoderConfig
-from .modules.convolution import DecoderResidualBlock
+from ...config.architecture import DecoderConfig
+from .convolution import DecoderResidualBlock
 
 
 @dataclass(frozen=True)

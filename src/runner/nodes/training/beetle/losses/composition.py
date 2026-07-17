@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 from torch import Tensor
 
-from ..models.bundle import Stage1Models, Stage1Synthesis
-from ..models.features import AcousticFeatures
+from ..models.model import Stage1Models, Stage1Synthesis
+from ..models.modules.audio import AcousticFeatures
 from .acoustic import masked_f0_mse, masked_kl_standard_normal, masked_n_mse
 from .adversarial import discriminator_step_loss, generator_step_loss
 

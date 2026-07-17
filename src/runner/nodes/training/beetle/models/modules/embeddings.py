@@ -4,9 +4,9 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from ..config.architecture import EmbeddingEncoderConfig
-from .modules.convolution import DilatedResidualStack
-from .modules.pooling import MaskedAttentivePool1d
+from ...config.architecture import EmbeddingEncoderConfig
+from .conditioning import MaskedAttentivePool1d
+from .convolution import DilatedResidualStack
 
 
 class EmbeddingEncoder(nn.Module):

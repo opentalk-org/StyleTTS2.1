@@ -25,9 +25,7 @@
 
 **Files:**
 - Create: `src/runner/nodes/training/beetle/models/modules/conditioning.py`
-- Create: `src/runner/nodes/training/beetle/models/modules/pooling.py`
-- Create: `src/runner/nodes/training/beetle/models/phoneme.py`
-- Create: `src/runner/nodes/training/beetle/models/context.py`
+- Create: `src/runner/nodes/training/beetle/models/modules/text.py`
 - Create temporarily: `/tmp/test_beetle_stage2.py`
 
 **Interfaces:**
@@ -43,8 +41,8 @@
 ### Task 2: Style, voice, and future prompt encoders
 
 **Files:**
-- Create: `src/runner/nodes/training/beetle/models/embeddings.py`
-- Create: `src/runner/nodes/training/beetle/models/text_prompt.py`
+- Create: `src/runner/nodes/training/beetle/models/modules/embeddings.py`
+- Modify: `src/runner/nodes/training/beetle/models/modules/text.py`
 - Modify temporarily: `/tmp/test_beetle_stage2.py`
 
 **Interfaces:**
@@ -60,8 +58,8 @@
 ### Task 3: Invertible transforms and DurationPredictor
 
 **Files:**
-- Create: `src/runner/nodes/training/beetle/models/modules/flows.py`
-- Create: `src/runner/nodes/training/beetle/models/duration.py`
+- Create: `src/runner/nodes/training/beetle/models/modules/duration/transforms.py`
+- Create: `src/runner/nodes/training/beetle/models/modules/duration/model.py`
 - Create: `src/runner/nodes/training/beetle/losses/duration.py`
 - Modify temporarily: `/tmp/test_beetle_stage2.py`
 
@@ -79,7 +77,8 @@
 ### Task 4: LatentFlowModel and merged flow objectives
 
 **Files:**
-- Create: `src/runner/nodes/training/beetle/models/latent_flow.py`
+- Create: `src/runner/nodes/training/beetle/models/modules/latent_flow/model.py`
+- Create: `src/runner/nodes/training/beetle/models/modules/latent_flow/integration.py`
 - Create: `src/runner/nodes/training/beetle/losses/flow.py`
 - Modify temporarily: `/tmp/test_beetle_stage2.py`
 
@@ -98,7 +97,7 @@
 ### Task 5: PhonemeAligner and alignment losses
 
 **Files:**
-- Create: `src/runner/nodes/training/beetle/models/aligner.py`
+- Create: `src/runner/nodes/training/beetle/models/modules/aligner.py`
 - Create: `src/runner/nodes/training/beetle/losses/alignment.py`
 - Modify temporarily: `/tmp/test_beetle_stage2.py`
 
@@ -131,7 +130,7 @@
 ### Task 7: Stage 2 bundle and full synthetic objective
 
 **Files:**
-- Modify: `src/runner/nodes/training/beetle/models/bundle.py`
+- Modify: `src/runner/nodes/training/beetle/models/model.py`
 - Modify: `src/runner/nodes/training/beetle/losses/composition.py`
 - Modify temporarily: `/tmp/test_beetle_stage2.py`
 

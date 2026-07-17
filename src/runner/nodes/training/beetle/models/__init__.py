@@ -1,15 +1,14 @@
-from .audio_encoder import AudioEncoder, AudioPosterior
-from .bundle import (
+from .model import (
     ParameterReport,
     Stage1Models,
     Stage1Synthesis,
     build_stage1_models,
     normalized_log_mel_energy,
 )
-from .decoder import Decoder, DecoderOutput
-from .discriminators import StyleTTSDiscriminators, build_styletts_discriminators
-from .features import AcousticFeatures, F0Extractor, FeatureLinear
-from .generator import Generator
+from .modules.audio import AcousticFeatures, AudioEncoder, AudioPosterior, F0Extractor, FeatureLinear
+from .modules.decoder import Decoder, DecoderOutput
+from .modules.discriminators import StyleTTSDiscriminators, build_styletts_discriminators
+from .modules.generator import Generator
 
 __all__ = [
     "AcousticFeatures",

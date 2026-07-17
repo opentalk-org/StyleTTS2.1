@@ -5,9 +5,9 @@ from torch import nn
 from torch.utils.flop_counter import FlopCounterMode
 
 from ..config.training import BeetleConfig, ComplexityConfig
-from .decoder import Decoder
-from .features import FeatureLinear
-from .generator import Generator
+from .modules.audio import FeatureLinear
+from .modules.decoder import Decoder
+from .modules.generator import Generator
 
 
 @dataclass(frozen=True)

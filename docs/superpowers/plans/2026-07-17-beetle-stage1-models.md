@@ -26,8 +26,7 @@
 - Modify: `src/runner/nodes/training/beetle/config/architecture.py`
 - Modify: `src/runner/nodes/training/beetle/config/default.yaml`
 - Modify: `src/runner/nodes/training/beetle/data/collate.py`
-- Modify: `src/runner/nodes/training/beetle/models/audio_encoder.py`
-- Modify: `src/runner/nodes/training/beetle/models/features.py`
+- Modify: `src/runner/nodes/training/beetle/models/modules/audio.py`
 - Modify temporarily: `/tmp/test_beetle_stage1.py`
 
 **Interfaces:**
@@ -47,7 +46,7 @@
 - Modify: `src/runner/nodes/training/beetle/config/architecture.py`
 - Modify: `src/runner/nodes/training/beetle/config/default.yaml`
 - Modify: `src/runner/nodes/training/beetle/models/modules/convolution.py`
-- Replace: `src/runner/nodes/training/beetle/models/decoder.py`
+- Replace: `src/runner/nodes/training/beetle/models/modules/decoder.py`
 - Modify temporarily: `/tmp/test_beetle_stage1.py`
 
 **Interfaces:**
@@ -64,10 +63,9 @@
 ### Task 3: Native iSTFTNet2-MB Generator and complexity gate
 
 **Files:**
-- Modify: `src/runner/nodes/training/beetle/models/generator.py`
+- Modify: `src/runner/nodes/training/beetle/models/modules/generator.py`
 - Modify: `src/runner/nodes/training/beetle/models/modules/convolution.py`
-- Modify: `src/runner/nodes/training/beetle/models/modules/source.py`
-- Modify: `src/runner/nodes/training/beetle/models/modules/istft.py`
+- Modify: `src/runner/nodes/training/beetle/models/modules/vocoder.py`
 - Create: `src/runner/nodes/training/beetle/models/complexity.py`
 - Modify: `src/runner/nodes/training/beetle/config/__init__.py`
 - Modify: `src/runner/nodes/training/beetle/config/training.py`
@@ -88,7 +86,7 @@
 ### Task 4: Stage 1 losses and discriminator adapter
 
 **Files:**
-- Create: `src/runner/nodes/training/beetle/models/discriminators.py`
+- Create: `src/runner/nodes/training/beetle/models/modules/discriminators.py`
 - Create: `src/runner/nodes/training/beetle/losses/__init__.py`
 - Create: `src/runner/nodes/training/beetle/losses/acoustic.py`
 - Create: `src/runner/nodes/training/beetle/losses/adversarial.py`
@@ -108,7 +106,7 @@
 
 **Files:**
 - Create: `src/runner/nodes/training/beetle/models/__init__.py`
-- Create: `src/runner/nodes/training/beetle/models/bundle.py`
+- Create: `src/runner/nodes/training/beetle/models/model.py`
 - Create: `src/runner/nodes/training/beetle/losses/composition.py`
 - Modify temporarily: `/tmp/test_beetle_stage1.py`
 
