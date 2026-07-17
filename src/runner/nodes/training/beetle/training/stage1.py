@@ -12,8 +12,6 @@ from ..losses.acoustic import (
     masked_kl_standard_normal,
     masked_n_mse,
 )
-from ..losses.adversarial import discriminator_step_loss, generator_step_loss
-from ..losses.composition import Stage1LossWeights
 from ..models.model import Stage1Models, Stage1Synthesis
 from .callbacks import TrainingMetric
 from .checkpoint import (
@@ -31,6 +29,7 @@ from .checkpoint import (
 from .loop import LoopIntervals
 from .optimizer import OptimizerSet
 from .stage1_setup import (
+    AcousticLossWeights,
     Stage1Schedules,
     build_stage1_optimizers,
     tensor_metric,
@@ -48,7 +47,7 @@ __all__ = ["Stage1Trainer", "build_stage1_optimizers"]
 
 class Stage1Trainer:
     stage = StageKind.STAGE1
-    trains_discriminator = True
+    trains_discriminator = False
 
     def __init__(
         self,
@@ -64,7 +63,17 @@ class Stage1Trainer:
     ) -> None:
         if initial_loop.stage is not self.stage:
             raise ValueError("Stage 1 trainer requires a Stage 1 loop state")
-        self.models = models.to(device).train()
+        self.models = models
+        for module in (
+            models.audio_encoder,
+            models.feature_linear,
+            models.decoder,
+            models.generator,
+            models.reconstruction_loss,
+        ):
+            module.to(device).train()
+        models.f0_extractor.to(device).requires_grad_(False).eval()
+        models.discriminators.cpu().requires_grad_(False).eval()
         self.stage_config = stage_config
         self.runtime_seed = runtime_seed
         self.device = device
@@ -88,22 +97,8 @@ class Stage1Trainer:
         self,
         batch: BeetleBatch,
     ) -> tuple[TrainingMetric, ...]:
-        waveform, mel, frame_mask = self._inputs(batch)
-        with torch.no_grad(), self._autocast():
-            synthesis = self._synthesize(mel, frame_mask, "discriminator")
-        with self._autocast():
-            loss = discriminator_step_loss(
-                self.models.discriminators,
-                waveform,
-                synthesis.waveform,
-            )
-            weighted = loss * self._weights().discriminator
-        scaled = weighted / self.accumulation_steps
-        self.optimizers.group("discriminator").backward(scaled)
-        return (
-            tensor_metric("discriminator", loss),
-            tensor_metric("discriminator_total", weighted),
-        )
+        del batch
+        raise RuntimeError("Stage 1 has no discriminator pass")
 
     def generator_backward(
         self,
@@ -133,19 +128,12 @@ class Stage1Trainer:
                 waveform,
                 synthesis.sample_mask,
             ).total
-            adversarial = generator_step_loss(
-                self.models.discriminators,
-                waveform,
-                synthesis.waveform,
-            )
             weights = self._weights()
             total = (
                 encoder_kl * weights.encoder_kl
                 + f0 * weights.f0
                 + n * weights.n
                 + reconstruction * weights.reconstruction
-                + adversarial.adversarial * weights.generator_adversarial
-                + adversarial.feature_matching * weights.feature_matching
             )
         self.optimizers.group("generator").backward(total / self.accumulation_steps)
         return (
@@ -153,8 +141,6 @@ class Stage1Trainer:
             tensor_metric("f0", f0),
             tensor_metric("n", n),
             tensor_metric("reconstruction", reconstruction),
-            tensor_metric("generator_adversarial", adversarial.adversarial),
-            tensor_metric("feature_matching", adversarial.feature_matching),
             tensor_metric("generator_total", total),
         )
 
@@ -241,7 +227,7 @@ class Stage1Trainer:
         )
         return torch.autocast(self.device.type, dtype=dtype)
 
-    def _weights(self) -> Stage1LossWeights:
+    def _weights(self) -> AcousticLossWeights:
         return self.schedules.weights(self._loop.optimizer_step)
 
     def _model_states(self):
@@ -263,7 +249,6 @@ class Stage1Trainer:
             ("decoder", StateKind.MODEL, self.models.decoder),
             ("generator", StateKind.MODEL, self.models.generator),
             ("f0_extractor", StateKind.FROZEN_MODEL, self.models.f0_extractor),
-            ("discriminators", StateKind.DISCRIMINATOR, self.models.discriminators),
         )
 
     def _gradients(self) -> tuple[NamedModuleGradients, ...]:

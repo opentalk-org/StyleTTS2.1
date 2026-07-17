@@ -150,6 +150,8 @@ data:
     pitch_shift_max_semitones: 2.0
     gain_min_db: -6.0
     gain_max_db: 6.0
+validation:
+  audio_file_ids: [00000000-0000-0000-0000-000000000000]
 runtime:
   seed: 1234
   device: cuda
@@ -165,6 +167,8 @@ stage2_objective:
 stage1: &stage1
   batch_size: 16
   accumulation_steps: 1
+  total_steps: 1000000
+  validation_every_steps: 10000
   precision: bfloat16
   generator_optimizer: &generator_optimizer
     learning_rate: 0.0002
@@ -176,16 +180,7 @@ stage1: &stage1
     decay_steps: 1000000
     minimum_learning_rate_ratio: 0.1
     maximum_gradient_norm: 10.0
-  discriminator_optimizer: &discriminator_optimizer
-    learning_rate: 0.0002
-    beta1: 0.8
-    beta2: 0.99
-    epsilon: 0.000000001
-    weight_decay: 0.0001
-    warmup_steps: 1000
-    decay_steps: 1000000
-    minimum_learning_rate_ratio: 0.1
-    maximum_gradient_norm: 10.0
+  discriminator_optimizer: null
   losses: &all_losses
     encoder_kl: {value: 1.0, start_step: 0, warmup_steps: 0}
     f0: {value: 1.0, start_step: 0, warmup_steps: 0}
@@ -221,5 +216,12 @@ stage3:
     <<: *generator_optimizer
     learning_rate: 0.00005
   discriminator_optimizer:
-    <<: *discriminator_optimizer
     learning_rate: 0.00005
+    beta1: 0.8
+    beta2: 0.99
+    epsilon: 0.000000001
+    weight_decay: 0.0001
+    warmup_steps: 1000
+    decay_steps: 1000000
+    minimum_learning_rate_ratio: 0.1
+    maximum_gradient_norm: 10.0

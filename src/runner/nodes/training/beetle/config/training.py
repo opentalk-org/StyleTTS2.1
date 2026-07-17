@@ -5,6 +5,7 @@ from pydantic import Field, model_validator
 
 from .architecture import ArchitectureConfig, AudioConfig, StrictConfigModel
 from .data import DataConfig
+from .validation import ValidationConfig
 
 
 class Precision(StrEnum):
@@ -57,6 +58,8 @@ class LossWeights(StrictConfigModel):
 class StageConfig(StrictConfigModel):
     batch_size: int = Field(gt=0)
     accumulation_steps: int = Field(gt=0)
+    total_steps: int = Field(gt=0)
+    validation_every_steps: int = Field(gt=0)
     precision: Precision
     generator_optimizer: OptimizerConfig
     discriminator_optimizer: OptimizerConfig | None
@@ -102,6 +105,7 @@ class BeetleConfig(StrictConfigModel):
     architecture: ArchitectureConfig
     complexity: ComplexityConfig
     data: DataConfig
+    validation: ValidationConfig
     runtime: RuntimeConfig
     checkpoint: CheckpointConfig
     stage2_objective: Stage2ObjectiveConfig
@@ -134,8 +138,8 @@ class BeetleConfig(StrictConfigModel):
             raise ValueError("posterior mel_channels must match audio mel_channels")
         if self.architecture.generator.output_hop() != self.audio.hop_length:
             raise ValueError("generator output geometry must match hop_length")
-        if self.stage1.discriminator_optimizer is None:
-            raise ValueError("stage1 requires discriminator_optimizer")
+        if self.stage1.discriminator_optimizer is not None:
+            raise ValueError("stage1 must not configure discriminator_optimizer")
         if self.stage2.discriminator_optimizer is not None:
             raise ValueError("stage2 must not configure discriminator_optimizer")
         if self.stage3.discriminator_optimizer is None:

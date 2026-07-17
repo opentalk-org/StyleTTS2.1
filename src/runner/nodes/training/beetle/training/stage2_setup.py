@@ -37,6 +37,48 @@ _LOSS_NAMES = (
 )
 
 
+@dataclass(frozen=True)
+class Stage3LossWeights:
+    encoder_kl: float
+    f0: float
+    n: float
+    reconstruction: float
+    discriminator: float
+    generator_adversarial: float
+    feature_matching: float
+
+
+@dataclass(frozen=True)
+class AdversarialSchedules:
+    discriminator: StepSchedule
+    generator_adversarial: StepSchedule
+    feature_matching: StepSchedule
+
+    @classmethod
+    def from_config(cls, config: StageConfig) -> "AdversarialSchedules":
+        losses = config.losses
+        return cls(
+            loss_weight_schedule(losses.discriminator),
+            loss_weight_schedule(losses.generator_adversarial),
+            loss_weight_schedule(losses.feature_matching),
+        )
+
+    def state(self, optimizer_step: int) -> LossScheduleState:
+        values = (
+            self.discriminator.value(optimizer_step),
+            self.generator_adversarial.value(optimizer_step),
+            self.feature_matching.value(optimizer_step),
+        )
+        names = ("discriminator", "generator_adversarial", "feature_matching")
+        return LossScheduleState(
+            optimizer_step,
+            tuple(
+                LossWeight(name, value)
+                for name, value in zip(names, values, strict=True)
+            ),
+        )
+
+
 class Stage2InputBuilder(Protocol):
     def build(
         self,
@@ -76,22 +118,38 @@ class Stage2Schedules:
 @dataclass(frozen=True)
 class Stage3Schedules:
     stage1: Stage1Schedules
+    adversarial: AdversarialSchedules
     stage2: Stage2Schedules
 
     @classmethod
     def from_config(cls, config: StageConfig) -> "Stage3Schedules":
         return cls(
             Stage1Schedules.from_config(config),
+            AdversarialSchedules.from_config(config),
             Stage2Schedules.from_config(config),
         )
 
-    def weights(self, optimizer_step: int):
-        return self.stage1.weights(optimizer_step)
+    def weights(self, optimizer_step: int) -> Stage3LossWeights:
+        acoustic = self.stage1.weights(optimizer_step)
+        adversarial = self.adversarial
+        return Stage3LossWeights(
+            acoustic.encoder_kl,
+            acoustic.f0,
+            acoustic.n,
+            acoustic.reconstruction,
+            adversarial.discriminator.value(optimizer_step),
+            adversarial.generator_adversarial.value(optimizer_step),
+            adversarial.feature_matching.value(optimizer_step),
+        )
 
     def state(self, optimizer_step: int) -> LossScheduleState:
         first = self.stage1.state(optimizer_step)
+        adversarial = self.adversarial.state(optimizer_step)
         second = self.stage2.state(optimizer_step)
-        return LossScheduleState(optimizer_step, (*first.weights, *second.weights))
+        return LossScheduleState(
+            optimizer_step,
+            (*first.weights, *adversarial.weights, *second.weights),
+        )
 
 
 def build_stage2_optimizer(

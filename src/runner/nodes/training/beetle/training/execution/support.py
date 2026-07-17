@@ -137,7 +137,6 @@ def restore_stage1(payload: CheckpointPayload, models: Stage1Models) -> None:
         StateTarget("decoder", StateKind.MODEL, models.decoder),
         StateTarget("generator", StateKind.MODEL, models.generator),
         StateTarget("f0_extractor", StateKind.FROZEN_MODEL, models.f0_extractor),
-        StateTarget("discriminators", StateKind.DISCRIMINATOR, models.discriminators),
     )
     restore_targets(payload, targets)
 

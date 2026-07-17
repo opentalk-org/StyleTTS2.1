@@ -78,7 +78,7 @@ class Stage3Trainer(Stage1Trainer):
         self.ema_latent_flow = ema_latent_flow.to(device).requires_grad_(False).eval()
         self.input_builder = input_builder
         self.schedules = Stage3Schedules.from_config(stage_config)
-        self.models.discriminators.requires_grad_(True).train()
+        self.models.discriminators.to(device).requires_grad_(True).train()
         for module in self._inference_modules():
             module.requires_grad_(True).train()
         for module in trainable_stage2_modules(self.stage2_models):
@@ -269,7 +269,10 @@ class Stage3Trainer(Stage1Trainer):
         )
 
     def _state_modules(self) -> tuple[tuple[str, StateKind, nn.Module], ...]:
-        stage1 = super()._state_modules()
+        stage1 = (
+            *super()._state_modules(),
+            ("discriminators", StateKind.DISCRIMINATOR, self.models.discriminators),
+        )
         stage2 = tuple(
             (name, StateKind.MODEL, module)
             for name, module in named_trainable_stage2_modules(self.stage2_models)
