@@ -19,10 +19,12 @@ class TrainingPhase(StrEnum):
     DISCRIMINATOR_BACKWARD = "discriminator_backward"
     DISCRIMINATOR_COMPLETE = "discriminator_complete"
     GENERATOR_BACKWARD = "generator_backward"
+    GENERATOR_COMPLETE = "generator_complete"
     OPTIMIZER_COMPLETE = "optimizer_complete"
     VALIDATING = "validating"
     VALIDATION_COMPLETE = "validation_complete"
     CHECKPOINTING = "checkpointing"
+    CHECKPOINT_COMPLETE = "checkpoint_complete"
 
 
 @dataclass(frozen=True)
