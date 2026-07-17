@@ -80,7 +80,7 @@ Different condition combinations are mixed within normal batches.
 
 - encoder KL;
 - F0 MSE on voiced valid frames and `N` MSE on valid frames;
-- multiscale mel and full-spectrum reconstruction;
+- the StyleTTS2 three-resolution normalized log-mel spectral-convergence loss;
 - current StyleTTS multi-period and multi-resolution spectrogram discriminator
   LSGAN losses plus feature matching;
 - exact duration-flow likelihood;

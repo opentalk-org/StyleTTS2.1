@@ -5,9 +5,18 @@ from torch import Tensor, nn
 
 from ..config import BeetleConfig
 from ..losses.acoustic import MultiResolutionReconstructionLoss
-from .modules.audio import AcousticFeatures, AudioEncoder, AudioPosterior, F0Extractor, FeatureLinear
+from .modules.audio import (
+    AcousticFeatures,
+    AudioEncoder,
+    AudioPosterior,
+    F0Extractor,
+    FeatureLinear,
+)
 from .modules.decoder import Decoder, DecoderOutput
-from .modules.discriminators import StyleTTSDiscriminators, build_styletts_discriminators
+from .modules.discriminators import (
+    StyleTTSDiscriminators,
+    build_styletts_discriminators,
+)
 from .modules.generator import Generator
 
 
@@ -131,7 +140,11 @@ class Stage1Models(nn.Module):
         inference, inference_ids = _count_unique_parameters(inference_modules)
         frozen, frozen_ids = _count_unique_parameters((self.f0_extractor,))
         training, training_ids = _count_unique_parameters((self.discriminators,))
-        if inference_ids & frozen_ids or inference_ids & training_ids or frozen_ids & training_ids:
+        if (
+            inference_ids & frozen_ids
+            or inference_ids & training_ids
+            or frozen_ids & training_ids
+        ):
             raise ValueError("Stage 1 parameter categories must be disjoint")
         return ParameterReport(inference, frozen, training)
 
@@ -150,8 +163,5 @@ def build_stage1_models(
         discriminators=build_styletts_discriminators(),
         reconstruction_loss=MultiResolutionReconstructionLoss(
             sample_rate=config.audio.sample_rate,
-            mel_channels=config.audio.mel_channels,
-            f_min=config.audio.f_min,
-            f_max=config.audio.f_max,
         ),
     )

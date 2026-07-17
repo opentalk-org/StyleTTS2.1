@@ -97,7 +97,7 @@
 - Consumes: only current `MultiPeriodDiscriminator` and `MultiResSpecDiscriminator` families.
 
 - [ ] Add failing tests that assert exactly those two discriminator families and no Wave-U-Net, WavLM, or SLM module.
-- [ ] Add hand-calculated masked KL, voiced F0 MSE, N MSE, multiresolution reconstruction, detach-boundary, and separate backward tests.
+- [ ] Add hand-calculated masked KL, voiced F0 MSE, N MSE, and the exact StyleTTS2 three-resolution normalized log-mel spectral-convergence loss, plus detach-boundary and separate backward tests.
 - [ ] Implement thin typed discriminator adapters and the current StyleTTS LSGAN/feature-matching equations; normalize acoustic reductions by valid element count.
 - [ ] Run focused loss tests; expect finite discriminator gradients only on its step and generator waveform gradients only on its step.
 - [ ] Commit the task files with `git commit -m 'feat: add beetle acoustic and gan losses'`.
