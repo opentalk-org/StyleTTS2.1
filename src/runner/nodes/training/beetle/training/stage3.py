@@ -1,5 +1,3 @@
-from dataclasses import dataclass
-
 import torch
 from torch import Tensor, nn
 
@@ -11,34 +9,27 @@ from ..losses.adversarial import discriminator_step_loss, generator_step_loss
 from ..losses.stage2 import Stage2LossInput, compute_stage2_losses
 from ..models.model import Stage1Models
 from ..models.modules.audio import AcousticFeatures
-from ..models.modules.decoder import DecoderOutput
 from ..models.modules.latent_flow import integrate_latent_flow
 from ..models.stage2 import Stage2Models
 from .callbacks import TrainingMetric
 from .checkpoint import GradientTarget, NamedModuleGradients, StateKind
 from .loop import LoopIntervals
 from .loss_schedules import Stage3Schedules
-from .optimizer import OptimizerSet
+from .optimizer import NamedGradientGroup, OptimizerSet
 from .stage1 import Stage1Trainer
 from .stage1_setup import tensor_metric
+from .stage2_features import ConditionalSynthesis
 from .stage2_setup import (
     Stage2InputBuilder,
     build_stage3_optimizers,
     named_trainable_stage2_modules,
+    stage2_gradient_groups,
     trainable_stage2_modules,
     update_latent_flow_ema,
 )
 from .state import LoopState, StageKind, capture_gradients
 
 __all__ = ["Stage3Trainer", "build_stage3_optimizers"]
-
-
-@dataclass(frozen=True)
-class ConditionalSynthesis:
-    acoustic: AcousticFeatures
-    decoded: DecoderOutput
-    waveform: Tensor
-    sample_mask: Tensor
 
 
 class Stage3Trainer(Stage1Trainer):
@@ -192,13 +183,20 @@ class Stage3Trainer(Stage1Trainer):
         )
 
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:
-        metrics = self.optimizers.step(optimizer_step)
+        metrics = self.optimizers.step(optimizer_step, self.gradient_groups())
         update_latent_flow_ema(
             self.ema_latent_flow,
             self.stage2_models.latent_flow,
             self.stage2_models.latent_flow.config.ema_decay,
         )
         return metrics
+
+    def gradient_groups(self) -> tuple[NamedGradientGroup, ...]:
+        return (
+            *super().gradient_groups(),
+            *stage2_gradient_groups(self.stage2_models),
+            NamedGradientGroup("discriminators", (self.models.discriminators,)),
+        )
 
     def _conditional(
         self,

@@ -23,7 +23,7 @@ from .checkpoint import (
 )
 from .loop import LoopIntervals
 from .loss_schedules import Stage2Schedules
-from .optimizer import OptimizerSet
+from .optimizer import NamedGradientGroup, OptimizerSet
 from .reporting import ReportingState
 from .stage1_setup import tensor_metric
 from .stage2_setup import (
@@ -32,6 +32,7 @@ from .stage2_setup import (
     build_stage2_optimizer,
     frozen_stage2_modules,
     named_trainable_stage2_modules,
+    stage2_gradient_groups,
     update_latent_flow_ema,
 )
 from .state import (
@@ -123,13 +124,16 @@ class Stage2Trainer:
         )
 
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:
-        metrics = self.optimizers.step(optimizer_step)
+        metrics = self.optimizers.step(optimizer_step, self.gradient_groups())
         update_latent_flow_ema(
             self.ema_latent_flow,
             self.models.latent_flow,
             self.models.latent_flow.config.ema_decay,
         )
         return metrics
+
+    def gradient_groups(self) -> tuple[NamedGradientGroup, ...]:
+        return stage2_gradient_groups(self.models)
 
     def checkpoint_payload(
         self,

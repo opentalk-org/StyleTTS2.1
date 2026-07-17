@@ -11,6 +11,18 @@ from .checkpoint import NamedState, StateKind, StateTarget, capture_named_state
 
 
 @dataclass(frozen=True)
+class NamedGradientGroup:
+    name: str
+    modules: tuple[nn.Module, ...]
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("gradient group name must not be empty")
+        if not self.modules:
+            raise ValueError("gradient group must contain a module")
+
+
+@dataclass(frozen=True)
 class StepSchedule:
     start_step: int
     warmup_steps: int
@@ -90,11 +102,14 @@ class ScheduledOptimizer:
     def backward(self, loss: Tensor) -> None:
         self.scaler.scale(loss).backward()
 
-    def step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:
+    def prepare(self, optimizer_step: int) -> float:
         learning_rate = self.schedule.value(optimizer_step)
         for group in self.optimizer.param_groups:
             group["lr"] = learning_rate
         self.scaler.unscale_(self.optimizer)
+        return learning_rate
+
+    def finish(self, learning_rate: float) -> tuple[TrainingMetric, ...]:
         gradient_norm = torch.nn.utils.clip_grad_norm_(
             self.parameters(), self.maximum_gradient_norm
         )
@@ -102,9 +117,18 @@ class ScheduledOptimizer:
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
         return (
-            TrainingMetric(f"learning_rate/{self.name}", learning_rate),
-            TrainingMetric(f"gradient_norm/{self.name}", float(gradient_norm)),
-            TrainingMetric(f"scale/{self.name}", self.scaler.get_scale()),
+            TrainingMetric(
+                f"optimizer/learning_rate/{self.name}",
+                learning_rate,
+            ),
+            TrainingMetric(
+                f"gradient_norm/optimizer/{self.name}",
+                float(gradient_norm),
+            ),
+            TrainingMetric(
+                f"optimizer/amp_scale/{self.name}",
+                self.scaler.get_scale(),
+            ),
         )
 
 
@@ -132,10 +156,31 @@ class OptimizerSet:
             raise KeyError(f"optimizer group does not exist: {name}")
         return matches[0]
 
-    def step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:
-        return tuple(
-            metric for group in self.groups for metric in group.step(optimizer_step)
+    def step(
+        self,
+        optimizer_step: int,
+        gradient_groups: tuple[NamedGradientGroup, ...],
+    ) -> tuple[TrainingMetric, ...]:
+        learning_rates = tuple(
+            group.prepare(optimizer_step) for group in self.groups
         )
+        module_metrics = tuple(
+            TrainingMetric(
+                f"gradient_norm/module/{group.name}",
+                _gradient_norm(_unique_parameters(group.modules)),
+            )
+            for group in gradient_groups
+        )
+        optimizer_metrics = tuple(
+            metric
+            for group, learning_rate in zip(
+                self.groups,
+                learning_rates,
+                strict=True,
+            )
+            for metric in group.finish(learning_rate)
+        )
+        return (*optimizer_metrics, *module_metrics)
 
     def capture_states(self) -> tuple[NamedState, ...]:
         return tuple(
@@ -177,3 +222,25 @@ def loss_weight_schedule(config: ScheduledWeight) -> StepSchedule:
         start_step=config.start_step,
         warmup_steps=config.warmup_steps,
     )
+
+
+def _unique_parameters(modules: tuple[nn.Module, ...]) -> tuple[nn.Parameter, ...]:
+    parameters: list[nn.Parameter] = []
+    seen: set[int] = set()
+    for module in modules:
+        for parameter in module.parameters():
+            if id(parameter) not in seen:
+                parameters.append(parameter)
+                seen.add(id(parameter))
+    return tuple(parameters)
+
+
+def _gradient_norm(parameters: tuple[nn.Parameter, ...]) -> float:
+    gradients = tuple(
+        parameter.grad.detach().float().norm(2)
+        for parameter in parameters
+        if parameter.grad is not None
+    )
+    if not gradients:
+        return 0.0
+    return float(torch.stack(gradients).norm(2))

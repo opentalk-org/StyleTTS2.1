@@ -1,4 +1,4 @@
-import math
+import time
 from dataclasses import dataclass, replace
 from typing import Protocol
 
@@ -6,12 +6,17 @@ from ..data.prefetch import DataPipelineState
 from ..data.records import BeetleBatch
 from .callbacks import (
     CancellationRequested,
-    ProgressEvent,
     TrainingCallbacks,
     TrainingMetric,
 )
 from .checkpoint import CheckpointManager, CheckpointPayload
-from .reporting import ReportingState
+from .loop_events import advance_sampler, announce, is_due, validate_metrics
+from .reporting import (
+    ForegroundCategory,
+    ReportingState,
+    StepObservationTracker,
+    StepTimer,
+)
 from .state import LoopState, StageKind, TrainingPhase
 
 _CHECKPOINT_MEDIA_TYPE = "application/vnd.beetle.checkpoint"
@@ -70,8 +75,9 @@ def run_continuously(
     trainer: StageTrainer,
     callbacks: TrainingCallbacks,
     checkpoint_manager: CheckpointManager,
-    reporting: ReportingState,
+    reporting: StepObservationTracker,
 ) -> LoopState:
+    timer = StepTimer()
     try:
         callbacks.check_cancel()
         while True:
@@ -83,6 +89,7 @@ def run_continuously(
                     callbacks,
                     checkpoint_manager,
                     reporting,
+                    timer,
                 )
                 continue
             if state.phase in (
@@ -95,6 +102,7 @@ def run_continuously(
                     callbacks,
                     checkpoint_manager,
                     reporting,
+                    timer,
                 )
                 continue
             _run_batch(
@@ -103,10 +111,17 @@ def run_continuously(
                 callbacks,
                 checkpoint_manager,
                 reporting,
+                timer,
             )
     except CancellationRequested:
+        elapsed, foreground = timer.snapshot()
+        reporting.capture_partial_timing(elapsed, foreground)
         state = trainer.loop_state()
-        payload = trainer.checkpoint_payload(state, pipeline.state_dict(), reporting)
+        payload = trainer.checkpoint_payload(
+            state,
+            pipeline.state_dict(),
+            reporting.snapshot(),
+        )
         path = checkpoint_manager.save(payload)
         callbacks.publish_artifact(path, _CHECKPOINT_MEDIA_TYPE)
         return state
@@ -117,47 +132,55 @@ def _run_batch(
     trainer: StageTrainer,
     callbacks: TrainingCallbacks,
     checkpoint_manager: CheckpointManager,
-    reporting: ReportingState,
+    reporting: StepObservationTracker,
+    timer: StepTimer,
 ) -> None:
     state = trainer.loop_state()
     resume_discriminator = state.phase in (
         TrainingPhase.DISCRIMINATOR_COMPLETE,
         TrainingPhase.GENERATOR_BACKWARD,
     )
+    started_at = time.monotonic()
     batch = pipeline.next_batch()
+    timer.record(ForegroundCategory.DATA_WAIT, started_at)
     if not resume_discriminator:
         state = replace(state, phase=TrainingPhase.BATCH_FETCHED)
-        _announce(trainer, callbacks, state, ())
+        announce(trainer, callbacks, state, (), timer)
     metrics: tuple[TrainingMetric, ...] = ()
     if trainer.trains_discriminator and not resume_discriminator:
         state = replace(state, phase=TrainingPhase.DISCRIMINATOR_BACKWARD)
-        _announce(trainer, callbacks, state, ())
+        announce(trainer, callbacks, state, (), timer)
+        started_at = time.monotonic()
         discriminator_metrics = trainer.discriminator_backward(batch)
-        _validate_metrics(discriminator_metrics)
+        timer.record(ForegroundCategory.COMPUTE, started_at)
+        validate_metrics(discriminator_metrics)
         metrics += discriminator_metrics
         state = replace(state, phase=TrainingPhase.DISCRIMINATOR_COMPLETE)
-        _announce(trainer, callbacks, state, discriminator_metrics)
+        announce(trainer, callbacks, state, discriminator_metrics, timer)
     if trainer.loop_state().phase is not TrainingPhase.GENERATOR_BACKWARD:
         state = replace(state, phase=TrainingPhase.GENERATOR_BACKWARD)
-        _announce(trainer, callbacks, state, ())
+        announce(trainer, callbacks, state, (), timer)
+    started_at = time.monotonic()
     generator_metrics = trainer.generator_backward(batch)
-    _validate_metrics(generator_metrics)
+    timer.record(ForegroundCategory.COMPUTE, started_at)
+    validate_metrics(generator_metrics)
     metrics += generator_metrics
     pipeline.mark_consumed()
-    state = _advance_sampler(state, pipeline.state_dict())
+    reporting.add_microstep(len(batch.sample_keys), metrics)
+    state = advance_sampler(state, pipeline.state_dict())
     state = replace(
         state,
         microstep=state.microstep + 1,
         phase=TrainingPhase.GENERATOR_COMPLETE,
     )
-    _announce(trainer, callbacks, state, generator_metrics)
+    announce(trainer, callbacks, state, generator_metrics, timer)
     _complete_accumulation(
         trainer,
         pipeline,
         callbacks,
         checkpoint_manager,
         reporting,
-        metrics,
+        timer,
     )
 
 
@@ -166,8 +189,8 @@ def _complete_accumulation(
     pipeline: TrainingPipeline,
     callbacks: TrainingCallbacks,
     checkpoint_manager: CheckpointManager | None,
-    reporting: ReportingState,
-    batch_metrics: tuple[TrainingMetric, ...] = (),
+    reporting: StepObservationTracker,
+    timer: StepTimer,
 ) -> None:
     state = trainer.loop_state()
     if state.microstep < trainer.accumulation_steps:
@@ -177,21 +200,29 @@ def _complete_accumulation(
         return
     if state.microstep > trainer.accumulation_steps:
         raise ValueError("microstep exceeds configured accumulation_steps")
+    started_at = time.monotonic()
     step_metrics = trainer.optimizer_step(state.optimizer_step)
-    _validate_metrics(step_metrics)
-    metrics = batch_metrics + step_metrics
+    timer.record(ForegroundCategory.COMPUTE, started_at)
+    validate_metrics(step_metrics)
     state = replace(
         state,
         optimizer_step=state.optimizer_step + 1,
         microstep=0,
         phase=TrainingPhase.OPTIMIZER_COMPLETE,
     )
+    elapsed, foreground = timer.complete()
+    observation = reporting.complete_step(
+        state.optimizer_step,
+        step_metrics,
+        elapsed,
+        foreground,
+    )
     report_metrics = (
-        metrics
-        if _is_due(state.optimizer_step, trainer.intervals.log_every_steps)
+        observation.metrics
+        if is_due(state.optimizer_step, trainer.intervals.log_every_steps)
         else ()
     )
-    _announce(trainer, callbacks, state, report_metrics)
+    announce(trainer, callbacks, state, report_metrics, timer)
     if checkpoint_manager is None:
         raise RuntimeError("checkpoint manager is required at optimizer boundaries")
     _complete_step_work(
@@ -200,6 +231,7 @@ def _complete_accumulation(
         callbacks,
         checkpoint_manager,
         reporting,
+        timer,
     )
 
 
@@ -208,69 +240,26 @@ def _complete_step_work(
     pipeline: TrainingPipeline,
     callbacks: TrainingCallbacks,
     checkpoint_manager: CheckpointManager,
-    reporting: ReportingState,
+    reporting: StepObservationTracker,
+    timer: StepTimer,
 ) -> None:
     state = trainer.loop_state()
-    checkpoint_due = _is_due(
+    checkpoint_due = is_due(
         state.optimizer_step, trainer.intervals.checkpoint_every_steps
     )
     if checkpoint_due:
         state = replace(state, phase=TrainingPhase.CHECKPOINTING)
-        _announce(trainer, callbacks, state, ())
+        announce(trainer, callbacks, state, (), timer)
         complete = replace(state, phase=TrainingPhase.CHECKPOINT_COMPLETE)
         payload = trainer.checkpoint_payload(
             complete,
             pipeline.state_dict(),
-            reporting,
+            reporting.snapshot(),
         )
         path = checkpoint_manager.save(payload)
         callbacks.publish_artifact(path, _CHECKPOINT_MEDIA_TYPE)
-        _announce(trainer, callbacks, complete, ())
+        announce(trainer, callbacks, complete, (), timer)
         state = complete
     ready = replace(state, phase=TrainingPhase.READY)
     trainer.set_loop_state(ready)
     callbacks.check_cancel()
-
-
-def _advance_sampler(state: LoopState, sampler: DataPipelineState) -> LoopState:
-    planner = sampler.planner
-    return replace(
-        state,
-        sampler_cursor=planner.batch_index,
-        cycle=max(planner.sentence.cycle_index, planner.mid_sentence.cycle_index),
-        batch_index=planner.batch_index,
-    )
-
-
-def _announce(
-    trainer: StageTrainer,
-    callbacks: TrainingCallbacks,
-    state: LoopState,
-    metrics: tuple[TrainingMetric, ...],
-) -> None:
-    trainer.set_loop_state(state)
-    callbacks.report_progress(
-        ProgressEvent(
-            state.stage,
-            state.optimizer_step,
-            state.microstep,
-            state.phase,
-            metrics,
-        )
-    )
-    callbacks.check_cancel()
-
-
-def _validate_metrics(metrics: tuple[TrainingMetric, ...]) -> None:
-    names = tuple(metric.name for metric in metrics)
-    if len(set(names)) != len(names):
-        raise ValueError(f"training metric names must be unique: {names}")
-    invalid = tuple(
-        metric.name for metric in metrics if not math.isfinite(metric.value)
-    )
-    if invalid:
-        raise FloatingPointError(f"non-finite training metrics: {invalid}")
-
-
-def _is_due(optimizer_step: int, interval: int) -> bool:
-    return optimizer_step > 0 and optimizer_step % interval == 0

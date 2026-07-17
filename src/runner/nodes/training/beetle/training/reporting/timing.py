@@ -1,5 +1,7 @@
 import math
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, replace
+from enum import StrEnum
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,8 @@ class TimingState:
     measured_items: int
     elapsed_seconds: float
     foreground: ForegroundDurations
+    partial_elapsed_seconds: float
+    partial_foreground: ForegroundDurations
 
     def __post_init__(self) -> None:
         counters = (
@@ -73,10 +77,48 @@ class TimingState:
             raise ValueError("timing counters must be non-negative")
         if not math.isfinite(self.elapsed_seconds) or self.elapsed_seconds < 0:
             raise ValueError("elapsed time must be finite and non-negative")
+        if (
+            not math.isfinite(self.partial_elapsed_seconds)
+            or self.partial_elapsed_seconds < 0
+        ):
+            raise ValueError("partial elapsed time must be finite and non-negative")
+        if not math.isclose(
+            self.partial_foreground.total,
+            self.partial_elapsed_seconds,
+            rel_tol=1e-6,
+            abs_tol=1e-9,
+        ):
+            raise ValueError("partial foreground must partition partial elapsed time")
 
     @classmethod
     def initial(cls) -> "TimingState":
-        return cls(0, 0, 0, 0.0, ForegroundDurations())
+        return cls(
+            0,
+            0,
+            0,
+            0.0,
+            ForegroundDurations(),
+            0.0,
+            ForegroundDurations(),
+        )
+
+    def with_partial(
+        self,
+        elapsed_seconds: float,
+        foreground: ForegroundDurations,
+    ) -> "TimingState":
+        if not math.isclose(
+            foreground.total,
+            elapsed_seconds,
+            rel_tol=1e-6,
+            abs_tol=1e-9,
+        ):
+            raise ValueError("partial foreground must partition elapsed time")
+        return replace(
+            self,
+            partial_elapsed_seconds=self.partial_elapsed_seconds + elapsed_seconds,
+            partial_foreground=self.partial_foreground.plus(foreground),
+        )
 
     def record_step(
         self,
@@ -93,14 +135,26 @@ class TimingState:
             raise ValueError("completed optimizer step elapsed time must be positive")
         if not math.isclose(foreground.total, elapsed_seconds, rel_tol=1e-6, abs_tol=1e-9):
             raise ValueError("foreground durations must partition elapsed time")
+        combined_elapsed = self.partial_elapsed_seconds + elapsed_seconds
+        combined_foreground = self.partial_foreground.plus(foreground)
         if self.last_completed_step == 0:
-            return TimingState(optimizer_step, 0, 0, 0.0, ForegroundDurations())
+            return TimingState(
+                optimizer_step,
+                0,
+                0,
+                0.0,
+                ForegroundDurations(),
+                0.0,
+                ForegroundDurations(),
+            )
         return TimingState(
             optimizer_step,
             self.measured_steps + 1,
             self.measured_items + items,
-            self.elapsed_seconds + elapsed_seconds,
-            self.foreground.plus(foreground),
+            self.elapsed_seconds + combined_elapsed,
+            self.foreground.plus(combined_foreground),
+            0.0,
+            ForegroundDurations(),
         )
 
     def snapshot(self, total_steps: int) -> TimingSnapshot:
@@ -120,3 +174,67 @@ class TimingState:
             eta,
             eta / 3600,
         )
+
+
+class ForegroundCategory(StrEnum):
+    DATA_WAIT = "data_wait"
+    COMPUTE = "compute"
+    VALIDATION = "validation"
+    CHECKPOINT = "checkpoint"
+    REPORTING = "reporting"
+
+
+class StepTimer:
+    def __init__(self) -> None:
+        self._started_at = time.monotonic()
+        self._foreground = ForegroundDurations()
+
+    def record(self, category: ForegroundCategory, started_at: float) -> None:
+        duration = time.monotonic() - started_at
+        if duration < 0:
+            raise ValueError("foreground timer moved backwards")
+        match category:
+            case ForegroundCategory.DATA_WAIT:
+                updated = replace(
+                    self._foreground,
+                    data_wait=self._foreground.data_wait + duration,
+                )
+            case ForegroundCategory.COMPUTE:
+                updated = replace(
+                    self._foreground,
+                    compute=self._foreground.compute + duration,
+                )
+            case ForegroundCategory.VALIDATION:
+                updated = replace(
+                    self._foreground,
+                    validation=self._foreground.validation + duration,
+                )
+            case ForegroundCategory.CHECKPOINT:
+                updated = replace(
+                    self._foreground,
+                    checkpoint=self._foreground.checkpoint + duration,
+                )
+            case ForegroundCategory.REPORTING:
+                updated = replace(
+                    self._foreground,
+                    reporting=self._foreground.reporting + duration,
+                )
+        self._foreground = updated
+
+    def snapshot(self) -> tuple[float, ForegroundDurations]:
+        return self._snapshot(time.monotonic())
+
+    def complete(self) -> tuple[float, ForegroundDurations]:
+        now = time.monotonic()
+        snapshot = self._snapshot(now)
+        self._started_at = now
+        self._foreground = ForegroundDurations()
+        return snapshot
+
+    def _snapshot(self, now: float) -> tuple[float, ForegroundDurations]:
+        elapsed = now - self._started_at
+        residual = elapsed - self._foreground.total
+        if residual < -1e-9:
+            raise ValueError("foreground timings overlap")
+        durations = replace(self._foreground, residual=max(residual, 0.0))
+        return durations.total, durations

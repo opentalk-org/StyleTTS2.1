@@ -7,6 +7,8 @@ from torchaudio.transforms import MelSpectrogram
 from ..config import BeetleConfig
 from ..data.records import BeetleBatch
 from ..models.model import normalized_log_mel_energy
+from ..models.modules.audio import AcousticFeatures
+from ..models.modules.decoder import DecoderOutput
 from ..models.modules.embeddings import AcousticStatistics
 from ..models.stage2 import Stage2Models
 
@@ -15,6 +17,14 @@ from ..models.stage2 import Stage2Models
 class MelBatch:
     values: Tensor
     mask: Tensor
+
+
+@dataclass(frozen=True)
+class ConditionalSynthesis:
+    acoustic: AcousticFeatures
+    decoded: DecoderOutput
+    waveform: Tensor
+    sample_mask: Tensor
 
 
 class WaveformMelExtractor(nn.Module):

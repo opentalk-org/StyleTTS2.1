@@ -27,7 +27,7 @@ from .checkpoint import (
     validate_resume_fingerprints,
 )
 from .loop import LoopIntervals
-from .optimizer import OptimizerSet
+from .optimizer import NamedGradientGroup, OptimizerSet
 from .reporting import ReportingState
 from .stage1_setup import (
     AcousticLossWeights,
@@ -146,7 +146,15 @@ class Stage1Trainer:
         )
 
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:
-        return self.optimizers.step(optimizer_step)
+        return self.optimizers.step(optimizer_step, self.gradient_groups())
+
+    def gradient_groups(self) -> tuple[NamedGradientGroup, ...]:
+        return (
+            NamedGradientGroup("audio_encoder", (self.models.audio_encoder,)),
+            NamedGradientGroup("feature_linear", (self.models.feature_linear,)),
+            NamedGradientGroup("decoder", (self.models.decoder,)),
+            NamedGradientGroup("generator", (self.models.generator,)),
+        )
 
     def checkpoint_payload(
         self,

@@ -9,6 +9,7 @@ from ..losses.stage2 import Stage2LossInput
 from ..models.model import Stage1Models
 from ..models.stage2 import Stage2Models
 from .optimizer import (
+    NamedGradientGroup,
     OptimizerSet,
     ScheduledOptimizer,
     learning_rate_schedule,
@@ -146,6 +147,31 @@ def named_trainable_stage2_modules(
         "style_ge2e",
     )
     return tuple(zip(names, trainable_stage2_modules(models), strict=True))
+
+
+def stage2_gradient_groups(models: Stage2Models) -> tuple[NamedGradientGroup, ...]:
+    return (
+        NamedGradientGroup(
+            "phoneme_encoders",
+            (
+                models.phoneme_encoder,
+                models.latent_phoneme_encoder,
+                models.duration_phoneme_encoder,
+            ),
+        ),
+        NamedGradientGroup(
+            "context_encoders",
+            (models.context_phoneme_encoder, models.context_audio_encoder),
+        ),
+        NamedGradientGroup(
+            "conditioning",
+            (models.language_embedding, models.condition_bank),
+        ),
+        NamedGradientGroup("style_encoder", (models.style_encoder,)),
+        NamedGradientGroup("voice_encoder", (models.voice_encoder,)),
+        NamedGradientGroup("duration_predictor", (models.duration_predictor,)),
+        NamedGradientGroup("latent_flow", (models.latent_flow,)),
+    )
 
 
 def frozen_stage2_modules(models: Stage2Models) -> tuple[nn.Module, ...]:

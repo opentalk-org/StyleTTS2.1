@@ -23,7 +23,7 @@ from ..checkpoint import (
     validate_resume_fingerprints,
 )
 from ..loop import LoopIntervals, run_continuously
-from ..reporting import ReportingState
+from ..reporting import ReportingState, StepObservationTracker
 from ..runtime import RunPreparation
 from ..stage2_inputs import SpeakerIndex
 from ..stage2_setup import named_trainable_stage2_modules
@@ -90,7 +90,7 @@ def train(
             trainer,
             callbacks,
             preparation.checkpoint_manager,
-            (
+            StepObservationTracker(
                 preparation.resume.reporting
                 if preparation.resume is not None
                 else ReportingState.initial()
