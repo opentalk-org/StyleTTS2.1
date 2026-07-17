@@ -7,7 +7,7 @@ from torch.nn import functional as F
 from torch.nn.utils.parametrizations import weight_norm
 
 from ..config.architecture import DecoderConfig
-from .modules.convolution import StyleFreeResidualBlock
+from .modules.convolution import DecoderResidualBlock
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,7 @@ class Decoder(nn.Module):
         self.latent_residual = weight_norm(
             nn.Conv1d(config.latent_channels, config.residual_channels, 1)
         )
-        self.encode = StyleFreeResidualBlock(
+        self.encode = DecoderResidualBlock(
             config.latent_channels + 2,
             config.hidden_channels,
             config.dropout,
@@ -42,7 +42,7 @@ class Decoder(nn.Module):
         )
         self.decode = nn.ModuleList(
             [
-                StyleFreeResidualBlock(
+                DecoderResidualBlock(
                     decode_input_channels,
                     config.hidden_channels,
                     config.dropout,
@@ -50,7 +50,7 @@ class Decoder(nn.Module):
                 for _ in range(config.decode_block_count - 1)
             ]
             + [
-                StyleFreeResidualBlock(
+                DecoderResidualBlock(
                     decode_input_channels,
                     config.generator_channels,
                     config.dropout,

@@ -34,7 +34,7 @@ class MaskedInstanceNorm1d(nn.Module):
         return (normalized * self.weight + self.bias) * numeric_mask
 
 
-class StyleFreeResidualBlock(nn.Module):
+class DecoderResidualBlock(nn.Module):
     def __init__(
         self,
         input_channels: int,

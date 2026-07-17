@@ -59,6 +59,8 @@ This project is a ComfyUI-style workflow system for typed, batched, concurrent p
 - Frontend features should separate API calls, query/cache hooks, state or domain logic, and rendering components. Prefer names such as `api`, `query`, `logic`, and `components` within the feature.
 - Backend features should separate request/response schemas, database models, persistence operations, actions or services, and route/API wiring. Prefer names such as `schemas`, `models`, `crud`, `actions`, `service`, and `api` within the feature.
 - Runner node families live under `src/runner/nodes/<family>/`; keep their datatypes, models, runtime code, and registration close to the node family.
+- Node families must not import implementation modules owned by another node family. Copy an external reference into the owning family when reuse through a domain-agnostic shared module is not appropriate.
+- Name modules, classes, functions, and variables after stable responsibilities and domain concepts, not implementation discussions or decision history.
 
 ## Frontend implementation
 

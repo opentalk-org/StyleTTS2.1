@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from torch import Tensor, nn
 
-from runner.nodes.training.styletts3.testing.styletts_discriminators import (
+from .modules.discriminators import (
     MultiPeriodDiscriminator,
     MultiResSpecDiscriminator,
 )

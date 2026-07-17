@@ -5,9 +5,8 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from runner.nodes.training.styletts.finetune.training.modules.jdc import JDCNet
-
 from ..config.architecture import FeatureConfig
+from .modules.pitch import JDCNet
 
 
 @dataclass(frozen=True)

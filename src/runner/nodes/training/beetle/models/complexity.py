@@ -137,5 +137,5 @@ def require_complexity_budget(
         raise ValueError(
             f"latent-to-audio complexity is {report.gflops_per_second:.6f} "
             f"GFLOPs/s and must be strictly below {ceiling:.6f} GFLOPs/s; "
-            "do not deploy without an approved complexity budget"
+            "do not deploy without a configured complexity budget"
         )
