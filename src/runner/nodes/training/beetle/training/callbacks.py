@@ -6,17 +6,12 @@ from pathlib import Path
 from types import FrameType
 from typing import Protocol, runtime_checkable
 
+from .reporting import TrainingMetric
 from .state import StageKind, TrainingPhase
 
 
 class CancellationRequested(RuntimeError):
     """Stop training at the next exact-resume boundary."""
-
-
-@dataclass(frozen=True)
-class TrainingMetric:
-    name: str
-    value: float
 
 
 @dataclass(frozen=True)

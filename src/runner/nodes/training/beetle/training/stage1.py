@@ -28,6 +28,7 @@ from .checkpoint import (
 )
 from .loop import LoopIntervals
 from .optimizer import OptimizerSet
+from .reporting import ReportingState
 from .stage1_setup import (
     AcousticLossWeights,
     Stage1Schedules,
@@ -151,6 +152,7 @@ class Stage1Trainer:
         self,
         loop: LoopState,
         sampler_state: DataPipelineState,
+        reporting: ReportingState,
     ) -> CheckpointPayload:
         return CheckpointPayload(
             version=CHECKPOINT_VERSION,
@@ -162,6 +164,7 @@ class Stage1Trainer:
             gradients=self._gradients(),
             sampler_state=sampler_state,
             loss_schedule=self.schedules.state(loop.optimizer_step),
+            reporting=reporting,
         )
 
     def restore(self, payload: CheckpointPayload) -> DataPipelineState:

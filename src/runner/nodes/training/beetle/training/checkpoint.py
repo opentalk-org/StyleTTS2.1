@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from torch import nn
 
 from ..data.prefetch import DataPipelineState
+from .reporting import ReportingState
 from .state import (
     LoopState,
     NamedGradient,
@@ -20,7 +21,7 @@ from .state import (
     restore_gradients,
 )
 
-CHECKPOINT_VERSION = 1
+CHECKPOINT_VERSION = 2
 _PAYLOAD_NAME = "payload.pt"
 _MANIFEST_NAME = "manifest.json"
 _LATEST_NAME = "latest.json"
@@ -91,6 +92,7 @@ class CheckpointPayload:
     gradients: tuple[NamedModuleGradients, ...]
     sampler_state: DataPipelineState
     loss_schedule: LossScheduleState
+    reporting: ReportingState
 
 
 class _FolderManifest(BaseModel):
@@ -234,6 +236,10 @@ def _validate_payload(payload: CheckpointPayload) -> None:
         raise ValueError("loss schedule step does not match loop optimizer_step")
     if payload.sampler_state.data_fingerprint != payload.data_fingerprint:
         raise ValueError("sampler data fingerprint does not match checkpoint")
+    if payload.reporting.last_reported_step > payload.loop.optimizer_step:
+        raise ValueError("reported step exceeds checkpoint optimizer step")
+    if payload.reporting.last_validated_step > payload.loop.optimizer_step:
+        raise ValueError("validated step exceeds checkpoint optimizer step")
 
 
 def _write_new_text(path: Path, value: str) -> None:

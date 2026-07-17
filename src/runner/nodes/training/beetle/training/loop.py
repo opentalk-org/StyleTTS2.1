@@ -11,6 +11,7 @@ from .callbacks import (
     TrainingMetric,
 )
 from .checkpoint import CheckpointManager, CheckpointPayload
+from .reporting import ReportingState
 from .state import LoopState, StageKind, TrainingPhase
 
 _CHECKPOINT_MEDIA_TYPE = "application/vnd.beetle.checkpoint"
@@ -60,6 +61,7 @@ class StageTrainer(Protocol):
         self,
         loop: LoopState,
         sampler_state: DataPipelineState,
+        reporting: ReportingState,
     ) -> CheckpointPayload: ...
 
 
@@ -68,26 +70,43 @@ def run_continuously(
     trainer: StageTrainer,
     callbacks: TrainingCallbacks,
     checkpoint_manager: CheckpointManager,
+    reporting: ReportingState,
 ) -> LoopState:
     try:
         callbacks.check_cancel()
         while True:
             state = trainer.loop_state()
             if state.phase is TrainingPhase.GENERATOR_COMPLETE:
-                _complete_accumulation(trainer, pipeline, callbacks, checkpoint_manager)
+                _complete_accumulation(
+                    trainer,
+                    pipeline,
+                    callbacks,
+                    checkpoint_manager,
+                    reporting,
+                )
                 continue
             if state.phase in (
                 TrainingPhase.OPTIMIZER_COMPLETE,
                 TrainingPhase.CHECKPOINTING,
             ):
                 _complete_step_work(
-                    trainer, pipeline, callbacks, checkpoint_manager
+                    trainer,
+                    pipeline,
+                    callbacks,
+                    checkpoint_manager,
+                    reporting,
                 )
                 continue
-            _run_batch(pipeline, trainer, callbacks, checkpoint_manager)
+            _run_batch(
+                pipeline,
+                trainer,
+                callbacks,
+                checkpoint_manager,
+                reporting,
+            )
     except CancellationRequested:
         state = trainer.loop_state()
-        payload = trainer.checkpoint_payload(state, pipeline.state_dict())
+        payload = trainer.checkpoint_payload(state, pipeline.state_dict(), reporting)
         path = checkpoint_manager.save(payload)
         callbacks.publish_artifact(path, _CHECKPOINT_MEDIA_TYPE)
         return state
@@ -98,6 +117,7 @@ def _run_batch(
     trainer: StageTrainer,
     callbacks: TrainingCallbacks,
     checkpoint_manager: CheckpointManager,
+    reporting: ReportingState,
 ) -> None:
     state = trainer.loop_state()
     resume_discriminator = state.phase in (
@@ -136,6 +156,7 @@ def _run_batch(
         pipeline,
         callbacks,
         checkpoint_manager,
+        reporting,
         metrics,
     )
 
@@ -145,6 +166,7 @@ def _complete_accumulation(
     pipeline: TrainingPipeline,
     callbacks: TrainingCallbacks,
     checkpoint_manager: CheckpointManager | None,
+    reporting: ReportingState,
     batch_metrics: tuple[TrainingMetric, ...] = (),
 ) -> None:
     state = trainer.loop_state()
@@ -177,6 +199,7 @@ def _complete_accumulation(
         pipeline,
         callbacks,
         checkpoint_manager,
+        reporting,
     )
 
 
@@ -185,6 +208,7 @@ def _complete_step_work(
     pipeline: TrainingPipeline,
     callbacks: TrainingCallbacks,
     checkpoint_manager: CheckpointManager,
+    reporting: ReportingState,
 ) -> None:
     state = trainer.loop_state()
     checkpoint_due = _is_due(
@@ -194,7 +218,11 @@ def _complete_step_work(
         state = replace(state, phase=TrainingPhase.CHECKPOINTING)
         _announce(trainer, callbacks, state, ())
         complete = replace(state, phase=TrainingPhase.CHECKPOINT_COMPLETE)
-        payload = trainer.checkpoint_payload(complete, pipeline.state_dict())
+        payload = trainer.checkpoint_payload(
+            complete,
+            pipeline.state_dict(),
+            reporting,
+        )
         path = checkpoint_manager.save(payload)
         callbacks.publish_artifact(path, _CHECKPOINT_MEDIA_TYPE)
         _announce(trainer, callbacks, complete, ())

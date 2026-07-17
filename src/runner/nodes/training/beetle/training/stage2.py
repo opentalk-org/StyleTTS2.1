@@ -24,6 +24,7 @@ from .checkpoint import (
 from .loop import LoopIntervals
 from .loss_schedules import Stage2Schedules
 from .optimizer import OptimizerSet
+from .reporting import ReportingState
 from .stage1_setup import tensor_metric
 from .stage2_setup import (
     Stage2InputBuilder,
@@ -134,17 +135,19 @@ class Stage2Trainer:
         self,
         loop: LoopState,
         sampler_state: DataPipelineState,
+        reporting: ReportingState,
     ) -> CheckpointPayload:
         return CheckpointPayload(
-            CHECKPOINT_VERSION,
-            self.config_fingerprint,
-            self.data_fingerprint,
-            loop,
-            capture_rng_state(),
-            (*self._model_states(), *self.optimizers.capture_states()),
-            self._gradients(),
-            sampler_state,
-            self.schedules.state(loop.optimizer_step),
+            version=CHECKPOINT_VERSION,
+            config_fingerprint=self.config_fingerprint,
+            data_fingerprint=self.data_fingerprint,
+            loop=loop,
+            rng=capture_rng_state(),
+            states=(*self._model_states(), *self.optimizers.capture_states()),
+            gradients=self._gradients(),
+            sampler_state=sampler_state,
+            loss_schedule=self.schedules.state(loop.optimizer_step),
+            reporting=reporting,
         )
 
     def restore(self, payload: CheckpointPayload) -> DataPipelineState:
