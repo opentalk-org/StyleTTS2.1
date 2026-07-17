@@ -33,6 +33,7 @@ class EligibilityReport:
     excluded_virtual: int
     excluded_external: int
     excluded_duration: int
+    excluded_language: int
     excluded_text_or_voice: int
 
     def require(self, stage: int, sentence_probability: float) -> None:
@@ -57,6 +58,7 @@ class EligibilityReport:
             f"stage2={self.stage2_eligible}, stage3={self.stage3_eligible}, "
             f"mid_sentence={self.mid_sentence_eligible}, virtual={self.excluded_virtual}, "
             f"external={self.excluded_external}, duration={self.excluded_duration}, "
+            f"language={self.excluded_language}, "
             f"text_or_voice={self.excluded_text_or_voice}"
         )
 
@@ -87,6 +89,7 @@ class DatabaseSegmentIndex:
     def build(
         cls,
         selection: DatabaseSelection,
+        languages: tuple[str, ...],
         page_size: int,
         callbacks: IndexCallbacks,
     ) -> "DatabaseSegmentIndex":
@@ -110,6 +113,7 @@ class DatabaseSegmentIndex:
         return cls.from_references(
             selection.dataset_id,
             selection.audio_file_ids,
+            languages,
             references,
         )
 
@@ -118,6 +122,7 @@ class DatabaseSegmentIndex:
         cls,
         dataset_id: UUID,
         selected_audio_ids: tuple[UUID, ...],
+        languages: tuple[str, ...],
         references: list[SegmentReference],
     ) -> "DatabaseSegmentIndex":
         selected = frozenset(selected_audio_ids)
@@ -134,7 +139,9 @@ class DatabaseSegmentIndex:
         voice_lists: dict[str, list[SegmentKey]] = defaultdict(list)
         recording_lists: dict[UUID, list[SegmentKey]] = defaultdict(list)
         excluded_virtual = excluded_external = excluded_duration = 0
+        excluded_language = 0
         excluded_text_or_voice = 0
+        configured_languages = frozenset(languages)
         for reference in filtered:
             if reference.audio_virtual:
                 excluded_virtual += 1
@@ -142,7 +149,13 @@ class DatabaseSegmentIndex:
             if reference.audio_storage_kind != "packed":
                 excluded_external += 1
                 continue
-            item = _indexed_segment(reference)
+            if (
+                reference.language is None
+                or reference.language not in configured_languages
+            ):
+                excluded_language += 1
+                continue
+            item = _indexed_segment(reference, reference.language)
             if item.duration < 1 or item.duration > 45:
                 excluded_duration += 1
                 continue
@@ -180,12 +193,13 @@ class DatabaseSegmentIndex:
             excluded_virtual=excluded_virtual,
             excluded_external=excluded_external,
             excluded_duration=excluded_duration,
+            excluded_language=excluded_language,
             excluded_text_or_voice=excluded_text_or_voice,
         )
         return cls(dataset_id, records, by_audio, pools, report, _fingerprint(dataset_id, records))
 
 
-def _indexed_segment(reference: SegmentReference) -> IndexedSegment:
+def _indexed_segment(reference: SegmentReference, language: str) -> IndexedSegment:
     raw = reference.segment
     key = SegmentKey(reference.audio_file_id, reference.segment_index, str(raw["id"]))
     start = float(raw["start"])
@@ -206,6 +220,7 @@ def _indexed_segment(reference: SegmentReference) -> IndexedSegment:
         end=end,
         audio_duration=reference.audio_duration,
         estimated_bytes=estimated,
+        language=language,
         voice_id=voice_id,
         has_text=bool(text.strip()),
         has_phonemes=bool(phonemes.strip()),
@@ -223,7 +238,7 @@ def _fingerprint(dataset_id: UUID, records: dict[SegmentKey, IndexedSegment]) ->
         rows.append(
             (
                 str(key.audio_file_id), key.segment_index, key.segment_id,
-                item.start, item.end, item.voice_id, item.has_text,
+                item.start, item.end, item.language, item.voice_id, item.has_text,
                 item.has_phonemes, item.phoneme_word_count,
                 tuple((word.word, word.start, word.end) for word in item.words),
                 item.style_prompt, item.voice_prompt,

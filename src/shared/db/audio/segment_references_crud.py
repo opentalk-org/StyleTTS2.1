@@ -25,6 +25,7 @@ class SegmentReference:
     audio_byte_length: int
     audio_virtual: bool
     audio_storage_kind: str
+    language: str | None
     style_prompt: str | None
     voice_prompt: str | None
     segment_index: int
@@ -65,6 +66,7 @@ def list_segment_references_page(
             audio_byte_length=row.audio_byte_length,
             audio_virtual=row.audio_virtual,
             audio_storage_kind=row.audio_storage_kind,
+            language=row.language,
             style_prompt=row.style_prompt,
             voice_prompt=row.voice_prompt,
             segment_index=row.segment_index,
@@ -95,6 +97,7 @@ def segment_references_statement(
             AudioFile.byte_length.label("audio_byte_length"),
             AudioFile.virtual.label("audio_virtual"),
             AudioFile.storage_kind.label("audio_storage_kind"),
+            AudioFile.language,
             AudioFile.style_prompt,
             AudioFile.voice_prompt,
             segment_index,

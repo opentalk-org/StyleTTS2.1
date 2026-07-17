@@ -129,6 +129,19 @@ class PhonemeConfig(StrictConfigModel):
     dropout: float = Field(ge=0, lt=1)
 
 
+class LanguageConfig(StrictConfigModel):
+    values: tuple[str, ...] = Field(min_length=1)
+    embedding_channels: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_values(self) -> "LanguageConfig":
+        if any(not value.strip() for value in self.values):
+            raise ValueError("language values must not be empty")
+        if len(set(self.values)) != len(self.values):
+            raise ValueError("language values must be unique")
+        return self
+
+
 class ContextConfig(StrictConfigModel):
     hidden_channels: int = Field(gt=0)
     output_channels: int = Field(gt=0)
@@ -225,6 +238,7 @@ class ArchitectureConfig(StrictConfigModel):
     generator: GeneratorConfig
     phoneme_token_count: int = Field(gt=1)
     phoneme: PhonemeConfig
+    language: LanguageConfig
     context: ContextConfig
     embeddings: EmbeddingEncoderConfig
     conditioning: ConditioningConfig

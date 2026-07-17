@@ -55,6 +55,9 @@ architecture:
     cnn_layers: 5
     cnn_kernel_size: 3
     dropout: 0.1
+  language:
+    values: [en]
+    embedding_channels: 64
   context:
     hidden_channels: 384
     output_channels: 256

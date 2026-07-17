@@ -112,6 +112,7 @@ def prepare_run(
     callbacks.check_cancel()
     index = DatabaseSegmentIndex.build(
         config.data.selection,
+        config.architecture.language.values,
         config.data.prefetch.page_size,
         callbacks,
     )
