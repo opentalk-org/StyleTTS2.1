@@ -121,10 +121,10 @@
 - Produces: contrastive, GE2E, speaker-adversarial, style-statistics, and latent re-encoding consistency losses with typed named results.
 - Consumes: grouped batch labels/views and models from Task 2/4.
 
-- [ ] Add hand-calculated tests showing same-voice vectors attract, different voices repel, recording-grouped style GE2E uses recording identity, and distance weights alter only same-recording style positives.
-- [ ] Add tests for style speaker CE with reversal, F0/N mean/std regression, and cosine/MSE re-encoding consistency from generated latent through StyleEncoder.
-- [ ] Implement masked normalized reductions and explicit temperature/scale parameters; require valid group cardinalities instead of silently skipping invalid groups.
-- [ ] Run all embedding loss backward tests; expect finite gradients in the intended encoders/heads.
+- [x] Add hand-calculated tests showing same-voice vectors attract, different voices repel, recording-grouped style GE2E uses recording identity, and distance weights alter only same-recording style positives.
+- [x] Add tests for style speaker CE with reversal, F0/N mean/std regression, and cosine/MSE re-encoding consistency from generated latent through StyleEncoder.
+- [x] Implement masked normalized reductions and explicit temperature/scale parameters; require valid group cardinalities instead of silently skipping invalid groups.
+- [x] Run all embedding loss backward tests; expect finite gradients in the intended encoders/heads.
 - [ ] Commit: `git commit -m 'feat: add beetle embedding losses'`.
 
 ### Task 7: Stage 2 bundle and full synthetic objective
