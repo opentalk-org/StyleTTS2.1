@@ -87,7 +87,7 @@ architecture:
       post_audio: 0.75
       language: 0.01
   duration_flow:
-    condition_channels: 256
+    condition_channels: 2496
     hidden_channels: 256
     flow_count: 4
     posterior_flow_count: 4

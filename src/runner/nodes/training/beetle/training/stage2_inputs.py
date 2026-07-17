@@ -8,7 +8,13 @@ from ..config.training import Stage2ObjectiveConfig
 from ..data.records import BeetleBatch
 from ..data.sampling import derive_seed
 from ..losses.stage2 import Stage2LossInput
-from ..models.modules.conditioning import ConditionInputs, pairwise_pool_tokens
+from ..models.modules.conditioning import (
+    ConditionBank,
+    ConditionKeep,
+    ConditionVectors,
+    ProjectedConditions,
+    pairwise_pool_tokens,
+)
 from ..models.modules.latent_flow import sample_flow_training_case
 from ..models.stage2 import Stage2Models
 from .stage2_setup import Stage2InputBuilder
@@ -16,7 +22,6 @@ from .stage2_features import (
     WaveformMelExtractor,
     acoustic_statistics,
     boundary_pool,
-    expand_vector,
     group_ids,
     style_weights,
 )
@@ -27,6 +32,18 @@ class SpeakerIndex(Protocol):
     def resolve(
         self, voice_ids: tuple[str | None, ...], device: torch.device
     ) -> Tensor: ...
+
+
+def build_rate_conditions(
+    bank: ConditionBank,
+    vectors: ConditionVectors,
+    duration_phoneme: Tensor,
+    latent_phoneme: Tensor,
+    keep: ConditionKeep,
+) -> tuple[Tensor, ProjectedConditions]:
+    duration = vectors.at_rate(duration_phoneme).dropped_concatenated(keep)
+    latent = bank(vectors.at_rate(latent_phoneme), keep)
+    return duration, latent
 
 
 class DefaultStage2InputBuilder(Stage2InputBuilder):
@@ -64,12 +81,6 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
         )
         phoneme = models.phoneme_encoder(values.phoneme_ids, values.phoneme_mask)
         duration_tokens = models.duration_phoneme_encoder(phoneme.tokens, phoneme.mask)
-        duration_nll = models.duration_predictor.log_prob(
-            alignment.durations.detach().clamp_min(1).unsqueeze(1),
-            duration_tokens,
-            phoneme.mask,
-            self._generator(loop, "duration"),
-        )
         latent_tokens = models.latent_phoneme_encoder(phoneme.tokens, phoneme.mask)
         full_rate = torch.bmm(latent_tokens, alignment.hard_alignment.detach())
         aligned_tokens, aligned_mask = pairwise_pool_tokens(
@@ -79,19 +90,34 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
             raise ValueError("aligned phonemes and posterior latents must match")
         target_style = models.style_encoder(posterior.latent, posterior.mask)
         target_voice = models.voice_encoder(posterior.latent, posterior.mask)
-        conditions = models.condition_bank(
-            self._condition_inputs(
-                models,
-                values,
-                loop,
-                aligned_tokens,
-                phoneme.pooled,
-                target_style,
-                target_voice,
-                posterior.latent.shape[2],
-            ),
+        vectors = ConditionVectors(
+            style=target_style,
+            voice=target_voice,
+            pooled_phoneme=phoneme.pooled,
+            pre_text=self._text_context(models, values, loop, True),
+            post_text=self._text_context(models, values, loop, False),
+            pre_audio=self._audio_context(models, values, loop, True),
+            post_audio=self._audio_context(models, values, loop, False),
+            language=models.language_embedding(values.language_ids),
+        )
+        keep = models.condition_bank.sample_keep(
+            values.waveform.shape[0],
+            self.device,
             self.config.architecture.conditioning.dropout,
             self._generator(loop, "condition-dropout"),
+        )
+        duration_condition, conditions = build_rate_conditions(
+            models.condition_bank,
+            vectors,
+            duration_tokens,
+            aligned_tokens,
+            keep,
+        )
+        duration_nll = models.duration_predictor.log_prob(
+            alignment.durations.detach().clamp_min(1).unsqueeze(1),
+            duration_condition,
+            phoneme.mask,
+            self._generator(loop, "duration"),
         )
         flow_sample = sample_flow_training_case(
             posterior.latent,
@@ -147,39 +173,12 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
             minimum_flow_steps=self.config.architecture.latent_flow.minimum_steps,
         )
 
-    def _condition_inputs(
-        self,
-        models: Stage2Models,
-        batch: BeetleBatch,
-        loop: LoopState,
-        phoneme: Tensor,
-        pooled: Tensor,
-        style: Tensor,
-        voice: Tensor,
-        frames: int,
-    ) -> ConditionInputs:
-        pre_text = self._text_context(models, batch, loop, True, frames)
-        post_text = self._text_context(models, batch, loop, False, frames)
-        pre_audio = self._audio_context(models, batch, loop, True, frames)
-        post_audio = self._audio_context(models, batch, loop, False, frames)
-        return ConditionInputs(
-            phoneme,
-            expand_vector(style, frames),
-            expand_vector(voice, frames),
-            expand_vector(pooled, frames),
-            pre_text,
-            post_text,
-            pre_audio,
-            post_audio,
-        )
-
     def _text_context(
         self,
         models: Stage2Models,
         batch: BeetleBatch,
         loop: LoopState,
         pre: bool,
-        frames: int,
     ) -> Tensor:
         ids = batch.pre_text_ids if pre else batch.post_text_ids
         lengths = batch.pre_text_lengths if pre else batch.post_text_lengths
@@ -198,8 +197,7 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
             device=self.device,
             generator=self._generator(loop, "pre-text" if pre else "post-text"),
         )
-        selected = boundary_pool(tokens, mask, available, counts, pre)
-        return expand_vector(selected, frames)
+        return boundary_pool(tokens, mask, available, counts, pre)
 
     def _audio_context(
         self,
@@ -207,7 +205,6 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
         batch: BeetleBatch,
         loop: LoopState,
         pre: bool,
-        frames: int,
     ) -> Tensor:
         waveform = batch.pre_audio if pre else batch.post_audio
         lengths = batch.pre_audio_lengths if pre else batch.post_audio_lengths
@@ -220,8 +217,7 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
                 self._generator(loop, "pre-audio" if pre else "post-audio"),
             )
         pooled = models.context_audio_encoder(posterior.latent, posterior.mask)
-        pooled = pooled * available.unsqueeze(1)
-        return expand_vector(pooled, frames)
+        return pooled * available.unsqueeze(1)
 
     def _view_latents(
         self,

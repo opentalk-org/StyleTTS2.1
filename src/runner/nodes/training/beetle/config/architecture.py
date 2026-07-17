@@ -272,8 +272,18 @@ class ArchitectureConfig(StrictConfigModel):
         if self.generator.input_channels != self.decoder.generator_channels:
             raise ValueError("generator input_channels must match decoder generator_channels")
         condition = self.conditioning.common_channels
-        if self.duration_flow.condition_channels != condition:
-            raise ValueError("duration-flow condition_channels must match conditioning")
+        duration_condition = (
+            self.phoneme.cnn_hidden_channels
+            + 2 * self.embeddings.embedding_channels
+            + self.phoneme.projection_channels
+            + 2 * self.phoneme.cnn_hidden_channels
+            + 2 * self.context.output_channels
+            + self.language.embedding_channels
+        )
+        if self.duration_flow.condition_channels != duration_condition:
+            raise ValueError(
+                "duration-flow condition_channels must match all condition sources"
+            )
         if self.latent_flow.condition_channels != condition:
             raise ValueError("latent-flow condition_channels must match conditioning")
         if max(self.conditioning.concat_layers) >= self.latent_flow.layer_count:

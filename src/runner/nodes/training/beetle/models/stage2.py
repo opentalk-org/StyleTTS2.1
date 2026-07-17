@@ -9,6 +9,7 @@ from .modules.aligner import PhonemeAligner
 from .modules.conditioning import ConditionBank, ConditionChannels
 from .modules.duration import DurationPredictor
 from .modules.embeddings import (
+    LanguageEmbedding,
     StyleEncoder,
     StyleSpeakerClassifier,
     StyleStatisticsHead,
@@ -73,6 +74,7 @@ class Stage2Models(nn.Module):
         context_audio_encoder: ContextAudioEncoder,
         style_encoder: StyleEncoder,
         voice_encoder: VoiceEncoder,
+        language_embedding: LanguageEmbedding,
         condition_bank: ConditionBank,
         duration_predictor: DurationPredictor,
         latent_flow: LatentFlowModel,
@@ -93,6 +95,7 @@ class Stage2Models(nn.Module):
         self.context_audio_encoder = context_audio_encoder
         self.style_encoder = style_encoder
         self.voice_encoder = voice_encoder
+        self.language_embedding = language_embedding
         self.condition_bank = condition_bank
         self.duration_predictor = duration_predictor
         self.latent_flow = latent_flow
@@ -114,6 +117,7 @@ class Stage2Models(nn.Module):
             self.context_audio_encoder,
             self.style_encoder,
             self.voice_encoder,
+            self.language_embedding,
             self.condition_bank,
             self.duration_predictor,
             self.latent_flow,
@@ -166,6 +170,7 @@ def build_stage2_models(
         post_text=architecture.phoneme.cnn_hidden_channels,
         pre_audio=architecture.context.output_channels,
         post_audio=architecture.context.output_channels,
+        language=architecture.language.embedding_channels,
     )
     return Stage2Models(
         audio_encoder=stage1.audio_encoder,
@@ -183,6 +188,10 @@ def build_stage2_models(
         ),
         style_encoder=StyleEncoder(architecture.embeddings),
         voice_encoder=VoiceEncoder(architecture.embeddings),
+        language_embedding=LanguageEmbedding(
+            len(architecture.language.values),
+            architecture.language.embedding_channels,
+        ),
         condition_bank=ConditionBank(
             condition_channels,
             architecture.conditioning.common_channels,
