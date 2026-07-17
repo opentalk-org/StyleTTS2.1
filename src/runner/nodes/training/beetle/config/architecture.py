@@ -119,9 +119,7 @@ class GeneratorConfig(StrictConfigModel):
 
 
 class PhonemeConfig(StrictConfigModel):
-    pretrained_model: str = Field(min_length=1)
-    vocabulary_size: int = Field(gt=0)
-    albert_hidden_channels: int = Field(gt=0)
+    model_path: str = Field(min_length=1)
     projection_channels: int = Field(gt=0)
     cnn_hidden_channels: int = Field(gt=0)
     cnn_layers: int = Field(gt=0)
@@ -204,7 +202,6 @@ class LatentFlowConfig(StrictConfigModel):
 
 class AlignerConfig(StrictConfigModel):
     checkpoint_asset_id: str = Field(min_length=1)
-    vocabulary_size: int = Field(gt=1)
     hidden_channels: int = Field(gt=0)
     blank_id: int = Field(ge=0)
 
@@ -220,6 +217,7 @@ class ArchitectureConfig(StrictConfigModel):
     feature: FeatureConfig
     decoder: DecoderConfig
     generator: GeneratorConfig
+    phoneme_token_count: int = Field(gt=1)
     phoneme: PhonemeConfig
     context: ContextConfig
     embeddings: EmbeddingEncoderConfig

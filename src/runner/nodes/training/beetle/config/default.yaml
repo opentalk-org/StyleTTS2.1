@@ -47,10 +47,9 @@ architecture:
     istft_hop_length: 15
     source_n_fft: 240
     source_hop_length: 60
+  phoneme_token_count: 178
   phoneme:
-    pretrained_model: albert-base-v2
-    vocabulary_size: 2048
-    albert_hidden_channels: 768
+    model_path: src/runner/nodes/training/beetle/files/phoneme_bert
     projection_channels: 256
     cnn_hidden_channels: 384
     cnn_layers: 5
@@ -106,7 +105,6 @@ architecture:
     ema_decay: 0.999
   aligner:
     checkpoint_asset_id: styletts2-aligner
-    vocabulary_size: 2048
     hidden_channels: 256
     blank_id: 0
   text_encoder:
