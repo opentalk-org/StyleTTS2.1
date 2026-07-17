@@ -51,9 +51,20 @@ from .state import (
     restore_gradients,
     restore_rng_state,
 )
+from .validation import (
+    ArtifactKind,
+    ValidationArtifact,
+    ValidationOutput,
+    ValidationRecord,
+    ValidationSample,
+    ValidationSelection,
+    run_stage_validation,
+    select_validation_items,
+)
 
 __all__ = [
     "ArtifactEvent",
+    "ArtifactKind",
     "CHECKPOINT_VERSION",
     "CancellationRequested",
     "CheckpointManager",
@@ -87,6 +98,11 @@ __all__ = [
     "TrainingMetric",
     "TrainingPipeline",
     "TrainingPhase",
+    "ValidationArtifact",
+    "ValidationOutput",
+    "ValidationRecord",
+    "ValidationSample",
+    "ValidationSelection",
     "capture_gradients",
     "capture_named_state",
     "capture_rng_state",
@@ -101,6 +117,8 @@ __all__ = [
     "restore_named_states",
     "restore_rng_state",
     "run_continuously",
+    "run_stage_validation",
+    "select_validation_items",
     "validate_resume_fingerprints",
     "DefaultStage2InputBuilder",
 ]

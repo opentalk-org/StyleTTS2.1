@@ -139,12 +139,12 @@
 - Produces: `ValidationSelection`, `ValidationRecord`, `select_validation_items()`, and `run_stage_validation()`.
 - Consumes: fixed eligible segment IDs stored in checkpoints, stage trainer inference methods, artifact root, and callbacks.
 
-- [ ] Select validation IDs once, round-trip them through a checkpoint, and prove resume preserves order even when the compact training index reshuffles.
+- [x] Select validation IDs once, round-trip them through a checkpoint, and prove resume preserves order even when the compact training index reshuffles.
 - [ ] Test Stage 1 emits reference/reconstruction/F0/N artifacts; Stage 2 emits reference/full text-conditioned synthesis/duration/alignment/flow artifacts; Stage 3 emits reference/reconstruction/end-to-end synthesis plus all metrics.
-- [ ] Implement atomic `validation/step_<optimizer_step>/` creation with PCM WAV files and a strict JSON record containing stage, step, source IDs, sample rate, artifact roles, and metrics.
-- [ ] Assert `validation_every_steps` fires only after completed optimizer steps and artifacts are published only after the folder is complete.
-- [ ] Run validation tests through Nix; expect PASS.
-- [ ] Commit: `git commit -m 'feat: add beetle validation artifacts'`.
+- [x] Implement atomic `validation/step_<optimizer_step>/` creation with PCM WAV files and a strict JSON record containing stage, step, source IDs, sample rate, artifact roles, and metrics.
+- [x] Assert `validation_every_steps` fires only after completed optimizer steps and artifacts are published only after the folder is complete.
+- [x] Run validation tests through Nix; expect PASS.
+- [x] Commit: `git commit -m 'feat: add beetle validation artifacts'`.
 
 ### Task 8: Runtime assembly, standalone scripts, and operator guide
 
