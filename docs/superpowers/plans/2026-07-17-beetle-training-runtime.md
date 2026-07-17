@@ -174,7 +174,7 @@
 
 **Files:**
 - Verify: `src/runner/nodes/training/beetle/`
-- Remove: `/tmp/test_beetle_training.py`
+- Keep temporary `/tmp/test_beetle_*.py` tests outside the repository.
 
 **Interfaces:**
 - Produces: a reviewed baseline ready for direct CLI use and later node adaptation.
@@ -184,5 +184,5 @@
 - [ ] Run `nix develop --command python -m compileall -q src/runner/nodes/training/beetle`; expect exit 0.
 - [ ] Run file/folder limit checks and the master-plan byte-count command; expect project-owned files below 300 lines, project-owned folders below 16 files, and total size below 20 GB.
 - [ ] Run inference parameter reporting; expect 100M–150M excluding TextEncoder, frozen helpers, discriminators, and training-only heads.
-- [ ] Remove the temporary test with `apply_patch`, run `git diff --check`, and inspect `git status --short` to confirm unrelated dirty files were untouched.
+- [ ] Keep the temporary tests in `/tmp`, run `git diff --check`, and inspect `git status --short` to confirm unrelated dirty files were untouched.
 - [ ] Commit: `git commit -m 'feat: complete beetle training baseline'`.
