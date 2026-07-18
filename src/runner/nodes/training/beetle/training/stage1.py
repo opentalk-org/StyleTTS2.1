@@ -101,7 +101,9 @@ class Stage1Trainer:
         waveform, mel, frame_mask = self._inputs(batch)
         segment = self._segment(frame_mask, "generator")
         real = segment.samples(waveform)
-        targets = self.models.acoustic_targets(mel, frame_mask)
+        f0_target = self.models.segment_f0_target(mel, frame_mask, segment)
+        n_target = self.models.n_target(mel, frame_mask)
+        segment_mask = segment.frames(frame_mask)
         with self._autocast():
             synthesis = self._synthesize(mel, frame_mask, segment, "generator")
             encoder_kl = masked_kl_standard_normal(
@@ -109,8 +111,10 @@ class Stage1Trainer:
                 synthesis.posterior.log_scale,
                 synthesis.posterior.mask,
             )
-            f0 = masked_f0_smooth_l1(synthesis.acoustic.f0, targets.f0, frame_mask)
-            n = masked_n_smooth_l1(synthesis.acoustic.n, targets.n, frame_mask)
+            f0 = masked_f0_smooth_l1(
+                segment.frames(synthesis.acoustic.f0), f0_target, segment_mask
+            )
+            n = masked_n_smooth_l1(synthesis.acoustic.n, n_target, frame_mask)
             reconstruction = self.models.reconstruction_loss(
                 synthesis.waveform,
                 real,

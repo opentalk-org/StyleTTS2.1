@@ -58,12 +58,13 @@ Alignment and duration supervision remain at the full hop-300 clock. Expanded
 phoneme conditioning is padded to even length and pairwise pooled before the
 half-rate LatentFlowModel. This avoids per-phoneme rounding drift.
 
-Stages 1 and 3 train the upstream encoders, flows, FeatureLinear, KL, F0, and
-`N` objectives over the complete utterance. Each example then selects a random
+Stages 1 and 3 train the upstream encoders, flows, FeatureLinear prediction,
+KL, and `N` over the complete utterance. Each example selects a random
 posterior-aligned 9,600-sample segment: 32 hop-300 frames and 16 half-rate
-latent frames. Only this matching latent/acoustic/audio interval enters
-Decoder, Generator, reconstruction, discriminator, generator-adversarial, and
-feature-matching computation. Stage 2 and validation stay full-utterance.
+latent frames. Frozen F0 target extraction and F0 supervision use this same
+interval with Decoder, Generator, reconstruction, discriminator,
+generator-adversarial, and feature-matching computation. Stage 2 and validation
+stay full-utterance.
 
 Duration prediction and latent flow receive the same nine condition sources:
 phoneme features, pooled phoneme vectors, style, voice, pre/post text context,
@@ -129,8 +130,8 @@ There is no Wave-U-Net, WavLM/SLM discriminator, or invented model family.
 
 1. Train AudioEncoder, FeatureLinear, Decoder, Generator, and both current
    StyleTTS discriminator families with posterior KL, F0, `N`, StyleTTS2
-   reconstruction, generator-adversarial, and feature-matching losses. KL,
-   F0, and `N` use complete utterances; the audio synthesis losses use aligned
+   reconstruction, generator-adversarial, and feature-matching losses. KL and
+   `N` use complete utterances; F0 and audio synthesis losses use aligned
    `adversarial.segment_samples` crops.
 2. Freeze Stage 1 and train the phoneme/context encoders, style/voice encoders,
    DurationPredictor, LatentFlowModel, and the pretrained PhonemeAligner against
@@ -143,8 +144,8 @@ There is no Wave-U-Net, WavLM/SLM discriminator, or invented model family.
 Stage 3 runs two audio paths per batch: posterior reconstruction and one-step
 text-conditioned shortcut generation from noise. Both paths use the same
 style-free Decoder followed by the separate Generator and share one aligned
-crop with the real waveform. Their full-utterance F0/`N` and cropped mel,
-generator-adversarial, and feature-matching losses are averaged into the
+crop with the real waveform. Their cropped F0, mel, generator-adversarial, and
+feature-matching losses and full-utterance `N` losses are averaged into the
 existing Stage 1 terms, while the full Stage 2 objective remains active. The
 two fake paths share one discriminator backward/update, so adversarial training
 is not applied through a duplicate optimizer step.

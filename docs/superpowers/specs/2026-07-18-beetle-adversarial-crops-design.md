@@ -34,14 +34,15 @@ selected as training audio.
 
 The audio encoder receives the full mel tensor and mask. Posterior KL uses the
 complete posterior sequence. FeatureLinear receives the complete posterior and
-produces full-utterance F0 and noise predictions; their supervised objectives
-also use the complete valid sequence.
+produces full-utterance F0 and noise predictions. Noise supervision uses the
+complete valid sequence; F0 targets and supervision use the generator crop.
 
 For each discriminator or generator pass, a deterministic per-example crop
 plan is derived from the runtime seed, stage, cycle, batch index, and pass name.
-That plan selects matching latent, acoustic-feature, mask, and real-waveform
-segments. Only those segments enter Decoder, Generator, mel/STFT
-reconstruction, adversarial, and feature-matching computation.
+That plan selects matching mel target, latent, acoustic-feature, mask, and
+real-waveform segments. The frozen F0 extractor, F0 loss, Decoder, Generator,
+mel/STFT reconstruction, adversarial, and feature-matching computation use only
+those segments.
 
 ## Stage 3 data flow
 

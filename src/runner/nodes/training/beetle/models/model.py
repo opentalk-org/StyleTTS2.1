@@ -167,9 +167,23 @@ class Stage1Models(nn.Module):
 
     def acoustic_targets(self, mel: Tensor, frame_mask: Tensor) -> AcousticFeatures:
         return AcousticFeatures(
-            f0=self.f0_extractor(mel, frame_mask),
-            n=normalized_log_mel_energy(mel, frame_mask),
+            f0=self.f0_target(mel, frame_mask),
+            n=self.n_target(mel, frame_mask),
         )
+
+    def f0_target(self, mel: Tensor, frame_mask: Tensor) -> Tensor:
+        return self.f0_extractor(mel, frame_mask)
+
+    def n_target(self, mel: Tensor, frame_mask: Tensor) -> Tensor:
+        return normalized_log_mel_energy(mel, frame_mask)
+
+    def segment_f0_target(
+        self,
+        mel: Tensor,
+        frame_mask: Tensor,
+        segment: AlignedSegments,
+    ) -> Tensor:
+        return self.f0_target(segment.frames(mel), segment.frames(frame_mask))
 
     def parameter_report(self) -> ParameterReport:
         inference_modules = (

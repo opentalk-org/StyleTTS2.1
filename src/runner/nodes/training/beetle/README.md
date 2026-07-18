@@ -99,14 +99,15 @@ The fixed training geometry uses static compiled graphs for AudioEncoder,
 FeatureLinear, and Decoder. Generator remains eager because TorchInductor cannot
 lower its complex harmonic-phase cumulative path.
 
-Stages 1 and 3 keep the AudioEncoder, FeatureLinear, acoustic supervision, and
-all conditioning/flow objectives at full utterance length. Before Decoder, each
-example selects one independently random posterior-aligned segment configured
-by `adversarial.segment_samples`. The baseline value is 9,600 samples: 32
-hop-300 frames and 16 half-rate posterior frames. Decoder, Generator,
-reconstruction, discriminator, generator-adversarial, and feature-matching
-losses use that same aligned segment. Crop plans derive from checkpointed loop
-coordinates and the runtime seed, while validation remains full-utterance.
+Stages 1 and 3 keep AudioEncoder, FeatureLinear prediction, `N`, KL, and all
+conditioning/flow objectives at full utterance length. Each example selects one
+independently random posterior-aligned segment configured by
+`adversarial.segment_samples`. The baseline value is 9,600 samples: 32 hop-300
+frames and 16 half-rate posterior frames. Frozen F0 target extraction and F0
+supervision use the same frames as Decoder, Generator, reconstruction,
+discriminator, generator-adversarial, and feature-matching losses. Crop plans
+derive from checkpointed loop coordinates and the runtime seed, while
+validation remains full-utterance.
 
 ## Runtime reports
 

@@ -106,7 +106,8 @@ class Stage3Trainer(Stage1Trainer):
         segment = self._segment(frame_mask, "generator")
         real = segment.samples(waveform)
         inputs = self.input_builder.build(self.stage2_models, batch, self._loop)
-        targets = self.models.acoustic_targets(mel, frame_mask)
+        f0_target = self.models.segment_f0_target(mel, frame_mask, segment)
+        n_target = self.models.n_target(mel, frame_mask)
         with self._autocast():
             posterior = self._synthesize(
                 mel, frame_mask, segment, "generator-posterior"
@@ -120,10 +121,12 @@ class Stage3Trainer(Stage1Trainer):
                 posterior.posterior.mask,
             )
             f0 = self._mean_acoustic_loss(
-                posterior.acoustic, conditional.acoustic, targets, frame_mask, True
+                posterior.acoustic, conditional.acoustic, f0_target,
+                frame_mask, True, segment
             )
             n = self._mean_acoustic_loss(
-                posterior.acoustic, conditional.acoustic, targets, frame_mask, False
+                posterior.acoustic, conditional.acoustic, n_target,
+                frame_mask, False, segment
             )
             reconstruction = 0.5 * (
                 self.models.reconstruction_loss(
@@ -235,16 +238,22 @@ class Stage3Trainer(Stage1Trainer):
         self,
         posterior: AcousticFeatures,
         conditional: AcousticFeatures,
-        target: AcousticFeatures,
+        target: Tensor,
         mask: Tensor,
         pitch: bool,
+        segment: AlignedSegments,
     ) -> Tensor:
-        loss = masked_f0_smooth_l1 if pitch else masked_n_smooth_l1
-        generated = posterior.f0 if pitch else posterior.n
-        conditioned = conditional.f0 if pitch else conditional.n
-        expected = target.f0 if pitch else target.n
+        if pitch:
+            loss = masked_f0_smooth_l1
+            generated = segment.frames(posterior.f0)
+            conditioned = segment.frames(conditional.f0)
+            mask = segment.frames(mask)
+        else:
+            loss = masked_n_smooth_l1
+            generated = posterior.n
+            conditioned = conditional.n
         return 0.5 * (
-            loss(generated, expected, mask) + loss(conditioned, expected, mask)
+            loss(generated, target, mask) + loss(conditioned, target, mask)
         )
 
     def _inference_modules(self) -> tuple[nn.Module, ...]:
