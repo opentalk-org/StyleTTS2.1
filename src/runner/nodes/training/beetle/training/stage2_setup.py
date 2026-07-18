@@ -25,6 +25,13 @@ class Stage2InputBuilder(Protocol):
         loop: LoopState,
     ) -> Stage2LossInput: ...
 
+    def build_validation(
+        self,
+        models: Stage2Models,
+        batch: object,
+        loop: LoopState,
+    ) -> Stage2LossInput: ...
+
 
 def build_stage2_optimizer(
     models: Stage2Models,

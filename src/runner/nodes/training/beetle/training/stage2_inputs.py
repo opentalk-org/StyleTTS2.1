@@ -65,6 +65,23 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
         batch: object,
         loop: LoopState,
     ) -> Stage2LossInput:
+        return self._build(models, batch, loop, False)
+
+    def build_validation(
+        self,
+        models: Stage2Models,
+        batch: object,
+        loop: LoopState,
+    ) -> Stage2LossInput:
+        return self._build(models, batch, loop, True)
+
+    def _build(
+        self,
+        models: Stage2Models,
+        batch: object,
+        loop: LoopState,
+        validation: bool,
+    ) -> Stage2LossInput:
         if not isinstance(batch, BeetleBatch):
             raise TypeError("Stage 2 input builder requires a BeetleBatch")
         values = batch.to(self.device)
@@ -100,11 +117,15 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
             post_audio=self._audio_context(models, values, loop, False),
             language=models.language_embedding(values.language_ids),
         )
-        keep = models.condition_bank.sample_keep(
-            values.waveform.shape[0],
-            self.device,
-            self.config.architecture.conditioning.dropout,
-            self._generator(loop, "condition-dropout"),
+        keep = (
+            keep_all_conditions(values.waveform.shape[0], self.device)
+            if validation
+            else models.condition_bank.sample_keep(
+                values.waveform.shape[0],
+                self.device,
+                self.config.architecture.conditioning.dropout,
+                self._generator(loop, "condition-dropout"),
+            )
         )
         duration_condition, conditions = build_rate_conditions(
             models.condition_bank,
@@ -248,3 +269,10 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
             label,
         )
         return torch.Generator(device=self.device).manual_seed(seed)
+
+
+def keep_all_conditions(batch_size: int, device: torch.device) -> ConditionKeep:
+    if batch_size <= 0:
+        raise ValueError("condition batch size must be positive")
+    keep = torch.ones(batch_size, 1, 1, dtype=torch.bool, device=device)
+    return ConditionKeep(keep, keep, keep, keep, keep, keep, keep, keep, keep)
