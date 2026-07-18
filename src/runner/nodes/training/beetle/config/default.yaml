@@ -10,12 +10,11 @@ architecture:
   posterior:
     mel_channels: 80
     latent_channels: 192
-    hidden_channels: 256
+    hidden_channels: 192
     downsample_rate: 2
     downsample_kernel_size: 4
     kernel_size: 5
-    dilation_cycle: [1, 2, 4, 8, 16]
-    cycles: 3
+    layer_count: 16
     dropout: 0.1
     log_scale_min: -7.0
     log_scale_max: 2.0

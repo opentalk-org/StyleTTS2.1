@@ -4,9 +4,9 @@ from pathlib import Path
 import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
+from torch.nn.utils.parametrizations import weight_norm
 
 from ...config.architecture import FeatureConfig, PosteriorEncoderConfig
-from .convolution import DilatedResidualStack
 from .pitch import JDCNet
 
 
@@ -16,6 +16,63 @@ class AudioPosterior:
     log_scale: Tensor
     latent: Tensor
     mask: Tensor
+
+
+class GatedResidualStack(nn.Module):
+    def __init__(
+        self,
+        channels: int,
+        kernel_size: int,
+        layer_count: int,
+        dropout: float,
+    ) -> None:
+        super().__init__()
+        padding = (kernel_size - 1) // 2
+        self.channels = channels
+        self.dropout = dropout
+        self.input_layers = nn.ModuleList(
+            weight_norm(
+                nn.Conv1d(
+                    channels,
+                    channels * 2,
+                    kernel_size,
+                    padding=padding,
+                )
+            )
+            for _ in range(layer_count)
+        )
+        self.residual_skip_layers = nn.ModuleList(
+            weight_norm(
+                nn.Conv1d(
+                    channels,
+                    channels * (2 if index < layer_count - 1 else 1),
+                    1,
+                )
+            )
+            for index in range(layer_count)
+        )
+
+    def forward(self, features: Tensor, mask: Tensor) -> Tensor:
+        if mask.shape != (features.shape[0], 1, features.shape[2]):
+            raise ValueError("posterior stack mask must match feature frames")
+        features = features * mask
+        skip = torch.zeros_like(features)
+        last_index = len(self.input_layers) - 1
+        for index, (input_layer, residual_skip_layer) in enumerate(
+            zip(self.input_layers, self.residual_skip_layers, strict=True)
+        ):
+            hidden = input_layer(features)
+            tanh_part, sigmoid_part = hidden.chunk(2, dim=1)
+            hidden = torch.tanh(tanh_part) * torch.sigmoid(sigmoid_part)
+            hidden = F.dropout(hidden, self.dropout, self.training)
+            projected = residual_skip_layer(hidden)
+            if index < last_index:
+                residual, layer_skip = projected.split(self.channels, dim=1)
+                features = (features + residual) * mask
+            else:
+                layer_skip = projected
+            skip = skip + layer_skip
+        return skip * mask
 
 
 class AudioEncoder(nn.Module):
@@ -29,11 +86,10 @@ class AudioEncoder(nn.Module):
             stride=config.downsample_rate,
             padding=1,
         )
-        self.stack = DilatedResidualStack(
+        self.stack = GatedResidualStack(
             config.hidden_channels,
             config.kernel_size,
-            config.dilation_cycle,
-            config.cycles,
+            config.layer_count,
             config.dropout,
         )
         self.posterior_projection = nn.Conv1d(

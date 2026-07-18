@@ -7,8 +7,11 @@ callbacks without rewriting training behavior.
 
 ## Models
 
-- `AudioEncoder`: Piper/VITS-inspired posterior encoder. Hop-300 mel input is
-  padded to even length and encoded to a half-rate latent sequence.
+- `AudioEncoder`: Piper/VITS-inspired posterior encoder. A kernel-four,
+  stride-two projection maps hop-300 mel input to 40 Hz before 16 gated
+  residual/skip layers with 192 channels, kernel five, and dilation one. Its
+  theoretical field of view is 132 mel frames, or 1.65 seconds, and it returns
+  a half-rate latent sequence.
 - `FeatureLinear`: one framewise latent projection for F0 and normalized
   log-energy `N`, followed by deterministic two-times interpolation.
 - `Decoder`: full-width, style-free adaptation of the current StyleTTS2
@@ -220,10 +223,10 @@ training-only modules may be excluded.
 The phoneme vocabulary contract is configured once as 178 tokens and is shared
 with the aligner. The custom BERT checkpoint defines its own internal width and
 parameter count; training preflight reports the actual loaded total and reports
-when it exceeds the approved range. Stage 1 contributes 42,382,092 inference
+when it exceeds the approved range. Stage 1 contributes 38,565,708 inference
 parameters before the custom BERT and Stage 2 inference modules are loaded.
-A BERT-base-shaped synthetic checkpoint with 178 tokens produces 199,603,199
-inference parameters, which exceeds the 150M ceiling by 49,603,199. Meeting the
+A BERT-base-shaped synthetic checkpoint with 178 tokens produces 195,786,815
+inference parameters, which exceeds the 150M ceiling by 45,786,815. Meeting the
 target therefore requires a smaller custom local BERT; startup reports the
 actual loaded result.
 

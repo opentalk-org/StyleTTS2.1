@@ -32,8 +32,7 @@ class PosteriorEncoderConfig(StrictConfigModel):
     downsample_rate: int = Field(default=2, gt=0)
     downsample_kernel_size: int = Field(default=4, gt=1)
     kernel_size: int = Field(gt=1)
-    dilation_cycle: tuple[int, ...] = Field(min_length=1)
-    cycles: int = Field(gt=0)
+    layer_count: int = Field(gt=0)
     dropout: float = Field(ge=0, lt=1)
     log_scale_min: float
     log_scale_max: float

@@ -134,8 +134,8 @@ validation remains full-utterance.
 ## Runtime reports
 
 Startup reports the complete inference parameter count after loading the custom
-BERT. A BERT-base-shaped 178-token fixture measures 199,603,199 parameters,
-49,603,199 above the configured 150M ceiling, so the local BERT must be smaller
+BERT. A BERT-base-shaped 178-token fixture measures 195,786,815 parameters,
+45,786,815 above the configured 150M ceiling, so the local BERT must be smaller
 to meet the target. The report excludes prompt TextEncoder, frozen helpers,
 discriminators, and training-only heads. The latent-to-audio path is profiled
 and must remain strictly below 15 GFLOPs per generated second.
