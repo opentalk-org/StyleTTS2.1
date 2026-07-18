@@ -9,6 +9,7 @@ from ...data import (
     ContinuousBatchPlanner,
     DataPipelineState,
     DatabaseSegmentIndex,
+    DistributedShard,
     build_data_pipeline,
 )
 from ...models import Stage1Models, Stage2Models
@@ -76,13 +77,18 @@ def train(
     text_tokenizer,
     state: DataPipelineState | None,
     validator: StageValidator,
+    shard: DistributedShard,
 ) -> LoopState:
     if (
         preparation.resume is not None
         and preparation.resume.reporting.completion is ReportingCompletion.FINISHED
     ):
         return trainer.loop_state()
-    pipeline_state = state or initial_pipeline_state(preparation, trainer.stage)
+    pipeline_state = state or initial_pipeline_state(
+        preparation,
+        trainer.stage,
+        shard,
+    )
     pipeline = build_data_pipeline(
         preparation.config,
         stage_number(trainer.stage),
@@ -91,6 +97,7 @@ def train(
         phoneme_tokenizer,
         text_tokenizer,
         pipeline_state,
+        shard,
     )
     try:
         services = build_runtime_services(
@@ -118,6 +125,7 @@ def train(
 def initial_pipeline_state(
     preparation: RunPreparation,
     stage: StageKind,
+    shard: DistributedShard,
 ) -> DataPipelineState:
     config = preparation.config
     stage_config = {
@@ -132,8 +140,13 @@ def initial_pipeline_state(
         config.data.sentence_probability,
         config.runtime.seed,
         config.data.grouping,
+        shard,
     )
-    return DataPipelineState(preparation.index.fingerprint, planner.state_dict())
+    return DataPipelineState(
+        preparation.index.fingerprint,
+        planner.state_dict(),
+        shard.world_size,
+    )
 
 
 def dependency_payload(

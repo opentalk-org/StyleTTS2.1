@@ -33,6 +33,18 @@ class PlannerState:
     batch_index: int
 
 
+@dataclass(frozen=True)
+class DistributedShard:
+    rank: int
+    world_size: int
+
+    def __post_init__(self) -> None:
+        if self.world_size <= 0:
+            raise ValueError("distributed world size must be positive")
+        if self.rank < 0 or self.rank >= self.world_size:
+            raise ValueError("distributed rank must be within world size")
+
+
 class _PermutationPool:
     def __init__(self, keys: tuple[SegmentKey, ...], seed: int, label: str) -> None:
         if not keys:
@@ -82,6 +94,7 @@ class ContinuousBatchPlanner:
         sentence_probability: float,
         seed: int,
         grouping: GroupSamplingConfig,
+        shard: DistributedShard,
     ) -> None:
         index.report.require(stage, sentence_probability)
         self.index = index
@@ -90,6 +103,7 @@ class ContinuousBatchPlanner:
         self.sentence_probability = sentence_probability
         self.seed = seed
         self.grouping = grouping
+        self.shard = shard
         self.cut_planner = CutPlanner(index, 1.0, 45.0)
         self.sentence = _PermutationPool(index.pools.for_stage(stage), seed, f"stage-{stage}-sentence")
         self.mid_sentence = (
@@ -106,7 +120,8 @@ class ContinuousBatchPlanner:
 
     def next_batch(self) -> PlannedBatch:
         plans = []
-        for sample_index in range(self.batch_size):
+        global_batch_size = self.batch_size * self.shard.world_size
+        for sample_index in range(global_batch_size):
             sample_seed = derive_seed(
                 self.seed,
                 self.stage,
@@ -123,9 +138,11 @@ class ContinuousBatchPlanner:
                 else self.cut_planner.plan_mid_sentence(key, cut_seed)
             )
             plans.append(plan)
+        start = self.shard.rank * self.batch_size
+        examples = tuple(plans[start : start + self.batch_size])
         voice_groups, style_groups = self._embedding_groups()
         self.batch_index += 1
-        return PlannedBatch(tuple(plans), voice_groups, style_groups)
+        return PlannedBatch(examples, voice_groups, style_groups)
 
     def state_dict(self) -> PlannerState:
         return PlannerState(
@@ -162,16 +179,22 @@ class ContinuousBatchPlanner:
             for voice_id, keys in self.index.pools.voice_groups.items()
             if len(keys) >= self.grouping.utterances_per_voice
         ]
-        if len(voices) < self.grouping.voices_per_batch:
+        required_voices = (
+            self.grouping.voices_per_batch * self.shard.world_size
+        )
+        if len(voices) < required_voices:
             raise ValueError(
                 "voice GE2E sampling requires "
-                f"{self.grouping.voices_per_batch} voices with "
+                f"{required_voices} voices with "
                 f"{self.grouping.utterances_per_voice} utterances; found {len(voices)}"
             )
-        if len(self.index.pools.recording_groups) < self.grouping.recordings_per_batch:
+        required_recordings = (
+            self.grouping.recordings_per_batch * self.shard.world_size
+        )
+        if len(self.index.pools.recording_groups) < required_recordings:
             raise ValueError(
                 "style GE2E sampling requires "
-                f"{self.grouping.recordings_per_batch} recordings; found "
+                f"{required_recordings} recordings; found "
                 f"{len(self.index.pools.recording_groups)}"
             )
 
@@ -187,22 +210,36 @@ class ContinuousBatchPlanner:
             for voice_id, keys in self.index.pools.voice_groups.items()
             if len(keys) >= self.grouping.utterances_per_voice
         )
-        selected_voices = voice_rng.sample(voice_ids, self.grouping.voices_per_batch)
-        voice_groups = tuple(
+        global_voice_count = (
+            self.grouping.voices_per_batch * self.shard.world_size
+        )
+        selected_voices = voice_rng.sample(voice_ids, global_voice_count)
+        global_voice_groups = tuple(
             self._voice_group(voice_id, voice_rng)
             for voice_id in selected_voices
         )
         style_seed = derive_seed(self.seed, self.stage, self.batch_index, "style-groups")
         style_rng = random.Random(style_seed)
         recording_ids = sorted(self.index.pools.recording_groups, key=str)
+        global_recording_count = (
+            self.grouping.recordings_per_batch * self.shard.world_size
+        )
         selected_recordings = style_rng.sample(
             recording_ids,
-            self.grouping.recordings_per_batch,
+            global_recording_count,
         )
-        style_groups = tuple(
+        global_style_groups = tuple(
             self._style_group(recording_id, style_rng)
             for recording_id in selected_recordings
         )
+        voice_start = self.shard.rank * self.grouping.voices_per_batch
+        style_start = self.shard.rank * self.grouping.recordings_per_batch
+        voice_groups = global_voice_groups[
+            voice_start : voice_start + self.grouping.voices_per_batch
+        ]
+        style_groups = global_style_groups[
+            style_start : style_start + self.grouping.recordings_per_batch
+        ]
         return voice_groups, style_groups
 
     def _voice_group(self, voice_id: str, rng: random.Random) -> EmbeddingGroupPlan:

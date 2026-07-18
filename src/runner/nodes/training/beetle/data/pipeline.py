@@ -10,6 +10,7 @@ from .prefetch import (
 )
 from .records import BeetleBatch, PlannedBatch
 from .sampling import ContinuousBatchPlanner
+from .sampling import DistributedShard
 from .source import DatabaseBatchSource
 
 
@@ -30,6 +31,7 @@ def build_data_pipeline(
     phoneme_tokenizer: Tokenizer,
     text_tokenizer: Tokenizer,
     initial_state: DataPipelineState,
+    shard: DistributedShard,
 ) -> BoundedBatchPrefetcher:
     stage_config = {1: config.stage1, 2: config.stage2, 3: config.stage3}[stage]
     planner = ContinuousBatchPlanner(
@@ -39,6 +41,7 @@ def build_data_pipeline(
         sentence_probability=config.data.sentence_probability,
         seed=config.runtime.seed,
         grouping=config.data.grouping,
+        shard=shard,
     )
     source = DatabaseBatchSource.from_database(
         index,

@@ -2,6 +2,8 @@ from pathlib import Path
 
 import torch
 
+from ...data import DistributedShard
+
 from ...models import (
     Stage2Dependencies,
     build_stage1_models,
@@ -117,6 +119,7 @@ def _run_stage1(
                 device,
             )
         ),
+        DistributedShard(0, 1),
     )
 
 
@@ -175,6 +178,7 @@ def _run_stage2(
                 device,
             )
         ),
+        DistributedShard(0, 1),
     )
 
 
@@ -243,6 +247,7 @@ def _run_stage3(
                 device,
             )
         ),
+        DistributedShard(0, 1),
     )
 
 

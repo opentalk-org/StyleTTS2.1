@@ -18,7 +18,7 @@ from .records import (
     SegmentKey,
     WordBoundary,
 )
-from .sampling import ContinuousBatchPlanner, PlannerState, derive_seed
+from .sampling import ContinuousBatchPlanner, DistributedShard, PlannerState, derive_seed
 from .validation import ValidationLoader
 from .validation_types import (
     StoredValidationAudio,
@@ -32,6 +32,7 @@ __all__ = [
     "BoundedBatchPrefetcher",
     "ContextRange",
     "ContinuousBatchPlanner",
+    "DistributedShard",
     "CutPlanner",
     "CutRange",
     "DatabaseSegmentIndex",

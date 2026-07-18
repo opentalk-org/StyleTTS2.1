@@ -21,6 +21,11 @@ class PlannedBatchLoader(Protocol):
 class DataPipelineState:
     data_fingerprint: str
     planner: PlannerState
+    world_size: int
+
+    def __post_init__(self) -> None:
+        if self.world_size <= 0:
+            raise ValueError("pipeline world size must be positive")
 
 
 @dataclass(frozen=True)
@@ -63,6 +68,8 @@ class BoundedBatchPrefetcher:
     ) -> None:
         if initial_state.data_fingerprint != planner.index.fingerprint:
             raise ValueError("data fingerprint does not match planner index")
+        if initial_state.world_size != planner.shard.world_size:
+            raise ValueError("pipeline world size does not match planner shard")
         planner.load_state_dict(initial_state.planner)
         self.planner = planner
         self.loader = loader
@@ -108,6 +115,7 @@ class BoundedBatchPrefetcher:
         self._committed_state = DataPipelineState(
             self.planner.index.fingerprint,
             self._in_flight.state_after,
+            self.planner.shard.world_size,
         )
         self._in_flight = None
 
@@ -119,6 +127,8 @@ class BoundedBatchPrefetcher:
             raise RuntimeError("cannot restore while a batch is in flight")
         if state.data_fingerprint != self.planner.index.fingerprint:
             raise ValueError("restored data fingerprint does not match index")
+        if state.world_size != self.planner.shard.world_size:
+            raise ValueError("restored world size does not match planner shard")
         self.close()
         self.planner.load_state_dict(state.planner)
         self._committed_state = state
