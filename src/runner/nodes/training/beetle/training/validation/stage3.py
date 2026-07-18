@@ -167,6 +167,7 @@ class Stage3ValidationEvaluator(Stage2ValidationEvaluator):
             conditional.n,
             conditional.mel,
             conditional.alignment,
+            conditional.seed,
         )
 
     def _posterior(

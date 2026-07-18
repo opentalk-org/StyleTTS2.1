@@ -110,6 +110,13 @@ class Stage1ValidationEvaluator:
             (_cpu(targets.n[0]), _cpu(synthesis.acoustic.n[0])),
             (_cpu(target_mel[0]), _cpu(predicted_mel[0])),
             None,
+            derive_seed(
+                self.runtime_seed,
+                self.stage,
+                step,
+                recording.audio_file_id,
+                "validation",
+            ),
         )
 
     def _artifact_mels(

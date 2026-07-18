@@ -1,3 +1,4 @@
+from .artifacts import ArtifactQueue, ValidationArtifacts
 from .batch import merge_validation_recordings
 from .conditional import Stage2ValidationEvaluator, one_step_ema_latent
 from .runtime import ValidationRuntime, aggregate_losses
@@ -19,6 +20,8 @@ __all__ = [
     "ValidationResult",
     "ValidationRuntime",
     "ValidationSampleResult",
+    "ArtifactQueue",
+    "ValidationArtifacts",
     "aggregate_losses",
     "merge_validation_recordings",
     "one_step_ema_latent",

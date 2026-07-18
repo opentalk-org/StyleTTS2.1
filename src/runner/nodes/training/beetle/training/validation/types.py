@@ -23,11 +23,14 @@ class ValidationSampleResult:
     n: SignalPair
     mel: SignalPair
     alignment: Tensor | None
+    seed: int
 
     def __post_init__(self) -> None:
         names = tuple(metric.name for metric in self.losses)
         if not self.losses or len(set(names)) != len(names):
             raise ValueError("validation sample losses must be nonempty and unique")
+        if self.seed < 0:
+            raise ValueError("validation seed must be non-negative")
 
 
 @dataclass(frozen=True)

@@ -128,6 +128,13 @@ class Stage2ValidationEvaluator:
                 (_cpu(targets.n[index]), _cpu(synthesis.acoustic.n[index])),
                 (_cpu(target_mel[index]), _cpu(predicted_mel[index])),
                 _cpu(inputs.alignment.soft_alignment[index]),
+                derive_seed(
+                    self.runtime_seed,
+                    self.stage,
+                    step,
+                    recording.audio_file_id,
+                    "validation",
+                ),
             )
             for index, recording in enumerate(recordings)
         )
