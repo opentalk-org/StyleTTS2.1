@@ -34,10 +34,11 @@ rank. Resume requires the same world size so exact continuation is well-defined.
 ## Accelerate runtime
 
 The CLI creates one `Accelerator` and uses its process index, process count,
-device, mixed precision, gradient synchronization, and collective operations.
-Trainable modules and optimizers are prepared before the continuous loop.
-Backward and gradient clipping go through Accelerate; accumulation suppresses
-unnecessary synchronization until the optimizer boundary.
+device, DDP wrapping, optimizer preparation, and collective operations.
+Trainable modules and optimizers are prepared before the continuous loop. The
+trainer retains one AMP scaler per optimizer so discriminator and generator
+overflow state remain independent; configured autocast and clipping therefore
+remain part of the optimizer runtime rather than Accelerate's shared scaler.
 
 Loss metrics are reduced across ranks before reporting. Only the main process
 writes MLflow data, validation artifacts, and shared checkpoint manifests. All
@@ -51,7 +52,8 @@ The documented multi-GPU command uses the project interpreter:
 
 ```bash
 nix develop --command python -m accelerate.commands.launch \
-  --num_processes 2 -m runner.nodes.training.beetle.scripts.train_stage1 ...
+  --multi_gpu --num_processes 2 --mixed_precision no \
+  -m runner.nodes.training.beetle.scripts.train_stage1 ...
 ```
 
 ## Bulk audio reader

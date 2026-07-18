@@ -86,6 +86,8 @@ class Stage1Models(nn.Module):
         self.f0_extractor = f0_extractor
         self.discriminators = discriminators
         self.reconstruction_loss = reconstruction_loss
+        self.output_hop = generator.config.output_hop()
+        self.latent_downsample_rate = audio_encoder.config.downsample_rate
 
     def reconstruct(
         self,
@@ -114,7 +116,7 @@ class Stage1Models(nn.Module):
             source_generator,
         )
         sample_mask = frame_mask.repeat_interleave(
-            self.generator.config.output_hop(),
+            self.output_hop,
             dim=-1,
         )
         return Stage1Synthesis(
@@ -154,7 +156,7 @@ class Stage1Models(nn.Module):
             source_generator,
         )
         sample_mask = segment_frame_mask.repeat_interleave(
-            self.generator.config.output_hop(),
+            self.output_hop,
             dim=-1,
         )
         return Stage1Synthesis(

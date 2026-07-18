@@ -175,7 +175,7 @@ class Stage2ValidationEvaluator:
             )
         waveform = torch.cat(generated, dim=0)
         sample_mask = batch.frame_mask.repeat_interleave(
-            self.stage1.generator.config.output_hop(),
+            self.stage1.output_hop,
             dim=-1,
         )
         return ConditionalSynthesis(acoustic, decoded, waveform, sample_mask)

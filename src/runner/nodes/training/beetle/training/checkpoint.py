@@ -16,13 +16,13 @@ from .reporting import ReportingState
 from .state import (
     LoopState,
     NamedGradient,
-    RngState,
+    RankState,
     StageKind,
     TrainingPhase,
     restore_gradients,
 )
 
-CHECKPOINT_VERSION = 4
+CHECKPOINT_VERSION = 5
 _PAYLOAD_NAME = "payload.pt"
 _MANIFEST_NAME = "manifest.json"
 _LATEST_NAME = "latest.json"
@@ -88,7 +88,7 @@ class CheckpointPayload:
     config_fingerprint: str
     data_fingerprint: str
     loop: LoopState
-    rng: RngState
+    rank_states: tuple[RankState, ...]
     states: tuple[NamedState, ...]
     gradients: tuple[NamedModuleGradients, ...]
     sampler_state: DataPipelineState
@@ -237,6 +237,8 @@ def _validate_payload(payload: CheckpointPayload) -> None:
         raise ValueError("loss schedule step does not match loop optimizer_step")
     if payload.sampler_state.data_fingerprint != payload.data_fingerprint:
         raise ValueError("sampler data fingerprint does not match checkpoint")
+    if len(payload.rank_states) != payload.sampler_state.world_size:
+        raise ValueError("checkpoint rank state count does not match world size")
     if payload.reporting.last_reported_step > payload.loop.optimizer_step:
         raise ValueError("reported step exceeds checkpoint optimizer step")
     if payload.reporting.last_validated_step > payload.loop.optimizer_step:
@@ -249,8 +251,6 @@ def _validate_payload(payload: CheckpointPayload) -> None:
             raise ValueError("pending reporting step requires optimizer-complete phase")
         if payload.reporting.accumulator.microsteps == 0:
             raise ValueError("pending reporting step requires accumulated losses")
-
-
 def _write_new_text(path: Path, value: str) -> None:
     with path.open("x", encoding="utf-8") as output:
         output.write(value)
@@ -264,8 +264,6 @@ def _sha256(path: Path) -> str:
         while block := source.read(1024 * 1024):
             digest.update(block)
     return digest.hexdigest()
-
-
 def _fsync_directory(path: Path) -> None:
     descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
     try:

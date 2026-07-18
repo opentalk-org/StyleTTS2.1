@@ -7,6 +7,7 @@ from ..losses.composition import Stage1LossWeights
 from ..models.model import Stage1Models
 from .callbacks import TrainingMetric
 from .checkpoint import LossScheduleState, LossWeight
+from .distributed import DistributedRuntime
 from .optimizer import (
     OptimizerSet,
     ScheduledOptimizer,
@@ -69,7 +70,7 @@ class Stage1Schedules:
 def build_stage1_optimizers(
     models: Stage1Models,
     config: StageConfig,
-    device: torch.device,
+    runtime: DistributedRuntime,
 ) -> OptimizerSet:
     discriminator_config = config.discriminator_optimizer
     if discriminator_config is None:
@@ -95,15 +96,17 @@ def build_stage1_optimizers(
                 "discriminator",
                 discriminator,
                 learning_rate_schedule(discriminator_config),
-                torch.amp.GradScaler(device.type, enabled=scale_enabled),
+                torch.amp.GradScaler(runtime.device.type, enabled=scale_enabled),
                 discriminator_config.maximum_gradient_norm,
+                runtime,
             ),
             ScheduledOptimizer(
                 "generator",
                 generator,
                 learning_rate_schedule(config.generator_optimizer),
-                torch.amp.GradScaler(device.type, enabled=scale_enabled),
+                torch.amp.GradScaler(runtime.device.type, enabled=scale_enabled),
                 config.generator_optimizer.maximum_gradient_norm,
+                runtime,
             ),
         )
     )

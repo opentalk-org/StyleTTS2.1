@@ -1,9 +1,7 @@
-from contextlib import AbstractContextManager
-
 import torch
 from torch import Tensor
 
-from ..config.training import AdversarialConfig, Precision, StageConfig
+from ..config.training import AdversarialConfig, StageConfig
 from ..data.prefetch import DataPipelineState
 from ..data.records import BeetleBatch
 from ..data.sampling import derive_seed
@@ -18,12 +16,12 @@ from .checkpoint import CHECKPOINT_VERSION, CheckpointPayload, GradientTarget
 from .checkpoint import NamedModuleGradients, StateKind, StateTarget
 from .checkpoint import capture_named_state, restore_checkpoint_gradients
 from .checkpoint import restore_named_states, validate_resume_fingerprints
+from .distributed import DistributedRuntime
 from .loop import LoopIntervals
 from .optimizer import NamedGradientGroup, OptimizerSet
 from .reporting import ReportingState
 from .stage1_setup import Stage1Schedules, build_stage1_optimizers, tensor_metric
-from .state import LoopState, StageKind, capture_gradients, capture_rng_state
-from .state import restore_rng_state
+from .state import LoopState, StageKind, capture_gradients
 
 
 class Stage1Trainer:
@@ -36,7 +34,7 @@ class Stage1Trainer:
         stage_config: StageConfig,
         adversarial_config: AdversarialConfig,
         runtime_seed: int,
-        device: torch.device,
+        runtime: DistributedRuntime,
         optimizers: OptimizerSet,
         intervals: LoopIntervals,
         config_fingerprint: str,
@@ -50,14 +48,24 @@ class Stage1Trainer:
             models.audio_encoder, models.feature_linear, models.decoder,
             models.generator, models.reconstruction_loss,
         ):
-            module.to(device).train()
-        models.f0_extractor.to(device).requires_grad_(False).eval()
-        models.discriminators.to(device).requires_grad_(True).train()
+            module.to(runtime.device).train()
+        models.f0_extractor.to(runtime.device).requires_grad_(False).eval()
+        models.discriminators.to(runtime.device).requires_grad_(True).train()
+        for name in (
+            "audio_encoder",
+            "feature_linear",
+            "decoder",
+            "generator",
+            "discriminators",
+        ):
+            setattr(models, name, runtime.prepare_module(getattr(models, name)))
         self.stage_config = stage_config
         self.adversarial_config = adversarial_config
         self.runtime_seed = runtime_seed
-        self.device = device
-        self.optimizers = optimizers
+        self.runtime = runtime
+        self.world_size = runtime.world_size
+        self.device = runtime.device
+        self.optimizers = optimizers.prepare_distributed()
         self.intervals = intervals
         self.config_fingerprint = config_fingerprint
         self.data_fingerprint = data_fingerprint
@@ -80,9 +88,9 @@ class Stage1Trainer:
         waveform, mel, frame_mask = self._inputs(batch)
         segment = self._segment(frame_mask, "discriminator")
         real = segment.samples(waveform)
-        with torch.no_grad(), self._autocast():
+        with torch.no_grad(), self.runtime.autocast():
             synthesis = self._synthesize(mel, frame_mask, segment, "discriminator")
-        with self._autocast():
+        with self.runtime.autocast():
             loss = discriminator_step_loss(
                 self.models.discriminators, real, synthesis.waveform
             )
@@ -104,7 +112,7 @@ class Stage1Trainer:
         f0_target = self.models.segment_f0_target(mel, frame_mask, segment)
         n_target = self.models.n_target(mel, frame_mask)
         segment_mask = segment.frames(frame_mask)
-        with self._autocast():
+        with self.runtime.autocast():
             synthesis = self._synthesize(mel, frame_mask, segment, "generator")
             encoder_kl = masked_kl_standard_normal(
                 synthesis.posterior.mean,
@@ -145,7 +153,8 @@ class Stage1Trainer:
 
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:
         return self.optimizers.step(optimizer_step, self.gradient_groups())
-
+    def reduce_metrics(self, metrics: tuple[TrainingMetric, ...]) -> tuple[TrainingMetric, ...]:
+        return self.runtime.reduce_metrics(metrics)
     def gradient_groups(self) -> tuple[NamedGradientGroup, ...]:
         return (
             NamedGradientGroup("audio_encoder", (self.models.audio_encoder,)),
@@ -166,7 +175,7 @@ class Stage1Trainer:
             config_fingerprint=self.config_fingerprint,
             data_fingerprint=self.data_fingerprint,
             loop=loop,
-            rng=capture_rng_state(),
+            rank_states=(self.runtime.capture_rank_state(),),
             states=(*self._model_states(), *self.optimizers.capture_states()),
             gradients=self._gradients(),
             sampler_state=sampler_state,
@@ -189,9 +198,14 @@ class Stage1Trainer:
             (*self._model_targets(), *self.optimizers.state_targets()),
         )
         restore_checkpoint_gradients(payload.gradients, self._gradient_targets())
-        restore_rng_state(payload.rng)
+        self._restore_rank_state(payload)
         self._loop = payload.loop
         return payload.sampler_state
+
+    def _restore_rank_state(self, payload: CheckpointPayload) -> None:
+        if len(payload.rank_states) != self.runtime.world_size:
+            raise ValueError("checkpoint world size does not match distributed runtime")
+        self.runtime.restore_rank_state(payload.rank_states[self.runtime.rank])
 
     def _synthesize(
         self,
@@ -234,10 +248,9 @@ class Stage1Trainer:
         generator = torch.Generator(device=self.device).manual_seed(seed)
         return AlignedSegments.random(
             frame_mask,
-            self.adversarial_config.segment_samples
-            // self.models.generator.config.output_hop(),
-            self.models.audio_encoder.config.downsample_rate,
-            self.models.generator.config.output_hop(),
+            self.adversarial_config.segment_samples // self.models.output_hop,
+            self.models.latent_downsample_rate,
+            self.models.output_hop,
             generator,
         )
 
@@ -247,16 +260,6 @@ class Stage1Trainer:
             batch.mel.to(self.device, non_blocking=True),
             batch.frame_mask.to(self.device, non_blocking=True),
         )
-
-    def _autocast(self) -> AbstractContextManager[None]:
-        if self.stage_config.precision is Precision.FLOAT32:
-            return torch.autocast(self.device.type, enabled=False)
-        dtype = (
-            torch.bfloat16
-            if self.stage_config.precision is Precision.BFLOAT16
-            else torch.float16
-        )
-        return torch.autocast(self.device.type, dtype=dtype)
 
     def _weights(self) -> Stage1LossWeights:
         return self.schedules.weights(self._loop.optimizer_step)
@@ -273,12 +276,12 @@ class Stage1Trainer:
 
     def _state_modules(self):
         return (
-            ("audio_encoder", StateKind.MODEL, self.models.audio_encoder),
-            ("feature_linear", StateKind.MODEL, self.models.feature_linear),
-            ("decoder", StateKind.MODEL, self.models.decoder),
-            ("generator", StateKind.MODEL, self.models.generator),
+            ("audio_encoder", StateKind.MODEL, self.runtime.unwrap(self.models.audio_encoder)),
+            ("feature_linear", StateKind.MODEL, self.runtime.unwrap(self.models.feature_linear)),
+            ("decoder", StateKind.MODEL, self.runtime.unwrap(self.models.decoder)),
+            ("generator", StateKind.MODEL, self.runtime.unwrap(self.models.generator)),
             ("f0_extractor", StateKind.FROZEN_MODEL, self.models.f0_extractor),
-            ("discriminators", StateKind.DISCRIMINATOR, self.models.discriminators),
+            ("discriminators", StateKind.DISCRIMINATOR, self.runtime.unwrap(self.models.discriminators)),
         )
 
     def _gradients(self) -> tuple[NamedModuleGradients, ...]:

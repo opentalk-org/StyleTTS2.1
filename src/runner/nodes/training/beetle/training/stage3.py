@@ -15,6 +15,7 @@ from ..models.modules.segments import AlignedSegments
 from ..models.stage2 import Stage2Models
 from .callbacks import TrainingMetric
 from .checkpoint import GradientTarget, NamedModuleGradients, StateKind
+from .distributed import DistributedRuntime
 from .loop import LoopIntervals
 from .loss_schedules import Stage3Schedules
 from .optimizer import NamedGradientGroup, OptimizerSet
@@ -38,7 +39,7 @@ class Stage3Trainer(Stage1Trainer):
         stage_config: StageConfig,
         adversarial_config: AdversarialConfig,
         runtime_seed: int,
-        device: torch.device,
+        runtime: DistributedRuntime,
         optimizers: OptimizerSet,
         intervals: LoopIntervals,
         config_fingerprint: str,
@@ -55,18 +56,22 @@ class Stage3Trainer(Stage1Trainer):
             stage_config,
             adversarial_config,
             runtime_seed,
-            device,
+            runtime,
             optimizers,
             intervals,
             config_fingerprint,
             data_fingerprint,
             initial_loop,
         )
-        self.stage2_models = stage2.to(device).train()
-        self.ema_latent_flow = ema_latent_flow.to(device).requires_grad_(False).eval()
+        stage2.audio_encoder = self.models.audio_encoder
+        stage2.f0_extractor = self.models.f0_extractor
+        self.stage2_models = stage2.to(runtime.device).train()
+        for name, module in named_trainable_stage2_modules(self.stage2_models):
+            setattr(self.stage2_models, name, runtime.prepare_module(module))
+        self.ema_latent_flow = ema_latent_flow.to(runtime.device).requires_grad_(False).eval()
         self.input_builder = input_builder
         self.schedules = Stage3Schedules.from_config(stage_config)
-        self.models.discriminators.to(device).requires_grad_(True).train()
+        self.models.discriminators.requires_grad_(True).train()
         for module in self._inference_modules():
             module.requires_grad_(True).train()
         for module in trainable_stage2_modules(self.stage2_models):
@@ -78,7 +83,7 @@ class Stage3Trainer(Stage1Trainer):
         waveform, mel, frame_mask = self._inputs(batch)
         segment = self._segment(frame_mask, "discriminator")
         real = segment.samples(waveform)
-        with torch.no_grad(), self._autocast():
+        with torch.no_grad(), self.runtime.autocast():
             inputs = self.input_builder.build(self.stage2_models, batch, self._loop)
             posterior = self._synthesize(
                 mel, frame_mask, segment, "discriminator-posterior"
@@ -86,7 +91,7 @@ class Stage3Trainer(Stage1Trainer):
             conditional = self._conditional(
                 inputs, frame_mask, segment, "discriminator"
             )
-        with self._autocast():
+        with self.runtime.autocast():
             posterior_loss = discriminator_step_loss(
                 self.models.discriminators, real, posterior.waveform
             )
@@ -95,7 +100,9 @@ class Stage3Trainer(Stage1Trainer):
             )
             loss = (posterior_loss + conditional_loss) * 0.5
             weighted = loss * self._weights().discriminator
-        self.optimizers.group("discriminator").backward(weighted / self.accumulation_steps)
+        self.optimizers.group("discriminator").backward(
+            weighted / self.accumulation_steps
+        )
         return (
             tensor_metric("discriminator", loss),
             tensor_metric("discriminator_total", weighted),
@@ -108,7 +115,7 @@ class Stage3Trainer(Stage1Trainer):
         inputs = self.input_builder.build(self.stage2_models, batch, self._loop)
         f0_target = self.models.segment_f0_target(mel, frame_mask, segment)
         n_target = self.models.n_target(mel, frame_mask)
-        with self._autocast():
+        with self.runtime.autocast():
             posterior = self._synthesize(
                 mel, frame_mask, segment, "generator-posterior"
             )
@@ -165,7 +172,9 @@ class Stage3Trainer(Stage1Trainer):
             )
             total = acoustic_total + flow_total
         self.optimizers.group("generator").backward(total / self.accumulation_steps)
-        stage2_names = tuple(weight.name for weight in self.schedules.stage2.state(0).weights)
+        stage2_names = tuple(
+            weight.name for weight in self.schedules.stage2.state(0).weights
+        )
         return (
             tensor_metric("encoder_kl", encoder_kl),
             tensor_metric("f0", f0),
@@ -181,16 +190,14 @@ class Stage3Trainer(Stage1Trainer):
             ),
             tensor_metric("generator_total", total),
         )
-
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:
         metrics = self.optimizers.step(optimizer_step, self.gradient_groups())
         update_latent_flow_ema(
             self.ema_latent_flow,
-            self.stage2_models.latent_flow,
-            self.stage2_models.latent_flow.config.ema_decay,
+            self.runtime.unwrap(self.stage2_models.latent_flow),
+            self.runtime.unwrap(self.stage2_models.latent_flow).config.ema_decay,
         )
         return metrics
-
     def gradient_groups(self) -> tuple[NamedGradientGroup, ...]:
         return (*super().gradient_groups(), *stage2_gradient_groups(self.stage2_models))
 
@@ -230,10 +237,9 @@ class Stage3Trainer(Stage1Trainer):
             decoded.features, decoded.f0, decoded.mask, source
         )
         sample_mask = segment_frame_mask.repeat_interleave(
-            self.models.generator.config.output_hop(), dim=-1
+            self.models.output_hop, dim=-1
         )
         return ConditionalSynthesis(acoustic, decoded, waveform, sample_mask)
-
     def _mean_acoustic_loss(
         self,
         posterior: AcousticFeatures,
@@ -265,15 +271,11 @@ class Stage3Trainer(Stage1Trainer):
         )
 
     def _frozen_modules(self) -> tuple[nn.Module, ...]:
-        return (
-            self.models.f0_extractor,
-            self.stage2_models.text_encoder,
-        )
-
+        return (self.models.f0_extractor, self.stage2_models.text_encoder)
     def _state_modules(self) -> tuple[tuple[str, StateKind, nn.Module], ...]:
         stage1 = super()._state_modules()
         stage2 = tuple(
-            (name, StateKind.MODEL, module)
+            (name, StateKind.MODEL, self.runtime.unwrap(module))
             for name, module in named_trainable_stage2_modules(self.stage2_models)
         )
         helpers = (

@@ -2,14 +2,14 @@ from pathlib import Path
 
 import torch
 
-from ...data import DistributedShard
-
 from ...models import (
     Stage2Dependencies,
     build_stage1_models,
     build_stage2_models,
     compile_stage1,
 )
+from ..callbacks import TrainingCallbacks
+from ..distributed import DistributedCallbacks, DistributedRuntime
 from ..runtime import (
     RunPreparation,
     load_aligner,
@@ -67,18 +67,31 @@ def run_stage(
     torch.set_num_threads(
         preparation.config.data.prefetch.preprocessing_threads
     )
-    callbacks.check_cancel()
+    stage_config = {
+        StageKind.STAGE1: preparation.config.stage1,
+        StageKind.STAGE2: preparation.config.stage2,
+        StageKind.STAGE3: preparation.config.stage3,
+    }[stage]
+    runtime = DistributedRuntime(
+        stage_config.precision,
+        torch.device(preparation.config.runtime.device),
+    )
+    distributed_callbacks = DistributedCallbacks(callbacks, runtime)
+    distributed_callbacks.check_cancel()
     if stage is StageKind.STAGE1:
-        return _run_stage1(preparation, callbacks)
+        return _run_stage1(preparation, distributed_callbacks, runtime)
     if stage is StageKind.STAGE2:
         if stage1_checkpoint is None:
             raise ValueError("Stage 2 requires a Stage 1 checkpoint")
-        return _run_stage2(preparation, callbacks, stage1_checkpoint)
+        return _run_stage2(
+            preparation, distributed_callbacks, runtime, stage1_checkpoint
+        )
     if stage1_checkpoint is None or stage2_checkpoint is None:
         raise ValueError("Stage 3 requires Stage 1 and Stage 2 checkpoints")
     return _run_stage3(
         preparation,
-        callbacks,
+        distributed_callbacks,
+        runtime,
         stage1_checkpoint,
         stage2_checkpoint,
     )
@@ -86,26 +99,28 @@ def run_stage(
 
 def _run_stage1(
     preparation: RunPreparation,
-    callbacks: RuntimeCallbacks,
+    callbacks: TrainingCallbacks,
+    runtime: DistributedRuntime,
 ) -> LoopState:
     config = preparation.config
-    device = torch.device(config.runtime.device)
     models = build_stage1_models(config, load_f0_extractor())
+    report_models(
+        models, None, config, runtime.device, retain_audio_path=True
+    )
+    if config.runtime.compile:
+        compile_stage1(models)
     trainer = Stage1Trainer(
         models,
         config.stage1,
         config.adversarial,
         config.runtime.seed,
-        device,
-        build_stage1_optimizers(models, config.stage1, device),
+        runtime,
+        build_stage1_optimizers(models, config.stage1, runtime),
         intervals(preparation),
         preparation.config_fingerprint,
         preparation.index.fingerprint,
         initial_loop(StageKind.STAGE1),
     )
-    report_models(models, None, config, retain_audio_path=True)
-    if config.runtime.compile:
-        compile_stage1(models)
     sampler = trainer.restore(preparation.resume) if preparation.resume else None
     return train(
         preparation,
@@ -119,20 +134,20 @@ def _run_stage1(
                 models,
                 config.stage1,
                 config.runtime.seed,
-                device,
+                runtime.device,
             )
         ),
-        DistributedShard(0, 1),
+        runtime,
     )
 
 
 def _run_stage2(
     preparation: RunPreparation,
-    callbacks: RuntimeCallbacks,
+    callbacks: TrainingCallbacks,
+    runtime: DistributedRuntime,
     stage1_checkpoint: Path,
 ) -> LoopState:
     config = preparation.config
-    device = torch.device(config.runtime.device)
     stage1 = build_stage1_models(config, load_f0_extractor())
     payload = dependency_payload(
         stage1_checkpoint,
@@ -148,20 +163,22 @@ def _run_stage2(
         Stage2Dependencies(phoneme.model, text.model, load_aligner(config)),
     )
     ema = build_latent_flow_ema(models)
-    input_builder = _input_builder(preparation, device)
+    report_models(
+        stage1, models, config, runtime.device, retain_audio_path=True
+    )
+    input_builder = _input_builder(preparation, runtime)
     trainer = Stage2Trainer(
         models,
         ema,
         config.stage2,
-        device,
-        build_stage2_optimizer(models, config.stage2, device),
+        runtime,
+        build_stage2_optimizer(models, config.stage2, runtime),
         intervals(preparation),
         preparation.config_fingerprint,
         preparation.index.fingerprint,
         initial_loop(StageKind.STAGE2),
         input_builder,
     )
-    report_models(stage1, models, config, retain_audio_path=True)
     sampler = trainer.restore(preparation.resume) if preparation.resume else None
     return train(
         preparation,
@@ -178,21 +195,21 @@ def _run_stage2(
                 input_builder,
                 config.stage2,
                 config.runtime.seed,
-                device,
+                runtime.device,
             )
         ),
-        DistributedShard(0, 1),
+        runtime,
     )
 
 
 def _run_stage3(
     preparation: RunPreparation,
-    callbacks: RuntimeCallbacks,
+    callbacks: TrainingCallbacks,
+    runtime: DistributedRuntime,
     stage1_checkpoint: Path,
     stage2_checkpoint: Path,
 ) -> LoopState:
     config = preparation.config
-    device = torch.device(config.runtime.device)
     stage1 = build_stage1_models(config, load_f0_extractor())
     first = dependency_payload(
         stage1_checkpoint,
@@ -214,7 +231,10 @@ def _run_stage3(
         preparation,
     )
     restore_stage2(second, stage2, ema)
-    input_builder = _input_builder(preparation, device)
+    report_models(
+        stage1, stage2, config, runtime.device, retain_audio_path=True
+    )
+    input_builder = _input_builder(preparation, runtime)
     trainer = Stage3Trainer(
         stage1,
         stage2,
@@ -222,15 +242,14 @@ def _run_stage3(
         config.stage3,
         config.adversarial,
         config.runtime.seed,
-        device,
-        build_stage3_optimizers(stage1, stage2, config.stage3, device),
+        runtime,
+        build_stage3_optimizers(stage1, stage2, config.stage3, runtime),
         intervals(preparation),
         preparation.config_fingerprint,
         preparation.index.fingerprint,
         initial_loop(StageKind.STAGE3),
         input_builder,
     )
-    report_models(stage1, stage2, config, retain_audio_path=True)
     sampler = trainer.restore(preparation.resume) if preparation.resume else None
     return train(
         preparation,
@@ -247,20 +266,20 @@ def _run_stage3(
                 input_builder,
                 config.stage3,
                 config.runtime.seed,
-                device,
+                runtime.device,
             )
         ),
-        DistributedShard(0, 1),
+        runtime,
     )
 
 
 def _input_builder(
     preparation: RunPreparation,
-    device: torch.device,
+    runtime: DistributedRuntime,
 ) -> DefaultStage2InputBuilder:
     config = preparation.config
     speakers = DatabaseSpeakerIndex(
         preparation.index,
         config.architecture.embeddings.speaker_classes,
     )
-    return DefaultStage2InputBuilder(config, speakers, device)
+    return DefaultStage2InputBuilder(config, speakers, runtime)

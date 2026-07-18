@@ -56,6 +56,7 @@ class StageTrainer(Protocol):
     accumulation_steps: int
     trains_discriminator: bool
     intervals: LoopIntervals
+    world_size: int
 
     def loop_state(self) -> LoopState: ...
 
@@ -68,6 +69,10 @@ class StageTrainer(Protocol):
     def generator_backward(self, batch: BeetleBatch) -> tuple[TrainingMetric, ...]: ...
 
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]: ...
+
+    def reduce_metrics(
+        self, metrics: tuple[TrainingMetric, ...]
+    ) -> tuple[TrainingMetric, ...]: ...
 
     def checkpoint_payload(
         self,
@@ -153,6 +158,12 @@ def run_continuously(
     except Exception as error:
         elapsed, foreground = timer.snapshot()
         reporting.capture_partial_timing(elapsed, foreground)
+        if trainer.world_size > 1:
+            try:
+                lifecycle.reporter.fail()
+            except Exception:
+                pass
+            raise error
         state = trainer.loop_state()
         try:
             save_emergency_checkpoint(
@@ -197,7 +208,9 @@ def _run_batch(
         state = replace(state, phase=TrainingPhase.DISCRIMINATOR_BACKWARD)
         announce(trainer, callbacks, state, (), timer)
         started_at = time.monotonic()
-        discriminator_metrics = trainer.discriminator_backward(batch)
+        discriminator_metrics = trainer.reduce_metrics(
+            trainer.discriminator_backward(batch)
+        )
         timer.record(ForegroundCategory.COMPUTE, started_at)
         validate_metrics(discriminator_metrics)
         metrics += discriminator_metrics
@@ -211,12 +224,15 @@ def _run_batch(
         state = replace(state, phase=TrainingPhase.GENERATOR_BACKWARD)
         announce(trainer, callbacks, state, (), timer)
     started_at = time.monotonic()
-    generator_metrics = trainer.generator_backward(batch)
+    generator_metrics = trainer.reduce_metrics(trainer.generator_backward(batch))
     timer.record(ForegroundCategory.COMPUTE, started_at)
     validate_metrics(generator_metrics)
     metrics += generator_metrics
     pipeline.mark_consumed()
-    reporting.add_microstep(len(batch.sample_keys), metrics)
+    reporting.add_microstep(
+        len(batch.sample_keys) * trainer.world_size,
+        metrics,
+    )
     state = advance_sampler(state, pipeline.state_dict())
     state = replace(
         state,
@@ -254,7 +270,9 @@ def _complete_accumulation(
     if state.microstep > trainer.accumulation_steps:
         raise ValueError("microstep exceeds configured accumulation_steps")
     started_at = time.monotonic()
-    step_metrics = trainer.optimizer_step(state.optimizer_step)
+    step_metrics = trainer.reduce_metrics(
+        trainer.optimizer_step(state.optimizer_step)
+    )
     timer.record(ForegroundCategory.COMPUTE, started_at)
     validate_metrics(step_metrics)
     state = replace(

@@ -60,6 +60,24 @@ nix develop --command python -m runner.nodes.training.beetle.scripts.train_stage
   --output /data/beetle/stage1
 ```
 
+Launch one process per GPU through Accelerate for data parallel training:
+
+```bash
+nix develop --command python -m accelerate.commands.launch \
+  --multi_gpu --num_processes 2 --mixed_precision no \
+  -m runner.nodes.training.beetle.scripts.train_stage1 \
+  --config src/runner/nodes/training/beetle/config/default.yaml \
+  --output /data/beetle/stage1
+```
+
+`batch_size` and the configured voice/style group counts are per GPU. Each rank
+receives a disjoint slice of one deterministic global plan, so two ranks consume
+all 5,000 target samples as 2,500 targets per rank before the shuffled source is
+repeated. Same-voice and same-recording groups are never split between ranks.
+The host-shared WAV cache prevents ranks from downloading the same stored WAV
+twice when context or embedding views overlap. Configured autocast is applied
+inside the trainer, so Accelerate is launched with `--mixed_precision no`.
+
 Stage 2 initializes its frozen audio path from a completed Stage 1 checkpoint
 folder:
 
@@ -90,6 +108,10 @@ reported/validated steps. SIGINT and SIGTERM request cancellation at the next
 exact state boundary, write an atomic checkpoint, and leave the MLflow run
 active for resume. Normal completion performs mandatory final validation,
 flushes all work, writes a final checkpoint, and marks the run `FINISHED`.
+Distributed checkpoints contain one RNG state per rank and require the same
+world size on resume. Only rank 0 writes shared checkpoints, MLflow events,
+progress events, and validation artifacts; losses are averaged and throughput
+counts all ranks.
 
 `runtime.compile: true` compiles the Stage 1 acoustic path while preserving
 normal checkpoint state-dict keys. `runtime.compile_frame_count` fixes the
@@ -138,6 +160,12 @@ saves ground-truth audio, latent/F0/`N`/mel/STFT-magnitude/phase plots; Stage 1
 saves `recon.wav`, while Stages 2/3 save `pred.wav` and `alignment.png`.
 `metrics.json` retains the ordered position-to-audio-ID mapping and per-sample
 losses.
+
+Audio preparation uses one ordered producer per rank. It fetches one byte range
+per distinct cold WAV through a persistent client, reuses complete WAV bytes
+from the bounded host cache, and overlaps the next batch's audio fetch with the
+current batch's collation and GPU step. Prefetched batches do not advance the
+checkpointed sampler until the trainer consumes them.
 
 One learned vector represents each configured language. Duration prediction and
 latent flow receive that same vector together with phoneme, pooled phoneme,

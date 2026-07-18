@@ -1,5 +1,5 @@
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import torch
@@ -8,6 +8,7 @@ from torch import Tensor, nn
 from ..config.training import OptimizerConfig, ScheduledWeight
 from .callbacks import TrainingMetric
 from .checkpoint import NamedState, StateKind, StateTarget, capture_named_state
+from .distributed import DistributedRuntime
 
 
 @dataclass(frozen=True)
@@ -85,6 +86,7 @@ class ScheduledOptimizer:
     schedule: StepSchedule
     scaler: torch.amp.GradScaler
     maximum_gradient_norm: float
+    runtime: DistributedRuntime
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -149,6 +151,17 @@ class OptimizerSet:
                         f"{owner} and {group.name}"
                     )
         self.groups = groups
+
+    def prepare_distributed(self) -> "OptimizerSet":
+        return OptimizerSet(
+            tuple(
+                replace(
+                    group,
+                    optimizer=group.runtime.prepare_optimizer(group.optimizer),
+                )
+                for group in self.groups
+            )
+        )
 
     def group(self, name: str) -> ScheduledOptimizer:
         matches = tuple(group for group in self.groups if group.name == name)

@@ -7652,6 +7652,7 @@ name = "runflow"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "accelerate" },
     { name = "appdirs" },
     { name = "boto3" },
     { name = "chatterbox-tts" },
@@ -7702,6 +7703,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "accelerate", specifier = ">=1.14" },
     { name = "appdirs" },
     { name = "boto3", specifier = ">=1.34" },
     { name = "chatterbox-tts" },

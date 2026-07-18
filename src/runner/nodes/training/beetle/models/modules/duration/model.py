@@ -86,6 +86,15 @@ class DurationPredictor(nn.Module):
         self.flows = _build_flows(config, config.flow_count)
         self.posterior_flows = _build_flows(config, config.posterior_flow_count)
 
+    def forward(
+        self,
+        duration: Tensor,
+        condition: Tensor,
+        mask: Tensor,
+        generator: torch.Generator,
+    ) -> Tensor:
+        return self.log_prob(duration, condition, mask, generator)
+
     def _run_flows(
         self,
         values: Tensor,

@@ -1,8 +1,9 @@
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID
+
+from appdirs import user_cache_dir
 
 from shared.db.audio.ranges import (
     AudioFileCache,
@@ -51,9 +52,7 @@ class SharedClipBulkLoader:
     def __init__(self, cache_bytes: int, fetch_workers: int) -> None:
         with database_session() as session:
             store = S3ObjectStore(settings_crud.object_store_config(session))
-        cache_root = (
-            Path(os.environ["XDG_CACHE_HOME"]) / "runflow" / "audio"
-        )
+        cache_root = Path(user_cache_dir("runflow")) / "audio"
         self.reader = BulkWavReader(
             store,
             AudioFileCache(cache_root, cache_bytes),

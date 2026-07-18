@@ -5,6 +5,7 @@ from torch import nn
 
 from ...data.validation_types import ValidationRecording
 from ..reporting import TrainingMetric
+from ..distributed import DistributedRuntime
 from ..state import capture_rng_state, restore_rng_state
 from .artifacts import ValidationArtifacts
 from .types import (
@@ -50,21 +51,36 @@ class ValidationCoordinator:
         self,
         validator: StageValidator,
         recordings: tuple[ValidationRecording, ...],
-        artifacts: ValidationArtifacts,
+        artifacts: ValidationArtifacts | None,
+        distributed: DistributedRuntime,
     ) -> None:
         if not recordings:
             raise ValueError("validation coordinator requires recordings")
         self.validator = validator
         self.recordings = recordings
         self.artifacts = artifacts
+        self.distributed = distributed
 
     def run(self, step: int) -> tuple[TrainingMetric, ...]:
         result = self.validator.evaluate(self.recordings, step)
-        self.artifacts.publish(result)
-        return validation_metrics(result)
+        if self.distributed.is_main_process:
+            if self.artifacts is None:
+                raise ValueError("main process requires validation artifacts")
+            self.artifacts.publish(result)
+        metrics = validation_metrics(result)
+        shared = self.distributed.broadcast_object(
+            metrics if self.distributed.is_main_process else None
+        )
+        if not isinstance(shared, tuple):
+            raise TypeError("main process did not broadcast validation metrics")
+        return shared
 
     def close(self) -> None:
-        self.artifacts.close()
+        if self.distributed.is_main_process:
+            if self.artifacts is None:
+                raise ValueError("main process requires validation artifacts")
+            self.artifacts.close()
+        self.distributed.wait_for_everyone()
 
 
 def aggregate_losses(

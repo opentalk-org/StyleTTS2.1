@@ -170,7 +170,6 @@ class BoundedBatchPrefetcher:
                 thread_name_prefix="beetle-audio-prefetch",
             ) as executor:
                 while not self._stop.is_set():
-                    self.callbacks.check_cancel()
                     if pending is None:
                         candidate = candidate or self._plan_candidate()
                         if not self._reserve_bytes(candidate.decoded_bytes, True):

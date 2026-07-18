@@ -17,7 +17,7 @@ from ..models.modules.conditioning import (
 )
 from ..models.modules.latent_flow import sample_flow_training_case
 from ..models.stage2 import Stage2Models
-from .stage2_setup import Stage2InputBuilder
+from .distributed import DistributedRuntime
 from .stage2_features import (
     WaveformMelExtractor,
     acoustic_statistics,
@@ -25,6 +25,7 @@ from .stage2_features import (
     group_ids,
     style_weights,
 )
+from .stage2_setup import Stage2InputBuilder
 from .state import LoopState
 
 
@@ -51,13 +52,14 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
         self,
         config: BeetleConfig,
         speaker_index: SpeakerIndex,
-        device: torch.device,
+        runtime: DistributedRuntime,
     ) -> None:
         self.config = config
         self.speaker_index = speaker_index
         self.settings: Stage2ObjectiveConfig = config.stage2_objective
-        self.device = device
-        self.mel_extractor = WaveformMelExtractor(config).to(device)
+        self.runtime = runtime
+        self.device = runtime.device
+        self.mel_extractor = WaveformMelExtractor(config).to(runtime.device)
 
     def build(
         self,
@@ -120,7 +122,7 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
         keep = (
             keep_all_conditions(values.waveform.shape[0], self.device)
             if validation
-            else models.condition_bank.sample_keep(
+            else self.runtime.unwrap(models.condition_bank).sample_keep(
                 values.waveform.shape[0],
                 self.device,
                 self.config.architecture.conditioning.dropout,
@@ -134,7 +136,7 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
             aligned_tokens,
             keep,
         )
-        duration_nll = models.duration_predictor.log_prob(
+        duration_nll = models.duration_predictor(
             alignment.durations.detach().clamp_min(1).unsqueeze(1),
             duration_condition,
             phoneme.mask,
@@ -189,8 +191,8 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
             reversal_scale=settings.reversal_scale,
             consistency_cosine_weight=settings.consistency_cosine_weight,
             consistency_mse_weight=settings.consistency_mse_weight,
-            align_blank_id=models.aligner.config.blank_id,
-            align_frame_reduction=models.aligner.frame_reduction,
+            align_blank_id=self.config.architecture.aligner.blank_id,
+            align_frame_reduction=self.config.architecture.aligner.frame_reduction,
             minimum_flow_steps=self.config.architecture.latent_flow.minimum_steps,
         )
 

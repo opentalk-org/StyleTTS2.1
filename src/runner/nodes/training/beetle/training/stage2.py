@@ -1,9 +1,6 @@
-from contextlib import AbstractContextManager
-
-import torch
 from torch import nn
 
-from ..config.training import Precision, StageConfig
+from ..config.training import StageConfig
 from ..data.prefetch import DataPipelineState
 from ..data.records import BeetleBatch
 from ..losses.stage2 import compute_stage2_losses
@@ -21,6 +18,7 @@ from .checkpoint import (
     restore_named_states,
     validate_resume_fingerprints,
 )
+from .distributed import DistributedRuntime
 from .loop import LoopIntervals
 from .loss_schedules import Stage2Schedules
 from .optimizer import NamedGradientGroup, OptimizerSet
@@ -39,8 +37,6 @@ from .state import (
     LoopState,
     StageKind,
     capture_gradients,
-    capture_rng_state,
-    restore_rng_state,
 )
 
 __all__ = [
@@ -60,7 +56,7 @@ class Stage2Trainer:
         models: Stage2Models,
         ema_latent_flow: nn.Module,
         stage_config: StageConfig,
-        device: torch.device,
+        runtime: DistributedRuntime,
         optimizers: OptimizerSet,
         intervals: LoopIntervals,
         config_fingerprint: str,
@@ -70,13 +66,17 @@ class Stage2Trainer:
     ) -> None:
         if initial_loop.stage is not self.stage:
             raise ValueError("Stage 2 trainer requires a Stage 2 loop state")
-        self.models = models.to(device).train()
+        self.models = models.to(runtime.device).train()
         for module in frozen_stage2_modules(self.models):
             module.requires_grad_(False).eval()
-        self.ema_latent_flow = ema_latent_flow.to(device).requires_grad_(False).eval()
+        for name, module in named_trainable_stage2_modules(self.models):
+            setattr(self.models, name, runtime.prepare_module(module))
+        self.ema_latent_flow = ema_latent_flow.to(runtime.device).requires_grad_(False).eval()
         self.stage_config = stage_config
-        self.device = device
-        self.optimizers = optimizers
+        self.runtime = runtime
+        self.world_size = runtime.world_size
+        self.device = runtime.device
+        self.optimizers = optimizers.prepare_distributed()
         self.intervals = intervals
         self.config_fingerprint = config_fingerprint
         self.data_fingerprint = data_fingerprint
@@ -105,7 +105,7 @@ class Stage2Trainer:
         batch: BeetleBatch,
     ) -> tuple[TrainingMetric, ...]:
         inputs = self.input_builder.build(self.models, batch, self._loop)
-        with self._autocast():
+        with self.runtime.autocast():
             losses = compute_stage2_losses(
                 self.models,
                 self.ema_latent_flow,
@@ -127,10 +127,15 @@ class Stage2Trainer:
         metrics = self.optimizers.step(optimizer_step, self.gradient_groups())
         update_latent_flow_ema(
             self.ema_latent_flow,
-            self.models.latent_flow,
-            self.models.latent_flow.config.ema_decay,
+            self.runtime.unwrap(self.models.latent_flow),
+            self.runtime.unwrap(self.models.latent_flow).config.ema_decay,
         )
         return metrics
+
+    def reduce_metrics(
+        self, metrics: tuple[TrainingMetric, ...]
+    ) -> tuple[TrainingMetric, ...]:
+        return self.runtime.reduce_metrics(metrics)
 
     def gradient_groups(self) -> tuple[NamedGradientGroup, ...]:
         return stage2_gradient_groups(self.models)
@@ -146,7 +151,7 @@ class Stage2Trainer:
             config_fingerprint=self.config_fingerprint,
             data_fingerprint=self.data_fingerprint,
             loop=loop,
-            rng=capture_rng_state(),
+            rank_states=(self.runtime.capture_rank_state(),),
             states=(*self._model_states(), *self.optimizers.capture_states()),
             gradients=self._gradients(),
             sampler_state=sampler_state,
@@ -169,24 +174,16 @@ class Stage2Trainer:
             (*self._model_targets(), *self.optimizers.state_targets()),
         )
         restore_checkpoint_gradients(payload.gradients, self._gradient_targets())
-        restore_rng_state(payload.rng)
+        if len(payload.rank_states) != self.runtime.world_size:
+            raise ValueError("checkpoint world size does not match distributed runtime")
+        self.runtime.restore_rank_state(payload.rank_states[self.runtime.rank])
         self._loop = payload.loop
         return payload.sampler_state
-
-    def _autocast(self) -> AbstractContextManager[None]:
-        if self.stage_config.precision is Precision.FLOAT32:
-            return torch.autocast(self.device.type, enabled=False)
-        dtype = (
-            torch.bfloat16
-            if self.stage_config.precision is Precision.BFLOAT16
-            else torch.float16
-        )
-        return torch.autocast(self.device.type, dtype=dtype)
 
     def _state_modules(self) -> tuple[tuple[str, StateKind, nn.Module], ...]:
         trainable = tuple(
             (name, StateKind.MODEL, module)
-            for name, module in named_trainable_stage2_modules(self.models)
+            for name, module in self._named_trainable_modules()
         )
         frozen = tuple(
             (name, StateKind.FROZEN_MODEL, module)
@@ -210,12 +207,18 @@ class Stage2Trainer:
     def _gradients(self) -> tuple[NamedModuleGradients, ...]:
         return tuple(
             NamedModuleGradients(name, capture_gradients(module))
-            for name, module in named_trainable_stage2_modules(self.models)
+            for name, module in self._named_trainable_modules()
         )
 
     def _gradient_targets(self) -> tuple[GradientTarget, ...]:
         return tuple(
             GradientTarget(name, module)
+            for name, module in self._named_trainable_modules()
+        )
+
+    def _named_trainable_modules(self) -> tuple[tuple[str, nn.Module], ...]:
+        return tuple(
+            (name, self.runtime.unwrap(module))
             for name, module in named_trainable_stage2_modules(self.models)
         )
 

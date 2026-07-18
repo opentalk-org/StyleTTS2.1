@@ -8,6 +8,7 @@ from ..config.training import OptimizerConfig, Precision, StageConfig
 from ..losses.stage2 import Stage2LossInput
 from ..models.model import Stage1Models
 from ..models.stage2 import Stage2Models
+from .distributed import DistributedRuntime
 from .optimizer import (
     NamedGradientGroup,
     OptimizerSet,
@@ -36,7 +37,7 @@ class Stage2InputBuilder(Protocol):
 def build_stage2_optimizer(
     models: Stage2Models,
     config: StageConfig,
-    device: torch.device,
+    runtime: DistributedRuntime,
 ) -> OptimizerSet:
     if config.discriminator_optimizer is not None:
         raise ValueError("Stage 2 must not configure a discriminator optimizer")
@@ -54,8 +55,9 @@ def build_stage2_optimizer(
                 "generator",
                 optimizer,
                 learning_rate_schedule(config.generator_optimizer),
-                torch.amp.GradScaler(device.type, enabled=scale_enabled),
+                torch.amp.GradScaler(runtime.device.type, enabled=scale_enabled),
                 config.generator_optimizer.maximum_gradient_norm,
+                runtime,
             ),
         )
     )
@@ -65,7 +67,7 @@ def build_stage3_optimizers(
     stage1: Stage1Models,
     stage2: Stage2Models,
     config: StageConfig,
-    device: torch.device,
+    runtime: DistributedRuntime,
 ) -> OptimizerSet:
     discriminator_config = config.discriminator_optimizer
     if discriminator_config is None:
@@ -82,26 +84,28 @@ def build_stage3_optimizers(
     )
     if len({id(parameter) for parameter in parameters}) != len(parameters):
         raise ValueError("Stage 3 generator parameters must have one optimizer owner")
-    scale_enabled = config.precision is Precision.FLOAT16
     generator = _adamw(parameters, config.generator_optimizer)
     discriminator = _adamw(
         tuple(stage1.discriminators.parameters()), discriminator_config
     )
+    scale_enabled = config.precision is Precision.FLOAT16
     return OptimizerSet(
         (
             ScheduledOptimizer(
                 "discriminator",
                 discriminator,
                 learning_rate_schedule(discriminator_config),
-                torch.amp.GradScaler(device.type, enabled=scale_enabled),
+                torch.amp.GradScaler(runtime.device.type, enabled=scale_enabled),
                 discriminator_config.maximum_gradient_norm,
+                runtime,
             ),
             ScheduledOptimizer(
                 "generator",
                 generator,
                 learning_rate_schedule(config.generator_optimizer),
-                torch.amp.GradScaler(device.type, enabled=scale_enabled),
+                torch.amp.GradScaler(runtime.device.type, enabled=scale_enabled),
                 config.generator_optimizer.maximum_gradient_norm,
+                runtime,
             ),
         )
     )

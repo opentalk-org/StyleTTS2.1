@@ -23,6 +23,8 @@ from ..checkpoint import (
     restore_named_states,
     validate_resume_fingerprints,
 )
+from ..distributed.checkpoint import DistributedCheckpointManager
+from ..distributed import DistributedRuntime
 from ..loop import LoopIntervals, run_continuously
 from ..reporting import ReportingCompletion
 from ..runtime import RunPreparation
@@ -77,7 +79,7 @@ def train(
     text_tokenizer,
     state: DataPipelineState | None,
     validator: StageValidator,
-    shard: DistributedShard,
+    runtime: DistributedRuntime,
 ) -> LoopState:
     if (
         preparation.resume is not None
@@ -87,7 +89,7 @@ def train(
     pipeline_state = state or initial_pipeline_state(
         preparation,
         trainer.stage,
-        shard,
+        runtime.shard,
     )
     pipeline = build_data_pipeline(
         preparation.config,
@@ -97,7 +99,7 @@ def train(
         phoneme_tokenizer,
         text_tokenizer,
         pipeline_state,
-        shard,
+        runtime.shard,
     )
     try:
         services = build_runtime_services(
@@ -106,13 +108,17 @@ def train(
             validator,
             phoneme_tokenizer,
             text_tokenizer,
+            runtime,
         )
         try:
             return run_continuously(
                 pipeline,
                 trainer,
                 callbacks,
-                preparation.checkpoint_manager,
+                DistributedCheckpointManager(
+                    preparation.checkpoint_manager,
+                    runtime,
+                ),
                 services.reporting,
                 services.lifecycle,
             )
@@ -217,6 +223,7 @@ def report_models(
     stage1: Stage1Models,
     stage2: Stage2Models | None,
     config,
+    device: torch.device,
     retain_audio_path: bool,
 ) -> None:
     stage1_report = stage1.parameter_report()
@@ -237,7 +244,6 @@ def report_models(
         (logger.warning if inference < minimum or inference > maximum else logger.info)(
             message
         )
-    device = torch.device(config.runtime.device)
     stage1.to(device)
     complexity = profile_latent_audio(
         stage1.feature_linear,

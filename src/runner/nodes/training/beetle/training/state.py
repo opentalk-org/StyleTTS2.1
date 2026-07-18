@@ -87,6 +87,11 @@ class RngState:
 
 
 @dataclass(frozen=True)
+class RankState:
+    rng: RngState
+
+
+@dataclass(frozen=True)
 class NamedGradient:
     name: str
     value: Tensor | None
