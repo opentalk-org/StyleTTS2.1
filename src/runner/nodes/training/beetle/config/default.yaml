@@ -190,7 +190,7 @@ stage1: &stage1
     reconstruction: {value: 5.0, start_step: 0, warmup_steps: 0}
     discriminator: {value: 1.0, start_step: 0, warmup_steps: 1000}
     generator_adversarial: {value: 1.0, start_step: 0, warmup_steps: 1000}
-    feature_matching: {value: 2.0, start_step: 0, warmup_steps: 1000}
+    feature_matching: {value: 1.0, start_step: 0, warmup_steps: 1000}
     duration_flow: {value: 1.0, start_step: 0, warmup_steps: 0}
     latent_flow: {value: 1.0, start_step: 0, warmup_steps: 0}
     shortcut: {value: 1.0, start_step: 0, warmup_steps: 0}
