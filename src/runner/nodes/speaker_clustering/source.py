@@ -29,6 +29,7 @@ PAGE_SIZE = 1_024
 class SpeakerSegmentSourceSettings(StrictSettings):
     dataset_id: UUID
     maximum_page_bytes: int = Field(default=256 * 1024 * 1024, gt=0)
+    audio_fetch_workers: int = Field(default=16, gt=0)
 
 
 class SpeakerSegmentSource(Node):
@@ -83,7 +84,7 @@ class SpeakerSegmentSource(Node):
                         references, stored_segments, strict=True
                     )
                 ],
-                self.settings.maximum_page_bytes,
+                self.settings.audio_fetch_workers,
             )
 
         outputs = []

@@ -1,4 +1,7 @@
-from shared.db.audio.ranges.bulk import SegmentReadRequest, bulk_read_wav_segments
+from shared.db.audio.ranges.bulk import bulk_read_wav_segments
+from shared.db.audio.ranges.cache import AudioFileCache, StoredWavLocation
+from shared.db.audio.ranges.reader import BulkWavReader
+from shared.db.audio.ranges.types import SegmentReadRequest
 from shared.db.audio.ranges.wav import (
     WavClip,
     WavTimeRange,
@@ -8,6 +11,9 @@ from shared.db.audio.ranges.wav import (
 
 __all__ = [
     "SegmentReadRequest",
+    "AudioFileCache",
+    "BulkWavReader",
+    "StoredWavLocation",
     "WavClip",
     "WavTimeRange",
     "bulk_read_wav_segments",
