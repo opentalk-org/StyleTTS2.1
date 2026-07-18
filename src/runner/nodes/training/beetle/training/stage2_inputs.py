@@ -13,7 +13,7 @@ from ..models.modules.conditioning import (
     ConditionKeep,
     ConditionVectors,
     ProjectedConditions,
-    pairwise_pool_tokens,
+    align_phoneme_tokens,
 )
 from ..models.modules.latent_flow import sample_flow_training_case
 from ..models.stage2 import Stage2Models
@@ -101,11 +101,14 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
         phoneme = models.phoneme_encoder(values.phoneme_ids, values.phoneme_mask)
         duration_tokens = models.duration_phoneme_encoder(phoneme.tokens, phoneme.mask)
         latent_tokens = models.latent_phoneme_encoder(phoneme.tokens, phoneme.mask)
-        full_rate = torch.bmm(latent_tokens, alignment.hard_alignment.detach())
-        aligned_tokens, aligned_mask = pairwise_pool_tokens(
-            full_rate, values.frame_mask
+        aligned_tokens, aligned_mask = align_phoneme_tokens(
+            latent_tokens,
+            alignment.hard_alignment.detach(),
         )
-        if aligned_mask.shape != posterior.mask.shape:
+        if aligned_mask.shape != posterior.mask.shape or not torch.equal(
+            aligned_mask,
+            posterior.mask,
+        ):
             raise ValueError("aligned phonemes and posterior latents must match")
         target_style = models.style_encoder(posterior.latent, posterior.mask)
         target_voice = models.voice_encoder(posterior.latent, posterior.mask)
@@ -175,7 +178,7 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
             latent_mask=posterior.mask,
             alignment=alignment,
             phonemes=values.phoneme_ids,
-            frame_mask=values.frame_mask,
+            alignment_mask=posterior.mask,
             target_latent_mask=posterior.mask,
             target_style=target_style,
             style_view_latent=style_latent,
@@ -192,7 +195,6 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
             consistency_cosine_weight=settings.consistency_cosine_weight,
             consistency_mse_weight=settings.consistency_mse_weight,
             align_blank_id=self.config.architecture.aligner.blank_id,
-            align_frame_reduction=self.config.architecture.aligner.frame_reduction,
             minimum_flow_steps=self.config.architecture.latent_flow.minimum_steps,
         )
 

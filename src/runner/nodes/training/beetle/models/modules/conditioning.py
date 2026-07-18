@@ -233,16 +233,18 @@ class MaskedAttentivePool1d(nn.Module):
         return self.output(statistics)
 
 
-def pairwise_pool_tokens(tokens: Tensor, mask: Tensor) -> tuple[Tensor, Tensor]:
-    if tokens.ndim != 3 or mask.shape != (tokens.shape[0], 1, tokens.shape[2]):
-        raise ValueError("pairwise pooling requires [B,C,T] and [B,1,T]")
-    if tokens.shape[-1] % 2:
-        tokens = F.pad(tokens, (0, 1))
-        mask = F.pad(mask, (0, 1))
-    batch, channels, frames = tokens.shape
-    paired_tokens = tokens.view(batch, channels, frames // 2, 2)
-    paired_mask = mask.view(batch, 1, frames // 2, 2)
-    count = paired_mask.sum(dim=3).clamp_min(1)
-    pooled = (paired_tokens * paired_mask).sum(dim=3) / count
-    output_mask = paired_mask.any(dim=3)
-    return pooled * output_mask, output_mask
+def align_phoneme_tokens(
+    tokens: Tensor,
+    hard_alignment: Tensor,
+) -> tuple[Tensor, Tensor]:
+    if tokens.ndim != 3 or hard_alignment.ndim != 3:
+        raise ValueError("phoneme alignment requires [B,C,P] and [B,P,F]")
+    if (
+        tokens.shape[0] != hard_alignment.shape[0]
+        or tokens.shape[2] != hard_alignment.shape[1]
+    ):
+        raise ValueError("phoneme alignment batch and phoneme axes must match")
+    numeric_alignment = hard_alignment.to(dtype=tokens.dtype)
+    aligned_mask = hard_alignment.to(dtype=torch.bool).any(dim=1, keepdim=True)
+    aligned = torch.bmm(tokens, numeric_alignment)
+    return aligned * aligned_mask.to(dtype=aligned.dtype), aligned_mask

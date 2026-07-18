@@ -69,7 +69,7 @@ class Stage2LossInput:
     latent_mask: Tensor
     alignment: AlignerOutput
     phonemes: Tensor
-    frame_mask: Tensor
+    alignment_mask: Tensor
     target_latent_mask: Tensor
     target_style: Tensor
     style_view_latent: Tensor
@@ -86,7 +86,6 @@ class Stage2LossInput:
     consistency_cosine_weight: float
     consistency_mse_weight: float
     align_blank_id: int
-    align_frame_reduction: int
     minimum_flow_steps: int
 
 
@@ -158,9 +157,8 @@ def compute_stage2_losses(
         inputs.alignment,
         inputs.phonemes,
         inputs.phoneme_mask[:, 0],
-        inputs.frame_mask,
+        inputs.alignment_mask,
         inputs.align_blank_id,
-        inputs.align_frame_reduction,
     )
     speaker_logits = models.style_speaker_classifier(
         inputs.target_style, inputs.reversal_scale

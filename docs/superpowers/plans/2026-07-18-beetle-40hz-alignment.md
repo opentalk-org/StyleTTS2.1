@@ -64,7 +64,7 @@ Expected: `AssertionError` because the current adapter returns eight alignment f
 In `aligner.py`, remove the interpolation-only functional import and interpolation block. Build the alignment mask from the already computed reduced CTC mask:
 
 ```python
-alignment_frame_mask = (~ctc_mask).unsqueeze(1)
+alignment_frame_mask = ctc_mask.unsqueeze(1)
 ```
 
 Require `raw_attention.shape[2] == reduced_frames`, then form the valid matrix at 40 Hz:

@@ -4,7 +4,6 @@ from pathlib import Path
 import torch
 from monotonic_align import maximum_path
 from torch import Tensor, nn
-from torch.nn import functional as F
 
 from ...config.architecture import AlignerConfig
 
@@ -70,6 +69,7 @@ class PhonemeAligner(nn.Module):
         )
         positions = torch.arange(reduced_frames, device=mel.device).unsqueeze(0)
         ctc_mask = positions < reduced_lengths.unsqueeze(1)
+        alignment_frame_mask = ctc_mask.unsqueeze(1)
         ctc_logits, s2s_logits, raw_attention = self.backbone(
             mel,
             ~ctc_mask,
@@ -96,19 +96,13 @@ class PhonemeAligner(nn.Module):
         if (
             raw_attention.shape[0] != mel.shape[0]
             or raw_attention.shape[1] < max_phonemes + 1
+            or raw_attention.shape[2] != reduced_frames
         ):
             raise ValueError(
-                "aligner attention is missing the start row or phoneme rows"
+                "aligner attention must contain start, phoneme, and reduced frame axes"
             )
         soft_alignment = raw_attention[:, 1 : max_phonemes + 1]
-        if soft_alignment.shape[2] != mel.shape[2]:
-            soft_alignment = F.interpolate(
-                soft_alignment,
-                size=mel.shape[2],
-                mode="linear",
-                align_corners=False,
-            )
-        valid_matrix = phoneme_mask.unsqueeze(2) & frame_mask
+        valid_matrix = phoneme_mask.unsqueeze(2) & alignment_frame_mask
         soft_alignment = soft_alignment * valid_matrix
         normalization = soft_alignment.sum(dim=1, keepdim=True).clamp_min(1e-8)
         soft_alignment = soft_alignment / normalization * valid_matrix

@@ -18,20 +18,19 @@ def compute_alignment_losses(
     output: AlignerOutput,
     phonemes: Tensor,
     phoneme_mask: Tensor,
-    frame_mask: Tensor,
+    alignment_mask: Tensor,
     blank_id: int,
-    frame_reduction: int,
 ) -> AlignmentLosses:
     if output.s2s_logits.shape[:2] != phonemes.shape:
         raise ValueError("sequence logits and phonemes must have equal token shapes")
     if phoneme_mask.shape != phonemes.shape:
         raise ValueError("phoneme mask must match phonemes")
-    if frame_mask.shape != (
+    if alignment_mask.shape != (
         output.soft_alignment.shape[0],
         1,
         output.soft_alignment.shape[2],
     ):
-        raise ValueError("frame mask must match alignment frames")
+        raise ValueError("alignment mask must match alignment frames")
     token_count = phoneme_mask.sum()
     if token_count == 0:
         raise ValueError("alignment loss requires a valid phoneme")
@@ -42,18 +41,13 @@ def compute_alignment_losses(
     )
     s2s = (sequence_loss * phoneme_mask).sum() / token_count
 
-    valid_matrix = phoneme_mask.unsqueeze(2) & frame_mask
+    valid_matrix = phoneme_mask.unsqueeze(2) & alignment_mask
     mono = (
         (output.soft_alignment - output.hard_alignment).abs() * valid_matrix
     ).sum() / valid_matrix.sum()
     mono = mono * 10
 
-    frame_lengths = frame_mask.sum(dim=(1, 2))
-    input_lengths = torch.div(
-        frame_lengths + frame_reduction - 1,
-        frame_reduction,
-        rounding_mode="floor",
-    )
+    input_lengths = alignment_mask.sum(dim=(1, 2))
     target_lengths = phoneme_mask.sum(dim=1)
     if torch.any(target_lengths > input_lengths):
         raise ValueError("CTC target length exceeds reduced input length")

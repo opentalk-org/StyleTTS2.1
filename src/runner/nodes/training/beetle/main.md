@@ -54,9 +54,10 @@ z + F0/N -> Decoder -> h[T] + prepared F0[T]
 h + prepared F0 -> Generator -> waveform[T*300]
 ```
 
-Alignment and duration supervision remain at the full hop-300 clock. Expanded
-phoneme conditioning is padded to even length and pairwise pooled before the
-half-rate LatentFlowModel. This avoids per-phoneme rounding drift.
+Alignment and duration supervision remain at the aligner's native half-rate
+40 Hz clock. Hard-alignment expansion maps latent phoneme features directly to
+the 40 Hz posterior and LatentFlowModel timeline without interpolation or
+pairwise pooling.
 
 Stages 1 and 3 train the upstream encoders, flows, FeatureLinear prediction,
 KL, and `N` over the complete utterance. Each example selects a random
