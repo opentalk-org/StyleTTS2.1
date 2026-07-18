@@ -38,6 +38,7 @@ class IndexedSegment:
     start: float
     end: float
     audio_duration: float
+    sample_rate: int
     estimated_bytes: int
     language: str | None
     voice_id: str | None
@@ -53,6 +54,8 @@ class IndexedSegment:
             raise ValueError(f"invalid segment range: {self.key}")
         if self.end > self.audio_duration:
             raise ValueError(f"segment exceeds audio duration: {self.key}")
+        if self.sample_rate <= 0:
+            raise ValueError(f"segment sample rate is invalid: {self.key}")
         if self.estimated_bytes <= 0:
             raise ValueError(f"estimated bytes must be positive: {self.key}")
 

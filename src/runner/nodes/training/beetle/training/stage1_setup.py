@@ -2,9 +2,17 @@ from dataclasses import dataclass
 import torch
 from torch import Tensor, nn
 
-from ..config.training import OptimizerConfig, Precision, StageConfig
+from ..config.training import (
+    AdversarialConfig,
+    OptimizerConfig,
+    Precision,
+    StageConfig,
+)
+from ..data.records import BeetleBatch
+from ..data.sampling import derive_seed
 from ..losses.composition import Stage1LossWeights
-from ..models.model import Stage1Models
+from ..models.model import Stage1Models, Stage1Synthesis
+from ..models.modules.segments import AlignedSegments
 from .callbacks import TrainingMetric
 from .checkpoint import LossScheduleState, LossWeight
 from .distributed import DistributedRuntime
@@ -15,6 +23,76 @@ from .optimizer import (
     learning_rate_schedule,
     loss_weight_schedule,
 )
+from .state import LoopState, StageKind
+
+
+class AlignedSegmentTraining:
+    models: Stage1Models
+    adversarial_config: AdversarialConfig
+    runtime_seed: int
+    stage: StageKind
+    device: torch.device
+    _loop: LoopState
+
+    def _synthesize(
+        self,
+        mel: Tensor,
+        frame_mask: Tensor,
+        segment: AlignedSegments,
+        view: str,
+    ) -> Stage1Synthesis:
+        state = self._loop
+        latent_seed = derive_seed(
+            self.runtime_seed,
+            self.stage,
+            state.cycle,
+            state.batch_index,
+            view,
+            "latent",
+        )
+        source_seed = derive_seed(
+            self.runtime_seed,
+            self.stage,
+            state.cycle,
+            state.batch_index,
+            view,
+            "source",
+        )
+        latent = torch.Generator(device=self.device).manual_seed(latent_seed)
+        source = torch.Generator(device=self.device).manual_seed(source_seed)
+        return self.models.reconstruct_segment(
+            mel,
+            frame_mask,
+            segment,
+            latent,
+            source,
+        )
+
+    def _segment(self, frame_mask: Tensor, view: str) -> AlignedSegments:
+        state = self._loop
+        seed = derive_seed(
+            self.runtime_seed,
+            self.stage,
+            state.cycle,
+            state.batch_index,
+            view,
+            "segment",
+        )
+        generator = torch.Generator(device=self.device).manual_seed(seed)
+        return AlignedSegments.random(
+            frame_mask,
+            self.adversarial_config.segment_samples // self.models.output_hop,
+            self.models.latent_downsample_rate,
+            self.models.output_hop,
+            generator,
+        )
+
+    def _inputs(self, batch: BeetleBatch) -> tuple[Tensor, Tensor, Tensor]:
+        return (
+            batch.waveform.to(self.device, non_blocking=True),
+            batch.mel.to(self.device, non_blocking=True),
+            batch.frame_mask.to(self.device, non_blocking=True),
+        )
 
 
 @dataclass(frozen=True)

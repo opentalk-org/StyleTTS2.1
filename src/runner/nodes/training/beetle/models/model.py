@@ -167,6 +167,53 @@ class Stage1Models(nn.Module):
             sample_mask=sample_mask,
         )
 
+    def reconstruct_window(
+        self,
+        encoder_mel: Tensor,
+        encoder_mask: Tensor,
+        frame_mask: Tensor,
+        posterior_start: int,
+        latent_frames: int,
+        latent_generator: torch.Generator,
+        source_generator: torch.Generator,
+    ) -> Stage1Synthesis:
+        full = self.audio_encoder(encoder_mel, encoder_mask, latent_generator)
+        posterior_end = posterior_start + latent_frames
+        if posterior_end > full.latent.shape[-1]:
+            raise ValueError("requested posterior window exceeds encoder output")
+        posterior = AudioPosterior(
+            mean=full.mean[:, :, posterior_start:posterior_end],
+            log_scale=full.log_scale[:, :, posterior_start:posterior_end],
+            latent=full.latent[:, :, posterior_start:posterior_end],
+            mask=full.mask[:, :, posterior_start:posterior_end],
+        )
+        acoustic = self.feature_linear(
+            posterior.latent,
+            posterior.mask,
+            frame_mask,
+        )
+        decoded = self.decoder(
+            posterior.latent,
+            acoustic.f0,
+            acoustic.n,
+            posterior.mask,
+            frame_mask,
+        )
+        waveform = self.generator(
+            decoded.features,
+            decoded.f0,
+            decoded.mask,
+            source_generator,
+        )
+        sample_mask = frame_mask.repeat_interleave(self.output_hop, dim=-1)
+        return Stage1Synthesis(
+            posterior=posterior,
+            acoustic=acoustic,
+            decoded=decoded,
+            waveform=waveform,
+            sample_mask=sample_mask,
+        )
+
     def acoustic_targets(self, mel: Tensor, frame_mask: Tensor) -> AcousticFeatures:
         return AcousticFeatures(
             f0=self.f0_target(mel, frame_mask),

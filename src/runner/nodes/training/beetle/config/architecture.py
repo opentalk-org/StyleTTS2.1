@@ -43,6 +43,10 @@ class PosteriorEncoderConfig(StrictConfigModel):
             raise ValueError("log_scale_min must be below log_scale_max")
         return self
 
+    def receptive_field_mel_frames(self) -> int:
+        residual = self.downsample_rate * (self.kernel_size - 1) * self.layer_count
+        return self.downsample_kernel_size + residual
+
 
 class FeatureConfig(StrictConfigModel):
     latent_channels: int = Field(gt=0)

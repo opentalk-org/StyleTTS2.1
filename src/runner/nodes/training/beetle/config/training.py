@@ -88,6 +88,10 @@ class AdversarialConfig(StrictConfigModel):
     segment_samples: int = Field(gt=0)
 
 
+class Stage1WindowConfig(StrictConfigModel):
+    latent_frames: int = Field(gt=0)
+
+
 class ComplexityConfig(StrictConfigModel):
     minimum_inference_parameters: int = Field(gt=0)
     maximum_inference_parameters: int = Field(gt=0)
@@ -124,6 +128,7 @@ class BeetleConfig(StrictConfigModel):
     validation: ValidationConfig
     runtime: RuntimeConfig
     adversarial: AdversarialConfig
+    stage1_window: Stage1WindowConfig
     checkpoint: CheckpointConfig
     stage2_objective: Stage2ObjectiveConfig
     stage1: StageConfig
@@ -155,6 +160,16 @@ class BeetleConfig(StrictConfigModel):
             raise ValueError("posterior mel_channels must match audio mel_channels")
         if self.architecture.generator.output_hop() != self.audio.hop_length:
             raise ValueError("generator output geometry must match hop_length")
+        posterior = self.architecture.posterior
+        receptive_field = posterior.receptive_field_mel_frames()
+        if receptive_field % 2:
+            raise ValueError("posterior receptive field must be even")
+        target_frames = self.stage1_window.latent_frames * posterior.downsample_rate
+        encoder_frames = target_frames + receptive_field
+        if self.runtime.compile and self.runtime.compile_frame_count != encoder_frames:
+            raise ValueError(
+                "compile_frame_count must match Stage 1 contextual encoder frames"
+            )
         segment_samples = self.adversarial.segment_samples
         if segment_samples % self.audio.hop_length:
             raise ValueError("adversarial segment_samples must divide by hop_length")

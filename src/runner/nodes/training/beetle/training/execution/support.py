@@ -10,7 +10,9 @@ from ...data import (
     DataPipelineState,
     DatabaseSegmentIndex,
     DistributedShard,
+    Stage1WindowPlanner,
     build_data_pipeline,
+    build_stage1_window_geometry,
 )
 from ...models import Stage1Models, Stage2Models
 from ...models.complexity import profile_latent_audio, require_complexity_budget
@@ -139,15 +141,24 @@ def initial_pipeline_state(
         StageKind.STAGE2: config.stage2,
         StageKind.STAGE3: config.stage3,
     }[stage]
-    planner = ContinuousBatchPlanner(
-        preparation.index,
-        stage_number(stage),
-        stage_config.batch_size,
-        config.data.sentence_probability,
-        config.runtime.seed,
-        config.data.grouping,
-        shard,
-    )
+    if stage is StageKind.STAGE1:
+        planner = Stage1WindowPlanner(
+            preparation.index,
+            stage_config.batch_size,
+            config.runtime.seed,
+            shard,
+            build_stage1_window_geometry(config),
+        )
+    else:
+        planner = ContinuousBatchPlanner(
+            preparation.index,
+            stage_number(stage),
+            stage_config.batch_size,
+            config.data.sentence_probability,
+            config.runtime.seed,
+            config.data.grouping,
+            shard,
+        )
     return DataPipelineState(
         preparation.index.fingerprint,
         planner.state_dict(),

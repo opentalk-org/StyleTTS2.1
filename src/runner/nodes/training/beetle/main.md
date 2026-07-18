@@ -62,13 +62,13 @@ Alignment and duration supervision remain at the aligner's native half-rate
 the 40 Hz posterior and LatentFlowModel timeline without interpolation or
 pairwise pooling.
 
-Stages 1 and 3 train the upstream encoders, flows, FeatureLinear prediction,
-KL, and `N` over the complete utterance. Each example selects a random
-posterior-aligned 9,600-sample segment: 32 hop-300 frames and 16 half-rate
-latent frames. Frozen F0 target extraction and F0 supervision use this same
-interval with Decoder, Generator, reconstruction, discriminator,
-generator-adversarial, and feature-matching computation. Stage 2 and validation
-stay full-utterance.
+Stage 1 traverses each source as sequential 32-posterior-frame windows. A final
+end-aligned window overlaps the preceding one when necessary, preserving the
+tail without variable shapes. Every 64-mel-frame, 19,200-sample target receives
+66 mel frames of left and right AudioEncoder context, producing a fixed
+196-frame encoder input; only posterior frames `[33:65]` drive FeatureLinear,
+Decoder, Generator, and the Stage 1 losses. Stage 2, Stage 3, and validation
+keep their full-utterance inputs and existing behavior.
 
 Duration prediction and latent flow receive the same nine condition sources:
 phoneme features, pooled phoneme vectors, style, voice, pre/post text context,
@@ -134,9 +134,9 @@ There is no Wave-U-Net, WavLM/SLM discriminator, or invented model family.
 
 1. Train AudioEncoder, FeatureLinear, Decoder, Generator, and both current
    StyleTTS discriminator families with posterior KL, F0, `N`, StyleTTS2
-   reconstruction, generator-adversarial, and feature-matching losses. KL and
-   `N` use complete utterances; F0 and audio synthesis losses use aligned
-   `adversarial.segment_samples` crops.
+   reconstruction, generator-adversarial, and feature-matching losses. Each
+   fixed item uses a contextual 32-frame central posterior and its coherent
+   64-frame mel and 19,200-sample waveform targets.
 2. Freeze Stage 1 and train the phoneme/context encoders, style/voice encoders,
    DurationPredictor, LatentFlowModel, and the pretrained PhonemeAligner against
    posterior latents. Decoder, Generator, FeatureLinear, and discriminators are
@@ -159,11 +159,11 @@ explicit `total_steps`, and schedules reporting, validation, checkpoints, and
 loss weights by optimizer step. Validation runs at
 `validation_every_steps` and always at the final step when not already due.
 Stage 1 may compile its acoustic path at the explicit even
-`runtime.compile_frame_count`; training and validation pad to that time shape
-and reject longer recordings. AudioEncoder, FeatureLinear, and Decoder use
-static compiled graphs. Generator remains eager because TorchInductor cannot
-lower its complex harmonic-phase cumulative path. Compilation does not wrap
-modules or alter checkpoint parameter keys.
+`runtime.compile_frame_count`, which must equal the derived 196-frame contextual
+AudioEncoder input. Stage 1 training uses static AudioEncoder, FeatureLinear,
+and Decoder shapes, while validation remains full-utterance. Generator remains
+eager because TorchInductor cannot lower its complex harmonic-phase cumulative
+path. Compilation does not wrap modules or alter checkpoint parameter keys.
 Checkpoints include model, optimizer, scaler, EMA, discriminator,
 accumulated gradients, sampler cursor, loss schedules, RNG, MLflow run identity,
 pending step metrics, accumulated timing, and last reported/validated state so

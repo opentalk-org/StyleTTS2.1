@@ -1,16 +1,14 @@
 import torch
-from torch import Tensor
 
 from ..config.training import AdversarialConfig, StageConfig
 from ..data.prefetch import DataPipelineState
-from ..data.records import BeetleBatch
 from ..data.sampling import derive_seed
+from ..data.stage1_records import Stage1Batch, Stage1WindowGeometry
 from ..losses.acoustic import masked_f0_smooth_l1, masked_kl_standard_normal
 from ..losses.acoustic import masked_n_smooth_l1
 from ..losses.adversarial import discriminator_step_loss, generator_step_loss
 from ..losses.composition import Stage1LossWeights
 from ..models.model import Stage1Models, Stage1Synthesis
-from ..models.modules.segments import AlignedSegments
 from .callbacks import TrainingMetric
 from .checkpoint import CHECKPOINT_VERSION, CheckpointPayload, GradientTarget
 from .checkpoint import NamedModuleGradients, StateKind, StateTarget
@@ -20,11 +18,16 @@ from .distributed import DistributedRuntime
 from .loop import LoopIntervals
 from .optimizer import NamedGradientGroup, OptimizerSet
 from .reporting import ReportingState
-from .stage1_setup import Stage1Schedules, build_stage1_optimizers, tensor_metric
+from .stage1_setup import (
+    AlignedSegmentTraining,
+    Stage1Schedules,
+    build_stage1_optimizers,
+    tensor_metric,
+)
 from .state import LoopState, StageKind, capture_gradients
 
 
-class Stage1Trainer:
+class Stage1Trainer(AlignedSegmentTraining):
     stage = StageKind.STAGE1
     trains_discriminator = True
 
@@ -40,6 +43,7 @@ class Stage1Trainer:
         config_fingerprint: str,
         data_fingerprint: str,
         initial_loop: LoopState,
+        geometry: Stage1WindowGeometry | None = None,
     ) -> None:
         if initial_loop.stage is not self.stage:
             raise ValueError("Stage 1 trainer requires a Stage 1 loop state")
@@ -61,6 +65,7 @@ class Stage1Trainer:
             setattr(models, name, runtime.prepare_module(getattr(models, name)))
         self.stage_config = stage_config
         self.adversarial_config = adversarial_config
+        self.geometry = geometry
         self.runtime_seed = runtime_seed
         self.runtime = runtime
         self.world_size = runtime.world_size
@@ -83,16 +88,16 @@ class Stage1Trainer:
 
     def discriminator_backward(
         self,
-        batch: BeetleBatch,
+        batch: Stage1Batch,
     ) -> tuple[TrainingMetric, ...]:
-        waveform, mel, frame_mask = self._inputs(batch)
-        segment = self._segment(frame_mask, "discriminator")
-        real = segment.samples(waveform)
+        values = batch.to(self.device)
         with torch.no_grad(), self.runtime.autocast():
-            synthesis = self._synthesize(mel, frame_mask, segment, "discriminator")
+            synthesis = self._synthesize_window(values, "discriminator")
         with self.runtime.autocast():
             loss = discriminator_step_loss(
-                self.models.discriminators, real, synthesis.waveform
+                self.models.discriminators,
+                values.waveform,
+                synthesis.waveform,
             )
             weighted = loss * self._weights().discriminator
         scaled = weighted / self.accumulation_steps
@@ -104,32 +109,37 @@ class Stage1Trainer:
 
     def generator_backward(
         self,
-        batch: BeetleBatch,
+        batch: Stage1Batch,
     ) -> tuple[TrainingMetric, ...]:
-        waveform, mel, frame_mask = self._inputs(batch)
-        segment = self._segment(frame_mask, "generator")
-        real = segment.samples(waveform)
-        f0_target = self.models.segment_f0_target(mel, frame_mask, segment)
-        n_target = self.models.n_target(mel, frame_mask)
-        segment_mask = segment.frames(frame_mask)
+        values = batch.to(self.device)
+        f0_target = self.models.f0_target(values.target_mel, values.frame_mask)
+        n_target = self.models.n_target(values.target_mel, values.frame_mask)
         with self.runtime.autocast():
-            synthesis = self._synthesize(mel, frame_mask, segment, "generator")
+            synthesis = self._synthesize_window(values, "generator")
             encoder_kl = masked_kl_standard_normal(
                 synthesis.posterior.mean,
                 synthesis.posterior.log_scale,
                 synthesis.posterior.mask,
             )
             f0 = masked_f0_smooth_l1(
-                segment.frames(synthesis.acoustic.f0), f0_target, segment_mask
+                synthesis.acoustic.f0,
+                f0_target,
+                values.frame_mask,
             )
-            n = masked_n_smooth_l1(synthesis.acoustic.n, n_target, frame_mask)
+            n = masked_n_smooth_l1(
+                synthesis.acoustic.n,
+                n_target,
+                values.frame_mask,
+            )
             reconstruction = self.models.reconstruction_loss(
                 synthesis.waveform,
-                real,
+                values.waveform,
                 synthesis.sample_mask,
             ).total
             adversarial = generator_step_loss(
-                self.models.discriminators, real, synthesis.waveform
+                self.models.discriminators,
+                values.waveform,
+                synthesis.waveform,
             )
             weights = self._weights()
             total = (
@@ -207,13 +217,13 @@ class Stage1Trainer:
             raise ValueError("checkpoint world size does not match distributed runtime")
         self.runtime.restore_rank_state(payload.rank_states[self.runtime.rank])
 
-    def _synthesize(
+    def _synthesize_window(
         self,
-        mel: Tensor,
-        frame_mask: Tensor,
-        segment: AlignedSegments,
+        batch: Stage1Batch,
         view: str,
     ) -> Stage1Synthesis:
+        if self.geometry is None:
+            raise RuntimeError("Stage 1 window geometry is required")
         state = self._loop
         latent_seed = derive_seed(
             self.runtime_seed,
@@ -233,32 +243,14 @@ class Stage1Trainer:
         )
         latent = torch.Generator(device=self.device).manual_seed(latent_seed)
         source = torch.Generator(device=self.device).manual_seed(source_seed)
-        return self.models.reconstruct_segment(mel, frame_mask, segment, latent, source)
-
-    def _segment(self, frame_mask: Tensor, view: str) -> AlignedSegments:
-        state = self._loop
-        seed = derive_seed(
-            self.runtime_seed,
-            self.stage,
-            state.cycle,
-            state.batch_index,
-            view,
-            "segment",
-        )
-        generator = torch.Generator(device=self.device).manual_seed(seed)
-        return AlignedSegments.random(
-            frame_mask,
-            self.adversarial_config.segment_samples // self.models.output_hop,
-            self.models.latent_downsample_rate,
-            self.models.output_hop,
-            generator,
-        )
-
-    def _inputs(self, batch: BeetleBatch) -> tuple[Tensor, Tensor, Tensor]:
-        return (
-            batch.waveform.to(self.device, non_blocking=True),
-            batch.mel.to(self.device, non_blocking=True),
-            batch.frame_mask.to(self.device, non_blocking=True),
+        return self.models.reconstruct_window(
+            batch.encoder_mel,
+            batch.encoder_mask,
+            batch.frame_mask,
+            self.geometry.posterior_start,
+            self.geometry.latent_frames,
+            latent,
+            source,
         )
 
     def _weights(self) -> Stage1LossWeights:

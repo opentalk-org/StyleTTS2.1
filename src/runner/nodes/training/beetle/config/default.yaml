@@ -156,10 +156,12 @@ runtime:
   seed: 1234
   device: cuda
   compile: true
-  compile_frame_count: 3600
+  compile_frame_count: 196
   log_every_steps: 100
 adversarial:
   segment_samples: 9600
+stage1_window:
+  latent_frames: 32
 checkpoint:
   every_steps: 1000
   keep_last: 5

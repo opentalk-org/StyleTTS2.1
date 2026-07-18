@@ -2,8 +2,7 @@ import time
 from dataclasses import dataclass, replace
 from typing import Protocol
 
-from ..data.prefetch import DataPipelineState
-from ..data.records import BeetleBatch
+from ..data.prefetch import DataPipelineState, TrainingBatch
 from .callbacks import (
     CancellationRequested,
     TrainingCallbacks,
@@ -44,7 +43,7 @@ class LoopIntervals:
 
 
 class TrainingPipeline(Protocol):
-    def next_batch(self) -> BeetleBatch: ...
+    def next_batch(self) -> TrainingBatch: ...
 
     def mark_consumed(self) -> None: ...
 
@@ -63,10 +62,12 @@ class StageTrainer(Protocol):
     def set_loop_state(self, state: LoopState) -> None: ...
 
     def discriminator_backward(
-        self, batch: BeetleBatch
+        self, batch: TrainingBatch
     ) -> tuple[TrainingMetric, ...]: ...
 
-    def generator_backward(self, batch: BeetleBatch) -> tuple[TrainingMetric, ...]: ...
+    def generator_backward(
+        self, batch: TrainingBatch
+    ) -> tuple[TrainingMetric, ...]: ...
 
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]: ...
 

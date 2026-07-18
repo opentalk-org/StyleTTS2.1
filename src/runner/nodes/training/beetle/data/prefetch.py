@@ -7,16 +7,23 @@ from typing import Protocol
 from .records import BeetleBatch, PlannedBatch
 from .sampling import ContinuousBatchPlanner, PlannerState
 from .source import FetchedBatch
+from .stage1_records import FetchedStage1Batch, Stage1Batch, Stage1PlannedBatch
+from .stage1_sampling import Stage1PlannerState, Stage1WindowPlanner
 
+TrainingBatch = BeetleBatch | Stage1Batch
+BatchPlan = PlannedBatch | Stage1PlannedBatch
+FetchedPlan = FetchedBatch | FetchedStage1Batch
+PlannerStateType = PlannerState | Stage1PlannerState
+BatchPlanner = ContinuousBatchPlanner | Stage1WindowPlanner
 
 class PrefetchCallbacks(Protocol):
     def check_cancel(self) -> None: ...
 
 
 class PlannedBatchLoader(Protocol):
-    def fetch(self, planned: PlannedBatch) -> FetchedBatch: ...
+    def fetch(self, planned: BatchPlan) -> FetchedPlan: ...
 
-    def collate(self, fetched: FetchedBatch) -> BeetleBatch: ...
+    def collate(self, fetched: FetchedPlan) -> TrainingBatch: ...
 
     def close(self) -> None: ...
 
@@ -24,7 +31,7 @@ class PlannedBatchLoader(Protocol):
 @dataclass(frozen=True)
 class DataPipelineState:
     data_fingerprint: str
-    planner: PlannerState
+    planner: PlannerStateType
     world_size: int
 
     def __post_init__(self) -> None:
@@ -34,22 +41,22 @@ class DataPipelineState:
 
 @dataclass(frozen=True)
 class _QueuedBatch:
-    batch: BeetleBatch
-    state_after: PlannerState
+    batch: TrainingBatch
+    state_after: PlannerStateType
     decoded_bytes: int
 
 
 @dataclass(frozen=True)
 class _PlannedCandidate:
-    batch: PlannedBatch
-    state_after: PlannerState
+    batch: BatchPlan
+    state_after: PlannerStateType
     decoded_bytes: int
 
 
 @dataclass(frozen=True)
 class _PendingFetch:
     candidate: _PlannedCandidate
-    future: Future[FetchedBatch]
+    future: Future[FetchedPlan]
 
 
 @dataclass(frozen=True)
@@ -60,7 +67,7 @@ class _ProducerFailure:
 class BoundedBatchPrefetcher:
     def __init__(
         self,
-        planner: ContinuousBatchPlanner,
+        planner: BatchPlanner,
         loader: PlannedBatchLoader,
         callbacks: PrefetchCallbacks,
         maximum_batches: int,
@@ -72,7 +79,7 @@ class BoundedBatchPrefetcher:
             raise ValueError("data fingerprint does not match planner index")
         if initial_state.world_size != planner.shard.world_size:
             raise ValueError("pipeline world size does not match planner shard")
-        planner.load_state_dict(initial_state.planner)
+        _restore_planner_state(planner, initial_state.planner)
         self.planner = planner
         self.loader = loader
         self.callbacks = callbacks
@@ -93,7 +100,7 @@ class BoundedBatchPrefetcher:
         with self._condition:
             return self._queued_bytes
 
-    def next_batch(self) -> BeetleBatch:
+    def next_batch(self) -> TrainingBatch:
         if self._in_flight is not None:
             raise RuntimeError("mark the current batch consumed before requesting another")
         while True:
@@ -131,7 +138,7 @@ class BoundedBatchPrefetcher:
         if state.world_size != self.planner.shard.world_size:
             raise ValueError("restored world size does not match planner shard")
         self._stop_producer()
-        self.planner.load_state_dict(state.planner)
+        _restore_planner_state(self.planner, state.planner)
         self._committed_state = state
         self._queue = queue.Queue(self.maximum_batches)
         self._queued_bytes = 0
@@ -215,7 +222,11 @@ class BoundedBatchPrefetcher:
 
     def _plan_candidate(self) -> _PlannedCandidate:
         planned = self.planner.next_batch()
-        decoded_bytes = _estimated_decoded_bytes(planned, self.sample_rate)
+        decoded_bytes = _estimated_decoded_bytes(
+            planned,
+            self.planner,
+            self.sample_rate,
+        )
         if decoded_bytes > self.maximum_decoded_bytes:
             raise ValueError(
                 "one planned batch exceeds prefetch decoded-byte limit: "
@@ -252,7 +263,13 @@ class BoundedBatchPrefetcher:
         return False
 
 
-def _estimated_decoded_bytes(planned: PlannedBatch, sample_rate: int) -> int:
+def _estimated_decoded_bytes(planned: BatchPlan, planner: BatchPlanner, sample_rate: int) -> int:
+    if isinstance(planned, Stage1PlannedBatch):
+        if not isinstance(planner, Stage1WindowPlanner):
+            raise TypeError("Stage 1 plans require the Stage 1 planner")
+        keys = set(plan.key for plan in planned.windows)
+        seconds = sum(planner.index.records[key].duration for key in keys)
+        return max(1, round(seconds * sample_rate * 4))
     ranges = set()
     for example in planned.examples:
         ranges.add((example.key.audio_file_id, example.target.start, example.target.end))
@@ -267,3 +284,14 @@ def _estimated_decoded_bytes(planned: PlannedBatch, sample_rate: int) -> int:
             ranges.add((view.key.audio_file_id, view.audio.start, view.audio.end))
     seconds = sum(end - start for _, start, end in ranges)
     return max(1, round(seconds * sample_rate * 4))
+
+
+def _restore_planner_state(planner: BatchPlanner, state: PlannerStateType) -> None:
+    if isinstance(planner, Stage1WindowPlanner):
+        if not isinstance(state, Stage1PlannerState):
+            raise TypeError("Stage 1 pipeline requires Stage1PlannerState")
+        planner.load_state_dict(state)
+        return
+    if not isinstance(state, PlannerState):
+        raise TypeError("Stage 2/3 pipeline requires PlannerState")
+    planner.load_state_dict(state)

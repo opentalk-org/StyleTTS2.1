@@ -8,6 +8,7 @@ from ...models import (
     build_stage2_models,
     compile_stage1,
 )
+from ...data import build_stage1_window_geometry
 from ..callbacks import TrainingCallbacks
 from ..distributed import DistributedCallbacks, DistributedRuntime
 from ..runtime import (
@@ -120,6 +121,7 @@ def _run_stage1(
         preparation.config_fingerprint,
         preparation.index.fingerprint,
         initial_loop(StageKind.STAGE1),
+        build_stage1_window_geometry(config),
     )
     sampler = trainer.restore(preparation.resume) if preparation.resume else None
     return train(

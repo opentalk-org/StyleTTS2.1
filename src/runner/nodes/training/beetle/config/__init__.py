@@ -14,6 +14,7 @@ from .training import (
     LossWeights,
     OptimizerConfig,
     RuntimeConfig,
+    Stage1WindowConfig,
     Stage2ObjectiveConfig,
     StageConfig,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "OptimizerConfig",
     "RuntimeConfig",
     "Stage2ObjectiveConfig",
+    "Stage1WindowConfig",
     "StageConfig",
     "ValidationConfig",
     "config_fingerprint",

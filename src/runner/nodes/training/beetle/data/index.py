@@ -222,6 +222,7 @@ def _indexed_segment(
         start=start,
         end=end,
         audio_duration=reference.audio_duration,
+        sample_rate=int(reference.audio_metadata["sample_rate"]),
         estimated_bytes=estimated,
         language=language,
         voice_id=voice_id,
@@ -241,7 +242,8 @@ def _fingerprint(dataset_id: UUID, records: dict[SegmentKey, IndexedSegment]) ->
         rows.append(
             (
                 str(key.audio_file_id), key.segment_index, key.segment_id,
-                item.start, item.end, item.language, item.voice_id, item.has_text,
+                item.start, item.end, item.sample_rate, item.language,
+                item.voice_id, item.has_text,
                 item.has_phonemes, item.phoneme_word_count,
                 tuple((word.word, word.start, word.end) for word in item.words),
                 item.style_prompt, item.voice_prompt,

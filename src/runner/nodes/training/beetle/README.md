@@ -115,21 +115,21 @@ counts all ranks.
 
 `runtime.compile: true` compiles the Stage 1 acoustic path while preserving
 normal checkpoint state-dict keys. `runtime.compile_frame_count` fixes the
-training and validation time dimension, must be even, and must cover the
-longest selected recording; oversize recordings fail instead of being cut.
+Stage 1 contextual encoder dimension and must equal its derived 196 mel frames.
 The fixed training geometry uses static compiled graphs for AudioEncoder,
 FeatureLinear, and Decoder. Generator remains eager because TorchInductor cannot
-lower its complex harmonic-phase cumulative path.
+lower its complex harmonic-phase cumulative path. Validation remains dynamic
+and full-utterance.
 
-Stages 1 and 3 keep AudioEncoder, FeatureLinear prediction, `N`, KL, and all
-conditioning/flow objectives at full utterance length. Each example selects one
-independently random posterior-aligned segment configured by
-`adversarial.segment_samples`. The baseline value is 9,600 samples: 32 hop-300
-frames and 16 half-rate posterior frames. Frozen F0 target extraction and F0
-supervision use the same frames as Decoder, Generator, reconstruction,
-discriminator, generator-adversarial, and feature-matching losses. Crop plans
-derive from checkpointed loop coordinates and the runtime seed, while
-validation remains full-utterance.
+Stage 1 assigns each complete source segment to one data-parallel rank and
+expands it into sequential 32-posterior-frame windows. Each item contains a
+64-mel-frame, 19,200-sample target plus 66 mel frames of AudioEncoder context on
+each side. The central posterior slice `[33:65]` alone drives KL, F0, `N`,
+Decoder, Generator, reconstruction, discriminator, generator-adversarial, and
+feature-matching losses. A final end-aligned window overlaps its predecessor
+when needed so the source tail is not discarded. Stage 2 remains frozen and
+full-utterance; Stage 3 retains its full-utterance and
+`adversarial.segment_samples` behavior.
 
 ## Runtime reports
 
@@ -164,7 +164,10 @@ losses.
 Audio preparation uses one ordered producer per rank. It fetches one byte range
 per distinct cold WAV through a persistent client, reuses complete WAV bytes
 from the bounded host cache, and overlaps the next batch's audio fetch with the
-current batch's collation and GPU step. Prefetched batches do not advance the
+current batch's collation and GPU step. Stage 1 preprocesses each distinct
+source at most once per prefetched batch and reuses it for adjacent windows.
+Its checkpointed planner preserves the source permutation and every pending
+window for exact distributed resume. Prefetched batches do not advance the
 checkpointed sampler until the trainer consumes them.
 
 One learned vector represents each configured language. Duration prediction and
