@@ -29,7 +29,7 @@ class PoolState:
 @dataclass(frozen=True)
 class PlannerState:
     sentence: PoolState
-    mid_sentence: PoolState
+    mid_sentence: PoolState | None
     batch_index: int
 
 
@@ -92,7 +92,15 @@ class ContinuousBatchPlanner:
         self.grouping = grouping
         self.cut_planner = CutPlanner(index, 1.0, 45.0)
         self.sentence = _PermutationPool(index.pools.for_stage(stage), seed, f"stage-{stage}-sentence")
-        self.mid_sentence = _PermutationPool(index.pools.mid_sentence, seed, f"stage-{stage}-mid")
+        self.mid_sentence = (
+            None
+            if sentence_probability == 1
+            else _PermutationPool(
+                index.pools.mid_sentence,
+                seed,
+                f"stage-{stage}-mid",
+            )
+        )
         self.batch_index = 0
         self._validate_embedding_pools()
 
@@ -106,7 +114,7 @@ class ContinuousBatchPlanner:
                 sample_index,
             )
             sentence = random.Random(sample_seed).random() < self.sentence_probability
-            pool = self.sentence if sentence else self.mid_sentence
+            pool = self.sentence if sentence else self._require_mid_sentence_pool()
             key, position = pool.next()
             cut_seed = derive_seed(sample_seed, pool.cycle_index, position, key)
             plan = (
@@ -122,7 +130,9 @@ class ContinuousBatchPlanner:
     def state_dict(self) -> PlannerState:
         return PlannerState(
             sentence=self.sentence.state(),
-            mid_sentence=self.mid_sentence.state(),
+            mid_sentence=(
+                None if self.mid_sentence is None else self.mid_sentence.state()
+            ),
             batch_index=self.batch_index,
         )
 
@@ -130,8 +140,19 @@ class ContinuousBatchPlanner:
         if state.batch_index < 0:
             raise ValueError("batch_index must be non-negative")
         self.sentence.restore(state.sentence)
-        self.mid_sentence.restore(state.mid_sentence)
+        if self.mid_sentence is None:
+            if state.mid_sentence is not None:
+                raise ValueError("sentence-only planner state contains a mid-sentence pool")
+        else:
+            if state.mid_sentence is None:
+                raise ValueError("mid-sentence planner state is missing its pool")
+            self.mid_sentence.restore(state.mid_sentence)
         self.batch_index = state.batch_index
+
+    def _require_mid_sentence_pool(self) -> _PermutationPool:
+        if self.mid_sentence is None:
+            raise RuntimeError("sentence-only planner selected a mid-sentence sample")
+        return self.mid_sentence
 
     def _validate_embedding_pools(self) -> None:
         if self.stage == 1:

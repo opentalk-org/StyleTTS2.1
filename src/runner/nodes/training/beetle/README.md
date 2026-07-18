@@ -9,12 +9,13 @@ stage stops exactly at its configured `total_steps`.
 
 The YAML `data.selection.dataset_id` must identify a PostgreSQL dataset. The
 index reads segment references through shared CRUD and accepts packed,
-non-virtual audio with 1–45 second target segments. Every row must have a
-language present in the explicit ordered `architecture.language.values` list;
-missing and unconfigured values are rejected before stage pools are built. The
-configured order defines checkpoint-stable embedding IDs and supports
-mixed-language batches. Stages 2 and 3 additionally require text, phonemes,
-voice labels, aligned word boundaries, enough distinct
+non-virtual audio with 1–45 second target segments. Stage 1 is audio-only and
+therefore accepts rows without conditioning metadata. Stages 2 and 3 require a
+language from the explicit ordered `architecture.language.values` list plus
+text and voice metadata. The configured order defines checkpoint-stable
+embedding IDs and supports mixed-language batches. Mid-sentence sampling also
+requires aligned word boundaries; `sentence_probability: 1` selects only whole
+segments when those boundaries are unavailable. Stages 2 and 3 require enough distinct
 voices for the configured voice groups, and enough recordings for style groups.
 Empty or ineligible data fails before any model is loaded.
 

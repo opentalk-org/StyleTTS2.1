@@ -84,11 +84,14 @@ phonemes, transcripts, voice labels, and optional prompts follow the exact
 shared schema. The loader builds a compact index, then bulk-prefetches current
 segment JSON and deduplicated waveform ranges with bounded decoded bytes.
 The configured language list is ordered and defines checkpoint-stable embedding
-IDs. Audio rows with a missing language or a value absent from that list are
-rejected before every stage pool is built; language is included in the dataset
-fingerprint. Normal batches may mix any configured language IDs.
+IDs. Stage 1 admits stored audio without language metadata because it trains no
+conditioning path. Stage 2/3 pools reject missing or unconfigured languages,
+and their normal batches may mix any configured language IDs. Language remains
+part of the dataset fingerprint.
 
 Training cuts are 1–45 seconds and balance sentence and mid-sentence targets.
+Setting `sentence_probability` to `1` uses whole segments exclusively and does
+not require an aligned mid-sentence pool.
 Pre/post audio or text context is cut by the dataset pipeline and may be absent.
 Style and voice grouped views support the approved contrastive and GE2E losses.
 Different condition combinations are mixed within normal batches.

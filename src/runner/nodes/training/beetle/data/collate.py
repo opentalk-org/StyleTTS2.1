@@ -44,6 +44,7 @@ class BatchCollator:
         text_tokenizer: Tokenizer,
         augmentation: AugmentationConfig,
         languages: tuple[str, ...],
+        stage: int,
     ) -> None:
         self.preprocessor = preprocessor
         self.phoneme_tokenizer = phoneme_tokenizer
@@ -52,6 +53,7 @@ class BatchCollator:
         self.language_ids = {
             language: index for index, language in enumerate(languages)
         }
+        self.stage = stage
 
     def collate(self, fetched: FetchedBatch) -> BeetleBatch:
         prepared = tuple(self._prepare_example(item) for item in fetched.examples)
@@ -125,7 +127,9 @@ class BatchCollator:
             voice_group_ids=voice_groups.group_ids,
         )
 
-    def _resolve_language_ids(self, languages: tuple[str, ...]) -> Tensor:
+    def _resolve_language_ids(self, languages: tuple[str | None, ...]) -> Tensor:
+        if self.stage == 1:
+            return torch.zeros(len(languages), dtype=torch.long)
         return torch.tensor(
             [self.language_ids[language] for language in languages],
             dtype=torch.long,

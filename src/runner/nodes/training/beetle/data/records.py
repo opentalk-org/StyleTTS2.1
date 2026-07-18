@@ -39,7 +39,7 @@ class IndexedSegment:
     end: float
     audio_duration: float
     estimated_bytes: int
-    language: str
+    language: str | None
     voice_id: str | None
     has_text: bool
     has_phonemes: bool

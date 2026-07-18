@@ -63,7 +63,7 @@ class FetchedExample:
     style_prompt: str | None
     voice_prompt: str | None
     voice_id: str | None
-    language: str
+    language: str | None
 
 
 @dataclass(frozen=True)

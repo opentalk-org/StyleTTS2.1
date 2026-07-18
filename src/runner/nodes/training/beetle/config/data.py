@@ -49,7 +49,7 @@ class DataConfig(StrictConfigModel):
     selection: DatabaseSelection
     minimum_seconds: float = Field(ge=1, le=45)
     maximum_seconds: float = Field(ge=1, le=45)
-    sentence_probability: float = Field(gt=0, lt=1)
+    sentence_probability: float = Field(gt=0, le=1)
     prefetch: PrefetchConfig
     grouping: GroupSamplingConfig
     augmentation: AugmentationConfig

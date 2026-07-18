@@ -149,12 +149,6 @@ class DatabaseSegmentIndex:
             if reference.audio_storage_kind != "packed":
                 excluded_external += 1
                 continue
-            if (
-                reference.language is None
-                or reference.language not in configured_languages
-            ):
-                excluded_language += 1
-                continue
             item = _indexed_segment(reference, reference.language)
             if item.duration < 1 or item.duration > 45:
                 excluded_duration += 1
@@ -164,6 +158,12 @@ class DatabaseSegmentIndex:
             records[item.key] = item
             by_audio_lists[item.key.audio_file_id].append(item)
             stage1.append(item.key)
+            if (
+                reference.language is None
+                or reference.language not in configured_languages
+            ):
+                excluded_language += 1
+                continue
             if item.has_text and item.has_phonemes and item.voice_id is not None:
                 stage2.append(item.key)
                 voice_lists[item.voice_id].append(item.key)
@@ -199,7 +199,10 @@ class DatabaseSegmentIndex:
         return cls(dataset_id, records, by_audio, pools, report, _fingerprint(dataset_id, records))
 
 
-def _indexed_segment(reference: SegmentReference, language: str) -> IndexedSegment:
+def _indexed_segment(
+    reference: SegmentReference,
+    language: str | None,
+) -> IndexedSegment:
     raw = reference.segment
     key = SegmentKey(reference.audio_file_id, reference.segment_index, str(raw["id"]))
     start = float(raw["start"])

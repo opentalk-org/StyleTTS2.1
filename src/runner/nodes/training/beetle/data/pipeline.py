@@ -62,6 +62,7 @@ def build_data_pipeline(
             text_tokenizer,
             config.data.augmentation,
             config.architecture.language.values,
+            stage,
         ),
     )
     return BoundedBatchPrefetcher(
