@@ -54,6 +54,7 @@ class MlflowSession:
         self.client = client
         self.run_id = run_id
         self._pending: list[PendingOperation] = []
+        self._finished = False
 
     @classmethod
     def start(
@@ -90,15 +91,19 @@ class MlflowSession:
             raise ValueError(
                 f"MLflow run stage mismatch: {recorded_stage} != {stage.value}"
             )
-        if run.info.status != "RUNNING":
+        if run.info.status not in ("RUNNING", "FINISHED"):
             raise ValueError(f"MLflow run is not active: {run.info.status}")
-        return cls(client, run_id)
+        session = cls(client, run_id)
+        session._finished = run.info.status == "FINISHED"
+        return session
 
     @property
     def pending_count(self) -> int:
         return len(self._pending)
 
     def submit(self, metrics: tuple[TrainingMetric, ...], step: int) -> None:
+        if self._finished:
+            raise ValueError("cannot submit metrics to a finished MLflow run")
         if step <= 0:
             raise ValueError("MLflow metric step must be positive")
         names = tuple(metric.name for metric in metrics)
@@ -136,9 +141,13 @@ class MlflowSession:
 
     def finish(self) -> None:
         self.flush()
-        self.client.set_terminated(self.run_id, "FINISHED")
+        if not self._finished:
+            self.client.set_terminated(self.run_id, "FINISHED")
+            self._finished = True
 
     def fail(self) -> None:
+        if self._finished:
+            return
         try:
             self.flush()
         finally:

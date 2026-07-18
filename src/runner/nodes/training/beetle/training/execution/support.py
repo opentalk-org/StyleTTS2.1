@@ -23,11 +23,13 @@ from ..checkpoint import (
     validate_resume_fingerprints,
 )
 from ..loop import LoopIntervals, run_continuously
-from ..reporting import ReportingState, StepObservationTracker
+from ..reporting import ReportingCompletion
 from ..runtime import RunPreparation
 from ..stage2_inputs import SpeakerIndex
 from ..stage2_setup import named_trainable_stage2_modules
 from ..state import LoopState, StageKind, TrainingPhase
+from ..validation import StageValidator
+from .services import build_runtime_services
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +75,13 @@ def train(
     phoneme_tokenizer,
     text_tokenizer,
     state: DataPipelineState | None,
+    validator: StageValidator,
 ) -> LoopState:
+    if (
+        preparation.resume is not None
+        and preparation.resume.reporting.completion is ReportingCompletion.FINISHED
+    ):
+        return trainer.loop_state()
     pipeline_state = state or initial_pipeline_state(preparation, trainer.stage)
     pipeline = build_data_pipeline(
         preparation.config,
@@ -85,17 +93,24 @@ def train(
         pipeline_state,
     )
     try:
-        return run_continuously(
-            pipeline,
-            trainer,
-            callbacks,
-            preparation.checkpoint_manager,
-            StepObservationTracker(
-                preparation.resume.reporting
-                if preparation.resume is not None
-                else ReportingState.initial()
-            ),
+        services = build_runtime_services(
+            preparation,
+            trainer.stage,
+            validator,
+            phoneme_tokenizer,
+            text_tokenizer,
         )
+        try:
+            return run_continuously(
+                pipeline,
+                trainer,
+                callbacks,
+                preparation.checkpoint_manager,
+                services.reporting,
+                services.lifecycle,
+            )
+        finally:
+            services.validation.close()
     finally:
         pipeline.close()
 

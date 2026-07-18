@@ -3,9 +3,16 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
+from ...data.validation_types import ValidationRecording
 from ..reporting import TrainingMetric
 from ..state import capture_rng_state, restore_rng_state
-from .types import ValidationEvaluator, ValidationResult, ValidationSampleResult
+from .artifacts import ValidationArtifacts
+from .types import (
+    StageValidator,
+    ValidationEvaluator,
+    ValidationResult,
+    ValidationSampleResult,
+)
 
 
 @dataclass(frozen=True)
@@ -38,6 +45,28 @@ class ValidationRuntime:
         return ValidationResult(self.evaluator.stage, step, samples, aggregates)
 
 
+class ValidationCoordinator:
+    def __init__(
+        self,
+        validator: StageValidator,
+        recordings: tuple[ValidationRecording, ...],
+        artifacts: ValidationArtifacts,
+    ) -> None:
+        if not recordings:
+            raise ValueError("validation coordinator requires recordings")
+        self.validator = validator
+        self.recordings = recordings
+        self.artifacts = artifacts
+
+    def run(self, step: int) -> tuple[TrainingMetric, ...]:
+        result = self.validator.evaluate(self.recordings, step)
+        self.artifacts.publish(result)
+        return validation_metrics(result)
+
+    def close(self) -> None:
+        self.artifacts.close()
+
+
 def aggregate_losses(
     samples: tuple[ValidationSampleResult, ...],
 ) -> tuple[TrainingMetric, ...]:
@@ -52,6 +81,23 @@ def aggregate_losses(
         )
         for index, name in enumerate(names)
     )
+
+
+def validation_metrics(result: ValidationResult) -> tuple[TrainingMetric, ...]:
+    aggregate = tuple(
+        TrainingMetric(f"validation/loss/{metric.name}", metric.value)
+        for metric in result.aggregates
+    )
+    samples = tuple(
+        TrainingMetric(
+            "validation/sample/"
+            f"{position}_{sample.audio_file_id}/loss/{metric.name}",
+            metric.value,
+        )
+        for position, sample in enumerate(result.samples)
+        for metric in sample.losses
+    )
+    return (*aggregate, *samples)
 
 
 def _capture_modes(roots: tuple[nn.Module, ...]) -> tuple[_ModuleMode, ...]:

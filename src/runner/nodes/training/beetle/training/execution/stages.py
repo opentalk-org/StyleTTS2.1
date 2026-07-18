@@ -25,6 +25,12 @@ from ..stage2_setup import (
 )
 from ..stage3 import Stage3Trainer
 from ..state import LoopState, StageKind
+from ..validation import (
+    Stage1ValidationEvaluator,
+    Stage2ValidationEvaluator,
+    Stage3ValidationEvaluator,
+    ValidationRuntime,
+)
 from .support import (
     DatabaseSpeakerIndex,
     IgnoredTokenizer,
@@ -99,6 +105,14 @@ def _run_stage1(
         IgnoredTokenizer(),
         IgnoredTokenizer(),
         sampler,
+        ValidationRuntime(
+            Stage1ValidationEvaluator(
+                models,
+                config.stage1,
+                config.runtime.seed,
+                device,
+            )
+        ),
     )
 
 
@@ -124,6 +138,7 @@ def _run_stage2(
         Stage2Dependencies(phoneme.model, text.model, load_aligner(config)),
     )
     ema = build_latent_flow_ema(models)
+    input_builder = _input_builder(preparation, device)
     trainer = Stage2Trainer(
         models,
         ema,
@@ -134,9 +149,9 @@ def _run_stage2(
         preparation.config_fingerprint,
         preparation.index.fingerprint,
         initial_loop(StageKind.STAGE2),
-        _input_builder(preparation, device),
+        input_builder,
     )
-    report_models(stage1, models, config, retain_audio_path=False)
+    report_models(stage1, models, config, retain_audio_path=True)
     sampler = trainer.restore(preparation.resume) if preparation.resume else None
     return train(
         preparation,
@@ -145,6 +160,17 @@ def _run_stage2(
         phoneme.tokenizer,
         text.tokenizer,
         sampler,
+        ValidationRuntime(
+            Stage2ValidationEvaluator(
+                stage1,
+                models,
+                ema,
+                input_builder,
+                config.stage2,
+                config.runtime.seed,
+                device,
+            )
+        ),
     )
 
 
@@ -177,6 +203,7 @@ def _run_stage3(
         preparation,
     )
     restore_stage2(second, stage2, ema)
+    input_builder = _input_builder(preparation, device)
     trainer = Stage3Trainer(
         stage1,
         stage2,
@@ -189,7 +216,7 @@ def _run_stage3(
         preparation.config_fingerprint,
         preparation.index.fingerprint,
         initial_loop(StageKind.STAGE3),
-        _input_builder(preparation, device),
+        input_builder,
     )
     report_models(stage1, stage2, config, retain_audio_path=True)
     sampler = trainer.restore(preparation.resume) if preparation.resume else None
@@ -200,6 +227,17 @@ def _run_stage3(
         phoneme.tokenizer,
         text.tokenizer,
         sampler,
+        ValidationRuntime(
+            Stage3ValidationEvaluator(
+                stage1,
+                stage2,
+                ema,
+                input_builder,
+                config.stage3,
+                config.runtime.seed,
+                device,
+            )
+        ),
     )
 
 

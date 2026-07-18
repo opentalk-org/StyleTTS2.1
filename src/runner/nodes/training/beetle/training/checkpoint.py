@@ -18,10 +18,11 @@ from .state import (
     NamedGradient,
     RngState,
     StageKind,
+    TrainingPhase,
     restore_gradients,
 )
 
-CHECKPOINT_VERSION = 2
+CHECKPOINT_VERSION = 3
 _PAYLOAD_NAME = "payload.pt"
 _MANIFEST_NAME = "manifest.json"
 _LATEST_NAME = "latest.json"
@@ -240,6 +241,14 @@ def _validate_payload(payload: CheckpointPayload) -> None:
         raise ValueError("reported step exceeds checkpoint optimizer step")
     if payload.reporting.last_validated_step > payload.loop.optimizer_step:
         raise ValueError("validated step exceeds checkpoint optimizer step")
+    pending = payload.reporting.pending_step
+    if pending is not None:
+        if pending.optimizer_step != payload.loop.optimizer_step:
+            raise ValueError("pending reporting step does not match optimizer step")
+        if payload.loop.phase is not TrainingPhase.OPTIMIZER_COMPLETE:
+            raise ValueError("pending reporting step requires optimizer-complete phase")
+        if payload.reporting.accumulator.microsteps == 0:
+            raise ValueError("pending reporting step requires accumulated losses")
 
 
 def _write_new_text(path: Path, value: str) -> None:

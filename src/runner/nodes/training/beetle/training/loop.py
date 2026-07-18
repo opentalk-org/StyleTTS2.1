@@ -8,9 +8,18 @@ from .callbacks import (
     CancellationRequested,
     TrainingCallbacks,
     TrainingMetric,
+    validate_metrics,
 )
 from .checkpoint import CheckpointManager, CheckpointPayload
-from .loop_events import advance_sampler, announce, is_due, validate_metrics
+from .loop_events import (
+    TrainingLifecycle,
+    advance_sampler,
+    announce,
+    cancel_run,
+    complete_step_work,
+    finish_run,
+    save_emergency_checkpoint,
+)
 from .reporting import (
     ForegroundCategory,
     ReportingState,
@@ -18,8 +27,6 @@ from .reporting import (
     StepTimer,
 )
 from .state import LoopState, StageKind, TrainingPhase
-
-_CHECKPOINT_MEDIA_TYPE = "application/vnd.beetle.checkpoint"
 
 
 @dataclass(frozen=True)
@@ -76,12 +83,28 @@ def run_continuously(
     callbacks: TrainingCallbacks,
     checkpoint_manager: CheckpointManager,
     reporting: StepObservationTracker,
+    lifecycle: TrainingLifecycle,
 ) -> LoopState:
     timer = StepTimer()
     try:
         callbacks.check_cancel()
         while True:
             state = trainer.loop_state()
+            if state.optimizer_step > lifecycle.total_steps:
+                raise ValueError("optimizer step exceeds configured total_steps")
+            if (
+                state.optimizer_step == lifecycle.total_steps
+                and reporting.snapshot().pending_step is None
+            ):
+                return finish_run(
+                    trainer,
+                    pipeline,
+                    callbacks,
+                    checkpoint_manager,
+                    reporting,
+                    lifecycle,
+                    timer,
+                )
             if state.phase is TrainingPhase.GENERATOR_COMPLETE:
                 _complete_accumulation(
                     trainer,
@@ -89,20 +112,21 @@ def run_continuously(
                     callbacks,
                     checkpoint_manager,
                     reporting,
+                    lifecycle,
                     timer,
                 )
                 continue
-            if state.phase in (
-                TrainingPhase.OPTIMIZER_COMPLETE,
-                TrainingPhase.CHECKPOINTING,
-            ):
-                _complete_step_work(
+            if state.phase is TrainingPhase.OPTIMIZER_COMPLETE:
+                complete_step_work(
                     trainer,
                     pipeline,
                     callbacks,
                     checkpoint_manager,
                     reporting,
+                    lifecycle,
                     timer,
+                    trainer.intervals.log_every_steps,
+                    trainer.intervals.checkpoint_every_steps,
                 )
                 continue
             _run_batch(
@@ -111,20 +135,41 @@ def run_continuously(
                 callbacks,
                 checkpoint_manager,
                 reporting,
+                lifecycle,
                 timer,
             )
     except CancellationRequested:
         elapsed, foreground = timer.snapshot()
         reporting.capture_partial_timing(elapsed, foreground)
-        state = trainer.loop_state()
-        payload = trainer.checkpoint_payload(
-            state,
-            pipeline.state_dict(),
-            reporting.snapshot(),
+        return cancel_run(
+            trainer,
+            pipeline,
+            callbacks,
+            checkpoint_manager,
+            reporting,
+            lifecycle,
+            timer,
         )
-        path = checkpoint_manager.save(payload)
-        callbacks.publish_artifact(path, _CHECKPOINT_MEDIA_TYPE)
-        return state
+    except Exception as error:
+        elapsed, foreground = timer.snapshot()
+        reporting.capture_partial_timing(elapsed, foreground)
+        state = trainer.loop_state()
+        try:
+            save_emergency_checkpoint(
+                trainer,
+                pipeline,
+                callbacks,
+                checkpoint_manager,
+                reporting.snapshot(),
+                state,
+                timer,
+            )
+        finally:
+            try:
+                lifecycle.reporter.fail()
+            except Exception:
+                pass
+        raise error
 
 
 def _run_batch(
@@ -133,6 +178,7 @@ def _run_batch(
     callbacks: TrainingCallbacks,
     checkpoint_manager: CheckpointManager,
     reporting: StepObservationTracker,
+    lifecycle: TrainingLifecycle,
     timer: StepTimer,
 ) -> None:
     state = trainer.loop_state()
@@ -180,6 +226,7 @@ def _run_batch(
         callbacks,
         checkpoint_manager,
         reporting,
+        lifecycle,
         timer,
     )
 
@@ -190,6 +237,7 @@ def _complete_accumulation(
     callbacks: TrainingCallbacks,
     checkpoint_manager: CheckpointManager | None,
     reporting: StepObservationTracker,
+    lifecycle: TrainingLifecycle,
     timer: StepTimer,
 ) -> None:
     state = trainer.loop_state()
@@ -210,56 +258,18 @@ def _complete_accumulation(
         microstep=0,
         phase=TrainingPhase.OPTIMIZER_COMPLETE,
     )
-    elapsed, foreground = timer.complete()
-    observation = reporting.complete_step(
-        state.optimizer_step,
-        step_metrics,
-        elapsed,
-        foreground,
-    )
-    report_metrics = (
-        observation.metrics
-        if is_due(state.optimizer_step, trainer.intervals.log_every_steps)
-        else ()
-    )
-    announce(trainer, callbacks, state, report_metrics, timer)
+    trainer.set_loop_state(state)
+    reporting.begin_step(state.optimizer_step, step_metrics)
     if checkpoint_manager is None:
         raise RuntimeError("checkpoint manager is required at optimizer boundaries")
-    _complete_step_work(
+    complete_step_work(
         trainer,
         pipeline,
         callbacks,
         checkpoint_manager,
         reporting,
+        lifecycle,
         timer,
+        trainer.intervals.log_every_steps,
+        trainer.intervals.checkpoint_every_steps,
     )
-
-
-def _complete_step_work(
-    trainer: StageTrainer,
-    pipeline: TrainingPipeline,
-    callbacks: TrainingCallbacks,
-    checkpoint_manager: CheckpointManager,
-    reporting: StepObservationTracker,
-    timer: StepTimer,
-) -> None:
-    state = trainer.loop_state()
-    checkpoint_due = is_due(
-        state.optimizer_step, trainer.intervals.checkpoint_every_steps
-    )
-    if checkpoint_due:
-        state = replace(state, phase=TrainingPhase.CHECKPOINTING)
-        announce(trainer, callbacks, state, (), timer)
-        complete = replace(state, phase=TrainingPhase.CHECKPOINT_COMPLETE)
-        payload = trainer.checkpoint_payload(
-            complete,
-            pipeline.state_dict(),
-            reporting.snapshot(),
-        )
-        path = checkpoint_manager.save(payload)
-        callbacks.publish_artifact(path, _CHECKPOINT_MEDIA_TYPE)
-        announce(trainer, callbacks, complete, (), timer)
-        state = complete
-    ready = replace(state, phase=TrainingPhase.READY)
-    trainer.set_loop_state(ready)
-    callbacks.check_cancel()

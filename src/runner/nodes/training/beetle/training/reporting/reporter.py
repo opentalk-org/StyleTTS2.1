@@ -6,6 +6,8 @@ from .mlflow import MAX_PENDING_OPERATIONS, MlflowSession
 from .observations import StepObservation
 from .state import ReportingCompletion, ReportingState
 
+MAX_PENDING_ARTIFACT_JOBS = 16
+
 
 class SystemSampler(Protocol):
     def sample(self) -> tuple[TrainingMetric, ...]: ...
@@ -122,5 +124,9 @@ class TrainingReporter:
             TrainingMetric(
                 "overhead/pending_artifact_jobs",
                 float(state.pending_artifact_jobs),
+            ),
+            TrainingMetric(
+                "overhead/artifact_queue_utilization_percent",
+                100 * state.pending_artifact_jobs / MAX_PENDING_ARTIFACT_JOBS,
             ),
         )

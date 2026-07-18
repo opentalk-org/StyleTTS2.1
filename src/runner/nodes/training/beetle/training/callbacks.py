@@ -1,13 +1,15 @@
+import math
 import signal
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from types import FrameType
 from typing import Protocol, runtime_checkable
 
-from .reporting import TrainingMetric
-from .state import StageKind, TrainingPhase
+from .reporting import ForegroundCategory, StepTimer, TrainingMetric
+from .state import LoopState, StageKind, TrainingPhase
 
 
 class CancellationRequested(RuntimeError):
@@ -68,3 +70,39 @@ class StandaloneCallbacks:
     def _handle_signal(self, signal_number: int, frame: FrameType | None) -> None:
         del signal_number, frame
         self.request_cancel()
+
+
+def validate_metrics(metrics: tuple[TrainingMetric, ...]) -> None:
+    names = tuple(metric.name for metric in metrics)
+    if len(set(names)) != len(names):
+        raise ValueError(f"training metric names must be unique: {names}")
+    invalid = tuple(
+        metric.name for metric in metrics if not math.isfinite(metric.value)
+    )
+    if invalid:
+        raise FloatingPointError(f"non-finite training metrics: {invalid}")
+
+
+def is_due(optimizer_step: int, interval: int) -> bool:
+    return optimizer_step > 0 and optimizer_step % interval == 0
+
+
+def report_only(
+    callbacks: TrainingCallbacks,
+    state: LoopState,
+    metrics: tuple[TrainingMetric, ...],
+    timer: StepTimer,
+) -> None:
+    started_at = time.monotonic()
+    try:
+        callbacks.report_progress(
+            ProgressEvent(
+                state.stage,
+                state.optimizer_step,
+                state.microstep,
+                state.phase,
+                metrics,
+            )
+        )
+    finally:
+        timer.record(ForegroundCategory.REPORTING, started_at)

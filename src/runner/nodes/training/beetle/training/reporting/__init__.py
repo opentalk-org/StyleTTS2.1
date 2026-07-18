@@ -6,8 +6,8 @@ from .metrics import (
 )
 from .mlflow import MlflowSession, configured_mlflow_client
 from .observations import StepObservation, StepObservationTracker
-from .state import ReportingCompletion, ReportingState
-from .reporter import TrainingReporter
+from .state import PendingStepState, ReportingCompletion, ReportingState
+from .reporter import MAX_PENDING_ARTIFACT_JOBS, TrainingReporter
 from .system import SystemMetricsSampler
 from .timing import (
     ForegroundCategory,
@@ -24,6 +24,8 @@ __all__ = [
     "MetricAccumulator",
     "MetricAccumulatorState",
     "MlflowSession",
+    "MAX_PENDING_ARTIFACT_JOBS",
+    "PendingStepState",
     "ReportingCompletion",
     "ReportingState",
     "StepObservation",

@@ -1,7 +1,7 @@
 from dataclasses import dataclass, replace
 
 from .metrics import MetricAccumulator, TrainingMetric
-from .state import ReportingState
+from .state import PendingStepState, ReportingState
 from .timing import ForegroundDurations
 
 
@@ -35,10 +35,12 @@ class StepObservationTracker:
     def complete_step(
         self,
         optimizer_step: int,
-        optimizer_metrics: tuple[TrainingMetric, ...],
         elapsed_seconds: float,
         foreground: ForegroundDurations,
     ) -> StepObservation:
+        pending = self._state.pending_step
+        if pending is None or pending.optimizer_step != optimizer_step:
+            raise ValueError("completed step does not match pending optimizer state")
         completed = self._accumulator.complete()
         timing = self._state.timing.record_step(
             optimizer_step,
@@ -50,15 +52,36 @@ class StepObservationTracker:
             self._state,
             timing=timing,
             accumulator=self._accumulator.state,
+            pending_step=None,
         )
         return StepObservation(
             optimizer_step,
             completed.metrics,
-            optimizer_metrics,
+            pending.optimizer_metrics,
             completed.items,
             elapsed_seconds,
             foreground,
         )
+
+    def begin_step(
+        self,
+        optimizer_step: int,
+        optimizer_metrics: tuple[TrainingMetric, ...],
+    ) -> None:
+        if self._state.pending_step is not None:
+            raise ValueError("optimizer step is already pending")
+        self._state = replace(
+            self._state,
+            pending_step=PendingStepState(optimizer_step, optimizer_metrics),
+        )
+
+    def update(self, state: ReportingState) -> None:
+        if state.accumulator != self._accumulator.state:
+            raise ValueError("updated reporting state changed metric accumulation")
+        self._state = state
+
+    def mark_flushed(self) -> None:
+        self._state = replace(self._state, pending_metric_operations=0)
 
     def capture_partial_timing(
         self,
