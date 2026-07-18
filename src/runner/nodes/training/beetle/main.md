@@ -116,15 +116,17 @@ There is no Wave-U-Net, WavLM/SLM discriminator, or invented model family.
 
 ## Training stages
 
-1. Train AudioEncoder, FeatureLinear, Decoder, Generator, and both current
-   StyleTTS discriminator families.
+1. Train AudioEncoder, FeatureLinear, Decoder, and Generator with posterior KL,
+   F0, `N`, and StyleTTS2 reconstruction losses. Discriminators remain frozen on
+   CPU and are neither optimized nor checkpointed as Stage 1 state.
 2. Freeze Stage 1 and train the phoneme/context encoders, style/voice encoders,
    DurationPredictor, LatentFlowModel, and the pretrained PhonemeAligner against
    posterior latents. Decoder, Generator, FeatureLinear, and discriminators are
-   unused.
+   unused for training; the frozen latent-to-audio path is used for validation.
 3. End-to-end fine-tuning with differentiable latent generation. Train both
-   current discriminator families and continue fine-tuning the PhonemeAligner
-   in this stage.
+   current StyleTTS discriminator families and continue fine-tuning the
+   PhonemeAligner in this stage. Stage 3 is the only discriminator-training
+   stage.
 
 Stage 3 runs two audio paths per batch: posterior reconstruction and one-step
 text-conditioned shortcut generation from noise. Both paths use the same
@@ -134,15 +136,59 @@ existing Stage 1 terms, while the full Stage 2 objective remains active. The
 two fake paths share one discriminator backward/update, so adversarial training
 is not applied through a duplicate optimizer step.
 
-There are no epochs. Each script samples the dataset continuously and schedules
-all logging, checkpoints, and loss weights by optimizer step. There is no
-validation pass, validation split, validation cadence, or validation artifact
-generation. Checkpoints include model, optimizer, scaler, EMA, discriminator,
-accumulated gradients, sampler cursor, and RNG state so every stage resumes
-without losing a step.
+There are no epochs. Each stage samples the dataset continuously until its
+explicit `total_steps`, and schedules reporting, validation, checkpoints, and
+loss weights by optimizer step. Validation runs at
+`validation_every_steps` and always at the final step when not already due.
+Checkpoints include model, optimizer, scaler, EMA, Stage 3 discriminator,
+accumulated gradients, sampler cursor, loss schedules, RNG, MLflow run identity,
+pending step metrics, accumulated timing, and last reported/validated state so
+every stage resumes without losing a microstep or reapplying an optimizer step.
 Mixed Stage 2 flow batches always contain both analytic base tokens and EMA
 shortcut tokens when at least two valid tokens exist, keeping their separately
 weighted losses active in the same optimizer step.
+
+## Validation and reporting
+
+The required `validation.audio_file_ids` list is explicit and ordered. Each ID
+resolves through shared audio CRUD to one full stored recording; all segments
+are concatenated in database order. Validation rejects missing, virtual,
+unreadable, mixed-voice, untranscribed, unphonemized, or unconfigured-language
+samples. Stage 2/3 validation evaluates grouped embedding objectives without
+changing their equations, so it requires at least two configured recordings
+with distinct voices. Validation has no augmentation, context cutting, or
+conditioning dropout. Dedicated seeds are derived from stage, optimizer step,
+audio ID, and view, while global RNG and every module's train/eval mode are
+restored after evaluation.
+
+- Stage 1 uses the posterior AudioEncoder → style-free Decoder → Generator path
+  and reports KL, F0, `N`, reconstruction, and combined loss. It never calls a
+  discriminator.
+- Stage 2 reports duration likelihood, flow matching, shortcut, alignment,
+  style, voice, speaker, statistics, and re-encoding objectives. Prediction uses
+  the EMA LatentFlowModel for one integration step followed by the frozen
+  FeatureLinear → Decoder → Generator path.
+- Stage 3 reports the Stage 2 objectives plus posterior/conditional acoustic,
+  discriminator, generator-adversarial, and feature-matching losses. Its
+  conditional prediction also uses the one-step EMA path.
+
+The `beetle_training` MLflow experiment contains one strict run per stage. Each
+optimizer step submits one bounded asynchronous metric batch. Namespaces cover
+`train/loss/*`, `validation/loss/*`, ordered per-sample validation losses,
+optimizer learning rates and AMP scales, pre-clipping optimizer/module gradient
+norms, items/s, steps/s, elapsed time, ETA, foreground overhead percentages,
+queue occupancy, CPU/system memory/process RSS, and GPU utilization, memory,
+temperature, and power. Validation finishes before that step is submitted;
+MLflow is flushed before due and final checkpoints.
+
+Artifacts are deterministic under
+`validation/<stage>/step_<optimizer_step>/`. `metrics.json` records ordered
+audio IDs, per-sample and aggregate losses, seeds, and paths. Every sample saves
+`gt.wav`, latent, F0, `N`, paired mel, paired STFT-magnitude, and paired phase
+plots. Stage 1 saves `recon.wav`; Stages 2/3 save `pred.wav` and the alignment
+matrix. Rendering and upload use a bounded worker queue, and
+`last_validated_step` advances only after every artifact and the manifest
+succeed.
 
 ## Budgets
 

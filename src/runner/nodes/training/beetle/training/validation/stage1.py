@@ -11,7 +11,7 @@ from ...models.model import Stage1Models
 from ..reporting import TrainingMetric
 from ..stage1_setup import Stage1Schedules
 from ..state import StageKind
-from .types import ValidationSampleResult
+from .types import ValidationSampleResult, trim_waveform_pair
 
 
 class Stage1ValidationEvaluator:
@@ -94,6 +94,11 @@ class Stage1ValidationEvaluator:
             values.waveform,
             synthesis.waveform,
         )
+        ground_truth, prediction = trim_waveform_pair(
+            values.waveform,
+            synthesis.waveform,
+            int(values.waveform_lengths[0]),
+        )
         return ValidationSampleResult(
             recording.audio_file_id,
             (
@@ -103,8 +108,8 @@ class Stage1ValidationEvaluator:
                 _metric("reconstruction", reconstruction),
                 _metric("generator_total", total),
             ),
-            _cpu(values.waveform[0]),
-            _cpu(synthesis.waveform[0]),
+            ground_truth,
+            prediction,
             _cpu(synthesis.posterior.latent[0]),
             (_cpu(targets.f0[0]), _cpu(synthesis.acoustic.f0[0])),
             (_cpu(targets.n[0]), _cpu(synthesis.acoustic.n[0])),

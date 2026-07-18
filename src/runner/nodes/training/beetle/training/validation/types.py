@@ -63,3 +63,20 @@ class StageValidator(Protocol):
         recordings: tuple[ValidationRecording, ...],
         step: int,
     ) -> ValidationResult: ...
+
+
+def trim_waveform_pair(
+    target: Tensor,
+    prediction: Tensor,
+    sample_count: int,
+) -> SignalPair:
+    if target.ndim != 3 or prediction.shape != target.shape:
+        raise ValueError("validation waveforms must have equal [B,1,S] shapes")
+    if target.shape[0] != 1 or target.shape[1] != 1:
+        raise ValueError("validation artifact pair requires one mono item")
+    if sample_count <= 0 or sample_count > target.shape[2]:
+        raise ValueError("validation waveform length is invalid")
+    return (
+        target[0, :, :sample_count].detach().cpu().clone(),
+        prediction[0, :, :sample_count].detach().cpu().clone(),
+    )

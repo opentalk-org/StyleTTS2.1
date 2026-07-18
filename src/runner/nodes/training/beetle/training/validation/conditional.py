@@ -17,7 +17,7 @@ from ..stage2_features import ConditionalSynthesis
 from ..stage2_setup import Stage2InputBuilder
 from ..state import LoopState, StageKind, TrainingPhase
 from .batch import merge_validation_recordings
-from .types import ValidationSampleResult
+from .types import ValidationSampleResult, trim_waveform_pair
 
 
 def one_step_ema_latent(
@@ -117,27 +117,34 @@ class Stage2ValidationEvaluator:
             )
         )
         metrics = (*metrics, _metric("stage2_total", losses.total(weights)))
-        return tuple(
-            ValidationSampleResult(
-                recording.audio_file_id,
-                metrics,
-                _cpu(batch.waveform[index]),
-                _cpu(synthesis.waveform[index]),
-                _cpu(latent[index]),
-                (_cpu(targets.f0[index]), _cpu(synthesis.acoustic.f0[index])),
-                (_cpu(targets.n[index]), _cpu(synthesis.acoustic.n[index])),
-                (_cpu(target_mel[index]), _cpu(predicted_mel[index])),
-                _cpu(inputs.alignment.soft_alignment[index]),
-                derive_seed(
-                    self.runtime_seed,
-                    self.stage,
-                    step,
-                    recording.audio_file_id,
-                    "validation",
-                ),
+        samples = []
+        for index, recording in enumerate(recordings):
+            ground_truth, prediction = trim_waveform_pair(
+                batch.waveform[index : index + 1],
+                synthesis.waveform[index : index + 1],
+                int(batch.waveform_lengths[index]),
             )
-            for index, recording in enumerate(recordings)
-        )
+            samples.append(
+                ValidationSampleResult(
+                    recording.audio_file_id,
+                    metrics,
+                    ground_truth,
+                    prediction,
+                    _cpu(latent[index]),
+                    (_cpu(targets.f0[index]), _cpu(synthesis.acoustic.f0[index])),
+                    (_cpu(targets.n[index]), _cpu(synthesis.acoustic.n[index])),
+                    (_cpu(target_mel[index]), _cpu(predicted_mel[index])),
+                    _cpu(inputs.alignment.soft_alignment[index]),
+                    derive_seed(
+                        self.runtime_seed,
+                        self.stage,
+                        step,
+                        recording.audio_file_id,
+                        "validation",
+                    ),
+                )
+            )
+        return tuple(samples)
 
     def _synthesize(
         self,

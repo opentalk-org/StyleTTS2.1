@@ -14,6 +14,7 @@ from .types import (
     ValidationEvaluator,
     ValidationResult,
     ValidationSampleResult,
+    trim_waveform_pair,
 )
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     "merge_validation_recordings",
     "one_step_ema_latent",
     "validation_metrics",
+    "trim_waveform_pair",
 ]
