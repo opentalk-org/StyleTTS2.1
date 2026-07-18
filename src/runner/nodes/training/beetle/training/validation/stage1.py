@@ -6,7 +6,11 @@ from torch import Tensor, nn
 from ...config.training import StageConfig
 from ...data.sampling import derive_seed
 from ...data.validation_types import ValidationRecording
-from ...losses.acoustic import masked_f0_mse, masked_kl_standard_normal, masked_n_mse
+from ...losses.acoustic import (
+    masked_f0_smooth_l1,
+    masked_kl_standard_normal,
+    masked_n_smooth_l1,
+)
 from ...models.model import Stage1Models
 from ..reporting import TrainingMetric
 from ..stage1_setup import Stage1Schedules
@@ -72,12 +76,16 @@ class Stage1ValidationEvaluator:
             synthesis.posterior.log_scale,
             synthesis.posterior.mask,
         )
-        f0 = masked_f0_mse(
+        f0 = masked_f0_smooth_l1(
             synthesis.acoustic.f0,
             targets.f0,
             synthesis.decoded.mask,
         )
-        n = masked_n_mse(synthesis.acoustic.n, targets.n, synthesis.decoded.mask)
+        n = masked_n_smooth_l1(
+            synthesis.acoustic.n,
+            targets.n,
+            synthesis.decoded.mask,
+        )
         reconstruction = self.models.reconstruction_loss(
             synthesis.waveform,
             values.waveform,

@@ -4,7 +4,11 @@ from torch import Tensor, nn
 from ..config.training import StageConfig
 from ..data.records import BeetleBatch
 from ..data.sampling import derive_seed
-from ..losses.acoustic import masked_f0_mse, masked_kl_standard_normal, masked_n_mse
+from ..losses.acoustic import (
+    masked_f0_smooth_l1,
+    masked_kl_standard_normal,
+    masked_n_smooth_l1,
+)
 from ..losses.adversarial import discriminator_step_loss, generator_step_loss
 from ..losses.stage2 import Stage2LossInput, compute_stage2_losses
 from ..models.model import Stage1Models
@@ -244,7 +248,7 @@ class Stage3Trainer(Stage1Trainer):
         mask: Tensor,
         pitch: bool,
     ) -> Tensor:
-        loss = masked_f0_mse if pitch else masked_n_mse
+        loss = masked_f0_smooth_l1 if pitch else masked_n_smooth_l1
         generated = posterior.f0 if pitch else posterior.n
         conditioned = conditional.f0 if pitch else conditional.n
         expected = target.f0 if pitch else target.n

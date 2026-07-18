@@ -6,7 +6,11 @@ from torch import Tensor, nn
 from ...config.training import StageConfig
 from ...data.sampling import derive_seed
 from ...data.validation_types import ValidationRecording
-from ...losses.acoustic import masked_f0_mse, masked_kl_standard_normal, masked_n_mse
+from ...losses.acoustic import (
+    masked_f0_smooth_l1,
+    masked_kl_standard_normal,
+    masked_n_smooth_l1,
+)
 from ...losses.adversarial import discriminator_step_loss, generator_step_loss
 from ...models.model import Stage1Models, Stage1Synthesis
 from ...models.stage2 import Stage2Models
@@ -78,12 +82,28 @@ class Stage3ValidationEvaluator(Stage2ValidationEvaluator):
             posterior.posterior.mask,
         )
         f0 = 0.5 * (
-            masked_f0_mse(posterior.acoustic.f0, targets.f0, posterior.decoded.mask)
-            + masked_f0_mse(conditional_f0, targets.f0, posterior.decoded.mask)
+            masked_f0_smooth_l1(
+                posterior.acoustic.f0,
+                targets.f0,
+                posterior.decoded.mask,
+            )
+            + masked_f0_smooth_l1(
+                conditional_f0,
+                targets.f0,
+                posterior.decoded.mask,
+            )
         )
         n = 0.5 * (
-            masked_n_mse(posterior.acoustic.n, targets.n, posterior.decoded.mask)
-            + masked_n_mse(conditional_n, targets.n, posterior.decoded.mask)
+            masked_n_smooth_l1(
+                posterior.acoustic.n,
+                targets.n,
+                posterior.decoded.mask,
+            )
+            + masked_n_smooth_l1(
+                conditional_n,
+                targets.n,
+                posterior.decoded.mask,
+            )
         )
         reconstruction = 0.5 * (
             self.stage1.reconstruction_loss(

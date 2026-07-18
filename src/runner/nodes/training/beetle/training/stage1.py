@@ -8,9 +8,9 @@ from ..data.prefetch import DataPipelineState
 from ..data.records import BeetleBatch
 from ..data.sampling import derive_seed
 from ..losses.acoustic import (
-    masked_f0_mse,
+    masked_f0_smooth_l1,
     masked_kl_standard_normal,
-    masked_n_mse,
+    masked_n_smooth_l1,
 )
 from ..models.model import Stage1Models, Stage1Synthesis
 from .callbacks import TrainingMetric
@@ -114,12 +114,12 @@ class Stage1Trainer:
                 synthesis.posterior.log_scale,
                 synthesis.posterior.mask,
             )
-            f0 = masked_f0_mse(
+            f0 = masked_f0_smooth_l1(
                 synthesis.acoustic.f0,
                 targets.f0,
                 synthesis.decoded.mask,
             )
-            n = masked_n_mse(
+            n = masked_n_smooth_l1(
                 synthesis.acoustic.n,
                 targets.n,
                 synthesis.decoded.mask,

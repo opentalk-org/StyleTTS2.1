@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 import torch
 from torch import Tensor, nn
+from torch.nn import functional as F
 from torchaudio.transforms import MelSpectrogram
 
 
@@ -42,17 +43,27 @@ def masked_kl_standard_normal(mean: Tensor, log_scale: Tensor, mask: Tensor) -> 
     return _masked_mean(divergence, mask)
 
 
-def masked_f0_mse(predicted: Tensor, target: Tensor, mask: Tensor) -> Tensor:
+def masked_f0_smooth_l1(
+    predicted: Tensor,
+    target: Tensor,
+    mask: Tensor,
+) -> Tensor:
     if predicted.shape != target.shape:
         raise ValueError("predicted and target F0 must have equal shapes")
     voiced_mask = mask[:, 0].to(dtype=torch.bool) & (target > 0)
-    return _masked_mean((predicted - target).square(), voiced_mask)
+    values = F.smooth_l1_loss(predicted, target, reduction="none")
+    return _masked_mean(values, voiced_mask) / 10
 
 
-def masked_n_mse(predicted: Tensor, target: Tensor, mask: Tensor) -> Tensor:
+def masked_n_smooth_l1(
+    predicted: Tensor,
+    target: Tensor,
+    mask: Tensor,
+) -> Tensor:
     if predicted.shape != target.shape:
         raise ValueError("predicted and target N must have equal shapes")
-    return _masked_mean((predicted - target).square(), mask[:, 0])
+    values = F.smooth_l1_loss(predicted, target, reduction="none")
+    return _masked_mean(values, mask[:, 0])
 
 
 def multiresolution_l1(

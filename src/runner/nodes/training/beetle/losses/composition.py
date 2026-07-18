@@ -4,7 +4,11 @@ from torch import Tensor
 
 from ..models.model import Stage1Models, Stage1Synthesis
 from ..models.modules.audio import AcousticFeatures
-from .acoustic import masked_f0_mse, masked_kl_standard_normal, masked_n_mse
+from .acoustic import (
+    masked_f0_smooth_l1,
+    masked_kl_standard_normal,
+    masked_n_smooth_l1,
+)
 from .adversarial import discriminator_step_loss, generator_step_loss
 from .stage2 import (
     Stage2LossInput,
@@ -112,12 +116,12 @@ def compute_stage1_losses(
             synthesis.posterior.log_scale,
             synthesis.posterior.mask,
         ),
-        f0=masked_f0_mse(
+        f0=masked_f0_smooth_l1(
             synthesis.acoustic.f0,
             targets.f0,
             synthesis.decoded.mask,
         ),
-        n=masked_n_mse(
+        n=masked_n_smooth_l1(
             synthesis.acoustic.n,
             targets.n,
             synthesis.decoded.mask,

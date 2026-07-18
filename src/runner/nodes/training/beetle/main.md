@@ -105,7 +105,8 @@ online optimizer step.
 ## Losses
 
 - encoder KL;
-- F0 MSE on voiced valid frames and `N` MSE on valid frames;
+- StyleTTS2-scaled F0 Smooth L1 divided by 10 on voiced valid frames and `N`
+  Smooth L1 on valid frames;
 - the StyleTTS2 three-resolution normalized log-mel spectral-convergence loss;
 - current StyleTTS multi-period and multi-resolution spectrogram discriminator
   LSGAN losses plus feature matching;
