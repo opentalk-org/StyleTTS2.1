@@ -92,6 +92,7 @@ class Stage2ValidationEvaluator:
             0,
             step,
             0,
+            (),
         )
         inputs = self.input_builder.build_validation(self.models, batch, loop)
         losses = compute_stage2_losses(self.models, self.ema_latent_flow, inputs)

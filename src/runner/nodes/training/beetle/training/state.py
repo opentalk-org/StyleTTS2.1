@@ -6,6 +6,8 @@ import numpy as np
 import torch
 from torch import Tensor, nn
 
+from .reporting.metrics import TrainingMetric
+
 
 class StageKind(StrEnum):
     STAGE1 = "stage1"
@@ -34,6 +36,7 @@ class LoopState:
     sampler_cursor: int
     cycle: int
     batch_index: int
+    discriminator_metrics: tuple[TrainingMetric, ...]
 
     def __post_init__(self) -> None:
         counters = (
@@ -46,6 +49,17 @@ class LoopState:
         invalid = tuple(name for name, value in counters if value < 0)
         if invalid:
             raise ValueError(f"{', '.join(invalid)} must be non-negative")
+        metric_names = tuple(metric.name for metric in self.discriminator_metrics)
+        if len(set(metric_names)) != len(metric_names):
+            raise ValueError("pending discriminator metric names must be unique")
+        metric_phases = (
+            TrainingPhase.DISCRIMINATOR_COMPLETE,
+            TrainingPhase.GENERATOR_BACKWARD,
+        )
+        if self.discriminator_metrics and self.phase not in metric_phases:
+            raise ValueError(
+                "pending discriminator metrics require a completed discriminator pass"
+            )
 
 
 @dataclass(frozen=True)

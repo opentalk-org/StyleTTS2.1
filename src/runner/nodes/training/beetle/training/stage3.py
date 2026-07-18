@@ -199,7 +199,6 @@ class Stage3Trainer(Stage1Trainer):
         return (
             *super().gradient_groups(),
             *stage2_gradient_groups(self.stage2_models),
-            NamedGradientGroup("discriminators", (self.models.discriminators,)),
         )
 
     def _conditional(
@@ -271,10 +270,7 @@ class Stage3Trainer(Stage1Trainer):
         )
 
     def _state_modules(self) -> tuple[tuple[str, StateKind, nn.Module], ...]:
-        stage1 = (
-            *super()._state_modules(),
-            ("discriminators", StateKind.DISCRIMINATOR, self.models.discriminators),
-        )
+        stage1 = super()._state_modules()
         stage2 = tuple(
             (name, StateKind.MODEL, module)
             for name, module in named_trainable_stage2_modules(self.stage2_models)

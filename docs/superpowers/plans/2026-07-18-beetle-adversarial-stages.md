@@ -34,12 +34,12 @@ source defines the seven audio loss weights.
 `build_stage1_optimizers(...) -> OptimizerSet` with `discriminator` and
 `generator` groups.
 
-- [ ] Run `/tmp/beetle_stage_adversarial_check.py`; expect failure because the
+- [x] Run `/tmp/beetle_stage_adversarial_check.py`; expect failure because the
   default Stage 1 discriminator optimizer is absent.
-- [ ] Require Stage 1 and Stage 3 discriminator optimizer configuration while
+- [x] Require Stage 1 and Stage 3 discriminator optimizer configuration while
   rejecting it in Stage 2.
-- [ ] Restore all seven Stage 1 loss schedules and both optimizer groups.
-- [ ] Re-run the temporary check after the runtime changes.
+- [x] Restore all seven Stage 1 loss schedules and both optimizer groups.
+- [x] Re-run the temporary check after the runtime changes.
 
 ### Task 2: Restore Stage 1 adversarial execution and state
 
@@ -53,11 +53,11 @@ source defines the seven audio loss weights.
 weighted discriminator loss; `generator_backward(batch)` reports adversarial
 and feature-matching loss; checkpoints own discriminator model and gradients.
 
-- [ ] Enable the loop discriminator pass for Stage 1 and inherited Stage 3.
-- [ ] Restore discriminator and generator adversarial backward paths.
-- [ ] Include the discriminator in Stage 1 state, gradients, and gradient norms.
-- [ ] Restore Stage 1 discriminator weights when initializing later stages.
-- [ ] Remove the duplicate Stage 3 discriminator gradient group.
+- [x] Enable the loop discriminator pass for Stage 1 and inherited Stage 3.
+- [x] Restore discriminator and generator adversarial backward paths.
+- [x] Include the discriminator in Stage 1 state, gradients, and gradient norms.
+- [x] Restore Stage 1 discriminator weights when initializing later stages.
+- [x] Remove the duplicate Stage 3 discriminator gradient group.
 
 ### Task 3: Restore validation and documentation
 
@@ -68,9 +68,9 @@ and feature-matching loss; checkpoints own discriminator model and gradients.
 - Modify: `src/runner/nodes/training/beetle/README.md`
 - Modify: `docs/superpowers/specs/2026-07-17-beetle-mlflow-validation-design.md`
 
-- [ ] Evaluate and aggregate all seven Stage 1 losses plus discriminator and
+- [x] Evaluate and aggregate all seven Stage 1 losses plus discriminator and
   generator totals.
-- [ ] Replace statements that reserve discriminators for Stage 3.
-- [ ] Run compile checks, the temporary contract check, focused synthetic
+- [x] Replace statements that reserve discriminators for Stage 3.
+- [x] Run compile checks, the temporary contract check, focused synthetic
   backward checks, file limits, and `git diff --check`.
-- [ ] Remove the temporary check and commit the correction.
+- [x] Remove the temporary check and commit the correction.

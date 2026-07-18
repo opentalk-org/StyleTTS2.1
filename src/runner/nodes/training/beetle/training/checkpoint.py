@@ -22,7 +22,7 @@ from .state import (
     restore_gradients,
 )
 
-CHECKPOINT_VERSION = 3
+CHECKPOINT_VERSION = 4
 _PAYLOAD_NAME = "payload.pt"
 _MANIFEST_NAME = "manifest.json"
 _LATEST_NAME = "latest.json"

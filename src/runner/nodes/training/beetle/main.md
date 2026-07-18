@@ -120,17 +120,16 @@ There is no Wave-U-Net, WavLM/SLM discriminator, or invented model family.
 
 ## Training stages
 
-1. Train AudioEncoder, FeatureLinear, Decoder, and Generator with posterior KL,
-   F0, `N`, and StyleTTS2 reconstruction losses. Discriminators remain frozen on
-   CPU and are neither optimized nor checkpointed as Stage 1 state.
+1. Train AudioEncoder, FeatureLinear, Decoder, Generator, and both current
+   StyleTTS discriminator families with posterior KL, F0, `N`, StyleTTS2
+   reconstruction, generator-adversarial, and feature-matching losses.
 2. Freeze Stage 1 and train the phoneme/context encoders, style/voice encoders,
    DurationPredictor, LatentFlowModel, and the pretrained PhonemeAligner against
    posterior latents. Decoder, Generator, FeatureLinear, and discriminators are
    unused for training; the frozen latent-to-audio path is used for validation.
 3. End-to-end fine-tuning with differentiable latent generation. Train both
-   current StyleTTS discriminator families and continue fine-tuning the
-   PhonemeAligner in this stage. Stage 3 is the only discriminator-training
-   stage.
+   current StyleTTS discriminator families again and continue fine-tuning the
+   PhonemeAligner in this stage.
 
 Stage 3 runs two audio paths per batch: posterior reconstruction and one-step
 text-conditioned shortcut generation from noise. Both paths use the same

@@ -9,7 +9,7 @@ design amends the continuous-execution and training-stage sections of
 
 - every stage stops at its configured optimizer-step limit;
 - every stage validates on an optimizer-step cadence and at its final step;
-- discriminators and adversarial losses train only in Stage 3, not Stage 1.
+- discriminators and adversarial losses train in Stages 1 and 3, not Stage 2.
 
 There is still no dataset-pass or epoch concept. Training samples the eligible
 dataset pools in a deterministic cycle until the stage reaches its step limit.
@@ -139,10 +139,10 @@ MLflow call and included in the completed-step metric batch.
 Gradient norms are measured before clipping. Every optimizer logs its global
 norm. Important module groups are:
 
-- Stage 1: AudioEncoder, FeatureLinear, Decoder, and Generator;
+- Stage 1: AudioEncoder, FeatureLinear, Decoder, Generator, and discriminators;
 - Stage 2: phoneme encoders, context encoders, conditioning projections,
   StyleEncoder, VoiceEncoder, DurationPredictor, and LatentFlowModel;
-- Stage 3: all Stage 1 and Stage 2 groups plus the discriminators.
+- Stage 3: all Stage 1 and Stage 2 groups.
 
 ## Validation execution
 
@@ -159,13 +159,14 @@ conditioning dropout, and uses fixed validation seeds. The evaluator saves and
 restores module train/eval modes and all training RNG state. Validation-specific
 generators isolate any sampling noise from training. Implementations may process
 a recording in bounded windows, but every valid frame remains represented in
-the sample metrics and saved full-recording audio.
+the per-sample manifest losses and saved full-recording audio.
 
 Stage behavior is:
 
 - Stage 1 evaluates posterior reconstruction with AudioEncoder, FeatureLinear,
-  Decoder, and Generator. It reports reconstruction, encoder KL, F0, and `N`
-  losses. It has no discriminator or adversarial validation.
+  Decoder, Generator, and discriminators. It reports reconstruction, encoder
+  KL, F0, `N`, discriminator, generator-adversarial, and feature-matching
+  losses.
 - Stage 2 evaluates duration likelihood, latent flow/shortcut objectives,
   alignment, style, voice, and consistency losses. Audio prediction uses the
   LatentFlowModel EMA weights with one shortcut step followed by the frozen
@@ -174,10 +175,9 @@ Stage behavior is:
   consistency, discriminator, adversarial, and feature-matching objectives.
   Conditional audio also uses the EMA LatentFlowModel with one shortcut step.
 
-Every finite validation scalar is logged twice: once per sample under an
-audio-ID-qualified metric key and once as the sample-count-weighted aggregate
-under `validation/loss/*`. A JSON manifest records the ordered audio IDs,
-per-sample losses, aggregate losses, seeds, stage, optimizer step, and artifact
+Only sample-count-weighted aggregate validation scalars are logged to MLflow
+under `validation/*`. A JSON manifest records the ordered audio IDs, per-sample
+losses, aggregate losses, seeds, stage, optimizer step, and artifact
 paths.
 
 ## Validation artifacts
@@ -187,7 +187,7 @@ Artifacts use deterministic paths:
 ```text
 validation/<stage>/step_<optimizer_step>/
   metrics.json
-  sample_<position>_<audio_id>/
+  sample_<one-based-position>/
 ```
 
 All stages save `gt.wav`, a latent visualization, F0 and `N` plots, a paired

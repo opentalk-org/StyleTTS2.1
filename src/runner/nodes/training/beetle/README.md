@@ -116,10 +116,10 @@ are no epoch or per-sample MLflow metrics.
 
 Validation disables augmentation and every conditioning dropout source and
 restores model modes plus Python/NumPy/Torch RNG state byte-for-byte. Stage 1
-evaluates posterior reconstruction without a discriminator. Stages 2 and 3 use
-the latent-flow EMA for exactly one shortcut integration step and save the
-alignment. Stage 3 alone evaluates and trains the current StyleTTS discriminator
-families. Artifacts live under
+evaluates posterior reconstruction with the current StyleTTS discriminator
+families. Stages 2 and 3 use the latent-flow EMA for exactly one shortcut
+integration step and save the alignment. Stages 1 and 3 train and evaluate the
+discriminators. Artifacts live under
 `validation/<stage>/step_<step>/sample_<one-based-position>/`: every stage
 saves ground-truth audio, latent/F0/`N`/mel/STFT-magnitude/phase plots; Stage 1
 saves `recon.wav`, while Stages 2/3 save `pred.wav` and `alignment.png`.

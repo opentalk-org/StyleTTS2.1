@@ -33,12 +33,12 @@
 - Modify: `src/runner/nodes/training/beetle/training/stage2_setup.py`
 - Modify: `src/runner/nodes/training/beetle/training/execution/support.py`
 
-**Interfaces:** `ValidationConfig(audio_file_ids: tuple[UUID, ...])`; `StageConfig.total_steps`; `StageConfig.validation_every_steps`; Stage 1 owns only the generator optimizer and four acoustic losses; Stage 3 alone owns discriminator/adversarial schedules and state. The example YAML sets `total_steps: 1000000` and `validation_every_steps: 10000` for each stage, Stage 1/2 discriminator optimizers to null, and one explicit nil UUID validation ID that intentionally fails preflight until replaced with collected data.
+**Interfaces:** `ValidationConfig(audio_file_ids: tuple[UUID, ...])`; `StageConfig.total_steps`; `StageConfig.validation_every_steps`; Stages 1 and 3 own generator and discriminator optimizers plus acoustic/adversarial schedules, while Stage 2 owns only its generator optimizer. The example YAML sets `total_steps: 1000000` and `validation_every_steps: 10000` for each stage, keeps the Stage 2 discriminator optimizer null, and contains one explicit validation audio ID.
 
-- [ ] Write `/tmp/beetle_mlflow_validation_tests/test_config.py` with Pydantic checks that missing step fields fail, duplicate/empty validation IDs fail, Stage 1/2 reject discriminator optimizers, Stage 3 requires one, and an `epoch_count` key fails.
-- [ ] Run `nix develop --command pytest /tmp/beetle_mlflow_validation_tests/test_config.py -q`; expect failures for missing `ValidationConfig` and the old Stage 1 discriminator rule.
-- [ ] Implement strict fields and validators. Refactor `Stage1Schedules` to acoustic weights only; add Stage 3-only adversarial schedules. Set `Stage1Trainer.trains_discriminator = False`, remove its adversarial forward/backward and discriminator checkpoint state, keep its unused discriminator frozen on CPU, and make `Stage3Trainer._state_modules()` append the discriminator explicitly.
-- [ ] Update `restore_stage1()` so dependency checkpoints restore the four acoustic modules and frozen F0 extractor, while Stage 3 initializes and subsequently checkpoints its own discriminator.
+- [ ] Write `/tmp/beetle_mlflow_validation_tests/test_config.py` with Pydantic checks that missing step fields fail, duplicate/empty validation IDs fail, Stages 1 and 3 require discriminator optimizers, Stage 2 rejects one, and an `epoch_count` key fails.
+- [ ] Run `nix develop --command python -m pytest /tmp/beetle_mlflow_validation_tests/test_config.py -q`; expect failures for missing `ValidationConfig` and invalid discriminator stage ownership.
+- [ ] Implement strict fields and validators. Keep acoustic and adversarial weights in `Stage1Schedules`, require discriminator optimizers in Stages 1 and 3, and reject one in Stage 2. Keep `Stage1Trainer.trains_discriminator = True`, its separate discriminator/generator backward passes, and discriminator checkpoint state; Stage 3 inherits this stage contract.
+- [ ] Update `restore_stage1()` so dependency checkpoints restore the four acoustic modules, frozen F0 extractor, and trained discriminators.
 - [ ] Run the temporary test and `nix develop --command python -m compileall -q src/runner/nodes/training/beetle`; expect PASS and exit 0.
 - [ ] Commit production files with `git commit -m "refactor: reserve beetle discriminators for stage three"`.
 
@@ -75,7 +75,7 @@
 - [ ] Write `test_step_metrics.py` with a two-parameter module whose unclipped norm is known, two accumulation microsteps with batch sizes 3 and 2, and a clip threshold below the known norm.
 - [ ] Run it; expect the current optimizer API and loop to fail the contract.
 - [ ] Split optimizer stepping into unscale, module/global norm measurement, clipping, stepping, scaling, and zeroing. Prefix optimizer metrics later in the reporter, while preserving typed raw names here.
-- [ ] Expose Stage 1 groups `audio_encoder`, `feature_linear`, `decoder`, `generator`; Stage 2 groups for phoneme/context/conditioning/style/voice/duration/latent flow; Stage 3 combines them and adds `discriminators`.
+- [ ] Expose Stage 1 groups `audio_encoder`, `feature_linear`, `decoder`, `generator`, and `discriminators`; Stage 2 groups phoneme/context/conditioning/style/voice/duration/latent flow; Stage 3 combines both sets.
 - [ ] Aggregate every loss across all contributing microsteps and count `len(batch.sample_keys)`. Run the test; expect exact pre-clip norms and item count 5. Commit with `git commit -m "feat: observe beetle optimizer steps"`.
 
 ### Task 4: Strict asynchronous MLflow reporter
@@ -120,9 +120,9 @@
 
 **Interfaces:** `ValidationResult(stage, step, samples, aggregates)`; `ValidationSampleResult(audio_file_id, losses, ground_truth, prediction, latent, f0, n, mel, alignment)`; `StageValidator.evaluate(recordings, step) -> ValidationResult`.
 
-- [ ] Write `test_validation_runtime.py` with reduced fake modules. Assert Stage 1 uses posterior reconstruction and no discriminator; Stage 2/3 use EMA latent flow with exactly one integration step; Stage 2/3 return alignment; loss aggregation is sample-count weighted; RNG and train/eval modes are byte-for-byte restored.
+- [ ] Write `test_validation_runtime.py` with reduced fake modules. Assert Stage 1 uses posterior reconstruction and discriminators; Stage 2/3 use EMA latent flow with exactly one integration step; Stage 2/3 return alignment; loss aggregation is sample-count weighted; RNG and train/eval modes are byte-for-byte restored.
 - [ ] Run it; expect import failure for `training.validation`.
-- [ ] Implement no-grad evaluators by extracting reusable loss/inference methods from trainers rather than duplicating equations. Stage 1 returns KL/F0/`N`/StyleTTS2 mel-STFT reconstruction; Stage 2 returns every flow/alignment/style/voice objective; Stage 3 returns their union plus posterior/conditional acoustic and adversarial objectives.
+- [ ] Implement no-grad evaluators by extracting reusable loss/inference methods from trainers rather than duplicating equations. Stage 1 returns KL/F0/`N`/StyleTTS2 mel-STFT reconstruction plus discriminator/adversarial terms; Stage 2 returns every flow/alignment/style/voice objective; Stage 3 returns their union across posterior and conditional paths.
 - [ ] Use dedicated generators derived from stage, step, audio ID, and view. Process bounded windows when required but concatenate full audio and weight every frame once.
 - [ ] Run the test; expect PASS. Commit with `git commit -m "feat: evaluate beetle stages"`.
 
@@ -165,8 +165,8 @@
 
 **Interfaces:** documentation describes finite stages, Stage 3-only discriminators, MLflow namespaces/lifecycle, ordered validation IDs, artifacts, and exact-resume behavior.
 
-- [ ] Update both documents and remove statements claiming unbounded execution, Stage 1 adversarial training, or no validation.
-- [ ] Run `rg -n "no validation|continuously cycles|Stage 1.*discriminator" src/runner/nodes/training/beetle/{README.md,main.md}`; expect no stale contract text.
+- [ ] Update both documents and remove statements claiming unbounded execution, Stage 3-only adversarial training, or no validation.
+- [ ] Search `README.md` and `main.md` for `Stage 3 alone`, `only discriminator-training stage`, and `without a discriminator`; expect no stale contract text.
 - [ ] Run all temporary tests: `nix develop --command pytest /tmp/beetle_mlflow_validation_tests -q`; expect PASS.
 - [ ] Through shared CRUD, create temporary packed audio records and a reduced local config, then run each public stage CLI with a temporary MLflow experiment. Expect exact finite stopping, required validation directories, checkpointed run IDs, and resumed runs using the same IDs. Remove the records and generated files afterward.
 - [ ] Run `nix develop --command python -m compileall -q src/runner/nodes/training/beetle` and `git diff --check`; expect exit 0. Remove `/tmp/beetle_mlflow_validation_tests`.

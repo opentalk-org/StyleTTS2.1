@@ -11,6 +11,7 @@ from ...losses.acoustic import (
     masked_kl_standard_normal,
     masked_n_smooth_l1,
 )
+from ...losses.adversarial import discriminator_step_loss, generator_step_loss
 from ...models.model import Stage1Models
 from ..reporting import TrainingMetric
 from ..stage1_setup import Stage1Schedules
@@ -41,6 +42,7 @@ class Stage1ValidationEvaluator:
             "decoder",
             "generator",
             "f0_extractor",
+            "discriminators",
             "reconstruction_loss",
         )
 
@@ -91,12 +93,24 @@ class Stage1ValidationEvaluator:
             values.waveform,
             synthesis.sample_mask,
         ).total
+        discriminator = discriminator_step_loss(
+            self.models.discriminators,
+            values.waveform,
+            synthesis.waveform,
+        )
+        adversarial = generator_step_loss(
+            self.models.discriminators,
+            values.waveform,
+            synthesis.waveform,
+        )
         weights = self.schedules.weights(step)
         total = (
             encoder_kl * weights.encoder_kl
             + f0 * weights.f0
             + n * weights.n
             + reconstruction * weights.reconstruction
+            + adversarial.adversarial * weights.generator_adversarial
+            + adversarial.feature_matching * weights.feature_matching
         )
         target_mel, predicted_mel = self._artifact_mels(
             values.waveform,
@@ -114,6 +128,13 @@ class Stage1ValidationEvaluator:
                 _metric("f0", f0),
                 _metric("n", n),
                 _metric("reconstruction", reconstruction),
+                _metric("discriminator", discriminator),
+                _metric("generator_adversarial", adversarial.adversarial),
+                _metric("feature_matching", adversarial.feature_matching),
+                _metric(
+                    "discriminator_total",
+                    discriminator * weights.discriminator,
+                ),
                 _metric("generator_total", total),
             ),
             ground_truth,

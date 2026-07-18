@@ -192,7 +192,7 @@ def _run_batch(
     if not resume_discriminator:
         state = replace(state, phase=TrainingPhase.BATCH_FETCHED)
         announce(trainer, callbacks, state, (), timer)
-    metrics: tuple[TrainingMetric, ...] = ()
+    metrics = state.discriminator_metrics if resume_discriminator else ()
     if trainer.trains_discriminator and not resume_discriminator:
         state = replace(state, phase=TrainingPhase.DISCRIMINATOR_BACKWARD)
         announce(trainer, callbacks, state, (), timer)
@@ -201,7 +201,11 @@ def _run_batch(
         timer.record(ForegroundCategory.COMPUTE, started_at)
         validate_metrics(discriminator_metrics)
         metrics += discriminator_metrics
-        state = replace(state, phase=TrainingPhase.DISCRIMINATOR_COMPLETE)
+        state = replace(
+            state,
+            phase=TrainingPhase.DISCRIMINATOR_COMPLETE,
+            discriminator_metrics=discriminator_metrics,
+        )
         announce(trainer, callbacks, state, discriminator_metrics, timer)
     if trainer.loop_state().phase is not TrainingPhase.GENERATOR_BACKWARD:
         state = replace(state, phase=TrainingPhase.GENERATOR_BACKWARD)
@@ -218,6 +222,7 @@ def _run_batch(
         state,
         microstep=state.microstep + 1,
         phase=TrainingPhase.GENERATOR_COMPLETE,
+        discriminator_metrics=(),
     )
     announce(trainer, callbacks, state, generator_metrics, timer)
     _complete_accumulation(
