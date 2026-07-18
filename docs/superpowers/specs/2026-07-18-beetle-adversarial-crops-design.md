@@ -66,8 +66,9 @@ metrics are added.
 ## Compilation and verification
 
 The full training batch has fixed 808-frame inputs and a fixed 32-frame vocoder
-segment. Compiled modules use these static shapes instead of the failing dynamic
-TorchInductor path.
+segment. AudioEncoder, FeatureLinear, and Decoder use static compiled graphs.
+Generator remains eager because TorchInductor cannot lower its complex
+harmonic-phase cumulative path.
 
 Temporary checks, removed before completion, cover crop geometry, per-example
 valid bounds, latent/audio alignment, deterministic plan reproduction, full

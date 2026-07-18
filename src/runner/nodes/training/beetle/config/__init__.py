@@ -7,6 +7,7 @@ from .architecture import (
 from .data import DataConfig, DatabaseSelection
 from .load import config_fingerprint, load_config
 from .training import (
+    AdversarialConfig,
     BeetleConfig,
     CheckpointConfig,
     ComplexityConfig,
@@ -19,6 +20,7 @@ from .training import (
 from .validation import ValidationConfig
 
 __all__ = [
+    "AdversarialConfig",
     "ArchitectureConfig",
     "AudioConfig",
     "BeetleConfig",

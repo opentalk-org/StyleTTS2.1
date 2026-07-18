@@ -82,7 +82,7 @@ nix develop --command python -m runner.nodes.training.beetle.scripts.train_stage
 
 Add `--resume <checkpoint_folder>` to resume the same stage. Resume validates
 the configuration, compact data-index fingerprint, and stage before allocating
-models. Checkpoints contain model, Stage 3 discriminator, frozen helper, EMA,
+models. Checkpoints contain model, discriminator, frozen helper, EMA,
 optimizer, scheduler, scaler, accumulated gradient, sampler, loss-schedule, and
 Python/NumPy/Torch RNG state. They also preserve the MLflow run ID, pending
 optimizer observation, metric accumulation, timing, queue counters, and last
@@ -95,6 +95,18 @@ flushes all work, writes a final checkpoint, and marks the run `FINISHED`.
 normal checkpoint state-dict keys. `runtime.compile_frame_count` fixes the
 training and validation time dimension, must be even, and must cover the
 longest selected recording; oversize recordings fail instead of being cut.
+The fixed training geometry uses static compiled graphs for AudioEncoder,
+FeatureLinear, and Decoder. Generator remains eager because TorchInductor cannot
+lower its complex harmonic-phase cumulative path.
+
+Stages 1 and 3 keep the AudioEncoder, FeatureLinear, acoustic supervision, and
+all conditioning/flow objectives at full utterance length. Before Decoder, each
+example selects one independently random posterior-aligned segment configured
+by `adversarial.segment_samples`. The baseline value is 9,600 samples: 32
+hop-300 frames and 16 half-rate posterior frames. Decoder, Generator,
+reconstruction, discriminator, generator-adversarial, and feature-matching
+losses use that same aligned segment. Crop plans derive from checkpointed loop
+coordinates and the runtime seed, while validation remains full-utterance.
 
 ## Runtime reports
 

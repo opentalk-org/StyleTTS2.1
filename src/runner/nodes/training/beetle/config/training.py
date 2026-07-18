@@ -84,6 +84,10 @@ class RuntimeConfig(StrictConfigModel):
         return self
 
 
+class AdversarialConfig(StrictConfigModel):
+    segment_samples: int = Field(gt=0)
+
+
 class ComplexityConfig(StrictConfigModel):
     minimum_inference_parameters: int = Field(gt=0)
     maximum_inference_parameters: int = Field(gt=0)
@@ -119,6 +123,7 @@ class BeetleConfig(StrictConfigModel):
     data: DataConfig
     validation: ValidationConfig
     runtime: RuntimeConfig
+    adversarial: AdversarialConfig
     checkpoint: CheckpointConfig
     stage2_objective: Stage2ObjectiveConfig
     stage1: StageConfig
@@ -150,6 +155,14 @@ class BeetleConfig(StrictConfigModel):
             raise ValueError("posterior mel_channels must match audio mel_channels")
         if self.architecture.generator.output_hop() != self.audio.hop_length:
             raise ValueError("generator output geometry must match hop_length")
+        segment_samples = self.adversarial.segment_samples
+        if segment_samples % self.audio.hop_length:
+            raise ValueError("adversarial segment_samples must divide by hop_length")
+        segment_frames = segment_samples // self.audio.hop_length
+        if segment_frames % self.architecture.posterior.downsample_rate:
+            raise ValueError(
+                "adversarial segment_samples must align with posterior downsampling"
+            )
         if self.stage1.discriminator_optimizer is None:
             raise ValueError("stage1 requires discriminator_optimizer")
         if self.stage2.discriminator_optimizer is not None:

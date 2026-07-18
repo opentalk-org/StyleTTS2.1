@@ -1,19 +1,17 @@
 import torch
 from torch import Tensor, nn
 
-from ..config.training import StageConfig
+from ..config.training import AdversarialConfig, StageConfig
 from ..data.records import BeetleBatch
 from ..data.sampling import derive_seed
-from ..losses.acoustic import (
-    masked_f0_smooth_l1,
-    masked_kl_standard_normal,
-    masked_n_smooth_l1,
-)
+from ..losses.acoustic import masked_f0_smooth_l1, masked_kl_standard_normal
+from ..losses.acoustic import masked_n_smooth_l1
 from ..losses.adversarial import discriminator_step_loss, generator_step_loss
 from ..losses.stage2 import Stage2LossInput, compute_stage2_losses
 from ..models.model import Stage1Models
 from ..models.modules.audio import AcousticFeatures
 from ..models.modules.latent_flow import integrate_latent_flow
+from ..models.modules.segments import AlignedSegments
 from ..models.stage2 import Stage2Models
 from .callbacks import TrainingMetric
 from .checkpoint import GradientTarget, NamedModuleGradients, StateKind
@@ -23,17 +21,10 @@ from .optimizer import NamedGradientGroup, OptimizerSet
 from .stage1 import Stage1Trainer
 from .stage1_setup import tensor_metric
 from .stage2_features import ConditionalSynthesis
-from .stage2_setup import (
-    Stage2InputBuilder,
-    build_stage3_optimizers,
-    named_trainable_stage2_modules,
-    stage2_gradient_groups,
-    trainable_stage2_modules,
-    update_latent_flow_ema,
-)
+from .stage2_setup import Stage2InputBuilder, build_stage3_optimizers
+from .stage2_setup import named_trainable_stage2_modules, stage2_gradient_groups
+from .stage2_setup import trainable_stage2_modules, update_latent_flow_ema
 from .state import LoopState, StageKind, capture_gradients
-
-__all__ = ["Stage3Trainer", "build_stage3_optimizers"]
 
 
 class Stage3Trainer(Stage1Trainer):
@@ -45,6 +36,7 @@ class Stage3Trainer(Stage1Trainer):
         stage2: Stage2Models,
         ema_latent_flow: nn.Module,
         stage_config: StageConfig,
+        adversarial_config: AdversarialConfig,
         runtime_seed: int,
         device: torch.device,
         optimizers: OptimizerSet,
@@ -61,6 +53,7 @@ class Stage3Trainer(Stage1Trainer):
         super().__init__(
             stage1,
             stage_config,
+            adversarial_config,
             runtime_seed,
             device,
             optimizers,
@@ -83,22 +76,26 @@ class Stage3Trainer(Stage1Trainer):
 
     def discriminator_backward(self, batch: BeetleBatch) -> tuple[TrainingMetric, ...]:
         waveform, mel, frame_mask = self._inputs(batch)
+        segment = self._segment(frame_mask, "discriminator")
+        real = segment.samples(waveform)
         with torch.no_grad(), self._autocast():
             inputs = self.input_builder.build(self.stage2_models, batch, self._loop)
-            posterior = self._synthesize(mel, frame_mask, "discriminator-posterior")
-            conditional = self._conditional(inputs, frame_mask, "discriminator")
+            posterior = self._synthesize(
+                mel, frame_mask, segment, "discriminator-posterior"
+            )
+            conditional = self._conditional(
+                inputs, frame_mask, segment, "discriminator"
+            )
         with self._autocast():
             posterior_loss = discriminator_step_loss(
-                self.models.discriminators, waveform, posterior.waveform
+                self.models.discriminators, real, posterior.waveform
             )
             conditional_loss = discriminator_step_loss(
-                self.models.discriminators, waveform, conditional.waveform
+                self.models.discriminators, real, conditional.waveform
             )
             loss = (posterior_loss + conditional_loss) * 0.5
             weighted = loss * self._weights().discriminator
-        self.optimizers.group("discriminator").backward(
-            weighted / self.accumulation_steps
-        )
+        self.optimizers.group("discriminator").backward(weighted / self.accumulation_steps)
         return (
             tensor_metric("discriminator", loss),
             tensor_metric("discriminator_total", weighted),
@@ -106,43 +103,41 @@ class Stage3Trainer(Stage1Trainer):
 
     def generator_backward(self, batch: BeetleBatch) -> tuple[TrainingMetric, ...]:
         waveform, mel, frame_mask = self._inputs(batch)
+        segment = self._segment(frame_mask, "generator")
+        real = segment.samples(waveform)
         inputs = self.input_builder.build(self.stage2_models, batch, self._loop)
         targets = self.models.acoustic_targets(mel, frame_mask)
         with self._autocast():
-            posterior = self._synthesize(mel, frame_mask, "generator-posterior")
-            conditional = self._conditional(inputs, frame_mask, "generator")
+            posterior = self._synthesize(
+                mel, frame_mask, segment, "generator-posterior"
+            )
+            conditional = self._conditional(
+                inputs, frame_mask, segment, "generator"
+            )
             encoder_kl = masked_kl_standard_normal(
                 posterior.posterior.mean,
                 posterior.posterior.log_scale,
                 posterior.posterior.mask,
             )
             f0 = self._mean_acoustic_loss(
-                posterior.acoustic,
-                conditional.acoustic,
-                targets,
-                posterior.decoded.mask,
-                True,
+                posterior.acoustic, conditional.acoustic, targets, frame_mask, True
             )
             n = self._mean_acoustic_loss(
-                posterior.acoustic,
-                conditional.acoustic,
-                targets,
-                posterior.decoded.mask,
-                False,
+                posterior.acoustic, conditional.acoustic, targets, frame_mask, False
             )
             reconstruction = 0.5 * (
                 self.models.reconstruction_loss(
-                    posterior.waveform, waveform, posterior.sample_mask
+                    posterior.waveform, real, posterior.sample_mask
                 ).total
                 + self.models.reconstruction_loss(
-                    conditional.waveform, waveform, conditional.sample_mask
+                    conditional.waveform, real, conditional.sample_mask
                 ).total
             )
             posterior_adv = generator_step_loss(
-                self.models.discriminators, waveform, posterior.waveform
+                self.models.discriminators, real, posterior.waveform
             )
             conditional_adv = generator_step_loss(
-                self.models.discriminators, waveform, conditional.waveform
+                self.models.discriminators, real, conditional.waveform
             )
             adversarial = 0.5 * (
                 posterior_adv.adversarial + conditional_adv.adversarial
@@ -167,9 +162,7 @@ class Stage3Trainer(Stage1Trainer):
             )
             total = acoustic_total + flow_total
         self.optimizers.group("generator").backward(total / self.accumulation_steps)
-        stage2_names = tuple(
-            weight.name for weight in self.schedules.stage2.state(0).weights
-        )
+        stage2_names = tuple(weight.name for weight in self.schedules.stage2.state(0).weights)
         return (
             tensor_metric("encoder_kl", encoder_kl),
             tensor_metric("f0", f0),
@@ -196,15 +189,13 @@ class Stage3Trainer(Stage1Trainer):
         return metrics
 
     def gradient_groups(self) -> tuple[NamedGradientGroup, ...]:
-        return (
-            *super().gradient_groups(),
-            *stage2_gradient_groups(self.stage2_models),
-        )
+        return (*super().gradient_groups(), *stage2_gradient_groups(self.stage2_models))
 
     def _conditional(
         self,
         inputs: Stage2LossInput,
         frame_mask: Tensor,
+        segment: AlignedSegments,
         view: str,
     ) -> ConditionalSynthesis:
         latent = integrate_latent_flow(
@@ -215,12 +206,13 @@ class Stage3Trainer(Stage1Trainer):
             1,
         )
         acoustic = self.models.feature_linear(latent, inputs.latent_mask, frame_mask)
+        segment_frame_mask = segment.frames(frame_mask)
         decoded = self.models.decoder(
-            latent,
-            acoustic.f0,
-            acoustic.n,
-            inputs.latent_mask,
-            frame_mask,
+            segment.latents(latent),
+            segment.frames(acoustic.f0),
+            segment.frames(acoustic.n),
+            segment.latents(inputs.latent_mask),
+            segment_frame_mask,
         )
         source_seed = derive_seed(
             self.runtime_seed,
@@ -234,7 +226,7 @@ class Stage3Trainer(Stage1Trainer):
         waveform = self.models.generator(
             decoded.features, decoded.f0, decoded.mask, source
         )
-        sample_mask = frame_mask.repeat_interleave(
+        sample_mask = segment_frame_mask.repeat_interleave(
             self.models.generator.config.output_hop(), dim=-1
         )
         return ConditionalSynthesis(acoustic, decoded, waveform, sample_mask)

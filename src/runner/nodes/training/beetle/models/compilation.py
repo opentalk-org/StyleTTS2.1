@@ -9,7 +9,6 @@ def compile_stage1(models: Stage1Models) -> None:
         models.feature_linear,
         models.decoder.encode,
         *models.decoder.decode,
-        models.generator,
     )
     for module in modules:
-        module.compile(dynamic=True)
+        module.compile()

@@ -3,44 +3,27 @@ from contextlib import AbstractContextManager
 import torch
 from torch import Tensor
 
-from ..config.training import Precision, StageConfig
+from ..config.training import AdversarialConfig, Precision, StageConfig
 from ..data.prefetch import DataPipelineState
 from ..data.records import BeetleBatch
 from ..data.sampling import derive_seed
-from ..losses.acoustic import (
-    masked_f0_smooth_l1,
-    masked_kl_standard_normal,
-    masked_n_smooth_l1,
-)
+from ..losses.acoustic import masked_f0_smooth_l1, masked_kl_standard_normal
+from ..losses.acoustic import masked_n_smooth_l1
 from ..losses.adversarial import discriminator_step_loss, generator_step_loss
 from ..losses.composition import Stage1LossWeights
 from ..models.model import Stage1Models, Stage1Synthesis
+from ..models.modules.segments import AlignedSegments
 from .callbacks import TrainingMetric
-from .checkpoint import (
-    CHECKPOINT_VERSION,
-    CheckpointPayload,
-    GradientTarget,
-    NamedModuleGradients,
-    StateKind,
-    StateTarget,
-    capture_named_state,
-    restore_checkpoint_gradients,
-    restore_named_states,
-    validate_resume_fingerprints,
-)
+from .checkpoint import CHECKPOINT_VERSION, CheckpointPayload, GradientTarget
+from .checkpoint import NamedModuleGradients, StateKind, StateTarget
+from .checkpoint import capture_named_state, restore_checkpoint_gradients
+from .checkpoint import restore_named_states, validate_resume_fingerprints
 from .loop import LoopIntervals
 from .optimizer import NamedGradientGroup, OptimizerSet
 from .reporting import ReportingState
 from .stage1_setup import Stage1Schedules, build_stage1_optimizers, tensor_metric
-from .state import (
-    LoopState,
-    StageKind,
-    capture_gradients,
-    capture_rng_state,
-    restore_rng_state,
-)
-
-__all__ = ["Stage1Trainer", "build_stage1_optimizers"]
+from .state import LoopState, StageKind, capture_gradients, capture_rng_state
+from .state import restore_rng_state
 
 
 class Stage1Trainer:
@@ -51,6 +34,7 @@ class Stage1Trainer:
         self,
         models: Stage1Models,
         stage_config: StageConfig,
+        adversarial_config: AdversarialConfig,
         runtime_seed: int,
         device: torch.device,
         optimizers: OptimizerSet,
@@ -63,16 +47,14 @@ class Stage1Trainer:
             raise ValueError("Stage 1 trainer requires a Stage 1 loop state")
         self.models = models
         for module in (
-            models.audio_encoder,
-            models.feature_linear,
-            models.decoder,
-            models.generator,
-            models.reconstruction_loss,
+            models.audio_encoder, models.feature_linear, models.decoder,
+            models.generator, models.reconstruction_loss,
         ):
             module.to(device).train()
         models.f0_extractor.to(device).requires_grad_(False).eval()
         models.discriminators.to(device).requires_grad_(True).train()
         self.stage_config = stage_config
+        self.adversarial_config = adversarial_config
         self.runtime_seed = runtime_seed
         self.device = device
         self.optimizers = optimizers
@@ -96,13 +78,13 @@ class Stage1Trainer:
         batch: BeetleBatch,
     ) -> tuple[TrainingMetric, ...]:
         waveform, mel, frame_mask = self._inputs(batch)
+        segment = self._segment(frame_mask, "discriminator")
+        real = segment.samples(waveform)
         with torch.no_grad(), self._autocast():
-            synthesis = self._synthesize(mel, frame_mask, "discriminator")
+            synthesis = self._synthesize(mel, frame_mask, segment, "discriminator")
         with self._autocast():
             loss = discriminator_step_loss(
-                self.models.discriminators,
-                waveform,
-                synthesis.waveform,
+                self.models.discriminators, real, synthesis.waveform
             )
             weighted = loss * self._weights().discriminator
         scaled = weighted / self.accumulation_steps
@@ -117,33 +99,25 @@ class Stage1Trainer:
         batch: BeetleBatch,
     ) -> tuple[TrainingMetric, ...]:
         waveform, mel, frame_mask = self._inputs(batch)
+        segment = self._segment(frame_mask, "generator")
+        real = segment.samples(waveform)
         targets = self.models.acoustic_targets(mel, frame_mask)
         with self._autocast():
-            synthesis = self._synthesize(mel, frame_mask, "generator")
+            synthesis = self._synthesize(mel, frame_mask, segment, "generator")
             encoder_kl = masked_kl_standard_normal(
                 synthesis.posterior.mean,
                 synthesis.posterior.log_scale,
                 synthesis.posterior.mask,
             )
-            f0 = masked_f0_smooth_l1(
-                synthesis.acoustic.f0,
-                targets.f0,
-                synthesis.decoded.mask,
-            )
-            n = masked_n_smooth_l1(
-                synthesis.acoustic.n,
-                targets.n,
-                synthesis.decoded.mask,
-            )
+            f0 = masked_f0_smooth_l1(synthesis.acoustic.f0, targets.f0, frame_mask)
+            n = masked_n_smooth_l1(synthesis.acoustic.n, targets.n, frame_mask)
             reconstruction = self.models.reconstruction_loss(
                 synthesis.waveform,
-                waveform,
+                real,
                 synthesis.sample_mask,
             ).total
             adversarial = generator_step_loss(
-                self.models.discriminators,
-                waveform,
-                synthesis.waveform,
+                self.models.discriminators, real, synthesis.waveform
             )
             weights = self._weights()
             total = (
@@ -219,6 +193,7 @@ class Stage1Trainer:
         self,
         mel: Tensor,
         frame_mask: Tensor,
+        segment: AlignedSegments,
         view: str,
     ) -> Stage1Synthesis:
         state = self._loop
@@ -240,7 +215,27 @@ class Stage1Trainer:
         )
         latent = torch.Generator(device=self.device).manual_seed(latent_seed)
         source = torch.Generator(device=self.device).manual_seed(source_seed)
-        return self.models.reconstruct(mel, frame_mask, latent, source)
+        return self.models.reconstruct_segment(mel, frame_mask, segment, latent, source)
+
+    def _segment(self, frame_mask: Tensor, view: str) -> AlignedSegments:
+        state = self._loop
+        seed = derive_seed(
+            self.runtime_seed,
+            self.stage,
+            state.cycle,
+            state.batch_index,
+            view,
+            "segment",
+        )
+        generator = torch.Generator(device=self.device).manual_seed(seed)
+        return AlignedSegments.random(
+            frame_mask,
+            self.adversarial_config.segment_samples
+            // self.models.generator.config.output_hop(),
+            self.models.audio_encoder.config.downsample_rate,
+            self.models.generator.config.output_hop(),
+            generator,
+        )
 
     def _inputs(self, batch: BeetleBatch) -> tuple[Tensor, Tensor, Tensor]:
         return (
@@ -264,14 +259,12 @@ class Stage1Trainer:
 
     def _model_states(self):
         return tuple(
-            capture_named_state(name, kind, module)
-            for name, kind, module in self._state_modules()
+            capture_named_state(name, kind, module) for name, kind, module in self._state_modules()
         )
 
     def _model_targets(self):
         return tuple(
-            StateTarget(name, kind, module)
-            for name, kind, module in self._state_modules()
+            StateTarget(name, kind, module) for name, kind, module in self._state_modules()
         )
 
     def _state_modules(self):

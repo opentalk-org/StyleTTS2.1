@@ -163,11 +163,11 @@ Expected: checks pass and every file is at most 300 lines.
 - Modify: `src/runner/nodes/training/beetle/main.md`
 
 **Interfaces:**
-- `compile_stage1()` compiles the fixed 808-frame upstream path and 32-frame vocoder path without dynamic shape lowering.
+- `compile_stage1()` compiles fixed-shape AudioEncoder, FeatureLinear, and Decoder modules without dynamic shape lowering. Generator remains eager because its complex harmonic-phase cumulative path fails TorchInductor lowering.
 
 - [ ] **Step 1: Replace dynamic module compilation**
 
-Change `module.compile(dynamic=True)` to `module.compile()` because both training shapes are explicit and the dynamic generator backward currently fails in TorchInductor.
+Change supported modules from dynamic to static compilation and exclude Generator after reproducing its static and dynamic TorchInductor lowering failure.
 
 - [ ] **Step 2: Document the approved crop contract**
 

@@ -158,6 +158,8 @@ runtime:
   compile: true
   compile_frame_count: 3600
   log_every_steps: 100
+adversarial:
+  segment_samples: 9600
 checkpoint:
   every_steps: 1000
   keep_last: 5

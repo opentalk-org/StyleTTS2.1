@@ -89,6 +89,7 @@ def _run_stage1(
     trainer = Stage1Trainer(
         models,
         config.stage1,
+        config.adversarial,
         config.runtime.seed,
         device,
         build_stage1_optimizers(models, config.stage1, device),
@@ -212,6 +213,7 @@ def _run_stage3(
         stage2,
         ema,
         config.stage3,
+        config.adversarial,
         config.runtime.seed,
         device,
         build_stage3_optimizers(stage1, stage2, config.stage3, device),

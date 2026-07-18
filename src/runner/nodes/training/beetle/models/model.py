@@ -18,6 +18,7 @@ from .modules.discriminators import (
     build_styletts_discriminators,
 )
 from .modules.generator import Generator
+from .modules.segments import AlignedSegments
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,46 @@ class Stage1Models(nn.Module):
             source_generator,
         )
         sample_mask = frame_mask.repeat_interleave(
+            self.generator.config.output_hop(),
+            dim=-1,
+        )
+        return Stage1Synthesis(
+            posterior=posterior,
+            acoustic=acoustic,
+            decoded=decoded,
+            waveform=waveform,
+            sample_mask=sample_mask,
+        )
+
+    def reconstruct_segment(
+        self,
+        mel: Tensor,
+        frame_mask: Tensor,
+        segment: AlignedSegments,
+        latent_generator: torch.Generator,
+        source_generator: torch.Generator,
+    ) -> Stage1Synthesis:
+        posterior = self.audio_encoder(mel, frame_mask, latent_generator)
+        acoustic = self.feature_linear(
+            posterior.latent,
+            posterior.mask,
+            frame_mask,
+        )
+        segment_frame_mask = segment.frames(frame_mask)
+        decoded = self.decoder(
+            segment.latents(posterior.latent),
+            segment.frames(acoustic.f0),
+            segment.frames(acoustic.n),
+            segment.latents(posterior.mask),
+            segment_frame_mask,
+        )
+        waveform = self.generator(
+            decoded.features,
+            decoded.f0,
+            decoded.mask,
+            source_generator,
+        )
+        sample_mask = segment_frame_mask.repeat_interleave(
             self.generator.config.output_hop(),
             dim=-1,
         )

@@ -58,6 +58,13 @@ Alignment and duration supervision remain at the full hop-300 clock. Expanded
 phoneme conditioning is padded to even length and pairwise pooled before the
 half-rate LatentFlowModel. This avoids per-phoneme rounding drift.
 
+Stages 1 and 3 train the upstream encoders, flows, FeatureLinear, KL, F0, and
+`N` objectives over the complete utterance. Each example then selects a random
+posterior-aligned 9,600-sample segment: 32 hop-300 frames and 16 half-rate
+latent frames. Only this matching latent/acoustic/audio interval enters
+Decoder, Generator, reconstruction, discriminator, generator-adversarial, and
+feature-matching computation. Stage 2 and validation stay full-utterance.
+
 Duration prediction and latent flow receive the same nine condition sources:
 phoneme features, pooled phoneme vectors, style, voice, pre/post text context,
 pre/post audio context, and language. Duration uses phoneme-rate phoneme
@@ -122,7 +129,9 @@ There is no Wave-U-Net, WavLM/SLM discriminator, or invented model family.
 
 1. Train AudioEncoder, FeatureLinear, Decoder, Generator, and both current
    StyleTTS discriminator families with posterior KL, F0, `N`, StyleTTS2
-   reconstruction, generator-adversarial, and feature-matching losses.
+   reconstruction, generator-adversarial, and feature-matching losses. KL,
+   F0, and `N` use complete utterances; the audio synthesis losses use aligned
+   `adversarial.segment_samples` crops.
 2. Freeze Stage 1 and train the phoneme/context encoders, style/voice encoders,
    DurationPredictor, LatentFlowModel, and the pretrained PhonemeAligner against
    posterior latents. Decoder, Generator, FeatureLinear, and discriminators are
@@ -133,7 +142,8 @@ There is no Wave-U-Net, WavLM/SLM discriminator, or invented model family.
 
 Stage 3 runs two audio paths per batch: posterior reconstruction and one-step
 text-conditioned shortcut generation from noise. Both paths use the same
-style-free Decoder followed by the separate Generator. Their F0, `N`, mel,
+style-free Decoder followed by the separate Generator and share one aligned
+crop with the real waveform. Their full-utterance F0/`N` and cropped mel,
 generator-adversarial, and feature-matching losses are averaged into the
 existing Stage 1 terms, while the full Stage 2 objective remains active. The
 two fake paths share one discriminator backward/update, so adversarial training
@@ -145,9 +155,11 @@ loss weights by optimizer step. Validation runs at
 `validation_every_steps` and always at the final step when not already due.
 Stage 1 may compile its acoustic path at the explicit even
 `runtime.compile_frame_count`; training and validation pad to that time shape
-and reject longer recordings. Compilation does not wrap modules or alter
-checkpoint parameter keys.
-Checkpoints include model, optimizer, scaler, EMA, Stage 3 discriminator,
+and reject longer recordings. AudioEncoder, FeatureLinear, and Decoder use
+static compiled graphs. Generator remains eager because TorchInductor cannot
+lower its complex harmonic-phase cumulative path. Compilation does not wrap
+modules or alter checkpoint parameter keys.
+Checkpoints include model, optimizer, scaler, EMA, discriminator,
 accumulated gradients, sampler cursor, loss schedules, RNG, MLflow run identity,
 pending step metrics, accumulated timing, and last reported/validated state so
 every stage resumes without losing a microstep or reapplying an optimizer step.
@@ -169,8 +181,8 @@ audio ID, and view, while global RNG and every module's train/eval mode are
 restored after evaluation.
 
 - Stage 1 uses the posterior AudioEncoder → style-free Decoder → Generator path
-  and reports KL, F0, `N`, reconstruction, and combined loss. It never calls a
-  discriminator.
+  and reports KL, F0, `N`, reconstruction, discriminator,
+  generator-adversarial, feature-matching, and combined losses.
 - Stage 2 reports duration likelihood, flow matching, shortcut, alignment,
   style, voice, speaker, statistics, and re-encoding objectives. Prediction uses
   the EMA LatentFlowModel for one integration step followed by the frozen
