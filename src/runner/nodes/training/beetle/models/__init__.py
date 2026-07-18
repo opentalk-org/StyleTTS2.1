@@ -5,6 +5,7 @@ from .model import (
     build_stage1_models,
     normalized_log_mel_energy,
 )
+from .compilation import compile_stage1
 from .modules.audio import (
     AcousticFeatures,
     AudioEncoder,
@@ -44,5 +45,6 @@ __all__ = [
     "build_stage1_models",
     "build_stage2_models",
     "build_styletts_discriminators",
+    "compile_stage1",
     "normalized_log_mel_energy",
 ]

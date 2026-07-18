@@ -91,6 +91,11 @@ exact state boundary, write an atomic checkpoint, and leave the MLflow run
 active for resume. Normal completion performs mandatory final validation,
 flushes all work, writes a final checkpoint, and marks the run `FINISHED`.
 
+`runtime.compile: true` compiles the Stage 1 acoustic path while preserving
+normal checkpoint state-dict keys. `runtime.compile_frame_count` fixes the
+training and validation time dimension, must be even, and must cover the
+longest selected recording; oversize recordings fail instead of being cut.
+
 ## Runtime reports
 
 Startup reports the complete inference parameter count after loading the custom

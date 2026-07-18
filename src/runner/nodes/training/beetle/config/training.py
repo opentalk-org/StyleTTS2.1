@@ -69,7 +69,19 @@ class StageConfig(StrictConfigModel):
 class RuntimeConfig(StrictConfigModel):
     seed: int = Field(ge=0)
     device: str = Field(min_length=1)
+    compile: bool
+    compile_frame_count: int | None
     log_every_steps: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_compilation(self) -> "RuntimeConfig":
+        if self.compile != (self.compile_frame_count is not None):
+            raise ValueError(
+                "compile_frame_count must be set exactly when compilation is enabled"
+            )
+        if self.compile_frame_count is not None and self.compile_frame_count % 2:
+            raise ValueError("compile_frame_count must be even")
+        return self
 
 
 class ComplexityConfig(StrictConfigModel):

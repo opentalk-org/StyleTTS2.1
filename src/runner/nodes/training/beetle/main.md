@@ -144,6 +144,10 @@ There are no epochs. Each stage samples the dataset continuously until its
 explicit `total_steps`, and schedules reporting, validation, checkpoints, and
 loss weights by optimizer step. Validation runs at
 `validation_every_steps` and always at the final step when not already due.
+Stage 1 may compile its acoustic path at the explicit even
+`runtime.compile_frame_count`; training and validation pad to that time shape
+and reject longer recordings. Compilation does not wrap modules or alter
+checkpoint parameter keys.
 Checkpoints include model, optimizer, scaler, EMA, Stage 3 discriminator,
 accumulated gradients, sampler cursor, loss schedules, RNG, MLflow run identity,
 pending step metrics, accumulated timing, and last reported/validated state so

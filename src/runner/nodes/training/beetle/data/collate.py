@@ -45,6 +45,7 @@ class BatchCollator:
         augmentation: AugmentationConfig,
         languages: tuple[str, ...],
         stage: int,
+        frame_count: int | None,
     ) -> None:
         self.preprocessor = preprocessor
         self.phoneme_tokenizer = phoneme_tokenizer
@@ -54,13 +55,17 @@ class BatchCollator:
             language: index for index, language in enumerate(languages)
         }
         self.stage = stage
+        self.frame_count = frame_count
 
     def collate(self, fetched: FetchedBatch) -> BeetleBatch:
         prepared = tuple(self._prepare_example(item) for item in fetched.examples)
         target_waveforms, waveform_lengths = _pad_waveforms(
             tuple(item.target.waveform for item in prepared)
         )
-        mels, frame_lengths = _pad_mels(tuple(item.target.mel for item in prepared))
+        mels, frame_lengths = _pad_mels(
+            tuple(item.target.mel for item in prepared),
+            self.frame_count,
+        )
         target_waveforms = _fit_waveform_frames(target_waveforms, mels.shape[-1])
         phonemes, phoneme_lengths = _pad_ids(tuple(item.phoneme_ids for item in prepared))
         texts, text_lengths = _pad_ids(tuple(item.text_ids for item in prepared))
@@ -208,11 +213,18 @@ def _pad_waveforms(values: tuple[Tensor, ...]) -> tuple[Tensor, Tensor]:
     return output, lengths
 
 
-def _pad_mels(values: tuple[Tensor, ...]) -> tuple[Tensor, Tensor]:
+def _pad_mels(
+    values: tuple[Tensor, ...],
+    frame_count: int | None,
+) -> tuple[Tensor, Tensor]:
     lengths = torch.tensor([value.shape[-1] for value in values], dtype=torch.long)
     maximum = int(lengths.max())
-    even_maximum = maximum + maximum % 2
-    output = torch.zeros(len(values), values[0].shape[0], even_maximum)
+    padded_frames = maximum + maximum % 2 if frame_count is None else frame_count
+    if maximum > padded_frames:
+        raise ValueError(
+            f"batch requires {maximum} mel frames, exceeding configured {padded_frames}"
+        )
+    output = torch.zeros(len(values), values[0].shape[0], padded_frames)
     for index, value in enumerate(values):
         output[index, :, : value.shape[-1]] = value
     return output, lengths

@@ -155,6 +155,8 @@ validation:
 runtime:
   seed: 1234
   device: cuda
+  compile: true
+  compile_frame_count: 3600
   log_every_steps: 100
 checkpoint:
   every_steps: 1000

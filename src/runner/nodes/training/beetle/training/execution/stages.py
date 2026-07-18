@@ -6,6 +6,7 @@ from ...models import (
     Stage2Dependencies,
     build_stage1_models,
     build_stage2_models,
+    compile_stage1,
 )
 from ..runtime import (
     RunPreparation,
@@ -97,6 +98,8 @@ def _run_stage1(
         initial_loop(StageKind.STAGE1),
     )
     report_models(models, None, config, retain_audio_path=True)
+    if config.runtime.compile:
+        compile_stage1(models)
     sampler = trainer.restore(preparation.resume) if preparation.resume else None
     return train(
         preparation,

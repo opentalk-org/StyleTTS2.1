@@ -63,6 +63,7 @@ def build_data_pipeline(
             config.data.augmentation,
             config.architecture.language.values,
             stage,
+            config.runtime.compile_frame_count if stage == 1 else None,
         ),
     )
     return BoundedBatchPrefetcher(

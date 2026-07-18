@@ -26,7 +26,17 @@ def collate_validation_recording(
     stored = item.stored
     processed = item.processed
     original_frames = processed.mel.shape[-1]
-    padded_frames = original_frames + original_frames % 2
+    dynamic_frames = original_frames + original_frames % 2
+    padded_frames = (
+        config.runtime.compile_frame_count
+        if stage_number == 1 and config.runtime.compile
+        else dynamic_frames
+    )
+    if original_frames > padded_frames:
+        raise ValueError(
+            f"validation item requires {original_frames} mel frames, "
+            f"exceeding configured {padded_frames}"
+        )
     mel = F.pad(processed.mel, (0, padded_frames - original_frames)).unsqueeze(0)
     padded_samples = padded_frames * config.audio.hop_length
     waveform = F.pad(
