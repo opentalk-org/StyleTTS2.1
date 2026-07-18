@@ -48,6 +48,8 @@ class BulkWavReader:
         wavs = {
             audio_id: future.result() for audio_id, future in futures.items()
         }
+        if self.cache is not None:
+            self.cache.enforce_budget()
         grouped: dict[UUID, list[tuple[int, SegmentReadRequest]]] = defaultdict(list)
         for index, request in enumerate(requests):
             grouped[request.audio_file_id].append((index, request))

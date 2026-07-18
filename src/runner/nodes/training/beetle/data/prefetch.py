@@ -1,12 +1,12 @@
 import queue
 import threading
-from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Protocol
 
 from .records import BeetleBatch, PlannedBatch
 from .sampling import ContinuousBatchPlanner, PlannerState
+from .source import FetchedBatch
 
 
 class PrefetchCallbacks(Protocol):
@@ -14,7 +14,11 @@ class PrefetchCallbacks(Protocol):
 
 
 class PlannedBatchLoader(Protocol):
-    def load(self, planned: PlannedBatch) -> BeetleBatch: ...
+    def fetch(self, planned: PlannedBatch) -> FetchedBatch: ...
+
+    def collate(self, fetched: FetchedBatch) -> BeetleBatch: ...
+
+    def close(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -36,17 +40,16 @@ class _QueuedBatch:
 
 
 @dataclass(frozen=True)
-class _PendingBatch:
-    future: Future[BeetleBatch]
+class _PlannedCandidate:
+    batch: PlannedBatch
     state_after: PlannerState
     decoded_bytes: int
 
 
 @dataclass(frozen=True)
-class _PlannedCandidate:
-    batch: PlannedBatch
-    state_after: PlannerState
-    decoded_bytes: int
+class _PendingFetch:
+    candidate: _PlannedCandidate
+    future: Future[FetchedBatch]
 
 
 @dataclass(frozen=True)
@@ -62,7 +65,6 @@ class BoundedBatchPrefetcher:
         callbacks: PrefetchCallbacks,
         maximum_batches: int,
         maximum_decoded_bytes: int,
-        worker_count: int,
         sample_rate: int,
         initial_state: DataPipelineState,
     ) -> None:
@@ -76,7 +78,6 @@ class BoundedBatchPrefetcher:
         self.callbacks = callbacks
         self.maximum_batches = maximum_batches
         self.maximum_decoded_bytes = maximum_decoded_bytes
-        self.worker_count = worker_count
         self.sample_rate = sample_rate
         self._committed_state = initial_state
         self._queue: queue.Queue[_QueuedBatch | _ProducerFailure] = queue.Queue(maximum_batches)
@@ -129,7 +130,7 @@ class BoundedBatchPrefetcher:
             raise ValueError("restored data fingerprint does not match index")
         if state.world_size != self.planner.shard.world_size:
             raise ValueError("restored world size does not match planner shard")
-        self.close()
+        self._stop_producer()
         self.planner.load_state_dict(state.planner)
         self._committed_state = state
         self._queue = queue.Queue(self.maximum_batches)
@@ -138,6 +139,10 @@ class BoundedBatchPrefetcher:
         self._start()
 
     def close(self) -> None:
+        self._stop_producer()
+        self.loader.close()
+
+    def _stop_producer(self) -> None:
         self._stop.set()
         with self._condition:
             self._condition.notify_all()
@@ -156,50 +161,57 @@ class BoundedBatchPrefetcher:
         self._thread.start()
 
     def _produce(self) -> None:
-        pending: deque[_PendingBatch] = deque()
         candidate: _PlannedCandidate | None = None
+        pending: _PendingFetch | None = None
+        completed: _PendingFetch | None = None
         try:
             with ThreadPoolExecutor(
-                max_workers=self.worker_count,
-                thread_name_prefix="beetle-fetch",
+                max_workers=1,
+                thread_name_prefix="beetle-audio-prefetch",
             ) as executor:
                 while not self._stop.is_set():
                     self.callbacks.check_cancel()
-                    while len(pending) < self.worker_count and not self._stop.is_set():
+                    if pending is None:
                         candidate = candidate or self._plan_candidate()
-                        reserved = (
-                            self._reserve_bytes(candidate.decoded_bytes, wait=not pending)
-                        )
-                        if not reserved:
+                        if not self._reserve_bytes(candidate.decoded_bytes, True):
                             break
-                        pending.append(
-                            _PendingBatch(
-                                executor.submit(self.loader.load, candidate.batch),
-                                candidate.state_after,
-                                candidate.decoded_bytes,
-                            )
+                        pending = _PendingFetch(
+                            candidate,
+                            executor.submit(self.loader.fetch, candidate.batch),
                         )
                         candidate = None
-                    if not pending:
-                        continue
-                    completed = pending.popleft()
-                    try:
-                        batch = completed.future.result()
-                    except BaseException:
-                        self._release_bytes(completed.decoded_bytes)
-                        raise
+                    completed = pending
+                    pending = None
+                    fetched = completed.future.result()
+                    candidate = self._plan_candidate()
+                    if self._reserve_bytes(candidate.decoded_bytes, False):
+                        pending = _PendingFetch(
+                            candidate,
+                            executor.submit(self.loader.fetch, candidate.batch),
+                        )
+                        candidate = None
+                    batch = self.loader.collate(fetched)
                     queued = _QueuedBatch(
                         batch,
-                        completed.state_after,
-                        completed.decoded_bytes,
+                        completed.candidate.state_after,
+                        completed.candidate.decoded_bytes,
                     )
                     if not self._put(queued):
-                        self._release_bytes(completed.decoded_bytes)
+                        self._release_bytes(
+                            completed.candidate.decoded_bytes
+                        )
+                        completed = None
                         break
+                    completed = None
+            if pending is not None:
+                pending.future.cancel()
+                self._release_bytes(pending.candidate.decoded_bytes)
         except BaseException as error:
-            for item in pending:
-                item.future.cancel()
-                self._release_bytes(item.decoded_bytes)
+            if pending is not None:
+                pending.future.cancel()
+                self._release_bytes(pending.candidate.decoded_bytes)
+            if completed is not None:
+                self._release_bytes(completed.candidate.decoded_bytes)
             self._put(_ProducerFailure(error))
 
     def _plan_candidate(self) -> _PlannedCandidate:
@@ -217,7 +229,8 @@ class BoundedBatchPrefetcher:
             if wait:
                 self._condition.wait_for(
                     lambda: self._stop.is_set()
-                    or self._queued_bytes + decoded_bytes <= self.maximum_decoded_bytes
+                    or self._queued_bytes + decoded_bytes
+                    <= self.maximum_decoded_bytes
                 )
             fits = self._queued_bytes + decoded_bytes <= self.maximum_decoded_bytes
             if not self._stop.is_set() and fits:

@@ -11,7 +11,7 @@ from .prefetch import (
 from .records import BeetleBatch, PlannedBatch
 from .sampling import ContinuousBatchPlanner
 from .sampling import DistributedShard
-from .source import DatabaseBatchSource
+from .source import DatabaseBatchSource, FetchedBatch
 
 
 class DatabaseBatchLoader:
@@ -19,8 +19,14 @@ class DatabaseBatchLoader:
         self.source = source
         self.collator = collator
 
-    def load(self, planned: PlannedBatch) -> BeetleBatch:
-        return self.collator.collate(self.source.fetch(planned))
+    def fetch(self, planned: PlannedBatch) -> FetchedBatch:
+        return self.source.fetch(planned)
+
+    def collate(self, fetched: FetchedBatch) -> BeetleBatch:
+        return self.collator.collate(fetched)
+
+    def close(self) -> None:
+        self.source.close()
 
 
 def build_data_pipeline(
@@ -45,7 +51,8 @@ def build_data_pipeline(
     )
     source = DatabaseBatchSource.from_database(
         index,
-        config.data.prefetch.maximum_full_read_bytes,
+        config.data.prefetch.audio_cache_bytes,
+        config.data.prefetch.audio_fetch_workers,
     )
     audio = config.audio
     preprocessor = AudioPreprocessor(
@@ -75,7 +82,6 @@ def build_data_pipeline(
         callbacks=callbacks,
         maximum_batches=config.data.prefetch.planned_batches,
         maximum_decoded_bytes=config.data.prefetch.decoded_bytes,
-        worker_count=config.data.prefetch.worker_count,
         sample_rate=audio.sample_rate,
         initial_state=initial_state,
     )

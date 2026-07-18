@@ -14,8 +14,9 @@ class PrefetchConfig(StrictConfigModel):
     page_size: int = Field(gt=0)
     planned_batches: int = Field(gt=0)
     decoded_bytes: int = Field(gt=0)
-    maximum_full_read_bytes: int = Field(gt=0)
-    worker_count: int = Field(gt=0)
+    audio_cache_bytes: int = Field(gt=0)
+    audio_fetch_workers: int = Field(gt=0)
+    preprocessing_threads: int = Field(gt=0)
 
 
 class GroupSamplingConfig(StrictConfigModel):

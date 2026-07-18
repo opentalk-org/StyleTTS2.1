@@ -1,11 +1,19 @@
+import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID
 
-from shared.db.audio.ranges.bulk import SegmentReadRequest, bulk_read_wav_segments
+from shared.db.audio.ranges import (
+    AudioFileCache,
+    BulkWavReader,
+    SegmentReadRequest,
+)
 from shared.db.audio.ranges.wav import WavClip
 from shared.db.audio.segments_crud import list_audio_segments_bulk
 from shared.db.connection import database_session
+from shared.db.settings import crud as settings_crud
+from shared.storage import S3ObjectStore
 
 from .index import DatabaseSegmentIndex
 from .records import (
@@ -27,6 +35,8 @@ class SegmentBulkLoader(Protocol):
 class ClipBulkLoader(Protocol):
     def load(self, requests: tuple[SegmentReadRequest, ...]) -> list[WavClip]: ...
 
+    def close(self) -> None: ...
+
 
 class SharedSegmentBulkLoader:
     def load(
@@ -38,16 +48,24 @@ class SharedSegmentBulkLoader:
 
 
 class SharedClipBulkLoader:
-    def __init__(self, maximum_full_read_bytes: int) -> None:
-        self.maximum_full_read_bytes = maximum_full_read_bytes
+    def __init__(self, cache_bytes: int, fetch_workers: int) -> None:
+        with database_session() as session:
+            store = S3ObjectStore(settings_crud.object_store_config(session))
+        cache_root = (
+            Path(os.environ["XDG_CACHE_HOME"]) / "runflow" / "audio"
+        )
+        self.reader = BulkWavReader(
+            store,
+            AudioFileCache(cache_root, cache_bytes),
+            fetch_workers,
+        )
 
     def load(self, requests: tuple[SegmentReadRequest, ...]) -> list[WavClip]:
         with database_session() as session:
-            return bulk_read_wav_segments(
-                session,
-                list(requests),
-                self.maximum_full_read_bytes,
-            )
+            return self.reader.read(session, requests)
+
+    def close(self) -> None:
+        self.reader.close()
 
 
 @dataclass(frozen=True)
@@ -100,13 +118,17 @@ class DatabaseBatchSource:
     def from_database(
         cls,
         index: DatabaseSegmentIndex,
-        maximum_full_read_bytes: int,
+        cache_bytes: int,
+        fetch_workers: int,
     ) -> "DatabaseBatchSource":
         return cls(
             index,
             SharedSegmentBulkLoader(),
-            SharedClipBulkLoader(maximum_full_read_bytes),
+            SharedClipBulkLoader(cache_bytes, fetch_workers),
         )
+
+    def close(self) -> None:
+        self.clips.close()
 
     def fetch(self, planned: PlannedBatch) -> FetchedBatch:
         keys = _batch_keys(planned)

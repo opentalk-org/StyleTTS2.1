@@ -64,6 +64,9 @@ def run_stage(
         resume_path,
         callbacks,
     )
+    torch.set_num_threads(
+        preparation.config.data.prefetch.preprocessing_threads
+    )
     callbacks.check_cancel()
     if stage is StageKind.STAGE1:
         return _run_stage1(preparation, callbacks)

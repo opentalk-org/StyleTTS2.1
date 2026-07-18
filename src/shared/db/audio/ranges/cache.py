@@ -58,7 +58,6 @@ class AudioFileCache:
                 self._write(path, data)
             else:
                 os.utime(path, None)
-        self._evict(path)
         return data
 
     def invalidate(self, location: StoredWavLocation) -> None:
@@ -84,11 +83,9 @@ class AudioFileCache:
         )
         with temporary.open("xb") as output:
             output.write(data)
-            output.flush()
-            os.fsync(output.fileno())
         os.replace(temporary, path)
 
-    def _evict(self, protected: Path) -> None:
+    def enforce_budget(self) -> None:
         global_path = self.root / ".eviction.lock"
         with self._thread_lock, global_path.open("a+b") as global_lock:
             fcntl.flock(global_lock, fcntl.LOCK_EX)
@@ -100,8 +97,6 @@ class AudioFileCache:
             for victim in entries:
                 if total <= self.budget_bytes:
                     break
-                if victim == protected:
-                    continue
                 lock_path = victim.with_suffix(".lock")
                 with lock_path.open("a+b") as victim_lock:
                     try:
