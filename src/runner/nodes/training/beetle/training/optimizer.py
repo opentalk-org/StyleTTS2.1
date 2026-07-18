@@ -118,15 +118,15 @@ class ScheduledOptimizer:
         self.optimizer.zero_grad(set_to_none=True)
         return (
             TrainingMetric(
-                f"optimizer/learning_rate/{self.name}",
+                f"optimizer/{self.name}_learning_rate",
                 learning_rate,
             ),
             TrainingMetric(
-                f"gradient_norm/optimizer/{self.name}",
+                f"optimizer/{self.name}_gradient_norm",
                 float(gradient_norm),
             ),
             TrainingMetric(
-                f"optimizer/amp_scale/{self.name}",
+                f"optimizer/{self.name}_amp_scale",
                 self.scaler.get_scale(),
             ),
         )
@@ -166,7 +166,7 @@ class OptimizerSet:
         )
         module_metrics = tuple(
             TrainingMetric(
-                f"gradient_norm/module/{group.name}",
+                f"gradient/{group.name}",
                 _gradient_norm(_unique_parameters(group.modules)),
             )
             for group in gradient_groups

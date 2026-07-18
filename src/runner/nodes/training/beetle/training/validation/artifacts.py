@@ -144,8 +144,8 @@ class ValidationArtifacts:
         )
         local_root = self.output_root / relative_root
         local_root.mkdir(parents=True, exist_ok=True)
-        for position, sample in enumerate(result.samples):
-            sample_name = f"sample_{position}_{sample.audio_file_id}"
+        for position, sample in enumerate(result.samples, start=1):
+            sample_name = f"sample_{position}"
             self.queue.enqueue(
                 _SampleJob(
                     sample,
@@ -186,7 +186,7 @@ def _manifest(result: ValidationResult) -> ValidationManifest:
                 _metrics(sample.losses),
                 artifact_names(result.stage),
             )
-            for position, sample in enumerate(result.samples)
+            for position, sample in enumerate(result.samples, start=1)
         ),
     )
 

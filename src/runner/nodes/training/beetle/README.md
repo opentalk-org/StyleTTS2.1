@@ -106,12 +106,13 @@ discriminators, and training-only heads. The latent-to-audio path is profiled
 and must remain strictly below 15 GFLOPs per generated second.
 
 All stages log to the `beetle_training` experiment. A completed optimizer step
-uses one asynchronous MLflow metric batch containing every training loss,
-learning rates, pre-clipping optimizer/module gradient norms, AMP scales,
-items/s, steps/s, elapsed time, exact ETA, foreground overhead percentages,
-metric/artifact queue occupancy, and host/process/GPU metrics. The first step is
-excluded from rate and ETA estimates. Validation aggregate and ordered
-per-sample losses are included in the same step batch.
+uses one asynchronous MLflow metric batch containing every `train/*` loss,
+learning rates and AMP scales under `optimizer/*`, pre-clipping optimizer norms
+under `optimizer/*`, module norms under `gradient/*`, items/s, steps/s, elapsed
+time, exact ETA, foreground overhead percentages, metric/artifact queue
+occupancy, and host/process/GPU metrics. The first step is excluded from rate
+and ETA estimates. Validation adds only aggregate `validation/*` metrics; there
+are no epoch or per-sample MLflow metrics.
 
 Validation disables augmentation and every conditioning dropout source and
 restores model modes plus Python/NumPy/Torch RNG state byte-for-byte. Stage 1
@@ -119,9 +120,11 @@ evaluates posterior reconstruction without a discriminator. Stages 2 and 3 use
 the latent-flow EMA for exactly one shortcut integration step and save the
 alignment. Stage 3 alone evaluates and trains the current StyleTTS discriminator
 families. Artifacts live under
-`validation/<stage>/step_<step>/sample_<position>_<audio_id>/`: every stage
+`validation/<stage>/step_<step>/sample_<one-based-position>/`: every stage
 saves ground-truth audio, latent/F0/`N`/mel/STFT-magnitude/phase plots; Stage 1
 saves `recon.wav`, while Stages 2/3 save `pred.wav` and `alignment.png`.
+`metrics.json` retains the ordered position-to-audio-ID mapping and per-sample
+losses.
 
 One learned vector represents each configured language. Duration prediction and
 latent flow receive that same vector together with phoneme, pooled phoneme,

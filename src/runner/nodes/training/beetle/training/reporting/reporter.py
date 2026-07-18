@@ -38,7 +38,7 @@ class TrainingReporter:
             raise ValueError("reported optimizer step must advance")
         metrics = (
             *tuple(
-                TrainingMetric(f"train/loss/{metric.name}", metric.value)
+                TrainingMetric(f"train/{metric.name}", metric.value)
                 for metric in observation.losses
             ),
             *observation.optimizer_metrics,

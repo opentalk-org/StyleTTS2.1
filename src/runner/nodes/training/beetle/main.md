@@ -181,22 +181,22 @@ restored after evaluation.
   conditional prediction also uses the one-step EMA path.
 
 The `beetle_training` MLflow experiment contains one strict run per stage. Each
-optimizer step submits one bounded asynchronous metric batch. Namespaces cover
-`train/loss/*`, `validation/loss/*`, ordered per-sample validation losses,
-optimizer learning rates and AMP scales, pre-clipping optimizer/module gradient
-norms, items/s, steps/s, elapsed time, ETA, foreground overhead percentages,
-queue occupancy, CPU/system memory/process RSS, and GPU utilization, memory,
-temperature, and power. Validation finishes before that step is submitted;
-MLflow is flushed before due and final checkpoints.
+optimizer step submits one bounded asynchronous metric batch. Shallow
+namespaces cover `train/*`, aggregate-only `validation/*`, `optimizer/*`,
+module `gradient/*`, items/s, steps/s, elapsed time, ETA, foreground overhead
+percentages, queue occupancy, CPU/system memory/process RSS, and GPU
+utilization, memory, temperature, and power. There are no epoch or per-sample
+MLflow metrics. Validation finishes before that step is submitted; MLflow is
+flushed before due and final checkpoints.
 
 Artifacts are deterministic under
-`validation/<stage>/step_<optimizer_step>/`. `metrics.json` records ordered
-audio IDs, per-sample and aggregate losses, seeds, and paths. Every sample saves
-`gt.wav`, latent, F0, `N`, paired mel, paired STFT-magnitude, and paired phase
-plots. Stage 1 saves `recon.wav`; Stages 2/3 save `pred.wav` and the alignment
-matrix. Rendering and upload use a bounded worker queue, and
-`last_validated_step` advances only after every artifact and the manifest
-succeed.
+`validation/<stage>/step_<optimizer_step>/sample_<one-based-position>/`.
+`metrics.json` records the ordered positions and audio IDs, per-sample and
+aggregate losses, seeds, and paths. Every sample saves `gt.wav`, latent, F0,
+`N`, paired mel, paired STFT-magnitude, and paired phase plots. Stage 1 saves
+`recon.wav`; Stages 2/3 save `pred.wav` and the alignment matrix. Rendering and
+upload use a bounded worker queue, and `last_validated_step` advances only after
+every artifact and the manifest succeed.
 
 ## Budgets
 

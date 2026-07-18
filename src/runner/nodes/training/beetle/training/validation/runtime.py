@@ -84,20 +84,10 @@ def aggregate_losses(
 
 
 def validation_metrics(result: ValidationResult) -> tuple[TrainingMetric, ...]:
-    aggregate = tuple(
-        TrainingMetric(f"validation/loss/{metric.name}", metric.value)
+    return tuple(
+        TrainingMetric(f"validation/{metric.name}", metric.value)
         for metric in result.aggregates
     )
-    samples = tuple(
-        TrainingMetric(
-            "validation/sample/"
-            f"{position}_{sample.audio_file_id}/loss/{metric.name}",
-            metric.value,
-        )
-        for position, sample in enumerate(result.samples)
-        for metric in sample.losses
-    )
-    return (*aggregate, *samples)
 
 
 def _capture_modes(roots: tuple[nn.Module, ...]) -> tuple[_ModuleMode, ...]:
