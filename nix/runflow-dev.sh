@@ -17,6 +17,10 @@ export VITE_BACKEND_URL="${VITE_BACKEND_URL:-http://$BACKEND_HOST:$BACKEND_PORT}
 export FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 export FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 export RUNNER_ID="${RUNNER_ID:-runner-1}"
+export RCLONE_S3_HOST="${RCLONE_S3_HOST:-127.0.0.1}"
+export RCLONE_S3_PORT="${RCLONE_S3_PORT:-8002}"
+export RCLONE_S3_PATH="${RCLONE_S3_PATH:-/home/storagebucket}"
+export RCLONE_S3_SSH="${RCLONE_S3_SSH:-ssh hetzner-storagebox}"
 export BUCKET_DATA="${BUCKET_DATA:-.data/rustfs}"
 export BUCKET_VOLUMES="${BUCKET_VOLUMES:-$BUCKET_DATA}"
 export BUCKET_ADDRESS="${BUCKET_ADDRESS:-127.0.0.1:9000}"
@@ -140,6 +144,7 @@ pid_backend=""
 pid_frontend=""
 pid_runners=""
 pid_mlflow=""
+pid_rclone_s3=""
 
 if [ ! -s "$PGDATA/PG_VERSION" ]; then
   echo "Initializing PostgreSQL database at $PGDATA"
@@ -313,6 +318,15 @@ supervise() {
   done
 }
 
+echo "Starting rclone S3 at http://$RCLONE_S3_HOST:$RCLONE_S3_PORT"
+free_port "$RCLONE_S3_PORT" rclone-s3
+supervise rclone-s3 --port "$RCLONE_S3_PORT" rclone serve s3 \
+  --addr "$RCLONE_S3_HOST:$RCLONE_S3_PORT" \
+  --auth-key "$BUCKET_ACCESS_KEY,$BUCKET_SECRET_KEY" \
+  --sftp-ssh "$RCLONE_S3_SSH" \
+  ":sftp:$RCLONE_S3_PATH" &
+pid_rclone_s3=$!
+
 echo "Legacy static UI is available at http://$BACKEND_HOST:$BACKEND_PORT/ui-old"
 echo "Starting backend API at http://$BACKEND_HOST:$BACKEND_PORT"
 # Auto-reload backend + runner on source changes so node edits (and the node schema
@@ -393,6 +407,7 @@ shutdown() {
   [ -z "$pid_runners" ] || kill "$pid_runners" 2>/dev/null || true
   [ -z "$pid_frontend" ] || kill "$pid_frontend" 2>/dev/null || true
   [ -z "$pid_backend" ] || kill "$pid_backend" 2>/dev/null || true
+  [ -z "$pid_rclone_s3" ] || kill "$pid_rclone_s3" 2>/dev/null || true
   sleep 1
   [ -z "$pid_rustfs" ] || kill "$pid_rustfs" 2>/dev/null || true
   [ -z "$pid_pgbouncer" ] || kill "$pid_pgbouncer" 2>/dev/null || true
@@ -405,6 +420,7 @@ wait_pids=()
 [ -z "$pid_mlflow" ] || wait_pids+=("$pid_mlflow")
 [ -z "$pid_frontend" ] || wait_pids+=("$pid_frontend")
 [ -z "$pid_runners" ] || wait_pids+=("$pid_runners")
+[ -z "$pid_rclone_s3" ] || wait_pids+=("$pid_rclone_s3")
 [ -z "$pid_rustfs" ] || wait_pids+=("$pid_rustfs")
 [ -z "$pid_pgbouncer" ] || wait_pids+=("$pid_pgbouncer")
 wait -n "${wait_pids[@]}"

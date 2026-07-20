@@ -134,8 +134,10 @@
               pkgs.coreutils
               pkgs.gnugrep
               pkgs.nodejs_22
+              pkgs.openssh
               pkgs.pgbouncer
               pkgs.postgresql_16
+              pkgs.rclone
               rustfs
             ] ++ pythonTools;
             text = (pythonEnvExports pythonRuntime) + builtins.readFile ./nix/runflow-dev.sh;
@@ -233,8 +235,10 @@
             frontendDev
             runnerLaunch
             pkgs.nodejs_22
+            pkgs.openssh
             pkgs.pgbouncer
             pkgs.postgresql_16
+            pkgs.rclone
             pkgs.uv
             pkgs.zellij
             pythonRuntime.python
