@@ -242,6 +242,12 @@
           ] ++ pythonRuntime.runtimeExecutableDeps ++ pythonRuntime.runtimeLibs;
 
           shellHook = (pythonEnvExports pythonRuntime) + ''
+            if [ -f .env ]; then
+              set -a
+              . ./.env
+              set +a
+            fi
+
             export PYTHONPATH="$PWD/src"
 
             if [ -e .venv/bin/activate ]; then
@@ -280,9 +286,9 @@
         "PGBOUNCER_PORT=6432"
         "MLFLOW_DATABASE=mlflow"
         "MLFLOW_PORT=7860"
-        "RUSTFS_ACCESS_KEY=runflow"
-        "RUSTFS_SECRET_KEY=runflow-secret"
-        "RUSTFS_BUCKET=runflow"
+        "BUCKET_ACCESS_KEY=runflow"
+        "BUCKET_SECRET_KEY=runflow-secret"
+        "BUCKET_NAME=runflow"
         "AWS_ACCESS_KEY_ID=runflow"
         "AWS_SECRET_ACCESS_KEY=runflow-secret"
         "AWS_REGION=us-east-1"
@@ -295,11 +301,11 @@
         "PGDATA=/data/postgres"
         "PGHOST=/tmp/postgres"
         "PGPORT=5432"
-        "RUSTFS_DATA=/data/rustfs"
-        "RUSTFS_VOLUMES=/data/rustfs"
-        "RUSTFS_ADDRESS=0.0.0.0:9000"
-        "RUSTFS_CONSOLE_ENABLE=true"
-        "RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001"
+        "BUCKET_DATA=/data/rustfs"
+        "BUCKET_VOLUMES=/data/rustfs"
+        "BUCKET_ADDRESS=0.0.0.0:9000"
+        "BUCKET_CONSOLE_ENABLE=true"
+        "BUCKET_CONSOLE_ADDRESS=0.0.0.0:9001"
         "AWS_ENDPOINT_URL=http://127.0.0.1:9000"
         "BACKEND_PORT=8000"
         "MLFLOW_HOST=0.0.0.0"

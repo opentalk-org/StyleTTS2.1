@@ -17,23 +17,23 @@ export VITE_BACKEND_URL="${VITE_BACKEND_URL:-http://$BACKEND_HOST:$BACKEND_PORT}
 export FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 export FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 export RUNNER_ID="${RUNNER_ID:-runner-1}"
-export RUSTFS_DATA="${RUSTFS_DATA:-.data/rustfs}"
-export RUSTFS_VOLUMES="${RUSTFS_VOLUMES:-$RUSTFS_DATA}"
-export RUSTFS_ADDRESS="${RUSTFS_ADDRESS:-127.0.0.1:9000}"
-export RUSTFS_CONSOLE_ENABLE="${RUSTFS_CONSOLE_ENABLE:-true}"
-export RUSTFS_CONSOLE_ADDRESS="${RUSTFS_CONSOLE_ADDRESS:-127.0.0.1:9001}"
-export RUSTFS_ACCESS_KEY="${RUSTFS_ACCESS_KEY:-runflow}"
-export RUSTFS_SECRET_KEY="${RUSTFS_SECRET_KEY:-runflow-secret}"
-export RUSTFS_BUCKET="${RUSTFS_BUCKET:-runflow}"
-export AWS_ACCESS_KEY_ID="$RUSTFS_ACCESS_KEY"
-export AWS_SECRET_ACCESS_KEY="$RUSTFS_SECRET_KEY"
+export BUCKET_DATA="${BUCKET_DATA:-.data/rustfs}"
+export BUCKET_VOLUMES="${BUCKET_VOLUMES:-$BUCKET_DATA}"
+export BUCKET_ADDRESS="${BUCKET_ADDRESS:-127.0.0.1:9000}"
+export BUCKET_CONSOLE_ENABLE="${BUCKET_CONSOLE_ENABLE:-true}"
+export BUCKET_CONSOLE_ADDRESS="${BUCKET_CONSOLE_ADDRESS:-127.0.0.1:9001}"
+export BUCKET_ACCESS_KEY="${BUCKET_ACCESS_KEY:-runflow}"
+export BUCKET_SECRET_KEY="${BUCKET_SECRET_KEY:-runflow-secret}"
+export BUCKET_NAME="${BUCKET_NAME:-runflow}"
+export AWS_ACCESS_KEY_ID="$BUCKET_ACCESS_KEY"
+export AWS_SECRET_ACCESS_KEY="$BUCKET_SECRET_KEY"
 export AWS_REGION="${AWS_REGION:-us-east-1}"
-export AWS_ENDPOINT_URL="${AWS_ENDPOINT_URL:-http://$RUSTFS_ADDRESS}"
-export RUNFLOW_S3_BUCKET="${RUNFLOW_S3_BUCKET:-$RUSTFS_BUCKET}"
+export AWS_ENDPOINT_URL="${AWS_ENDPOINT_URL:-http://$BUCKET_ADDRESS}"
+export RUNFLOW_S3_BUCKET="${RUNFLOW_S3_BUCKET:-$BUCKET_NAME}"
 export RUNFLOW_S3_ENDPOINT_URL="${RUNFLOW_S3_ENDPOINT_URL:-$AWS_ENDPOINT_URL}"
 export RUNFLOW_S3_REGION="${RUNFLOW_S3_REGION:-$AWS_REGION}"
-export RUNFLOW_S3_ACCESS_KEY_ID="${RUNFLOW_S3_ACCESS_KEY_ID:-$RUSTFS_ACCESS_KEY}"
-export RUNFLOW_S3_SECRET_ACCESS_KEY="${RUNFLOW_S3_SECRET_ACCESS_KEY:-$RUSTFS_SECRET_KEY}"
+export RUNFLOW_S3_ACCESS_KEY_ID="${RUNFLOW_S3_ACCESS_KEY_ID:-$BUCKET_ACCESS_KEY}"
+export RUNFLOW_S3_SECRET_ACCESS_KEY="${RUNFLOW_S3_SECRET_ACCESS_KEY:-$BUCKET_SECRET_KEY}"
 export RUNFLOW_PGBOUNCER_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGBOUNCER_PORT/$POSTGRES_DB"
 export RUNFLOW_NOTIFY_DATABASE_URL="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGPORT/$POSTGRES_DB"
 export PYTHONPATH="$PWD/src"
@@ -59,7 +59,7 @@ if [ "$(id -u)" = "0" ]; then
     exit 1
   fi
 
-  mkdir -p "$RUSTFS_DATA" "$PGDATA" "$PGHOST" "$pgbouncer_dir"
+  mkdir -p "$BUCKET_DATA" "$PGDATA" "$PGHOST" "$pgbouncer_dir"
   chown -R "$runflow_dev_user" "$PWD/.data"
   chmod 700 "$PGDATA" "$PGHOST" "$pgbouncer_dir"
   if [ -d "$PWD/src/frontend/node_modules" ]; then
@@ -89,7 +89,7 @@ if [ "$(id -u)" = "0" ]; then
     "$0" "$@"
 fi
 
-mkdir -p "$RUSTFS_DATA" "$PGDATA" "$PGHOST" "$pgbouncer_dir"
+mkdir -p "$BUCKET_DATA" "$PGDATA" "$PGHOST" "$pgbouncer_dir"
 chmod 700 "$PGDATA" "$PGHOST" "$pgbouncer_dir"
 
 if [ ! -f uv.lock ]; then
@@ -241,7 +241,18 @@ if aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-buckets >/dev/null 2>&1; th
   echo "Using existing RustFS at $AWS_ENDPOINT_URL"
 else
   echo "Starting RustFS at $AWS_ENDPOINT_URL"
-  rustfs > /tmp/runflow-rustfs.log 2>&1 &
+  rustfs_args=(
+    server
+    --address "$BUCKET_ADDRESS"
+    --access-key "$BUCKET_ACCESS_KEY"
+    --secret-key "$BUCKET_SECRET_KEY"
+    --console-address "$BUCKET_CONSOLE_ADDRESS"
+    "$BUCKET_VOLUMES"
+  )
+  if [ "$BUCKET_CONSOLE_ENABLE" = "true" ]; then
+    rustfs_args+=(--console-enable)
+  fi
+  rustfs "${rustfs_args[@]}" > /tmp/runflow-rustfs.log 2>&1 &
   pid_rustfs=$!
 fi
 
@@ -255,10 +266,10 @@ until aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-buckets >/dev/null 2>&1;
 done
 
 if ! aws --endpoint-url "$AWS_ENDPOINT_URL" s3api head-bucket \
-  --bucket "$RUSTFS_BUCKET" >/dev/null 2>&1; then
-  echo "Creating RustFS bucket $RUSTFS_BUCKET"
+  --bucket "$BUCKET_NAME" >/dev/null 2>&1; then
+  echo "Creating RustFS bucket $BUCKET_NAME"
   aws --endpoint-url "$AWS_ENDPOINT_URL" s3api create-bucket \
-    --bucket "$RUSTFS_BUCKET" >/dev/null
+    --bucket "$BUCKET_NAME" >/dev/null
 fi
 
 # Recursively TERM a process and all its descendants (children first), so killing a
@@ -333,7 +344,7 @@ until python -c "from urllib.request import urlopen; urlopen('http://127.0.0.1:$
 done
 
 export MLFLOW_BACKEND_STORE_URI="postgresql+psycopg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:$PGPORT/$MLFLOW_DATABASE"
-export MLFLOW_ARTIFACTS_DESTINATION="s3://$RUSTFS_BUCKET/mlflow"
+export MLFLOW_ARTIFACTS_DESTINATION="s3://$BUCKET_NAME/mlflow"
 export MLFLOW_S3_ENDPOINT_URL="$AWS_ENDPOINT_URL"
 echo "Starting MLflow UI at http://$MLFLOW_HOST:$MLFLOW_PORT"
 free_port "$MLFLOW_PORT" mlflow
