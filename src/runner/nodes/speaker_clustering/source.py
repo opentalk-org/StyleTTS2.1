@@ -147,7 +147,7 @@ def _source_ref(reference: SegmentReference) -> AudioRecordRef:
         duration=reference.audio_duration,
         byte_length=reference.audio_byte_length,
         virtual=reference.audio_virtual,
-        metadata=reference.audio_metadata,
+        annotations=reference.annotations,
     )
 
 
@@ -164,12 +164,12 @@ def _segment_audio(
         name=f"segment:{reference.audio_name}",
         start=0.0,
         end=duration,
-        metadata={
+        annotations=stored_segment.annotations.model_copy(update={"metadata": {
             **stored_segment.metadata,
             "source_start": stored_segment.start,
             "source_end": stored_segment.end,
             "source_segment_index": reference.segment_index,
-        },
+        }}),
     )
     clip_id = stable_id("speaker_segment_audio", reference.audio_file_id, segment.segment_id)
     return Audio(
@@ -180,17 +180,16 @@ def _segment_audio(
         channels=clip.channels,
         start=0.0,
         end=duration,
-        confidence=segment.confidence if segment.confidence is not None else 1.0,
-        id=clip_id,
-        lineage_id=segment.lineage_id,
-        metadata={
-            **reference.audio_metadata,
+        annotations=segment.annotations.model_copy(update={"metadata": {
+            **reference.annotations.metadata,
             "source_audio_id": str(reference.audio_file_id),
             "source_segment_id": segment.segment_id,
             "source_segment_index": reference.segment_index,
             "source_segment_count": source_count,
             "dataset_id": str(dataset_id),
-        },
+        }}),
+        id=clip_id,
+        lineage_id=segment.lineage_id,
         byte_length=len(clip.data),
         virtual=reference.audio_virtual,
         style_prompt=reference.style_prompt,

@@ -130,7 +130,9 @@ class WhisperXAlignNode(Node):
         return replace(
             seg,
             alignment=_segment_alignment(inside, offset),
-            confidence=confidence if confidence is not None else seg.confidence,
+            annotations=seg.annotations.model_copy(
+                update={"accuracy": confidence if confidence is not None else seg.accuracy}
+            ),
         )
 
 

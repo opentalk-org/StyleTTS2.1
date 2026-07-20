@@ -168,7 +168,7 @@ export function SegmentTimeline({
             return (
               <div
                 key={seg.id}
-                title={`#${(indexOf.get(seg.id) ?? 0) + 1} · ${seg.speaker}\n${seg.text}`}
+                title={`#${(indexOf.get(seg.id) ?? 0) + 1} · ${seg.annotations.speaker_id ?? ""}\n${seg.text}`}
                 onPointerDown={(e) => onBlockDown(e, seg)}
                 onPointerMove={onBlockMove}
                 onPointerUp={() => onBlockUp(seg)}

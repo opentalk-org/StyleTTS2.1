@@ -9,8 +9,10 @@ from runner.nodes.hetzner.ds_v2_audio import (
     _float_or_none,
     _text,
     _transcript_segments,
+    speaker_id,
 )
 from runner.nodes.models import Audio, stable_id
+from shared.audio_annotations import AudioAnnotations
 
 
 def audio_metadata_from_row(
@@ -32,7 +34,7 @@ def audio_metadata_from_row(
         row, options, row_index, audio_file_id, name, duration, 0, 0, score, voice_id
     )
     metadata = _audio_metadata(
-        row, options, row_index, 0, 0, duration, score, text, voice_id
+        row, options, row_index, 0, 0, duration, text
     )
     return Audio(
         audio_file_id=audio_file_id,
@@ -42,14 +44,18 @@ def audio_metadata_from_row(
         channels=0,
         start=0.0,
         end=duration,
-        confidence=1.0,
+        annotations=AudioAnnotations(
+            speaker_id=speaker_id(row),
+            voice_id=voice_id,
+            score=score,
+            metadata={
+                **metadata,
+                "source_metadata_path": remote_metadata_path,
+                "storage_provider": "hetzner_sftp_parquet",
+            },
+        ),
         id=stable_id("hetzner_ds_v2_metadata", options.remote_parquet_path, row_index),
         lineage_id=stable_id("hetzner_ds_v2_metadata_lineage", options.remote_parquet_path, row_index),
-        metadata={
-            **metadata,
-            "source_metadata_path": remote_metadata_path,
-            "storage_provider": "hetzner_sftp_parquet",
-        },
         byte_length=0,
         virtual=True,
         segments=segments,

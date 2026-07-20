@@ -24,6 +24,7 @@ from runner.nodes.hetzner.ds_v1_metadata import (
 from runner.nodes.hetzner.ds_v1_segments import segments_from_samples
 from runner.nodes.hetzner.ds_v1_sources import AUDIO_COLUMN, DsV1ParquetRow, load_parquet_rows
 from runner.nodes.models import Audio, stable_id
+from shared.audio_annotations import AudioAnnotations
 
 
 JSON_METADATA_COLUMNS = ("categories_json", "tags_json")
@@ -99,7 +100,9 @@ class DsV1AudioPipeline:
         samples = matching_samples(index, pending.source.values, pending.source.row_index)
         enriched = replace(
             audio,
-            metadata=merge_recording_metadata(audio.metadata, samples, index.remote_path),
+            annotations=audio.annotations.model_copy(update={
+                "metadata": merge_recording_metadata(audio.metadata, samples, index.remote_path)
+            }),
             segments=segments_from_samples(
                 audio,
                 samples,
@@ -177,17 +180,16 @@ def _audio_from_conversion(
         channels=converted.channels,
         start=0.0,
         end=converted.duration,
-        confidence=1.0,
-        id=stable_id("hetzner_ds_v1_audio", remote_path, row_index),
-        lineage_id=stable_id("hetzner_ds_v1_audio_lineage", remote_path, row_index),
-        metadata=_audio_metadata(
+        annotations=AudioAnnotations(metadata=_audio_metadata(
             source.values,
             settings,
             remote_path,
             row_index,
             converted,
             source_byte_length,
-        ),
+        )),
+        id=stable_id("hetzner_ds_v1_audio", remote_path, row_index),
+        lineage_id=stable_id("hetzner_ds_v1_audio_lineage", remote_path, row_index),
         byte_length=len(wav_bytes),
         virtual=False,
         segments=[],

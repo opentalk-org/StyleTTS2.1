@@ -8,6 +8,7 @@ from shared.db.audio.models import AudioFile
 from shared.db.audio.schemas import AudioFileReference
 from shared.db.common import one
 from shared.db.datasets.models import Dataset, dataset_audio_files
+from shared.audio_annotations import AudioAnnotations
 
 
 def count_audio_file_references(
@@ -35,6 +36,10 @@ def list_audio_file_references_page(
         AudioFile.id,
         AudioFile.name,
         AudioFile.duration,
+        AudioFile.speaker_id,
+        AudioFile.voice_id,
+        AudioFile.score,
+        AudioFile.accuracy,
         AudioFile.metadata_,
         AudioFile.byte_length,
         AudioFile.virtual,
@@ -50,7 +55,13 @@ def list_audio_file_references_page(
             id=row.id,
             name=row.name,
             duration=row.duration,
-            metadata=row.metadata_,
+            annotations=AudioAnnotations(
+                speaker_id=row.speaker_id,
+                voice_id=row.voice_id,
+                score=row.score,
+                accuracy=row.accuracy,
+                metadata=dict(row.metadata_),
+            ),
             byte_length=row.byte_length,
             virtual=row.virtual,
             style_prompt=row.style_prompt,

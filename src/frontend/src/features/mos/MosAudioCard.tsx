@@ -27,14 +27,14 @@ export function MosAudioCard({
         <div className="min-w-0">
           <div className="text-[11px] font-bold uppercase tracking-wider text-blue-600">Sample {label}</div>
           <div className="truncate text-[14px] font-bold text-txt">{audio.name}</div>
-          <div className="truncate text-[12px] text-txt-mute">{audio.speaker || "No speaker"}</div>
+          <div className="truncate text-[12px] text-txt-mute">{audio.annotations.speaker_id || "No speaker"}</div>
         </div>
         <AudioScoreInput
           value={score}
           disabled={disabled}
           label="MOS"
           onChange={onScore}
-          onCancel={() => onScore(pairScoreDraft(audio.score))}
+          onCancel={() => onScore(pairScoreDraft(audio.annotations.score))}
         />
       </div>
       <div className="px-4 py-4">

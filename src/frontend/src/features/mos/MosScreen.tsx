@@ -31,7 +31,7 @@ export function MosScreen() {
 
   useEffect(() => {
     if (!pair) return;
-    resetPair(pairScoreDraft(pair.audio_a.score), pairScoreDraft(pair.audio_b.score));
+    resetPair(pairScoreDraft(pair.audio_a.annotations.score), pairScoreDraft(pair.audio_b.annotations.score));
   }, [pairQuery.dataUpdatedAt, pair, resetPair]);
 
   const submit = async (preferredAudioId: string) => {

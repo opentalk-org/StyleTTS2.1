@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type AudioSort = "updated" | "name" | "duration" | "speaker" | "segments";
+export type AudioSort = "updated" | "name" | "duration" | "speaker_id" | "segments";
 
 export type AudioFilters = {
   query: string;

@@ -46,8 +46,7 @@ def _canonical_record(audio: Audio, members: list[AudioSegment]) -> dict[str, An
         "source_audio_id": str(audio.audio_file_id),
         "text": text,
         "phon": phon,
-        "speaker": (canonical.speaker or "").strip(),
-        "voice_id": str(canonical.voice_id) if canonical.voice_id is not None else "",
+        "annotations": canonical.annotations.model_dump(mode="json"),
         "word_count": _word_count(canonical, text),
         "word_times": _word_times(canonical, members),
         "start": float(canonical.start),
@@ -167,8 +166,8 @@ def _overlap_ratio(left: AudioSegment, right: AudioSegment) -> float:
     return overlap / shortest
 
 
-# Confidence tilts the vote without replacing member counting.
-CONFIDENCE_WEIGHT_FLOOR = 0.7
+# Accuracy tilts the vote without replacing member counting.
+ACCURACY_WEIGHT_FLOOR = 0.7
 
 
 def _consensus_segment(members: list[AudioSegment]) -> AudioSegment:
@@ -179,38 +178,38 @@ def _consensus_segment(members: list[AudioSegment]) -> AudioSegment:
             winner.text, winner.start, winner.end, tracks
         )
         metadata = {**winner.metadata, "alignment_interpolated_words": count}
-        return replace(winner, metadata=metadata, alignment=alignment)
+        return replace(winner, annotations=winner.annotations.model_copy(update={"metadata": metadata}), alignment=alignment)
     normals = [_normalized_text(member) for member in members]
-    weights = _confidence_weights(members)
+    weights = _accuracy_weights(members)
     ranked = sorted(
         range(len(members)),
         key=lambda index: (
-            -_confidence_weighted_support(normals, weights, index),
-            -(members[index].confidence if members[index].confidence is not None else 0.0),
+            -_accuracy_weighted_support(normals, weights, index),
+            -(members[index].accuracy if members[index].accuracy is not None else 0.0),
             _model_rank(members[index]),
             -len(normals[index]),
         ),
     )
     winner_index = ranked[0]
     winner = members[winner_index]
-    # Peer similarity and confidence drive both disagreement penalty and corroboration bonus.
+    # Peer similarity and accuracy drive both disagreement penalty and corroboration bonus.
     others = [index for index in range(len(members)) if index != winner_index]
     sims = [_text_similarity(normals[winner_index], normals[index]) for index in others]
-    other_confidences = [members[index].confidence for index in others]
+    other_accuracies = [members[index].accuracy for index in others]
     agreement = sum(sims) / len(sims)
     metadata = {
         **winner.metadata,
         "overlap_cluster_size": len(members),
         "overlap_consensus_score": round(agreement, 6),
-        "overlap_selected_model_confidence": winner.confidence,
+        "overlap_selected_model_accuracy": winner.accuracy,
         # Keep every member's text + score so nothing is lost when the cluster collapses.
         "overlap_members": [
-            {"model": _segment_model(member), "text": member.text.strip(), "confidence": member.confidence}
+            {"model": _segment_model(member), "text": member.text.strip(), "accuracy": member.accuracy}
             for member in members
         ],
         "overlap_alternatives": [member.text.strip() for index, member in enumerate(members) if index != winner_index],
     }
-    confidence = _consensus_confidence(winner.confidence, sims, other_confidences)
+    accuracy = _consensus_accuracy(winner.accuracy, sims, other_accuracies)
     other_tracks = [
         [word for word in (member.alignment or []) if winner.start <= alignment_midpoint(word) <= winner.end]
         for index, member in enumerate(members)
@@ -222,17 +221,18 @@ def _consensus_segment(members: list[AudioSegment]) -> AudioSegment:
         winner.text, winner.start, winner.end, tracks
     )
     metadata["alignment_interpolated_words"] = interpolated_words
-    return replace(winner, confidence=confidence, metadata=metadata, alignment=alignment)
+    annotations = winner.annotations.model_copy(update={"accuracy": accuracy, "metadata": metadata})
+    return replace(winner, annotations=annotations, alignment=alignment)
 
 
-# Damping keeps correlated model agreement from saturating confidence.
+# Damping keeps correlated model agreement from saturating accuracy.
 CONSENSUS_BONUS_DAMPING = 0.5
 
 
-def _consensus_confidence(
-    winner_confidence: float | None, sims: list[float], other_confidences: list[float | None]
+def _consensus_accuracy(
+    winner_accuracy: float | None, sims: list[float], other_accuracies: list[float | None]
 ) -> float | None:
-    """Semi-normalized cluster confidence: winner score, penalized by disagreement then lifted a
+    """Semi-normalized cluster accuracy: winner score, penalized by disagreement then lifted a
     bounded amount by confident corroboration.
     ``base`` is the winner's acoustic score scaled by mean agreement (model-agnostic, so texts
     not matching always lowers it). On top, each *other* member that both agrees and is confident
@@ -240,22 +240,22 @@ def _consensus_confidence(
     one — but the damping keeps consensus from saturating the score. Bounds: ``base <= result < 1``.
     """
     agreement = sum(sims) / len(sims)
-    base = agreement if winner_confidence is None else winner_confidence * agreement
+    base = agreement if winner_accuracy is None else winner_accuracy * agreement
     corroboration = sum(
-        sim * (conf if conf is not None else 0.0) for sim, conf in zip(sims, other_confidences)
+        sim * (value if value is not None else 0.0) for sim, value in zip(sims, other_accuracies)
     ) / len(sims)
     return base + (1.0 - base) * corroboration * CONSENSUS_BONUS_DAMPING
 
 
-def _confidence_weights(members: list[AudioSegment]) -> list[float]:
+def _accuracy_weights(members: list[AudioSegment]) -> list[float]:
     """Per-member vote weights, min-max normalized within the cluster into ``[FLOOR, 1.0]``.
 
-    Normalizing *within the cluster* makes the weight relative (who is most confident here),
-    which neutralizes the fact that engines report confidence on different scales. Missing
+    Normalizing *within the cluster* makes the weight relative (who is most accurate here),
+    which neutralizes the fact that engines report accuracy on different scales. Missing
     scores get a neutral weight, and the floor guarantees every member still votes.
     """
-    confidences = [member.confidence for member in members]
-    present = [value for value in confidences if value is not None]
+    accuracies = [member.accuracy for member in members]
+    present = [value for value in accuracies if value is not None]
     if len(present) < 2:
         return [1.0] * len(members)
     low, high = min(present), max(present)
@@ -263,21 +263,21 @@ def _confidence_weights(members: list[AudioSegment]) -> list[float]:
     if span <= 0.0:
         return [1.0] * len(members)
     weights = []
-    for value in confidences:
+    for value in accuracies:
         if value is None:
             weights.append(1.0)
         else:
-            weights.append(CONFIDENCE_WEIGHT_FLOOR + (1.0 - CONFIDENCE_WEIGHT_FLOOR) * (value - low) / span)
+            weights.append(ACCURACY_WEIGHT_FLOOR + (1.0 - ACCURACY_WEIGHT_FLOOR) * (value - low) / span)
     return weights
 
 
-def _confidence_weighted_support(normals: list[str], weights: list[float], index: int) -> float:
-    """Confidence-weighted support for a member's text, summed over the whole cluster.
+def _accuracy_weighted_support(normals: list[str], weights: list[float], index: int) -> float:
+    """Accuracy-weighted support for a member's text, summed over the whole cluster.
 
     Self is included (``sim == 1``), which is what makes the score symmetric: two members
     with identical text get identical support regardless of their own weights, so selection
-    among them falls through to the confidence tiebreak instead of favouring whoever happened
-    to sit next to the more confident peers.
+    among them falls through to the accuracy tiebreak instead of favouring whoever happened
+    to sit next to the more accurate peers.
     """
     return sum(
         _text_similarity(normals[index], normals[other]) * weights[other]

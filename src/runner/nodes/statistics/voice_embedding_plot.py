@@ -32,7 +32,7 @@ UNASSIGNED_VOICE = "unassigned"
 
 
 class VoiceEmbeddingPlotSettings(StrictSettings):
-    label_source: Literal["voice", "speaker"] = Field(default="voice", title="Colour by")
+    label_source: Literal["voice", "speaker_id"] = Field(default="voice", title="Colour by")
     embedding_component: Literal["both", "acoustic", "prosodic"] = Field(default="both", title="Style component")
     title: str = Field(default="Voice style embeddings (PCA)", title="Plot title")
     point_size: int = Field(default=44, title="Point size", ge=4, le=400)
@@ -195,10 +195,12 @@ def _voice_label(segments: list[dict[str, Any]], voice_names: dict[str, str], la
     weight: Counter[str] = Counter()
     for segment in segments:
         duration = max(0.0, float(segment["end"]) - float(segment["start"]))
-        if label_source == "speaker":
-            key = str(segment["speaker"]) if segment["speaker"] else UNASSIGNED_VOICE
+        annotations = segment["annotations"]
+        assert isinstance(annotations, dict), "segment annotations must be an object"
+        if label_source == "speaker_id":
+            key = str(annotations["speaker_id"]) if annotations["speaker_id"] else UNASSIGNED_VOICE
         else:
-            voice_id = segment["voice_id"] if "voice_id" in segment else None
+            voice_id = annotations["voice_id"]
             key = voice_names.get(str(voice_id), UNASSIGNED_VOICE) if voice_id else UNASSIGNED_VOICE
         weight[key] += duration if duration > 0 else 1.0
     if not weight:

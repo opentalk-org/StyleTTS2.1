@@ -42,5 +42,5 @@ class DeduplicateOverlappingSegmentsNode(Node):
                 min_overlap_ratio=self.settings.min_overlap_ratio,
             )
             metadata = {**audio.metadata, "overlap_segments_collapsed": collapsed}
-            outputs.append({"audio": replace(audio, segments=kept, metadata=metadata)})
+            outputs.append({"audio": replace(audio, segments=kept, annotations=audio.annotations.model_copy(update={"metadata": metadata}))})
         return outputs

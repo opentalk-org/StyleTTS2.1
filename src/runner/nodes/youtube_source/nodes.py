@@ -23,6 +23,7 @@ from runner.nodes.datatypes import AudioPort
 from runner.nodes.models import Audio, stable_id
 from shared.db import database_session
 from shared.db.voices.models import Voice
+from shared.audio_annotations import AudioAnnotations
 
 _INFO_FIELDS = (
     "id",
@@ -211,10 +212,13 @@ def _audio_from_download(
         channels=channels,
         start=0.0,
         end=float(duration),
-        confidence=1.0,
+        annotations=AudioAnnotations(
+            speaker_id=uploader,
+            voice_id=voice_id,
+            metadata=_audio_metadata(url, proxy, info, sample_rate, channels, float(duration)),
+        ),
         id=stable_id("youtube_audio", webpage_url),
         lineage_id=stable_id("youtube_audio_lineage", webpage_url),
-        metadata=_audio_metadata(url, proxy, info, sample_rate, channels, float(duration), uploader, voice_id),
         byte_length=len(wav_bytes),
         virtual=False,
         segments=[],
@@ -228,8 +232,6 @@ def _audio_metadata(
     sample_rate: int,
     channels: int,
     duration: float,
-    uploader: str | None,
-    voice_id: UUID | None,
 ) -> dict[str, Any]:
     metadata: dict[str, Any] = {
         "source": "youtube",
@@ -238,10 +240,6 @@ def _audio_metadata(
         "sample_rate": sample_rate,
         "channels": channels,
         "duration": duration,
-        "score": None,
-        "speaker": uploader or "",
-        "speaker_id": uploader,
-        "voice_id": str(voice_id) if voice_id is not None else None,
         "language": _string_or_none(info.get("language")),
     }
     for field in _INFO_FIELDS:

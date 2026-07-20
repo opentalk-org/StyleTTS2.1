@@ -121,7 +121,7 @@ class NormalizeLoudnessNode(Node):
                     start=0.0,
                     end=result.duration,
                     id=normalized_id,
-                    metadata=metadata,
+                    annotations=audio.annotations.model_copy(update={"metadata": metadata}),
                 ),
             })
         return outputs

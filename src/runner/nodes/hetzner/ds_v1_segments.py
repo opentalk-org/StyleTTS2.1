@@ -8,6 +8,7 @@ from runner.nodes.hetzner.ds_v1_metadata import DsV2Sample
 from runner.nodes.hetzner.ds_v2_alignment import alignment_from_timestamps, alignment_window
 from runner.nodes.hetzner.ds_v2_audio import TRANSCRIPT_SEGMENTS
 from runner.nodes.models import Audio, AudioSegment, stable_id
+from shared.audio_annotations import AudioAnnotations
 
 
 def segments_from_samples(
@@ -42,7 +43,7 @@ def _sample_segments(
 ) -> list[AudioSegment]:
     start, sample_end, end = _segment_bounds(audio, sample)
     score = _optional_float(sample, "mos_score")
-    speaker = _optional_text(sample, "speaker_id")
+    speaker_id = _optional_text(sample, "speaker_id")
     timestamps = _json_value(sample, "text_timestamps")
     source_metadata = _json_value(sample, "metadata")
     if not isinstance(source_metadata, dict):
@@ -74,17 +75,17 @@ def _sample_segments(
                 id=stable_id("hetzner_ds_v1_segment", *segment_key),
                 lineage_id=stable_id("hetzner_ds_v1_segment_lineage", *segment_key),
                 segment_id=stable_id("hetzner_ds_v1_segment_entry", *segment_key),
-                speaker=speaker,
-                voice_id=None,
-                confidence=score,
-                metadata=_segment_metadata(
+                annotations=AudioAnnotations(
+                    speaker_id=speaker_id,
+                    score=score,
+                    metadata=_segment_metadata(
                     sample,
                     source,
                     column,
                     preferred_text_column,
                     timestamps,
                     source_metadata,
-                    score,
+                    ),
                 ),
                 alignment=alignment,
             )
@@ -150,7 +151,6 @@ def _segment_metadata(
     preferred_text_column: str,
     timestamps: Any,
     source_metadata: dict[str, Any],
-    score: float | None,
 ) -> dict[str, Any]:
     return {
         "type_": source,
@@ -169,8 +169,6 @@ def _segment_metadata(
         "sample_index": _int(sample, "sample_index"),
         "sample_start": _float(sample, "sample_start"),
         "sample_end": _float(sample, "sample_end"),
-        "speaker_id": _optional_text(sample, "speaker_id"),
-        "mos_score": score,
         "parquet_filename": _optional_text(sample, "parquet_filename"),
         "src_type": _optional_text(sample, "src_type"),
         "src": _optional_text(sample, "src"),

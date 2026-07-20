@@ -1,11 +1,13 @@
-from typing import Any, Literal
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
 
+from shared.audio_annotations import AudioAnnotations
 
-AudioSort = Literal["updated", "name", "duration", "speaker", "segments"]
+
+AudioSort = Literal["updated", "name", "duration", "speaker_id", "segments"]
 
 
 class WordAlignment(BaseModel):
@@ -20,9 +22,8 @@ class AudioSegmentRead(BaseModel):
     end: float
     text: str
     phon: str
-    speaker: str
+    annotations: AudioAnnotations
     type_: str = "manual"
-    confidence: float | None = None
     alignment: list[WordAlignment] | None = None
 
 
@@ -32,9 +33,8 @@ class AudioSegmentWrite(BaseModel):
     end: float
     text: str
     phon: str
-    speaker: str
+    annotations: AudioAnnotations
     type_: str = "manual"
-    confidence: float | None = None
     alignment: list[WordAlignment] | None = None
 
 
@@ -69,9 +69,8 @@ class AddToDatasetRequest(BaseModel):
 class AudioFileListItem(BaseModel):
     id: UUID
     name: str
-    speaker: str
+    annotations: AudioAnnotations
     duration: float
-    score: float | None
     language: str | None
     style_prompt: str | None
     voice_prompt: str | None
@@ -83,7 +82,6 @@ class AudioFileListItem(BaseModel):
     dataset_ids: list[UUID]
     virtual: bool
     storage_kind: Literal["packed", "external"]
-    metadata: dict[str, Any]
     updated_at: datetime
 
 

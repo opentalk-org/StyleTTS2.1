@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from backend.mos.schemas import MosAudioRead, MosPairRead, MosRatingDetailRead, MosRatingPage, MosRatingRead
 from shared.db import database_session
 from shared.db.audio.models import AudioFile
+from shared.db.audio import crud as audio_crud
 from shared.db.mos import crud as mos_crud
 from shared.db.mos.models import MosComparison
 from shared.db.mos.schemas import MosComparisonRead, MosRatingCreate, MosRatingUpdate
@@ -80,19 +81,11 @@ async def delete_mos_rating(comparison_id: UUID) -> None:
 
 
 def _audio_response(item: AudioFile) -> MosAudioRead:
-    metadata = item.metadata_
-    if "speaker" in metadata:
-        speaker = str(metadata["speaker"])
-    elif "voice" in metadata:
-        speaker = str(metadata["voice"])
-    else:
-        speaker = ""
     return MosAudioRead(
         id=item.id,
         name=item.name,
         duration=item.duration,
-        score=item.score,
-        speaker=speaker,
+        annotations=audio_crud.audio_file_annotations(item),
     )
 
 

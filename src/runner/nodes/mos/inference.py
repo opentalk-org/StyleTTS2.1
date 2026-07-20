@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from pathlib import Path
 from uuid import UUID
 
@@ -79,7 +80,10 @@ class PredictMosScoreNode(Node):
             audio_crud.bulk_update_audio_scores(session, scores)
         return [
             {
-                "audio": audio,
+                "audio": replace(
+                    audio,
+                    annotations=audio.annotations.model_copy(update={"score": score}),
+                ),
                 "writeback_result": {
                     "audio_file_id": str(audio.audio_file_id),
                     "score": score,

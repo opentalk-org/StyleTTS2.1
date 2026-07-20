@@ -116,7 +116,7 @@ function AudioSearchList({ onPick, exclude }: { onPick: (audio: AudioFile) => vo
               >
                 <span className="min-w-0 flex-1 truncate font-medium text-txt">{item.name}</span>
                 <span className="shrink-0 text-[11px] tabular-nums text-txt-mute">
-                  {item.speaker ? `${item.speaker} · ` : ""}
+                  {item.annotations.speaker_id ? `${item.annotations.speaker_id} · ` : ""}
                   {item.duration.toFixed(1)}s
                 </span>
               </button>

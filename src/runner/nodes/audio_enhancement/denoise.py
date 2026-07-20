@@ -71,12 +71,12 @@ class DeepFilterNetDenoiseNode(Node):
                     audio,
                     data=denoised,
                     id=denoised_id,
-                    metadata={
+                    annotations=audio.annotations.model_copy(update={"metadata": {
                         **audio.metadata,
                         "denoise": {
                             "model": self.settings.model,
                         },
-                    },
+                    }}),
                 ),
             })
         return outputs

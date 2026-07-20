@@ -1,12 +1,12 @@
 from pathlib import Path
 from typing import Any, Literal
-from uuid import UUID
 
 from runner.nodes.models import Audio, AudioRecordRef, AudioSegment, SaveResult, SegmentGroup, stable_id
+from shared.audio_annotations import AudioAnnotations
 
 
 def audio_ref_from_audio(audio: Audio) -> AudioRecordRef:
-    return AudioRecordRef(audio.audio_file_id, audio.name, audio.duration, audio.byte_length, audio.virtual, audio.metadata)
+    return AudioRecordRef(audio.audio_file_id, audio.name, audio.duration, audio.byte_length, audio.virtual, audio.annotations)
 
 
 def segment_group_from_audio(audio: Audio) -> SegmentGroup:
@@ -16,8 +16,8 @@ def segment_group_from_audio(audio: Audio) -> SegmentGroup:
 
 def audio_segment_from_dict(ref: AudioRecordRef, segment: dict[str, Any]) -> AudioSegment:
     segment_id = str(segment["id"])
-    speaker = str(segment["speaker"]) if "speaker" in segment else None
-    metadata = dict(segment["metadata"]) if isinstance(segment.get("metadata"), dict) else {}
+    annotations = AudioAnnotations.model_validate(segment["annotations"])
+    metadata = dict(annotations.metadata)
     metadata.setdefault("type_", _segment_type(segment))
     return AudioSegment(
         source_audio_id=ref.audio_file_id,
@@ -31,10 +31,7 @@ def audio_segment_from_dict(ref: AudioRecordRef, segment: dict[str, Any]) -> Aud
         id=stable_id("segment", ref.audio_file_id, segment_id),
         lineage_id=stable_id("segment_lineage", ref.audio_file_id, segment_id),
         segment_id=segment_id,
-        speaker=speaker,
-        voice_id=_optional_uuid(segment["voice_id"]) if "voice_id" in segment else None,
-        confidence=_optional_float(segment.get("confidence")),
-        metadata=metadata,
+        annotations=annotations.model_copy(update={"metadata": metadata}),
         alignment=segment["alignment"] if isinstance(segment.get("alignment"), list) else None,
     )
 
@@ -56,18 +53,18 @@ def save_result(path: str, kind: str, lineage_id: str, metadata: dict[str, Any])
 
 
 def _segment_dict(segment: AudioSegment) -> dict[str, Any]:
-    type_ = _segment_type({"metadata": segment.metadata})
+    type_ = _segment_type({"annotations": segment.annotations.model_dump(mode="json")})
+    annotations = segment.annotations.model_copy(
+        update={"metadata": {**segment.metadata, "type_": type_}}
+    )
     return {
         "id": segment.segment_id or segment.id,
         "start": segment.start,
         "end": segment.end,
         "text": segment.text,
         "phon": segment.phon,
-        "speaker": segment.speaker or "",
-        "voice_id": str(segment.voice_id) if segment.voice_id is not None else None,
-        "confidence": segment.confidence,
+        "annotations": annotations.model_dump(mode="json"),
         "type_": type_,
-        "metadata": {**segment.metadata, "type_": type_},
         "alignment": segment.alignment,
     }
 
@@ -79,22 +76,11 @@ def _segment_sort_key(segment: dict[str, Any]) -> tuple[float, float, str, str]:
 def _segment_type(segment: dict[str, Any]) -> str:
     if segment.get("type_"):
         return str(segment["type_"])
-    metadata = segment.get("metadata")
+    annotations = segment.get("annotations")
+    metadata = annotations.get("metadata") if isinstance(annotations, dict) else None
     if isinstance(metadata, dict):
         if metadata.get("type_"):
             return str(metadata["type_"])
         if metadata.get("model"):
             return str(metadata["model"])
     return "manual"
-
-
-def _optional_uuid(value: object) -> UUID | None:
-    if value is None or value == "":
-        return None
-    return UUID(str(value))
-
-
-def _optional_float(value: object) -> float | None:
-    if value is None or value == "":
-        return None
-    return float(value)  # type: ignore[arg-type]

@@ -41,7 +41,7 @@ export function EditorHeader({
   const [metadataCopied, setMetadataCopied] = useState(false);
   const [showMetadata, setShowMetadata] = useState(false);
 
-  const metadataJson = JSON.stringify(file.metadata, null, 2);
+  const metadataJson = JSON.stringify(file.annotations.metadata, null, 2);
   return (
     <div className="relative z-30 mb-4">
       <div className="rounded-[10px] border border-line bg-panel">
@@ -69,7 +69,7 @@ export function EditorHeader({
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-3 py-2.5">
           <div className="flex min-w-0 flex-1 basis-[280px] flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] tabular-nums text-txt-mute">
-            <span className="max-w-[220px] truncate rounded-full bg-panel-2 px-2 py-0.5 font-semibold text-txt-dim" title={file.speaker}>{file.speaker}</span>
+            <span className="max-w-[220px] truncate rounded-full bg-panel-2 px-2 py-0.5 font-semibold text-txt-dim" title={file.annotations.speaker_id ?? ""}>{file.annotations.speaker_id}</span>
             <span>{fmtDur(duration)}</span>
             <span>{file.sample_rate ? `${file.sample_rate / 1000}kHz` : "unknown rate"}</span>
             <span>{file.size_mb} MB</span>
@@ -89,7 +89,7 @@ export function EditorHeader({
             </button>
           </div>
           <div className="flex items-center gap-2">
-            <AudioScoreInput value={draft.score} disabled={saving} onChange={(score) => onDraftChange({ ...draft, score })} onCancel={() => onDraftChange({ ...draft, score: formatAudioScore(file.score) })} />
+            <AudioScoreInput value={draft.score} disabled={saving} onChange={(score) => onDraftChange({ ...draft, score })} onCancel={() => onDraftChange({ ...draft, score: formatAudioScore(file.annotations.score) })} />
             <label className="flex h-8 items-center rounded-md border border-line-2 bg-bg pl-2.5 pr-1 focus-within:border-blue-400">
               <span className="text-[10px] font-bold uppercase tracking-wide text-txt-mute">Lang</span>
               <input

@@ -34,7 +34,7 @@ class SortformerSettings(StrictSettings):
 class DiarizationSegment:
     start: float
     end: float
-    speaker: str
+    speaker_id: str
 
 
 class VadDetectNode(Node):
@@ -159,7 +159,7 @@ def speaker_audio_segments(audio: Audio, segments: list[DiarizationSegment], set
         end = min(audio.duration, float(segment.end))
         if end - start < settings.min_segment_sec:
             continue
-        outputs.append(_speaker_audio(audio, segment.speaker, start, end, info, index))
+        outputs.append(_speaker_audio(audio, segment.speaker_id, start, end, info, index))
     return outputs
 
 
@@ -181,11 +181,11 @@ def cut_audio_by_segment(audio: Audio, segment: AudioSegment, index: int = 0) ->
         segment,
         start=0.0,
         end=duration,
-        metadata={
+        annotations=segment.annotations.model_copy(update={"metadata": {
             **segment.metadata,
             "source_start": segment.start,
             "source_end": segment.end,
-        },
+        }}),
     )
     return Audio(
         audio_file_id=audio.audio_file_id,
@@ -195,10 +195,7 @@ def cut_audio_by_segment(audio: Audio, segment: AudioSegment, index: int = 0) ->
         channels=int(info["channels"]),
         start=0.0,
         end=duration,
-        confidence=segment.confidence if segment.confidence is not None else audio.confidence,
-        id=cut_id,
-        lineage_id=stable_id("lineage", audio.lineage_id, segment.lineage_id),
-        metadata={
+        annotations=segment.annotations.model_copy(update={"metadata": {
             **audio.metadata,
             **segment.metadata,
             "source_audio_id": str(audio.audio_file_id),
@@ -209,20 +206,20 @@ def cut_audio_by_segment(audio: Audio, segment: AudioSegment, index: int = 0) ->
             "source_end": segment.end,
             "text": segment.text,
             "phon": segment.phon,
-            "speaker": segment.speaker,
-            "voice_id": str(segment.voice_id) if segment.voice_id is not None else None,
-        },
+        }}),
+        id=cut_id,
+        lineage_id=stable_id("lineage", audio.lineage_id, segment.lineage_id),
         byte_length=len(data),
         virtual=audio.virtual,
         segments=[relative_segment],
     )
 
 
-def _speaker_audio(audio: Audio, speaker: str, start: float, end: float, info: dict[str, int], index: int) -> Audio:
+def _speaker_audio(audio: Audio, speaker_id: str, start: float, end: float, info: dict[str, int], index: int) -> Audio:
     absolute_start = audio.start + start
     absolute_end = audio.start + end
-    speaker_id = stable_id("speaker", audio.audio_file_id, audio.id, speaker)
-    audio_id = stable_id("audio", audio.audio_file_id, audio.id, speaker, index, absolute_start, absolute_end)
+    canonical_speaker_id = stable_id("speaker", audio.audio_file_id, audio.id, speaker_id)
+    audio_id = stable_id("audio", audio.audio_file_id, audio.id, speaker_id, index, absolute_start, absolute_end)
     data = extract_wav_range(audio.data, start, end, info)
     return Audio(
         audio.audio_file_id,
@@ -232,22 +229,18 @@ def _speaker_audio(audio: Audio, speaker: str, start: float, end: float, info: d
         int(info["channels"]),
         absolute_start,
         absolute_end,
-        audio.confidence,
-        audio_id,
-        stable_id("lineage", audio.lineage_id, audio_id),
-        {
+        audio.annotations.model_copy(update={"speaker_id": canonical_speaker_id, "metadata": {
             **audio.metadata,
             "diarization": {
                 "model": "sortformer",
-                "speaker": speaker,
-                "speaker_id": speaker_id,
+                "speaker_id": canonical_speaker_id,
                 "segment_index": index,
                 "start": absolute_start,
                 "end": absolute_end,
             },
-            "speaker": speaker,
-            "speaker_id": speaker_id,
-        },
+        }}),
+        audio_id,
+        stable_id("lineage", audio.lineage_id, audio_id),
     )
 
 
@@ -282,10 +275,10 @@ def _parse_sortformer_item(item: Any) -> DiarizationSegment:
     if isinstance(item, str):
         return _parse_sortformer_line(item)
     if isinstance(item, dict):
-        speaker = item.get("speaker", item.get("label"))
-        if speaker is None:
+        speaker_id = item.get("speaker", item.get("label"))
+        if speaker_id is None:
             raise ValueError("Sortformer diarization item missing speaker")
-        return DiarizationSegment(float(item["start"]), float(item["end"]), str(speaker))
+        return DiarizationSegment(float(item["start"]), float(item["end"]), str(speaker_id))
     if isinstance(item, (tuple, list)) and len(item) >= 3:
         return DiarizationSegment(float(item[0]), float(item[1]), str(item[2]))
     raise ValueError(f"invalid Sortformer diarization item: {item!r}")

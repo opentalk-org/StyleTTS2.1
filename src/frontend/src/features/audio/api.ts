@@ -7,13 +7,21 @@ export type WordAlignment = {
   end: number;
 };
 
+export type AudioAnnotations = {
+  speaker_id: string | null;
+  voice_id: string | null;
+  score: number | null;
+  accuracy: number | null;
+  metadata: Record<string, unknown>;
+};
+
 export type AudioSegment = {
   id: string;
   start: number;
   end: number;
   text: string;
   phon: string;
-  speaker: string;
+  annotations: AudioAnnotations;
   type_: string;
   alignment?: WordAlignment[] | null;
 };
@@ -23,9 +31,8 @@ export type Segment = AudioSegment;
 export type AudioFile = {
   id: string;
   name: string;
-  speaker: string;
+  annotations: AudioAnnotations;
   duration: number;
-  score: number | null;
   language: string | null;
   style_prompt: string | null;
   voice_prompt: string | null;
@@ -37,7 +44,6 @@ export type AudioFile = {
   dataset_ids: string[];
   virtual: boolean;
   storage_kind: "packed" | "external";
-  metadata: Record<string, unknown>;
   updated_at: string;
 };
 
@@ -56,7 +62,7 @@ export type AudioPage = {
 
 export type AudioUploadOptions = {
   datasetId: string;
-  speaker: string;
+  speaker_id: string;
 };
 
 export type AudioUploadProgress = {
@@ -219,7 +225,7 @@ function uploadAudioFile(
   body.append("duration", String(duration));
   body.append("sample_rate", String(sampleRate));
   body.append("dataset_id", options.datasetId);
-  body.append("speaker", options.speaker);
+  body.append("speaker_id", options.speaker_id);
   return uploadForm<AudioFile>("/audio-files/upload", body, onProgress);
 }
 

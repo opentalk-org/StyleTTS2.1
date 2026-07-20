@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from shared.audio_annotations import AudioAnnotations
 from shared.db.audio.rows_crud import get_audio_files_bulk
 from shared.db.audio.segments_crud import bulk_replace_audio_segments
 
@@ -61,7 +62,11 @@ def _assigned_segments(
         if voice_id is None:
             updated.append(segment)
             continue
-        updated.append({**segment, "voice_id": str(voice_id)})
+        annotations = AudioAnnotations.model_validate(segment["annotations"])
+        updated.append({
+            **segment,
+            "annotations": annotations.model_copy(update={"voice_id": voice_id}).model_dump(mode="json"),
+        })
         missing.remove(segment_id)
     if missing:
         raise KeyError(

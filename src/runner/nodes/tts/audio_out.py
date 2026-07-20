@@ -7,6 +7,7 @@ import numpy as np
 import soundfile as sf
 
 from runner.nodes.models import Audio, stable_id
+from shared.audio_annotations import AudioAnnotations
 
 
 def wav_bytes_from_samples(samples: np.ndarray, sample_rate: int) -> bytes:
@@ -46,8 +47,9 @@ def audio_from_samples(
         channels=1,
         start=0.0,
         end=duration,
-        confidence=1.0,
+        annotations=AudioAnnotations(
+            metadata={"node_type": node_type, "request_id": request_id, "byte_length": len(wav_bytes), **metadata},
+        ),
         id=audio_id,
         lineage_id=audio_id,
-        metadata={"node_type": node_type, "request_id": request_id, "byte_length": len(wav_bytes), **metadata},
     )

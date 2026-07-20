@@ -43,6 +43,17 @@ from shared.db.common import many
 from shared.db.settings import crud as settings_crud
 from shared.db.datasets.models import Dataset
 from shared.storage import S3ObjectStore
+from shared.audio_annotations import AudioAnnotations
+
+
+def audio_file_annotations(item: AudioFile) -> AudioAnnotations:
+    return AudioAnnotations(
+        speaker_id=item.speaker_id,
+        voice_id=item.voice_id,
+        score=item.score,
+        accuracy=item.accuracy,
+        metadata=dict(item.metadata_),
+    )
 
 
 def list_audio_files(session: Session) -> Sequence[AudioFile]:
@@ -143,8 +154,8 @@ def _audio_sort(sort: str):
         return desc(AudioFile.duration)
     if sort == "segments":
         return desc(func.jsonb_array_length(AudioFile.segments))
-    if sort == "speaker":
-        return AudioFile.name
+    if sort == "speaker_id":
+        return AudioFile.speaker_id
     return desc(AudioFile.updated_at)
 
 
@@ -308,8 +319,10 @@ def _object_store(session: Session, store: ObjectStore | None) -> ObjectStore:
 def _update_audio_metadata(item: AudioFile, payload: AudioUpdate) -> None:
     item.name = payload.name
     item.duration = payload.duration
-    if "score" in payload.model_fields_set:
-        item.score = payload.score
+    item.speaker_id = payload.annotations.speaker_id
+    item.voice_id = payload.annotations.voice_id
+    item.score = payload.annotations.score
+    item.accuracy = payload.annotations.accuracy
     if "language" in payload.model_fields_set:
         item.language = payload.language
     if "style_prompt" in payload.model_fields_set:
@@ -317,7 +330,7 @@ def _update_audio_metadata(item: AudioFile, payload: AudioUpdate) -> None:
     if "voice_prompt" in payload.model_fields_set:
         item.voice_prompt = payload.voice_prompt
     item.segments = payload.segments
-    item.metadata_ = payload.metadata
+    item.metadata_ = payload.annotations.metadata
     item.virtual = payload.virtual
     item.updated_at = _now()
 

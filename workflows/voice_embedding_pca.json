@@ -22,7 +22,7 @@
         "y": 120,
         "params": {
           "checkpoint_id": "f0d41c4b-5e5c-4be0-abe2-dfb15649ed52",
-          "label_source": "speaker",
+          "label_source": "speaker_id",
           "embedding_component": "both",
           "title": "Voice style embeddings (PCA)",
           "point_size": 44,

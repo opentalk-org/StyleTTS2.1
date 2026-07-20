@@ -43,10 +43,9 @@ def _artifact_bytes(audio: Audio, extension: str) -> tuple[bytes, str, str]:
             "name": audio.name,
             "start": audio.start,
             "end": audio.end,
-            "confidence": audio.confidence,
+            "annotations": audio.annotations.model_dump(mode="json"),
             "sample_rate": audio.sample_rate,
             "channels": audio.channels,
-            "metadata": audio.metadata,
         }, ensure_ascii=False, indent=2).encode("utf-8")
         return payload, kind, "application/json"
     assert audio.data is not None, f"audio bytes are required: {audio.id}"
@@ -80,7 +79,9 @@ class LoadAudioNode(Node):
                 data=data,
                 sample_rate=self.settings.sample_rate,
                 channels=self.settings.channels,
-                metadata={**audio.metadata, "byte_length": len(data), "source_duration": audio.duration},
+                annotations=audio.annotations.model_copy(update={"metadata": {
+                    **audio.metadata, "byte_length": len(data), "source_duration": audio.duration
+                }}),
                 byte_length=len(data),
             )
             outputs.append({"audio": loaded})

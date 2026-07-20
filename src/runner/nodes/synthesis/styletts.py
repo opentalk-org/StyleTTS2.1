@@ -19,6 +19,7 @@ from runflow.runtime.output_router import INPUT_INDEX_OUTPUT
 from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AudioPort, CheckpointRefPort, JsonPort, SynthesisResultPort
 from runner.nodes.models import Audio, SynthesisResult, stable_id, typed_checkpoint
+from shared.audio_annotations import AudioAnnotations
 from runner.nodes.synthesis.styletts_runtime.actions import (
     StyleTtsPayloadRequest,
     StyleTtsRequestSettings,
@@ -202,7 +203,9 @@ def _styletts_output(
         pending.inputs["style_reference"],
     )
     audio = _audio_from_wav(settings.output_name, wav_bytes, request_id, node_type)
-    audio = replace(audio, metadata={**audio.metadata, "run_id": run_id})
+    audio = replace(audio, annotations=audio.annotations.model_copy(
+        update={"metadata": {**audio.metadata, "run_id": run_id}}
+    ))
     result = SynthesisResult(
         request_id,
         audio,
@@ -240,10 +243,9 @@ def _audio_from_wav(output_name: str, wav_bytes: bytes, request_id: str, node_ty
         channels=info["channels"],
         start=0.0,
         end=info["duration"],
-        confidence=1.0,
+        annotations=AudioAnnotations(metadata=metadata),
         id=audio_id,
         lineage_id=audio_id,
-        metadata=metadata,
     )
 
 

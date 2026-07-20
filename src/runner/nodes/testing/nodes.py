@@ -134,10 +134,10 @@ def _voice_reference_audio_id(audio_files, voice_id: UUID, voice_name: str = "")
     matches = [
         item
         for item in audio_files
-        if str(item.metadata_.get("voice_id") or "") == voice
-        or (name and str(item.metadata_.get("speaker") or "").strip() == name)
-        or any(str(segment.get("voice_id") or "") == voice for segment in item.segments)
-        or (name and any(str(segment.get("speaker") or "").strip() == name for segment in item.segments))
+        if str(item.voice_id or "") == voice
+        or (name and str(item.speaker_id or "").strip() == name)
+        or any(str(segment["annotations"]["voice_id"] or "") == voice for segment in item.segments)
+        or (name and any(str(segment["annotations"]["speaker_id"] or "").strip() == name for segment in item.segments))
     ]
     if not matches:
         label = f"{voice_name} ({voice_id})" if voice_name else str(voice_id)

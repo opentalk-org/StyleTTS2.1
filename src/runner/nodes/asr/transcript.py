@@ -5,6 +5,7 @@ from dataclasses import replace
 from typing import Any
 
 from runner.nodes.models import Audio, AudioSegment, stable_id
+from shared.audio_annotations import AudioAnnotations
 
 
 def audio_with_transcript_segments(
@@ -31,7 +32,7 @@ def audio_with_transcript_segments(
         if item_text.strip()
     ).strip()
     transcript_id = stable_id("transcript", model_name, audio.audio_file_id, audio.id)
-    speaker = _diarized_speaker(audio)
+    speaker_id = _diarized_speaker_id(audio)
     segments = [
         AudioSegment(
             source_audio_id=audio.audio_file_id,
@@ -45,22 +46,26 @@ def audio_with_transcript_segments(
             id=stable_id("segment", transcript_id, index),
             lineage_id=stable_id("segment_lineage", audio.lineage_id, transcript_id, index),
             segment_id=stable_id("transcript_segment", transcript_id, index),
-            speaker=speaker,
-            confidence=confidence,
+            annotations=AudioAnnotations(
+                speaker_id=speaker_id,
+                voice_id=audio.voice_id,
+                score=audio.score,
+                accuracy=confidence,
+                metadata={
+                    "transcript_id": transcript_id,
+                    "transcript_segment_index": index,
+                    "model": model_name,
+                    "type_": model_name,
+                },
+            ),
             alignment=_offset_alignment(words, audio.start),
-            metadata={
-                "transcript_id": transcript_id,
-                "transcript_segment_index": index,
-                "model": model_name,
-                "type_": model_name,
-            },
         )
         for index, (start, end, item_text, confidence, words) in enumerate(filtered)
     ]
     return replace(
         audio,
         segments=segments,
-        metadata={
+        annotations=audio.annotations.model_copy(update={"metadata": {
             **audio.metadata,
             "language": language,
             "model": model_name,
@@ -69,7 +74,7 @@ def audio_with_transcript_segments(
             "transcript_text": text,
             "sample_rate": audio.sample_rate,
             "channels": audio.channels,
-        },
+        }}),
     )
 
 
@@ -94,8 +99,7 @@ def _offset_alignment(
     ]
 
 
-def _diarized_speaker(audio: Audio) -> str | None:
+def _diarized_speaker_id(audio: Audio) -> str | None:
     if "diarization" not in audio.metadata:
         return None
-    speaker = audio.metadata.get("speaker")
-    return str(speaker) if speaker else None
+    return audio.speaker_id

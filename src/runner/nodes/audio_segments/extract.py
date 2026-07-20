@@ -78,12 +78,11 @@ class PersistSplitAudioRecordsNode(Node):
                 name=audio.name,
                 wav_bytes=audio.data,
                 duration=audio.duration,
-                score=_target_audio_score(audio),
+                annotations=audio.annotations.model_copy(update={"metadata": _target_audio_metadata(audio)}),
                 language=_target_audio_language(audio),
                 style_prompt=audio.style_prompt,
                 voice_prompt=audio.voice_prompt,
                 segments=[],
-                metadata=_target_audio_metadata(audio),
                 virtual=self.settings.virtual,
             ))
         items, segments_by_id = persist_split_records(
@@ -107,7 +106,7 @@ class PersistSplitAudioRecordsNode(Node):
                 id=stable_id("audio", item.id, item.name),
                 lineage_id=stable_id("audio_ref", item.id),
                 segments=saved_group.segments,
-                metadata=item.metadata_,
+                annotations=audio_crud.audio_file_annotations(item),
                 byte_length=item.byte_length,
                 virtual=item.virtual,
             )
@@ -150,10 +149,9 @@ def extract_group_audio(audio: Audio, group: SegmentGroup) -> Audio:
         int(info["channels"]),
         0.0,
         duration,
-        audio.confidence,
+        audio.annotations.model_copy(update={"metadata": metadata}),
         audio_id,
         group.lineage_id,
-        metadata,
     )
 
 
@@ -169,16 +167,14 @@ def adjusted_segment_payloads(group: SegmentGroup) -> list[dict[str, Any]]:
             "end": end,
             "text": segment.text,
             "phon": segment.phon,
-            "speaker": segment.speaker or "",
-            "voice_id": str(segment.voice_id) if segment.voice_id is not None else None,
-            "type_": str(segment.metadata.get("type_", segment.metadata.get("model", "manual"))),
-            "metadata": {
+            "annotations": segment.annotations.model_copy(update={"metadata": {
                 **segment.metadata,
                 "type_": str(segment.metadata.get("type_", segment.metadata.get("model", "manual"))),
                 "source_audio_id": str(segment.source_audio_id),
                 "source_segment_id": segment.segment_id or segment.id,
                 "source_segment_lineage_id": segment.lineage_id,
-            },
+            }}).model_dump(mode="json"),
+            "type_": str(segment.metadata.get("type_", segment.metadata.get("model", "manual"))),
         })
     return payloads
 
@@ -210,10 +206,9 @@ def _source_audio(item: AudioFile, data: bytes, group: SegmentGroup) -> Audio:
         int(metadata["channels"]),
         0.0,
         item.duration,
-        1.0,
+        audio_crud.audio_file_annotations(item).model_copy(update={"metadata": metadata}),
         audio_id,
         group.lineage_id,
-        metadata,
     )
 
 
@@ -254,15 +249,6 @@ def _target_audio_metadata(audio: Audio) -> dict[str, Any]:
         "sample_rate": audio.sample_rate,
         "channels": audio.channels,
     }
-
-
-def _target_audio_score(audio: Audio) -> float | None:
-    for key in ("score", "mos_score"):
-        value = audio.metadata.get(key)
-        if value is None or value == "":
-            continue
-        return float(value)
-    return None
 
 
 def _target_audio_language(audio: Audio) -> str | None:

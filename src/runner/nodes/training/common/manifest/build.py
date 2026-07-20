@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from runner.nodes.models import AudioRecordRef, AudioSegment, stable_id
+from runner.nodes.audio_segments.writeback_helpers import audio_segment_from_dict
+from runner.nodes.models import AudioRecordRef, AudioSegment
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 
@@ -20,7 +21,7 @@ class ManifestLine:
     audio_id: UUID
     value: str
     phon: str
-    speaker: str
+    speaker_id: str
 
 
 @dataclass(frozen=True)
@@ -56,7 +57,7 @@ def segments_from_audio_file_ids(audio_file_ids: list[UUID]) -> list[AudioSegmen
     with database_session() as session:
         items = audio_crud.get_audio_files_bulk(session, audio_file_ids)
         for audio_file_id, item in items.items():
-            ref = AudioRecordRef(item.id, item.name, item.duration, item.byte_length, item.virtual, item.metadata_)
+            ref = AudioRecordRef(item.id, item.name, item.duration, item.byte_length, item.virtual, audio_crud.audio_file_annotations(item))
             segments.extend(
                 _audio_segment_from_dict(ref, segment)
                 for segment in item.segments
@@ -88,7 +89,7 @@ def manifest_lines(
                 audio_id=audio_id,
                 value=_manifest_audio_value(audio_id, root_path, audio_dir),
                 phon=" ".join(segment.phon.strip() for segment in segments),
-                speaker=str(speaker_ids[speaker_key(segments[0])]),
+                speaker_id=str(speaker_ids[speaker_key(segments[0])]),
             )
         )
     return lines
@@ -108,8 +109,8 @@ def speaker_id_map(groups: dict[UUID, list[AudioSegment]]) -> dict[str, int]:
 def speaker_key(segment: AudioSegment) -> str:
     if segment.voice_id is not None:
         return str(segment.voice_id)
-    if segment.speaker is not None and segment.speaker.strip():
-        return segment.speaker.strip()
+    if segment.speaker_id is not None and segment.speaker_id.strip():
+        return segment.speaker_id.strip()
     return "0"
 
 
@@ -130,7 +131,7 @@ def materialize_audio_files(audio_ids: list[UUID], audio_dir: Path) -> None:
 
 
 def write_manifest(path: Path, lines: list[ManifestLine]) -> None:
-    content = "".join(f"{line.value}|{line.phon}|{line.speaker}\n" for line in lines)
+    content = "".join(f"{line.value}|{line.phon}|{line.speaker_id}\n" for line in lines)
     path.write_text(content, encoding="utf-8")
 
 
@@ -153,37 +154,7 @@ def _segment_sort_key(segment: AudioSegment) -> tuple[str, float, float, str]:
 
 
 def _audio_segment_from_dict(ref: AudioRecordRef, segment: dict[str, Any]) -> AudioSegment:
-    segment_id = str(segment["id"])
-    metadata = dict(segment["metadata"]) if isinstance(segment.get("metadata"), dict) else {}
-    metadata.setdefault("type_", _segment_type(segment))
-    return AudioSegment(
-        source_audio_id=ref.audio_file_id,
-        name=ref.name,
-        start=float(segment["start"]),
-        end=float(segment["end"]),
-        sample_rate=int(ref.metadata["sample_rate"]),
-        channels=int(ref.metadata["channels"]) if "channels" in ref.metadata else 1,
-        text=str(segment["text"]),
-        phon=str(segment["phon"]),
-        id=stable_id("segment", ref.audio_file_id, segment_id),
-        lineage_id=stable_id("segment_lineage", ref.audio_file_id, segment_id),
-        segment_id=segment_id,
-        speaker=str(segment["speaker"]) if "speaker" in segment else None,
-        voice_id=_optional_uuid(segment["voice_id"]) if "voice_id" in segment else None,
-        metadata=metadata,
-    )
-
-
-def _segment_type(segment: dict[str, Any]) -> str:
-    if segment.get("type_"):
-        return str(segment["type_"])
-    metadata = segment.get("metadata")
-    if isinstance(metadata, dict):
-        if metadata.get("type_"):
-            return str(metadata["type_"])
-        if metadata.get("model"):
-            return str(metadata["model"])
-    return "manual"
+    return audio_segment_from_dict(ref, segment)
 
 
 def _segment_sidecar_row(segment: AudioSegment) -> dict[str, object]:
@@ -196,13 +167,5 @@ def _segment_sidecar_row(segment: AudioSegment) -> dict[str, object]:
         "end": segment.end,
         "text": segment.text,
         "phon": segment.phon,
-        "speaker": segment.speaker,
-        "voice_id": str(segment.voice_id) if segment.voice_id is not None else None,
-        "metadata": segment.metadata,
+        "annotations": segment.annotations.model_dump(mode="json"),
     }
-
-
-def _optional_uuid(value: object) -> UUID | None:
-    if value is None or value == "":
-        return None
-    return UUID(str(value))

@@ -1,9 +1,10 @@
-from typing import Any
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
+from shared.audio_annotations import AudioAnnotations
 from shared.db.assets.schemas import BucketFileRead
 from shared.db.waveforms.schemas import WaveformInput
 
@@ -13,9 +14,7 @@ class SegmentCreate(BaseModel):
     end: float
     text: str
     phon: str
-    speaker: str
-    voice_id: UUID | None = None
-    metadata: dict[str, Any]
+    annotations: AudioAnnotations
 
 
 class SegmentUpdate(BaseModel):
@@ -23,9 +22,7 @@ class SegmentUpdate(BaseModel):
     end: float
     text: str
     phon: str
-    speaker: str
-    voice_id: UUID | None = None
-    metadata: dict[str, Any]
+    annotations: AudioAnnotations
 
 
 class AudioFileCreate(BaseModel):
@@ -34,12 +31,11 @@ class AudioFileCreate(BaseModel):
     byte_offset: int
     byte_length: int
     duration: float
-    score: float | None = None
+    annotations: AudioAnnotations
     language: str | None = None
     style_prompt: str | None = None
     voice_prompt: str | None = None
     segments: list[dict[str, Any]]
-    metadata: dict[str, Any]
     virtual: bool
 
 
@@ -48,12 +44,11 @@ class AudioFileUpdate(BaseModel):
     byte_offset: int
     byte_length: int
     duration: float
-    score: float | None = None
+    annotations: AudioAnnotations
     language: str | None = None
     style_prompt: str | None = None
     voice_prompt: str | None = None
     segments: list[dict[str, Any]]
-    metadata: dict[str, Any]
     virtual: bool
 
 
@@ -61,12 +56,11 @@ class AudioCreate(BaseModel):
     name: str
     wav_bytes: bytes
     duration: float
-    score: float | None = None
+    annotations: AudioAnnotations
     language: str | None = None
     style_prompt: str | None = None
     voice_prompt: str | None = None
     segments: list[dict[str, Any]]
-    metadata: dict[str, Any]
     virtual: bool
     waveform: WaveformInput | None = None
 
@@ -82,12 +76,11 @@ class ExternalAudioCreate(BaseModel):
     id: UUID
     name: str
     duration: float
-    score: float | None = None
+    annotations: AudioAnnotations
     language: str | None = None
     style_prompt: str | None = None
     voice_prompt: str | None = None
     segments: list[dict[str, Any]]
-    metadata: dict[str, Any]
     storage_ref: ExternalAudioLocation
 
 
@@ -95,12 +88,11 @@ class AudioUpdate(BaseModel):
     name: str
     wav_bytes: bytes | None
     duration: float
-    score: float | None = None
+    annotations: AudioAnnotations
     language: str | None = None
     style_prompt: str | None = None
     voice_prompt: str | None = None
     segments: list[dict[str, Any]]
-    metadata: dict[str, Any]
     virtual: bool
     waveform: WaveformInput | None = None
 
@@ -129,7 +121,7 @@ class AudioFileReference(BaseModel):
     id: UUID
     name: str
     duration: float
-    metadata: dict[str, Any]
+    annotations: AudioAnnotations
     byte_length: int
     virtual: bool
     style_prompt: str | None
@@ -140,5 +132,4 @@ class AudioFileRead(AudioFileCreate):
     id: UUID
     bucket_file: BucketFileRead
     updated_at: datetime
-    metadata: dict[str, Any] = Field(alias="metadata_")
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)

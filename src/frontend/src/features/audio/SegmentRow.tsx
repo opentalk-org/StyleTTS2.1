@@ -24,7 +24,7 @@ function IconBtn({ icon, title, danger, onClick }: { icon: "play" | "merge" | "t
 }
 
 export function SegmentRow({ seg, index, isLast }: { seg: Segment; index: number; isLast: boolean }) {
-  const { segSel, segChecked, playPos, select, toggleCheck, seek, playing, togglePlay, setSegText, setSegPhon, setSegVoice, deleteSeg, mergeNext } = useEditor();
+  const { segSel, segChecked, playPos, select, toggleCheck, seek, playing, togglePlay, setSegText, setSegPhon, setSegSpeakerId, deleteSeg, mergeNext } = useEditor();
   const sel = seg.id === segSel;
   const checked = segChecked.includes(seg.id);
   const currentWord = activeAlignment(seg.alignment, playPos);
@@ -61,8 +61,8 @@ export function SegmentRow({ seg, index, isLast }: { seg: Segment; index: number
         <div onClick={(e) => e.stopPropagation()} className="flex min-w-0 flex-col gap-1">
           <div className="relative">
             <select
-              value={seg.speaker}
-              onChange={(e) => setSegVoice(seg.id, e.target.value)}
+              value={seg.annotations.speaker_id ?? ""}
+              onChange={(e) => setSegSpeakerId(seg.id, e.target.value)}
               className="h-7 w-full appearance-none rounded-md bg-panel-2 pl-2 pr-5 text-[11.5px] font-semibold text-txt-dim outline-none"
             >
               <option value="">None</option>

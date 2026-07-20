@@ -3,13 +3,14 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from shared.audio_annotations import AudioAnnotations
+
 
 class MosAudioRead(BaseModel):
     id: UUID
     name: str
     duration: float
-    score: float | None
-    speaker: str
+    annotations: AudioAnnotations
 
 
 class MosPairRead(BaseModel):

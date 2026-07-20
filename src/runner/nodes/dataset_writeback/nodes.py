@@ -15,6 +15,7 @@ from shared.db.audio import crud as audio_crud
 from shared.db.audio.schemas import AudioUpdate
 from shared.db.datasets import crud as dataset_crud
 from shared.db.voices import crud as voice_crud
+from shared.audio_annotations import AudioAnnotations
 
 
 class DatasetWritebackSettings(StrictSettings):
@@ -89,14 +90,16 @@ class AssignVoiceNode(Node):
             for audio in audios:
                 context.check_cancel()
                 item = items[audio.audio_file_id]
-                metadata = _assigned_metadata(item.metadata_, assignment)
                 segments = [_assigned_segment(segment, assignment) for segment in item.segments]
                 payloads[audio.audio_file_id] = AudioUpdate(
                     name=item.name,
                     wav_bytes=None,
                     duration=item.duration,
                     segments=segments,
-                    metadata=metadata,
+                    annotations=audio_crud.audio_file_annotations(item).model_copy(update={
+                        "speaker_id": assignment.speaker_id,
+                        "voice_id": assignment.voice_id,
+                    }),
                     virtual=item.virtual,
                 )
             updated_by_id = audio_crud.bulk_update_audio_files(session, payloads)
@@ -108,13 +111,16 @@ class AssignVoiceNode(Node):
                 "audio": replace(
                     audio,
                     name=updated.name,
-                    metadata=updated.metadata_,
-                    segments=[replace(segment, speaker=assignment.speaker, voice_id=assignment.voice_id) for segment in audio.segments],
+                    annotations=audio_crud.audio_file_annotations(updated),
+                    segments=[replace(segment, annotations=segment.annotations.model_copy(update={
+                        "speaker_id": assignment.speaker_id,
+                        "voice_id": assignment.voice_id,
+                    })) for segment in audio.segments],
                     virtual=updated.virtual,
                 ),
                 "writeback_result": {
                     "audio_file_id": str(updated.id),
-                    "speaker": assignment.speaker,
+                    "speaker_id": assignment.speaker_id,
                     "voice_id": str(assignment.voice_id) if assignment.voice_id is not None else None,
                 },
             })
@@ -162,7 +168,7 @@ class DeleteAudioRecordsNode(Node):
 
 @dataclass(frozen=True)
 class VoiceAssignment:
-    speaker: str
+    speaker_id: str
     voice_id: UUID | None
 
 
@@ -172,10 +178,10 @@ def _voice_assignment(session, value: str) -> VoiceAssignment:
         raise ValueError("AssignVoice requires a voice")
     voice_id = _parse_uuid(voice)
     if voice_id is None:
-        return VoiceAssignment(speaker=voice, voice_id=None)
+        return VoiceAssignment(speaker_id=voice, voice_id=None)
     for item in voice_crud.list_voices(session):
         if item.id == voice_id:
-            return VoiceAssignment(speaker=item.name, voice_id=item.id)
+            return VoiceAssignment(speaker_id=item.name, voice_id=item.id)
     raise KeyError(f"Voice not found: {voice_id}")
 
 
@@ -186,21 +192,12 @@ def _parse_uuid(value: str) -> UUID | None:
         return None
 
 
-def _assigned_metadata(metadata: dict, assignment: VoiceAssignment) -> dict:
-    out = {**metadata, "speaker": assignment.speaker}
-    if assignment.voice_id is None:
-        out.pop("voice_id", None)
-    else:
-        out["voice_id"] = str(assignment.voice_id)
-    return out
-
-
 def _assigned_segment(segment: dict, assignment: VoiceAssignment) -> dict:
-    metadata = dict(segment["metadata"]) if isinstance(segment.get("metadata"), dict) else {}
-    metadata = _assigned_metadata(metadata, assignment)
+    annotations = AudioAnnotations.model_validate(segment["annotations"])
     return {
         **segment,
-        "speaker": assignment.speaker,
-        "voice_id": str(assignment.voice_id) if assignment.voice_id is not None else None,
-        "metadata": metadata,
+        "annotations": annotations.model_copy(update={
+            "speaker_id": assignment.speaker_id,
+            "voice_id": assignment.voice_id,
+        }).model_dump(mode="json"),
     }

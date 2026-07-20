@@ -177,7 +177,7 @@ def _planned_audio(
         "merged_phon": merged_phon,
     }
     name = f"{source.name}_split_{index + 1:04d}"
-    return replace(source, name=name, id=group_id, lineage_id=stable_id("lineage", source.lineage_id, group_id), segments=list(segments), metadata=metadata)
+    return replace(source, name=name, id=group_id, lineage_id=stable_id("lineage", source.lineage_id, group_id), segments=list(segments), annotations=source.annotations.model_copy(update={"metadata": metadata}))
 
 
 def _reachable_end(segments: list[AudioSegment], index: int, max_gap_seconds: float | None) -> int:

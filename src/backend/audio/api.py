@@ -13,6 +13,7 @@ from shared.db.audio.schemas import AudioUpdate
 from shared.db.datasets import crud as dataset_crud
 from shared.db.waveforms import crud as waveform_crud
 from shared.db.waveforms.schemas import WaveformRead
+from shared.audio_annotations import AudioAnnotations
 
 
 router = APIRouter(prefix="/audio-files", tags=["audio-files"])
@@ -42,7 +43,7 @@ async def upload_audio_file(
     duration: float = Form(),
     sample_rate: int = Form(),
     dataset_id: str = Form(""),
-    speaker: str = Form(""),
+    speaker_id: str = Form(""),
 ) -> AudioFileListItem:
     data = await file.read()
     if not data:
@@ -55,7 +56,7 @@ async def upload_audio_file(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Audio filename is required")
     try:
         with database_session() as session:
-            item = audio_crud.create_audio_file(session, _audio_payload(file, data, duration, sample_rate, speaker))
+            item = audio_crud.create_audio_file(session, _audio_payload(file, data, duration, sample_rate, speaker_id))
             if dataset_id:
                 dataset_crud.add_audio_file_to_dataset(session, uuid.UUID(dataset_id), item.id)
                 session.refresh(item, attribute_names=["datasets"])
@@ -176,7 +177,7 @@ async def replace_audio_segments(audio_file_id: uuid.UUID, payload: list[AudioSe
                     wav_bytes=None,
                     duration=item.duration,
                     segments=[segment.model_dump(mode="json") for segment in payload],
-                    metadata=item.metadata_,
+                    annotations=_audio_annotations(item),
                     virtual=item.virtual,
                 ),
             )
@@ -201,7 +202,7 @@ async def rename_audio_file(audio_file_id: uuid.UUID, payload: AudioRenamePayloa
                     wav_bytes=None,
                     duration=item.duration,
                     segments=item.segments,
-                    metadata=item.metadata_,
+                    annotations=_audio_annotations(item),
                     virtual=item.virtual,
                 ),
             )
@@ -222,9 +223,8 @@ async def update_audio_score(audio_file_id: uuid.UUID, payload: AudioScorePayloa
                     name=item.name,
                     wav_bytes=None,
                     duration=item.duration,
-                    score=payload.score,
+                    annotations=_audio_annotations(item).model_copy(update={"score": payload.score}),
                     segments=item.segments,
-                    metadata=item.metadata_,
                     virtual=item.virtual,
                 ),
             )
@@ -247,7 +247,7 @@ async def update_audio_language(audio_file_id: uuid.UUID, payload: AudioLanguage
                     duration=item.duration,
                     language=payload.language,
                     segments=item.segments,
-                    metadata=item.metadata_,
+                    annotations=_audio_annotations(item),
                     virtual=item.virtual,
                 ),
             )
@@ -270,7 +270,7 @@ async def update_audio_style_prompt(audio_file_id: uuid.UUID, payload: AudioStyl
                     duration=item.duration,
                     style_prompt=payload.style_prompt,
                     segments=item.segments,
-                    metadata=item.metadata_,
+                    annotations=_audio_annotations(item),
                     virtual=item.virtual,
                 ),
             )
@@ -293,7 +293,7 @@ async def update_audio_voice_prompt(audio_file_id: uuid.UUID, payload: AudioVoic
                     duration=item.duration,
                     voice_prompt=payload.voice_prompt,
                     segments=item.segments,
-                    metadata=item.metadata_,
+                    annotations=_audio_annotations(item),
                     virtual=item.virtual,
                 ),
             )
@@ -317,9 +317,8 @@ def _audio_item(item: AudioFile, segment_count: int, segment_preview: list[dict[
     return AudioFileListItem(
         id=item.id,
         name=item.name,
-        speaker=_speaker(metadata),
+        annotations=_audio_annotations(item),
         duration=item.duration,
-        score=item.score,
         language=item.language,
         style_prompt=item.style_prompt,
         voice_prompt=item.voice_prompt,
@@ -331,24 +330,21 @@ def _audio_item(item: AudioFile, segment_count: int, segment_preview: list[dict[
         dataset_ids=[dataset.id for dataset in item.datasets],
         virtual=item.virtual,
         storage_kind=item.storage_kind,
-        metadata=metadata,
         updated_at=item.updated_at,
     )
 
 
-def _audio_payload(file: UploadFile, data: bytes, duration: float, sample_rate: int, speaker: str) -> AudioCreate:
+def _audio_payload(file: UploadFile, data: bytes, duration: float, sample_rate: int, speaker_id: str) -> AudioCreate:
     metadata: dict[str, Any] = {"sample_rate": sample_rate}
     if file.content_type is not None:
         metadata["content_type"] = file.content_type
     metadata["source_filename"] = file.filename
-    if speaker:
-        metadata["speaker"] = speaker
     return AudioCreate(
         name=file.filename,
         wav_bytes=data,
         duration=duration,
+        annotations=AudioAnnotations(speaker_id=speaker_id or None, metadata=metadata),
         segments=[],
-        metadata=metadata,
         virtual=False,
     )
 
@@ -360,18 +356,14 @@ def segment_response(segment: dict[str, Any]) -> AudioSegmentRead:
         end=float(segment["end"]),
         text=str(segment["text"]) if "text" in segment else "",
         phon=str(segment["phon"]) if "phon" in segment else "",
-        speaker=_segment_speaker(segment),
+        annotations=AudioAnnotations.model_validate(segment["annotations"]),
         type_=_segment_type(segment),
-        confidence=_segment_confidence(segment),
         alignment=_segment_alignment(segment),
     )
 
 
-def _segment_confidence(segment: dict[str, Any]) -> float | None:
-    value = segment.get("confidence")
-    if value is None:
-        return None
-    return float(value)
+def _audio_annotations(item: AudioFile) -> AudioAnnotations:
+    return audio_crud.audio_file_annotations(item)
 
 
 def _segment_alignment(segment: dict[str, Any]) -> list[WordAlignment] | None:
@@ -384,16 +376,6 @@ def _segment_alignment(segment: dict[str, Any]) -> list[WordAlignment] | None:
         if isinstance(item, dict) and "word" in item and "start" in item and "end" in item
     ]
     return words or None
-
-
-def _speaker(metadata: dict[str, Any]) -> str:
-    if "speaker" in metadata:
-        return str(metadata["speaker"])
-    if "voice" in metadata:
-        return str(metadata["voice"])
-    if "voice_id" in metadata:
-        return str(metadata["voice_id"])
-    return "-"
 
 
 def _sample_rate(metadata: dict[str, Any]) -> int | None:
@@ -430,25 +412,14 @@ def _content_range(range_header: str | None, byte_length: int) -> tuple[int, int
     return start, min(end, byte_length - 1)
 
 
-def _segment_speaker(segment: dict[str, Any]) -> str:
-    if "speaker" in segment:
-        return str(segment["speaker"])
-    if "voice" in segment:
-        return str(segment["voice"])
-    if "voice_id" in segment and segment["voice_id"] is not None:
-        return str(uuid.UUID(str(segment["voice_id"])))
-    return ""
-
-
 def _segment_type(segment: dict[str, Any]) -> str:
     if "type_" in segment and segment["type_"]:
         return str(segment["type_"])
     if "type" in segment and segment["type"]:
         return str(segment["type"])
-    metadata = segment.get("metadata")
-    if isinstance(metadata, dict):
-        if metadata.get("type_"):
-            return str(metadata["type_"])
-        if metadata.get("model"):
-            return str(metadata["model"])
+    annotations = AudioAnnotations.model_validate(segment["annotations"])
+    if annotations.metadata.get("type_"):
+        return str(annotations.metadata["type_"])
+    if annotations.metadata.get("model"):
+        return str(annotations.metadata["model"])
     return "manual"

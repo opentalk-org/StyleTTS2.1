@@ -14,7 +14,7 @@ from runflow.core.ports import PortMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import AudioPort
-from runner.nodes.hetzner.ds_v2_audio import DsV2AudioOptions, audio_from_row, speaker_name
+from runner.nodes.hetzner.ds_v2_audio import DsV2AudioOptions, audio_from_row, speaker_id
 from runner.nodes.hetzner.ds_v2_metadata_audio import audio_metadata_from_row
 from runner.nodes.hetzner.ds_v2_metadata_rows import DsV2MetadataRow, DsV2MetadataRows, load_metadata_rows
 from runner.nodes.hetzner.ds_v2_selected_rows import load_selected_audio_rows
@@ -103,7 +103,7 @@ def _audio_items(
             settings.text_column,
             settings.name_prefix,
         )
-        voice_id = voice_ids.get(speaker_name(source.metadata))
+        voice_id = voice_ids.get(speaker_id(source.metadata))
         if loaded is not None:
             row = {**source.metadata, "audio": loaded[position].audio}
             items.append(audio_from_row(row, options, source.index, voice_id))
@@ -123,7 +123,7 @@ def _audio_items(
 def _voice_ids(rows: list[DsV2MetadataRow], enabled: bool) -> dict[str, UUID]:
     if not enabled:
         return {}
-    names = sorted({name for source in rows if (name := speaker_name(source.metadata))})
+    names = sorted({name for source in rows if (name := speaker_id(source.metadata))})
     if not names:
         return {}
     with database_session() as session:

@@ -52,7 +52,7 @@ type EditorStore = {
   setSegTime: (id: string, start: number, end: number) => void;
   setSegText: (id: string, text: string) => void;
   setSegPhon: (id: string, phon: string) => void;
-  setSegVoice: (id: string, speaker: string) => void;
+  setSegSpeakerId: (id: string, speaker_id: string) => void;
   deleteSeg: (id: string) => void;
   mergeNext: (id: string) => void;
   addSeg: () => void;
@@ -127,8 +127,10 @@ export const useEditor = create<EditorStore>((set) => ({
     set((s) => ({ segs: s.segs.map((g) => (g.id === id ? { ...g, text, alignment: null } : g)), dirty: true })),
   setSegPhon: (id, phon) =>
     set((s) => ({ segs: s.segs.map((g) => (g.id === id ? { ...g, phon } : g)), dirty: true })),
-  setSegVoice: (id, speaker) =>
-    set((s) => ({ segs: s.segs.map((g) => (g.id === id ? { ...g, speaker } : g)), dirty: true })),
+  setSegSpeakerId: (id, speaker_id) =>
+    set((s) => ({ segs: s.segs.map((g) => (
+      g.id === id ? { ...g, annotations: { ...g.annotations, speaker_id } } : g
+    )), dirty: true })),
   deleteSeg: (id) =>
     set((s) => ({ segs: s.segs.filter((g) => g.id !== id), segChecked: s.segChecked.filter((x) => x !== id), dirty: true })),
   mergeNext: (id) =>
@@ -146,7 +148,15 @@ export const useEditor = create<EditorStore>((set) => ({
   addSeg: () =>
     set((s) => {
       const start = s.playPos;
-      const seg: Segment = { id: `seg_${Date.now()}`, start, end: Math.min(s.dur, start + 2), text: "", phon: "", speaker: "", type_: "manual" };
+      const seg: Segment = {
+        id: `seg_${Date.now()}`,
+        start,
+        end: Math.min(s.dur, start + 2),
+        text: "",
+        phon: "",
+        annotations: { speaker_id: null, voice_id: null, score: null, accuracy: null, metadata: {} },
+        type_: "manual",
+      };
       return { segs: sortSegs([...s.segs, seg]), dirty: true, segSel: seg.id };
     }),
   save: () => set({ dirty: false }),

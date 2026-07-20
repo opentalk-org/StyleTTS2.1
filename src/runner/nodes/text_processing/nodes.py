@@ -44,7 +44,7 @@ class PhonemizeSegmentsNode(Node):
                 "punctuation_marks": self.settings.punctuation_marks,
                 "phoneme_mode": self.settings.mode,
             }
-            outputs.append({"audio": replace(audio, segments=segments, metadata=metadata)})
+            outputs.append({"audio": replace(audio, segments=segments, annotations=audio.annotations.model_copy(update={"metadata": metadata}))})
         return outputs
 
 

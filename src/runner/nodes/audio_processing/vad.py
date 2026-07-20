@@ -80,10 +80,7 @@ def _segment_audio(
         int(info["channels"]),
         absolute_start,
         absolute_end,
-        audio.confidence,
-        segment_id,
-        stable_id("lineage", audio.lineage_id, segment_id),
-        {
+        audio.annotations.model_copy(update={"metadata": {
             **audio.metadata,
             "vad": {
                 "source_audio_id": audio.id,
@@ -91,7 +88,9 @@ def _segment_audio(
                 "start": absolute_start,
                 "end": absolute_end,
             },
-        },
+        }}),
+        segment_id,
+        stable_id("lineage", audio.lineage_id, segment_id),
     )
 
 

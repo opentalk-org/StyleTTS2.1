@@ -4,7 +4,7 @@ import { backendResourceUrl } from "@/app/backend";
 import { useNav } from "@/app/navStore";
 import { showToast } from "@/shared/feedback/Toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { renameAudioFile, saveAudioSegments, updateAudioLanguage, updateAudioScore, updateAudioStylePrompt, updateAudioVoicePrompt, type AudioFile } from "./api";
+import { renameAudioFile, saveAudioSegments, updateAudioLanguage, updateAudioScore, updateAudioStylePrompt, updateAudioVoicePrompt, type AudioFile, type AudioSegment } from "./api";
 import { EditorHeader, type EditorHeaderDraft } from "./editor/EditorHeader";
 import { EditorSegmentList } from "./editor/EditorSegmentList";
 import { EditorTransport } from "./editor/EditorTransport";
@@ -12,9 +12,9 @@ import { useEditor } from "./editorStore";
 import { parseAudioScore } from "./AudioScoreInput";
 import { AUDIO_FILES_KEY, useAudioFileQuery, useWaveformQuery, useWaveformStatusQuery } from "./query";
 
-function segmentsSignature(segments: { id: string; start: number; end: number; text: string; phon: string; speaker: string; alignment?: { start: number }[] | null }[]): string {
+function segmentsSignature(segments: AudioSegment[]): string {
   return segments
-    .map((segment) => `${segment.id}:${segment.start}:${segment.end}:${segment.text}:${segment.phon}:${segment.speaker}:${segment.alignment?.length ?? 0}`)
+    .map((segment) => `${segment.id}:${segment.start}:${segment.end}:${segment.text}:${segment.phon}:${JSON.stringify(segment.annotations)}:${segment.alignment?.length ?? 0}`)
     .sort()
     .join("|");
 }
@@ -22,7 +22,7 @@ function segmentsSignature(segments: { id: string; start: number; end: number; t
 function headerDraft(file: AudioFile): EditorHeaderDraft {
   return {
     name: file.name,
-    score: file.score === null ? "" : file.score.toFixed(3),
+    score: file.annotations.score === null ? "" : file.annotations.score.toFixed(3),
     language: file.language ?? "",
     stylePrompt: file.style_prompt ?? "",
     voicePrompt: file.voice_prompt ?? "",
@@ -35,7 +35,7 @@ function optionalText(value: string): string | null {
 }
 
 function scoreMatchesFile(score: number | null, file: AudioFile): boolean {
-  return score === file.score || (score !== null && file.score !== null && Number(file.score.toFixed(3)) === score);
+  return score === file.annotations.score || (score !== null && file.annotations.score !== null && Number(file.annotations.score.toFixed(3)) === score);
 }
 
 function draftMatchesFile(draft: EditorHeaderDraft, file: AudioFile): boolean {

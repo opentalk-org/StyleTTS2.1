@@ -1,8 +1,8 @@
 <start/>
 <end/>
 
-<p/> (,)
-<s/> (.)
+<p/> (,) ???
+<s/> (.) ???
 <break time="400ms/0.4s/low/medium/strong/300ms..500ms"/> low/medium/strong is alias for x ms, 300ms..500ms - range
 <mark name=""/>
 
@@ -14,7 +14,7 @@
 <prosody speed="0.8" pitch="-2st" volume="-6db" duration=2.0s></prosody> - code control, speed - obvious, pitch - f0, volume - obvious, duration not compatible with speed, allow for forced duration.
 <style value="sad/neutral/excited/emphasis" prompt="" power=0.5></style> - only steer generation, emotions
 <emphasis> - emphasis of word, alias for style
-<do value="laught/cry/breath/door slam"> - get own tokens
+<do prompt="laught/cry/breath/door slam"> - get own tokens
 <turn speaker="someone"> (really other speakers, the same speakers don't get turns tokens)
 
 
@@ -138,7 +138,6 @@ dict that auto converts given words into phonemes
 two texts with ssml -> bert style/diffusion
 audio -small model> diffusion
 ### Voice Prompt
-llm prompt explaining voice:
 - age
 - gender
 - pitch and timbre
@@ -287,13 +286,9 @@ models to add:
 - global voice embedding and aggregation???
 
 pipelines:
-- yt pipeline
-- audiobooki pipeline
-- synth pipeline
-- datasety gotowe
-- datasety english
-- elevenlabs ds
-na
+
+
+
 
 - mos score training
 - mos score classifier usage
@@ -310,8 +305,16 @@ na
 models:
 - mos classifier
 - tags classifier (style/emotions + tags)
+- bert
+- asr
+- f0 pitch
+
+- model for voice embeddings
+
 - text -> voice model
 - text -> style model
+
+- clips 0.4s -> 45s (1-640 phonemes), 64 phonemes pre/post context max, ~0.4-5s for pre/post context.
 
 all modules:
 - AudioEncoder - similar to pipertts audio encoder
@@ -393,3 +396,152 @@ voice prompt - can be empty
 speaker id - must be filled
 mos_score
 segments with one segment: (phonemes 1-512 uniform distribution + source text)
+
+
+
+
+for each importated data, you need to import/upload:
+- segments (if transcripts are per audio: create full audio segment, set src "dataset", quality None)
+- alignment of words if exist
+- audio (24 khz, 24 bit, wav, mono)
+- style prompt (if single keywords put them and use ", " as separator, if prompt place as it is)
+- voice prompt (if single keywords put them and use ", " as separator, if prompt place as it is)
+- mos score (None if not, otherwise value)
+- for each dataset create dataset unique entry.
+- speaker_id (create speaker and assign it to audio) "dataset_unique_name_{speaker_id}"
+- if audio contain some effects (laught, cry, moan, etc.) then add them as <do prompt="cry"/> to transcript at valid place.
+- language
+- import every possible other data and original format data as "metadata" of audio file.
+
+<do prompt=""/> is something that can be assigned a timing, things like style/voice are only hearable over some texts, the <do/> is real audio.
+laughs
+breath
+wheezing
+whispers
+shout
+beep
+giggling
+clear throat
+yawn
+sighs
+exhales
+curious
+chuckles
+crying
+snorts
+swallows
+moan
+gulps
+woo,ummm,ohhh,hhmmm, wwwmm
+
+### Style prompt
+emotion and intensity
+speaking rate
+loudness
+tone
+pitch movement
+energy
+rhythm
+pause behavior
+formality
+conversational versus narrative delivery, audiobook, podcast
+whispering, shouting, laughing, crying
+
+#### Basic
+neutral
+happy
+cheerful
+excited
+enthusiastic
+elated
+euphoric
+triumphant
+amazed
+surprised
+awe
+flirtatious
+curious
+content
+peaceful
+serene
+calm
+grateful
+affectionate
+trust
+sympathetic
+anticipation
+mysterious
+mischievous
+angry
+mad
+outraged
+frustrated
+agitated
+threatened
+disgusted
+contempt
+envious
+sarcastic
+ironic
+sad
+sorrowful
+dejected
+melancholic
+disappointed
+hurt
+guilty
+crying
+bored
+tired
+rejected
+nostalgic
+wistful
+apologetic
+hesitant
+indecisive
+insecure
+confused
+quizzical
+resigned
+anxious
+panicked
+alarmed
+scared
+cautious
+proud
+confident
+distant
+erotic
+skeptical
+contemplative
+determined
+dramatic
+laughing
+sighing
+whispering
+shouting
+groaning
+exhaling
+
+### Voice Prompt
+- age
+- gender
+- pitch and timbre
+- accent/dialect
+- formality
+- resonance
+- breathiness
+- vocal range
+- roughness
+- articulation character
+
+
+- youtube current pl (2000h)
+- My existing scripts for datasets (500h)
+- youtube scrape english + other languages (2000h)
+- tts synth in languages (500h)
+- elevenlabs datasets (500h?)
+- current founded datasets for multilingual (mms need processing) (~6000h)
+- voice effects / style datasets (~1000h)
+- audio books (1000h)
+

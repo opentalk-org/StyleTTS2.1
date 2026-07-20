@@ -20,7 +20,7 @@ export function uploadAction(datasets: Dataset[]) {
     fields: [
       { type: "drop", label: "Drop audio files here or click to browse", hint: "WAV, FLAC, MP3 · up to 2 GB per file" },
       { key: "target", type: "select", label: "Add to dataset", default: options[0]?.value ?? "", options },
-      { key: "speaker", type: "select", label: "Assign voice", default: "", options: [{ value: "", label: "None" }, ...SPEAKER_NAMES.map((s) => ({ value: s, label: s }))] },
+      { key: "speaker_id", type: "select", label: "Assign voice", default: "", options: [{ value: "", label: "None" }, ...SPEAKER_NAMES.map((s) => ({ value: s, label: s }))] },
     ],
     onSubmit: () => {
       showToast("Upload queued");

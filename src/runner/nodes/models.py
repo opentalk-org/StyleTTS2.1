@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from shared.audio_annotations import AudioAnnotations, HasAudioAnnotations
+
 
 def stable_id(prefix: str, *parts: object) -> str:
     raw = "|".join(str(part) for part in parts)
@@ -28,13 +30,13 @@ def typed_assets(
 
 
 @dataclass(frozen=True)
-class AudioRecordRef:
+class AudioRecordRef(HasAudioAnnotations):
     audio_file_id: UUID
     name: str
     duration: float
     byte_length: int
     virtual: bool
-    metadata: dict[str, Any] = field(default_factory=dict)
+    annotations: AudioAnnotations = field(default_factory=AudioAnnotations)
 
     @property
     def id(self) -> str:
@@ -46,7 +48,7 @@ class AudioRecordRef:
 
 
 @dataclass(frozen=True)
-class Audio:
+class Audio(HasAudioAnnotations):
     audio_file_id: UUID
     name: str
     data: bytes | None
@@ -54,10 +56,9 @@ class Audio:
     channels: int
     start: float
     end: float
-    confidence: float
+    annotations: AudioAnnotations
     id: str
     lineage_id: str
-    metadata: dict[str, Any] = field(default_factory=dict)
     byte_length: int = 0
     virtual: bool = False
     style_prompt: str | None = None
@@ -70,7 +71,7 @@ class Audio:
 
 
 @dataclass(frozen=True)
-class AudioSegment:
+class AudioSegment(HasAudioAnnotations):
     source_audio_id: UUID
     name: str
     start: float
@@ -82,10 +83,7 @@ class AudioSegment:
     id: str
     lineage_id: str
     segment_id: str | None = None
-    speaker: str | None = None
-    voice_id: UUID | None = None
-    confidence: float | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    annotations: AudioAnnotations = field(default_factory=AudioAnnotations)
     alignment: list[dict[str, Any]] | None = None
 
     @property
@@ -109,7 +107,7 @@ class Transcript:
     source_audio_id: UUID
     start: float | None
     end: float | None
-    speaker: str | None
+    speaker_id: str | None
     id: str
     lineage_id: str
     segments: list[dict[str, Any]] = field(default_factory=list)

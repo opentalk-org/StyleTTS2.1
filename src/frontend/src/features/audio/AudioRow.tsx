@@ -136,7 +136,7 @@ export function AudioRow({ file, index }: { file: AudioFile; index: number }) {
             <span className="flex-none rounded bg-panel-2 px-1.5 py-0.5 text-[9px] font-bold uppercase text-txt-mute">metadata only</span>
           ) : null}
         </div>
-        <span className="truncate text-[12.5px] text-txt-dim">{file.speaker}</span>
+        <span className="truncate text-[12.5px] text-txt-dim">{file.annotations.speaker_id}</span>
         <span className="font-mono text-[12.5px] tabular-nums text-txt-dim">{fmtDur(file.duration)}</span>
         <span className={cn("justify-self-end text-[12.5px] tabular-nums", file.segments ? "font-semibold text-txt" : "text-txt-mute")}>
           {file.segments || "—"}

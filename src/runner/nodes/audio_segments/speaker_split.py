@@ -22,14 +22,14 @@ from runner.nodes.models import Audio, AudioSegment, stable_id, typed_checkpoint
 from shared.db import database_session
 from shared.db.voices import crud as voice_crud
 from shared.db.voices.schemas import VoiceCreate
+from shared.audio_annotations import AudioAnnotations
 
 _PUNCTUATION = ".,!?;:…—"
 
 
 class DiarizeSplitSpeakersSettings(StrictSettings):
-    """Diarize an already-transcribed audio, assign a random voice per speaker,
-    and split the transcript into single-speaker clips whose durations follow a
-    normal distribution over ``[min_segment_sec, max_segment_sec]``. Splits only
+    """Diarize audio, assign voices, and split the transcript into single-speaker clips whose
+    durations follow ``[min_segment_sec, max_segment_sec]``. Splits only
     happen at transcript segment boundaries that end on punctuation, so clips are
     never cut mid-word."""
 
@@ -92,9 +92,9 @@ class DiarizeSplitSpeakersNode(Node):
             voices_by_name = {}
             if self.settings.create_voices:
                 voice_names = list(dict.fromkeys(
-                    self._voice_name(audio, speaker)
+                    self._voice_name(audio, speaker_id)
                     for audio, diar in zip(audios, diarized, strict=True)
-                    for speaker in {"speaker_0", *(str(segment.speaker) for segment in diar)}
+                    for speaker_id in {"speaker_0", *(str(segment.speaker_id) for segment in diar)}
                 ))
                 voices_by_name = voice_crud.get_voices_by_names(session, voice_names)
                 missing_names = [name for name in voice_names if name not in voices_by_name]
@@ -129,8 +129,8 @@ class DiarizeSplitSpeakersNode(Node):
             return []
 
         for item in local_segments:
-            item.speaker = _speaker_for_span(item.start, item.end, diar)
-        voice_map = self._voice_map(audio, {item.speaker for item in local_segments}, voices_by_name)
+            item.speaker_id = _speaker_id_for_span(item.start, item.end, diar)
+        voice_map = self._voice_map(audio, {item.speaker_id for item in local_segments}, voices_by_name)
 
         groups = _group_by_speaker_punctuation(local_segments, self.settings)
         info = wav_info(audio.data)
@@ -141,19 +141,19 @@ class DiarizeSplitSpeakersNode(Node):
                 clips.append(clip)
         return clips
 
-    def _voice_map(self, audio: Audio, speakers, voices_by_name) -> dict[str, tuple[str, uuid.UUID | None]]:
+    def _voice_map(self, audio: Audio, speaker_ids, voices_by_name) -> dict[str, tuple[str, uuid.UUID | None]]:
         mapping: dict[str, tuple[str, uuid.UUID | None]] = {}
-        for speaker in sorted(speakers):
+        for speaker_id in sorted(speaker_ids):
             if not self.settings.create_voices:
-                mapping[speaker] = (speaker, None)
+                mapping[speaker_id] = (speaker_id, None)
                 continue
-            name = self._voice_name(audio, speaker)
+            name = self._voice_name(audio, speaker_id)
             voice = voices_by_name[name]
-            mapping[speaker] = (name, voice.id)
+            mapping[speaker_id] = (name, voice.id)
         return mapping
 
-    def _voice_name(self, audio: Audio, speaker: str) -> str:
-        token = stable_id("voice", audio.audio_file_id, audio.id, speaker)[:12]
+    def _voice_name(self, audio: Audio, speaker_id: str) -> str:
+        token = stable_id("voice", audio.audio_file_id, audio.id, speaker_id)[:12]
         return f"{self.settings.voice_prefix}_{token}"
 
     def _build_clip(self, audio: Audio, group, info, index, voice_map) -> Audio | None:
@@ -163,8 +163,8 @@ class DiarizeSplitSpeakersNode(Node):
         if duration <= 0.0:
             return None
         data = extract_wav_range(audio.data, local_start, local_end, info)
-        speaker = group[0].speaker
-        display_speaker, voice_id = voice_map.get(speaker, (speaker, None))
+        speaker_id = group[0].speaker_id
+        assigned_speaker_id, voice_id = voice_map.get(speaker_id, (speaker_id, None))
         text = " ".join(item.text.strip() for item in group if item.text.strip()).strip()
         clip_id = stable_id("audio", audio.audio_file_id, audio.id, index, local_start, local_end)
         transcript_type = self.settings.transcript_type
@@ -180,16 +180,16 @@ class DiarizeSplitSpeakersNode(Node):
             id=stable_id("segment", clip_id, transcript_type),
             lineage_id=stable_id("segment_lineage", audio.lineage_id, clip_id, transcript_type),
             segment_id=stable_id("transcript_segment", clip_id, transcript_type),
-            speaker=display_speaker,
-            voice_id=voice_id,
-            confidence=audio.confidence,
-            metadata={"model": transcript_type, "type_": transcript_type},
+            annotations=AudioAnnotations(
+                speaker_id=assigned_speaker_id,
+                voice_id=voice_id,
+                score=audio.score, accuracy=audio.accuracy,
+                metadata={"model": transcript_type, "type_": transcript_type},
+            ),
         )
         metadata = {
             **audio.metadata,
-            "speaker": display_speaker,
-            "voice_id": str(voice_id) if voice_id is not None else None,
-            "diarization": {"model": "sortformer", "speaker": speaker},
+            "diarization": {"model": "sortformer", "speaker_id": speaker_id},
             "source_audio_id": str(audio.audio_file_id),
             "source_audio_node_id": audio.id,
             "split_local_start": audio.start + local_start,
@@ -206,10 +206,11 @@ class DiarizeSplitSpeakersNode(Node):
             channels=int(info["channels"]),
             start=0.0,
             end=duration,
-            confidence=audio.confidence,
+            annotations=audio.annotations.model_copy(update={
+                "speaker_id": assigned_speaker_id, "voice_id": voice_id, "metadata": metadata,
+            }),
             id=clip_id,
             lineage_id=stable_id("lineage", audio.lineage_id, clip_id),
-            metadata=metadata,
             byte_length=len(data),
             virtual=audio.virtual,
             segments=[segment],
@@ -217,25 +218,25 @@ class DiarizeSplitSpeakersNode(Node):
 
 
 class _LocalSegment:
-    __slots__ = ("start", "end", "text", "segment", "speaker")
+    __slots__ = ("start", "end", "text", "segment", "speaker_id")
 
     def __init__(self, start: float, end: float, text: str, segment: AudioSegment) -> None:
         self.start = start
         self.end = end
         self.text = text
         self.segment = segment
-        self.speaker = "speaker_0"
+        self.speaker_id = "speaker_0"
 
 
-def _speaker_for_span(start: float, end: float, diar) -> str:
-    best_speaker = "speaker_0"
+def _speaker_id_for_span(start: float, end: float, diar) -> str:
+    best_speaker_id = "speaker_0"
     best_overlap = 0.0
     for segment in diar:
         overlap = min(end, segment.end) - max(start, segment.start)
         if overlap > best_overlap:
             best_overlap = overlap
-            best_speaker = str(segment.speaker)
-    return best_speaker
+            best_speaker_id = str(segment.speaker_id)
+    return best_speaker_id
 
 
 def _ends_on_punctuation(text: str, punctuation: str) -> bool:
@@ -256,12 +257,12 @@ def _group_by_speaker_punctuation(segments, settings: DiarizeSplitSpeakersSettin
     while index < total:
         target = min(high, max(low, rng.gauss(mean, std)))
         current: list[_LocalSegment] = []
-        group_speaker = segments[index].speaker
+        group_speaker_id = segments[index].speaker_id
         group_start = segments[index].start
         cursor = index
         while cursor < total:
             segment = segments[cursor]
-            if current and segment.speaker != group_speaker:
+            if current and segment.speaker_id != group_speaker_id:
                 break  # speaker change always closes the current run
             current.append(segment)
             cursor += 1
@@ -283,7 +284,7 @@ def _merge_short_tail_groups(groups, min_seconds: float):
         if (
             merged
             and duration < min_seconds
-            and merged[-1][0].speaker == group[0].speaker
+            and merged[-1][0].speaker_id == group[0].speaker_id
         ):
             merged[-1].extend(group)
         else:

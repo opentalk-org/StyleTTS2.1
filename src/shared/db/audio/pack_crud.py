@@ -162,12 +162,15 @@ def _create_item_from_write(writer: AudioPackWriter, payload: AudioCreate) -> Au
         byte_offset=write.byte_offset,
         byte_length=write.byte_length,
         duration=payload.duration,
-        score=payload.score,
+        speaker_id=payload.annotations.speaker_id,
+        voice_id=payload.annotations.voice_id,
+        score=payload.annotations.score,
+        accuracy=payload.annotations.accuracy,
         language=payload.language,
         style_prompt=payload.style_prompt,
         voice_prompt=payload.voice_prompt,
         segments=payload.segments,
-        metadata_=payload.metadata,
+        metadata_=payload.annotations.metadata,
         virtual=payload.virtual,
         storage_kind="packed",
         storage_ref=None,
@@ -184,10 +187,12 @@ def _replace_item_from_write(item: AudioFile, writer: AudioPackWriter, payload: 
     item.byte_offset = write.byte_offset
     item.byte_length = write.byte_length
     item.duration = payload.duration
-    if "score" in payload.model_fields_set:
-        item.score = payload.score
+    item.speaker_id = payload.annotations.speaker_id
+    item.voice_id = payload.annotations.voice_id
+    item.score = payload.annotations.score
+    item.accuracy = payload.annotations.accuracy
     item.segments = payload.segments
-    item.metadata_ = payload.metadata
+    item.metadata_ = payload.annotations.metadata
     item.virtual = payload.virtual
     item.storage_kind = "packed"
     item.storage_ref = None

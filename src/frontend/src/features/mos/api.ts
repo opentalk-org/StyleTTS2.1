@@ -1,11 +1,11 @@
 import { backendFetch, backendRequest } from "@/app/backend";
+import type { AudioAnnotations } from "@/features/audio/api";
 
 export type MosAudio = {
   id: string;
   name: string;
   duration: number;
-  score: number | null;
-  speaker: string;
+  annotations: AudioAnnotations;
 };
 
 export type MosPair = {

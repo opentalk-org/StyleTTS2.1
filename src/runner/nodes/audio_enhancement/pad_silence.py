@@ -63,7 +63,7 @@ class PadSilenceNode(Node):
                     end=result.duration,
                     id=padded_id,
                     byte_length=len(result.wav_bytes),
-                    metadata={
+                    annotations=audio.annotations.model_copy(update={"metadata": {
                         **audio.metadata,
                         "duration": result.duration,
                         "sample_rate": result.sample_rate,
@@ -73,7 +73,7 @@ class PadSilenceNode(Node):
                             **self.settings.model_dump(),
                             "rms_bin_ms": RMS_BIN_MS,
                         },
-                    },
+                    }}),
                 ),
             })
         return outputs

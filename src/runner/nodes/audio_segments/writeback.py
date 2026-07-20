@@ -96,12 +96,14 @@ class UpdateAudioRecordBytesNode(Node):
                     name=item.name,
                     wav_bytes=audio.data,
                     duration=audio.duration,
-                    score=_audio_score(audio, fallback=item.score),
+                    annotations=audio.annotations.model_copy(update={
+                        "score": audio.score if audio.score is not None else item.score,
+                        "metadata": _audio_metadata(audio),
+                    }),
                     language=_audio_language(audio, fallback=item.language),
                     style_prompt=audio.style_prompt if audio.style_prompt is not None else item.style_prompt,
                     voice_prompt=audio.voice_prompt if audio.voice_prompt is not None else item.voice_prompt,
                     segments=item.segments,
-                    metadata=_audio_metadata(audio),
                     virtual=item.virtual,
                 )
             updated_by_id = audio_crud.bulk_update_audio_files(session, payloads)
@@ -198,12 +200,11 @@ def _stored_payload(audio: Audio, virtual: bool) -> AudioCreate:
         name=audio.name,
         wav_bytes=audio.data,
         duration=audio.duration,
-        score=_audio_score(audio),
+        annotations=audio.annotations.model_copy(update={"metadata": _audio_metadata(audio)}),
         language=_audio_language(audio),
         style_prompt=audio.style_prompt,
         voice_prompt=audio.voice_prompt,
         segments=[],
-        metadata=_audio_metadata(audio),
         virtual=virtual,
     )
 
@@ -216,15 +217,6 @@ def _audio_pack_config(settings: SaveAudioRecordSettings) -> audio_crud.AudioPac
     )
 
 
-def _audio_score(audio: Audio, fallback: float | None = None) -> float | None:
-    for key in ("score", "mos_score"):
-        value = audio.metadata.get(key)
-        if value is None or value == "":
-            continue
-        return float(value)
-    return fallback
-
-
 def _audio_language(audio: Audio, fallback: str | None = None) -> str | None:
     value = audio.metadata.get("language")
     if value is None or value == "":
@@ -233,7 +225,7 @@ def _audio_language(audio: Audio, fallback: str | None = None) -> str | None:
 
 
 def _audio_writeback_output(item: AudioFile, source: Audio, action: str) -> dict[str, Audio | SaveResult]:
-    ref = AudioRecordRef(item.id, item.name, item.duration, item.byte_length, item.virtual, item.metadata_)
+    ref = AudioRecordRef(item.id, item.name, item.duration, item.byte_length, item.virtual, audio_crud.audio_file_annotations(item))
     audio = replace(
         source,
         audio_file_id=item.id,
@@ -241,7 +233,7 @@ def _audio_writeback_output(item: AudioFile, source: Audio, action: str) -> dict
         end=item.duration,
         id=stable_id("audio", item.id, item.name),
         lineage_id=ref.lineage_id,
-        metadata=item.metadata_,
+        annotations=audio_crud.audio_file_annotations(item),
         byte_length=item.byte_length,
         virtual=item.virtual,
         style_prompt=item.style_prompt,

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from shared.db.audio.models import AudioFile
 from shared.db.common import one
 from shared.db.datasets.models import Dataset, dataset_audio_files
+from shared.audio_annotations import AudioAnnotations
 
 
 @dataclass(frozen=True)
@@ -21,7 +22,7 @@ class SegmentReference:
     audio_file_id: UUID
     audio_name: str
     audio_duration: float
-    audio_metadata: dict[str, Any]
+    annotations: AudioAnnotations
     audio_byte_length: int
     audio_virtual: bool
     audio_storage_kind: str
@@ -62,7 +63,13 @@ def list_segment_references_page(
             audio_file_id=row.audio_file_id,
             audio_name=row.audio_name,
             audio_duration=row.audio_duration,
-            audio_metadata=row.audio_metadata,
+            annotations=AudioAnnotations(
+                speaker_id=row.speaker_id,
+                voice_id=row.voice_id,
+                score=row.score,
+                accuracy=row.accuracy,
+                metadata=dict(row.audio_metadata),
+            ),
             audio_byte_length=row.audio_byte_length,
             audio_virtual=row.audio_virtual,
             audio_storage_kind=row.audio_storage_kind,
@@ -93,6 +100,10 @@ def segment_references_statement(
             AudioFile.id.label("audio_file_id"),
             AudioFile.name.label("audio_name"),
             AudioFile.duration.label("audio_duration"),
+            AudioFile.speaker_id,
+            AudioFile.voice_id,
+            AudioFile.score,
+            AudioFile.accuracy,
             AudioFile.metadata_.label("audio_metadata"),
             AudioFile.byte_length.label("audio_byte_length"),
             AudioFile.virtual.label("audio_virtual"),

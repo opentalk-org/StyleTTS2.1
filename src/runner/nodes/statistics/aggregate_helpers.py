@@ -137,9 +137,11 @@ def segment_phon(segment: dict[str, Any]) -> str:
     return ""
 
 
-def segment_speaker(segment: dict[str, Any]) -> str:
-    if "speaker" in segment and str(segment["speaker"]).strip():
-        return str(segment["speaker"]).strip()
+def segment_speaker_id(segment: dict[str, Any]) -> str:
+    annotations = segment["annotations"]
+    assert isinstance(annotations, dict), "segment annotations must be an object"
+    if annotations["speaker_id"] and str(annotations["speaker_id"]).strip():
+        return str(annotations["speaker_id"]).strip()
     return "-"
 
 

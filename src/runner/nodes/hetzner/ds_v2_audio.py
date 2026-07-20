@@ -14,6 +14,7 @@ from runner.nodes.hetzner.ds_v2_alignment import (
     alignment_window,
 )
 from runner.nodes.models import Audio, AudioSegment, stable_id
+from shared.audio_annotations import AudioAnnotations
 
 
 TEXT_COLUMNS = ("text_src", "text_whisper", "text_parakeet", "text_canary")
@@ -56,17 +57,21 @@ def audio_from_row(row: dict[str, Any], options: DsV2AudioOptions, row_index: in
         channels=channels,
         start=0.0,
         end=duration,
-        confidence=1.0,
+        annotations=AudioAnnotations(
+            speaker_id=speaker_id(row),
+            voice_id=voice_id,
+            score=score,
+            metadata=_audio_metadata(row, options, row_index, sample_rate, channels, duration, text),
+        ),
         id=audio_id,
         lineage_id=stable_id("hetzner_ds_v2_audio_lineage", options.remote_parquet_path, row_index),
-        metadata=_audio_metadata(row, options, row_index, sample_rate, channels, duration, score, text, voice_id),
         byte_length=len(wav_bytes),
         virtual=False,
         segments=segments,
     )
 
 
-def speaker_name(row: dict[str, Any]) -> str | None:
+def speaker_id(row: dict[str, Any]) -> str | None:
     return _string_or_none(row["speaker_id"])
 
 
@@ -132,16 +137,18 @@ def _transcript_segment(
         id=stable_id("hetzner_ds_v2_segment", remote_path, row_index, source),
         lineage_id=stable_id("hetzner_ds_v2_segment_lineage", remote_path, row_index, source),
         segment_id=stable_id("hetzner_ds_v2_segment_entry", remote_path, row_index, source),
-        speaker=speaker_name(row),
-        voice_id=voice_id,
-        confidence=score,
-        metadata={
+        annotations=AudioAnnotations(
+            speaker_id=speaker_id(row),
+            voice_id=voice_id,
+            score=score,
+            metadata={
             "type_": source,
             "model": source,
             "text_column": column,
             "preferred_text_column": options.text_column,
             "text_timestamps": timestamps,
-        },
+            },
+        ),
         alignment=alignment,
     )
 
@@ -172,11 +179,8 @@ def _audio_metadata(
     sample_rate: int,
     channels: int,
     duration: float,
-    score: float | None,
     text: str,
-    voice_id: UUID | None,
 ) -> dict[str, Any]:
-    speaker = speaker_name(row)
     return {
         "source": "hetzner_ds_v2",
         "source_host": options.host,
@@ -185,11 +189,6 @@ def _audio_metadata(
         "sample_rate": sample_rate,
         "channels": channels,
         "duration": duration,
-        "score": score,
-        "mos_score": score,
-        "speaker": speaker or "",
-        "speaker_id": speaker,
-        "voice_id": str(voice_id) if voice_id is not None else None,
         "text": text,
         "text_column": options.text_column,
         "text_src": _string_or_none(row["text_src"]),

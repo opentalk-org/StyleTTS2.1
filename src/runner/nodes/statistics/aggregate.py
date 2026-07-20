@@ -29,7 +29,7 @@ from runner.nodes.statistics.aggregate_helpers import (
     segment_audio_id,
     segment_duration,
     segment_phon,
-    segment_speaker,
+    segment_speaker_id,
     source_batch_count,
     source_batch_id,
     string_value,
@@ -114,18 +114,20 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
         audio_id = segment_audio_id(segment)
         text = string_value(segment, "text")
         phon = segment_phon(segment)
-        speaker = segment_speaker(segment)
-        voice_id = str(segment.get("voice_id") or "")
+        speaker_id = segment_speaker_id(segment)
+        annotations = segment["annotations"]
+        assert isinstance(annotations, dict), "segment annotations must be an object"
+        voice_id = str(annotations["voice_id"] or "")
         duration = segment_duration(segment)
         text_by_file.setdefault(audio_id, []).append(text)
         phon_by_file.setdefault(audio_id, []).append(phon)
         corpus_text.append(text)
         corpus_phon.append(phon)
         inter_word_silence_values.extend(inter_word_silences(segment, settings.inter_word_silence_max_seconds))
-        speaker_seconds[speaker] += duration
-        speaker_chars[speaker] += len(text)
-        speaker_phonemes[speaker] += len(phon)
-        speaker_samples[speaker] += 1
+        speaker_seconds[speaker_id] += duration
+        speaker_chars[speaker_id] += len(text)
+        speaker_phonemes[speaker_id] += len(phon)
+        speaker_samples[speaker_id] += 1
         if voice_id:
             voice_seconds[voice_id] += duration
             voice_samples[voice_id] += 1

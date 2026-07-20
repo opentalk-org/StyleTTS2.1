@@ -224,7 +224,7 @@ class ECAPASpeakerEmbedNode(Node):
         assert len(audio.segments) == 1, f"{self.id} requires one segment per audio item"
         segment = audio.segments[0]
         segment_id = str(audio.metadata["source_segment_id"])
-        true_label = segment.speaker
+        true_label = segment.speaker_id
         return SpeakerEmbeddingRow(
             segment_id=segment_id,
             audio_id=audio.audio_file_id,
