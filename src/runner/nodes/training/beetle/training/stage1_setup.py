@@ -17,6 +17,7 @@ from .callbacks import TrainingMetric
 from .checkpoint import LossScheduleState, LossWeight
 from .distributed import DistributedRuntime
 from .optimizer import (
+    NamedGradientGroup,
     OptimizerSet,
     ScheduledOptimizer,
     StepSchedule,
@@ -187,6 +188,16 @@ def build_stage1_optimizers(
                 runtime,
             ),
         )
+    )
+
+
+def stage1_gradient_groups(models: Stage1Models) -> tuple[NamedGradientGroup, ...]:
+    return (
+        NamedGradientGroup("audio_encoder", (models.audio_encoder,)),
+        NamedGradientGroup("feature_linear", (models.feature_linear,)),
+        NamedGradientGroup("decoder", (models.decoder,)),
+        NamedGradientGroup("generator", (models.generator,)),
+        NamedGradientGroup("discriminators", (models.discriminators,)),
     )
 
 

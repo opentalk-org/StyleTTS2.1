@@ -111,14 +111,18 @@ class ScheduledOptimizer:
         self.scaler.unscale_(self.optimizer)
         return learning_rate
 
-    def finish(self, learning_rate: float) -> tuple[TrainingMetric, ...]:
+    def finish(
+        self,
+        learning_rate: float,
+        diagnostics: bool,
+    ) -> tuple[TrainingMetric, ...]:
         gradient_norm = torch.nn.utils.clip_grad_norm_(
             self.parameters(), self.maximum_gradient_norm
         )
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
-        return (
+        metrics = (
             TrainingMetric(
                 f"optimizer/{self.name}_learning_rate",
                 learning_rate,
@@ -130,6 +134,16 @@ class ScheduledOptimizer:
             TrainingMetric(
                 f"optimizer/{self.name}_amp_scale",
                 self.scaler.get_scale(),
+            ),
+        )
+        if not diagnostics:
+            return metrics
+        return (
+            *metrics,
+            *clipping_diagnostic_metrics(
+                self.name,
+                float(gradient_norm),
+                self.maximum_gradient_norm,
             ),
         )
 
@@ -173,6 +187,7 @@ class OptimizerSet:
         self,
         optimizer_step: int,
         gradient_groups: tuple[NamedGradientGroup, ...],
+        diagnostics: bool = False,
     ) -> tuple[TrainingMetric, ...]:
         learning_rates = tuple(
             group.prepare(optimizer_step) for group in self.groups
@@ -191,7 +206,7 @@ class OptimizerSet:
                 learning_rates,
                 strict=True,
             )
-            for metric in group.finish(learning_rate)
+            for metric in group.finish(learning_rate, diagnostics)
         )
         return (*optimizer_metrics, *module_metrics)
 
@@ -257,3 +272,21 @@ def _gradient_norm(parameters: tuple[nn.Parameter, ...]) -> float:
     if not gradients:
         return 0.0
     return float(torch.stack(gradients).norm(2))
+
+
+def clipping_diagnostic_metrics(
+    optimizer_name: str,
+    gradient_norm: float,
+    maximum_gradient_norm: float,
+) -> tuple[TrainingMetric, ...]:
+    coefficient = min(1.0, maximum_gradient_norm / (gradient_norm + 1e-6))
+    return (
+        TrainingMetric(
+            f"optimizer/{optimizer_name}_clip_coefficient",
+            coefficient,
+        ),
+        TrainingMetric(
+            f"optimizer/{optimizer_name}_was_clipped",
+            float(coefficient < 1.0),
+        ),
+    )

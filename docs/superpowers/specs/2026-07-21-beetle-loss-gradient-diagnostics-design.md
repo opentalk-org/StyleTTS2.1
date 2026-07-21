@@ -14,24 +14,24 @@ The active training process is not restarted. It continues with its already-load
 
 Preserve the existing three-resolution relative L1 reconstruction objective and its scalar value. Retain each resolution's loss and calculate relative L1 errors over mel bands whose center frequencies fall in 0–1 kHz, 1–4 kHz, 4–8 kHz, and 8–12 kHz. Average each band across the three resolutions.
 
-Every diagnostic step reports the three resolution values and four frequency-band values. These are detached observations and do not change the optimized total.
+Every diagnostic step reports the three resolution values and four frequency-band values. Band reductions are not constructed on ordinary steps. These are detached observations and do not change the optimized total.
 
 ## Loss-Attributed Gradients
 
 Every diagnostic step, calculate weighted gradients without accumulating them into `.grad`:
 
-- reconstruction, generator adversarial, and feature matching with respect to the synthesized waveform;
-- the same three objectives with respect to generator parameters;
-- F0 and N objectives with respect to FeatureLinear parameters;
-- encoder KL with respect to audio-encoder parameters.
+- reconstruction, generator adversarial, and feature matching with respect to the synthesized waveform and decoder input features;
+- F0 with respect to its acoustic prediction;
+- N with respect to its acoustic prediction;
+- encoder KL with respect to posterior mean and log scale.
 
-Report L2 norms. Report cosine similarity between reconstruction and adversarial waveform gradients and between reconstruction and feature-matching waveform gradients. Scheduled weights are applied before measuring, so a disabled objective reports zero influence.
+Report L2 norms. Report cosine similarity between reconstruction and adversarial waveform gradients and between reconstruction and feature-matching waveform gradients. Each cosine has a defined flag; a zero-norm comparison reports value zero and defined zero. Scheduled weights are applied before measuring, so a disabled objective reports zero influence.
 
-Use `torch.autograd.grad(..., retain_graph=True)` and discard diagnostic gradients before the normal combined backward pass. Branched modules may contain parameters unused by one objective; exclude those `None` entries but require at least one gradient for each declared objective-to-target relationship.
+Use `torch.autograd.grad(..., retain_graph=True)` only on activation interfaces, never on DDP-managed parameters, and discard diagnostic gradients before the normal combined backward pass. Require at least one gradient for each declared objective-to-target relationship.
 
 ## Clipping Metrics
 
-Keep the existing pre-clipping optimizer and module norms. On diagnostic steps, additionally report the actual global clipping coefficient and a numeric clipped flag for each optimizer. The coefficient is `min(1, maximum_norm / (pre_clip_norm + epsilon))`.
+Keep the existing pre-clipping optimizer and module norms. On Stage 1 diagnostic steps, additionally report the actual global clipping coefficient and a numeric clipped flag for each optimizer. The coefficient is `min(1, maximum_norm / (pre_clip_norm + epsilon))`; the flag is one exactly when that coefficient is below one. Stage 2 and Stage 3 reporting remains unchanged.
 
 ## Reporting
 
@@ -39,4 +39,4 @@ Metric names remain generic training telemetry and flow through the existing cal
 
 ## Validation
 
-Temporary tests verify band assignment, per-resolution aggregation, weighted gradient norms and cosines, zero-weight behavior, due-step cadence, and clipping coefficients. Repository policy requires removing those temporary tests before completion. A real smoke graph is not necessary because this is standalone Beetle training rather than a runner node invocation; configuration parsing and a small tensor-level training diagnostic exercise provide focused verification.
+Temporary tests verify band assignment and diagnostic gating, per-resolution aggregation, weighted gradient norms and cosines, zero-weight behavior, due-step cadence, clipping coefficients, and a two-rank DDP backward after interface attribution. Repository policy requires removing those temporary tests before completion. A real smoke graph is not necessary because this is standalone Beetle training rather than a runner node invocation; configuration parsing and tensor-level training diagnostic exercises provide focused verification.

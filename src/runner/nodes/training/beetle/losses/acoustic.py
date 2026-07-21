@@ -14,9 +14,37 @@ class SpectralResolution:
 
 
 @dataclass(frozen=True)
+class FrequencyBand:
+    minimum_hz: int
+    maximum_hz: int
+
+
+@dataclass(frozen=True)
+class ResolutionLoss:
+    resolution: SpectralResolution
+    value: Tensor
+
+
+@dataclass(frozen=True)
+class FrequencyBandLoss:
+    band: FrequencyBand
+    value: Tensor
+
+
+@dataclass(frozen=True)
 class ReconstructionLoss:
     mel: Tensor
     total: Tensor
+    resolutions: tuple[ResolutionLoss, ...]
+    bands: tuple[FrequencyBandLoss, ...]
+
+
+FREQUENCY_BANDS = (
+    FrequencyBand(0, 1000),
+    FrequencyBand(1000, 4000),
+    FrequencyBand(4000, 8000),
+    FrequencyBand(8000, 12000),
+)
 
 
 def _expanded_mask(values: Tensor, mask: Tensor) -> Tensor:
@@ -91,6 +119,7 @@ class StyleTTSMelTransform(nn.Module):
         sample_rate: int,
     ) -> None:
         super().__init__()
+        self.resolution = resolution
         self.transform = MelSpectrogram(
             sample_rate=sample_rate,
             n_fft=resolution.n_fft,
@@ -98,6 +127,18 @@ class StyleTTSMelTransform(nn.Module):
             hop_length=resolution.hop_length,
             window_fn=torch.hann_window,
         )
+        mel_max = 2595 * torch.log10(torch.tensor(1 + sample_rate / 1400))
+        mel_points = torch.linspace(0, mel_max, self.transform.n_mels + 2)[1:-1]
+        centers = 700 * (torch.pow(10, mel_points / 2595) - 1)
+        band_masks = torch.stack(
+            tuple(
+                (centers >= band.minimum_hz) & (centers < band.maximum_hz)
+                for band in FREQUENCY_BANDS
+            )
+        )
+        if not torch.all(band_masks.any(dim=1)):
+            raise ValueError("each diagnostic frequency band requires a mel bin")
+        self.register_buffer("frequency_band_masks", band_masks, persistent=False)
 
     def forward(self, waveform: Tensor) -> Tensor:
         mel = self.transform(waveform)
@@ -125,35 +166,93 @@ class MultiResolutionReconstructionLoss(nn.Module):
         predicted: Tensor,
         target: Tensor,
         lengths: Tensor,
-    ) -> Tensor:
+        include_diagnostics: bool,
+    ) -> tuple[Tensor, tuple[Tensor, ...]]:
         total = predicted.new_zeros(())
+        band_totals = (
+            tuple(predicted.new_zeros(()) for _ in FREQUENCY_BANDS)
+            if include_diagnostics
+            else ()
+        )
         for length in torch.unique(lengths):
             selected = lengths == length
             sample_count = selected.sum()
             valid_samples = int(length.item())
             predicted_mel = transform(predicted[selected, 0, :valid_samples])
             target_mel = transform(target[selected, 0, :valid_samples])
-            convergence = torch.norm(target_mel - predicted_mel, p=1)
+            difference = (target_mel - predicted_mel).abs()
+            convergence = difference.sum()
             convergence = convergence / torch.norm(target_mel, p=1)
             total = total + convergence * sample_count / predicted.shape[0]
-        return total
+            if include_diagnostics:
+                band_totals = tuple(
+                    band_total
+                    + self._band_loss(transform, difference, target_mel, band_index)
+                    * sample_count
+                    / predicted.shape[0]
+                    for band_index, band_total in enumerate(
+                        band_totals,
+                    )
+                )
+        return total, band_totals
+
+    @staticmethod
+    def _band_loss(
+        transform: StyleTTSMelTransform,
+        difference: Tensor,
+        target: Tensor,
+        band_index: int,
+    ) -> Tensor:
+        selected = transform.frequency_band_masks[band_index]
+        denominator = target[:, selected, :].abs().sum()
+        return difference[:, selected, :].sum() / denominator
 
     def forward(
         self,
         predicted: Tensor,
         target: Tensor,
         sample_mask: Tensor,
+        include_diagnostics: bool = False,
     ) -> ReconstructionLoss:
         if predicted.shape != target.shape or predicted.shape != sample_mask.shape:
             raise ValueError("waveforms and sample mask must have equal shapes")
         lengths = sample_mask.sum(dim=(1, 2))
         if torch.any(lengths == 0):
             raise ValueError("reconstruction loss requires valid waveform samples")
-        losses = torch.stack(
-            tuple(
-                self._resolution_loss(transform, predicted, target, lengths)
-                for transform in self.transforms
+        results = tuple(
+            self._resolution_loss(
+                transform,
+                predicted,
+                target,
+                lengths,
+                include_diagnostics,
             )
+            for transform in self.transforms
         )
+        losses = torch.stack(tuple(result[0] for result in results))
         mel = losses.mean()
-        return ReconstructionLoss(mel=mel, total=mel)
+        band_losses = (
+            torch.stack(tuple(torch.stack(result[1]) for result in results)).mean(dim=0)
+            if include_diagnostics
+            else ()
+        )
+        return ReconstructionLoss(
+            mel=mel,
+            total=mel,
+            resolutions=tuple(
+                ResolutionLoss(transform.resolution, value)
+                for transform, value in zip(self.transforms, losses, strict=True)
+            ),
+            bands=(
+                tuple(
+                    FrequencyBandLoss(band, value)
+                    for band, value in zip(
+                        FREQUENCY_BANDS,
+                        band_losses,
+                        strict=True,
+                    )
+                )
+                if include_diagnostics
+                else ()
+            ),
+        )

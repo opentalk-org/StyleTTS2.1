@@ -68,7 +68,7 @@ Run the same command. Expected: all reconstruction diagnostic tests pass.
 - Test temporarily: `/tmp/test_beetle_gradient_diagnostics.py`
 
 **Interfaces:**
-- Consumes: weighted named loss tensors, synthesized waveform, and the declared module parameters.
+- Consumes: weighted named loss tensors and declared activation interfaces.
 - Produces: stable `TrainingMetric` tuples for norms and cosines without modifying `.grad`.
 
 - [ ] **Step 1: Write failing tests for cadence and attribution**
@@ -93,7 +93,7 @@ Expected: failure because the diagnostics package does not exist.
 
 - [ ] **Step 3: Implement focused gradient helpers**
 
-Define `DIAGNOSTICS_EVERY_STEPS = 250`, `diagnostics_due(completed_step: int) -> bool`, an L2 norm helper that accepts `None` entries but requires at least one real gradient, a cosine helper that rejects zero-norm comparisons, and a Stage 1 attribution function using `torch.autograd.grad(..., retain_graph=True, allow_unused=True)`.
+Define `DIAGNOSTICS_EVERY_STEPS = 250`, `diagnostics_due(completed_step: int) -> bool`, an L2 norm helper that accepts `None` entries but requires at least one real gradient, a cosine helper returning value and defined observations for zero-norm comparisons, and a Stage 1 attribution function using `torch.autograd.grad(..., retain_graph=True, allow_unused=True)` only on activation interfaces.
 
 Emit weighted metrics for:
 
@@ -101,19 +101,19 @@ Emit weighted metrics for:
 gradient_by_loss/reconstruction/waveform
 gradient_by_loss/adversarial/waveform
 gradient_by_loss/feature_matching/waveform
-gradient_by_loss/reconstruction/generator
-gradient_by_loss/adversarial/generator
-gradient_by_loss/feature_matching/generator
-gradient_by_loss/f0/feature_linear
-gradient_by_loss/n/feature_linear
-gradient_by_loss/kl/audio_encoder
+gradient_by_loss/reconstruction/generator_input
+gradient_by_loss/adversarial/generator_input
+gradient_by_loss/feature_matching/generator_input
+gradient_by_loss/f0/acoustic_f0
+gradient_by_loss/n/acoustic_n
+gradient_by_loss/kl/posterior
 gradient_cosine/reconstruction_adversarial
 gradient_cosine/reconstruction_feature_matching
 ```
 
 - [ ] **Step 4: Integrate Stage 1 diagnostics**
 
-At each generator microstep, use `completed_step = self._loop.optimizer_step + 1`. When due, compute attributed gradients before normal backward and append reconstruction resolution/band metrics. Keep the existing generator total and backward unchanged.
+At each generator microstep, use `completed_step = self._loop.optimizer_step + 1`. When due, compute attributed gradients before normal backward, enable frequency-band reductions, and append reconstruction resolution/band metrics. Keep the existing generator total and backward unchanged.
 
 - [ ] **Step 5: Run the temporary tests**
 
@@ -145,7 +145,7 @@ Expected: failure because clipping diagnostic metrics are not implemented.
 
 - [ ] **Step 3: Implement and connect clipping metrics**
 
-Pass the completed step into optimizer finishing, preserve `clip_grad_norm_`, and append these metrics only when `diagnostics_due(completed_step)`:
+Pass an explicit Stage 1 diagnostic flag into optimizer finishing, preserve `clip_grad_norm_`, and append these metrics only when the flag is true. Stage 2 and Stage 3 retain their prior metric set:
 
 ```text
 optimizer/<name>_clip_coefficient
@@ -177,6 +177,8 @@ nix develop --command python -m unittest discover -s /tmp -p 'test_beetle_*diagn
 Expected: all tests pass.
 
 - [ ] **Step 2: Run compile and configuration checks**
+
+Run a real two-rank CPU Gloo DDP test that performs activation-interface attribution, normal backward, and verifies synchronized parameter gradients.
 
 ```bash
 nix develop --command python -m compileall -q src/runner/nodes/training/beetle

@@ -14,14 +14,20 @@ from .checkpoint import CHECKPOINT_VERSION, CheckpointPayload, GradientTarget
 from .checkpoint import NamedModuleGradients, StateKind, StateTarget
 from .checkpoint import capture_named_state, restore_checkpoint_gradients
 from .checkpoint import restore_named_states, validate_resume_fingerprints
+from .diagnostics import (
+    Stage1GradientLosses,
+    diagnostics_due,
+    stage1_training_metrics,
+)
 from .distributed import DistributedRuntime
 from .loop import LoopIntervals
-from .optimizer import NamedGradientGroup, OptimizerSet
+from .optimizer import OptimizerSet
 from .reporting import ReportingState
 from .stage1_setup import (
     AlignedSegmentTraining,
     Stage1Schedules,
     build_stage1_optimizers,
+    stage1_gradient_groups,
     tensor_metric,
 )
 from .state import LoopState, StageKind, capture_gradients
@@ -112,6 +118,7 @@ class Stage1Trainer(AlignedSegmentTraining):
         batch: Stage1Batch,
     ) -> tuple[TrainingMetric, ...]:
         values = batch.to(self.device)
+        completed_step = self._loop.optimizer_step + 1
         f0_target = self.models.f0_target(values.target_mel, values.frame_mask)
         n_target = self.models.n_target(values.target_mel, values.frame_mask)
         with self.runtime.autocast():
@@ -135,7 +142,8 @@ class Stage1Trainer(AlignedSegmentTraining):
                 synthesis.waveform,
                 values.waveform,
                 synthesis.sample_mask,
-            ).total
+                include_diagnostics=diagnostics_due(completed_step),
+            )
             adversarial = generator_step_loss(
                 self.models.discriminators,
                 values.waveform,
@@ -146,33 +154,33 @@ class Stage1Trainer(AlignedSegmentTraining):
                 encoder_kl * weights.encoder_kl
                 + f0 * weights.f0
                 + n * weights.n
-                + reconstruction * weights.reconstruction
+                + reconstruction.total * weights.reconstruction
                 + adversarial.adversarial * weights.generator_adversarial
                 + adversarial.feature_matching * weights.feature_matching
             )
-        self.optimizers.group("generator").backward(total / self.accumulation_steps)
-        return (
-            tensor_metric("encoder_kl", encoder_kl),
-            tensor_metric("f0", f0),
-            tensor_metric("n", n),
-            tensor_metric("reconstruction", reconstruction),
-            tensor_metric("generator_adversarial", adversarial.adversarial),
-            tensor_metric("feature_matching", adversarial.feature_matching),
-            tensor_metric("generator_total", total),
+        losses = Stage1GradientLosses(
+            encoder_kl, f0, n, reconstruction.total,
+            adversarial.adversarial, adversarial.feature_matching,
         )
+        metrics = stage1_training_metrics(
+            completed_step,
+            losses, reconstruction, total, weights, synthesis,
+        )
+        self.optimizers.group("generator").backward(total / self.accumulation_steps)
+        return metrics
 
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:
-        return self.optimizers.step(optimizer_step, self.gradient_groups())
+        return self.optimizers.step(
+            optimizer_step,
+            self.gradient_groups(),
+            diagnostics=diagnostics_due(optimizer_step + 1),
+        )
+
     def reduce_metrics(self, metrics: tuple[TrainingMetric, ...]) -> tuple[TrainingMetric, ...]:
         return self.runtime.reduce_metrics(metrics)
-    def gradient_groups(self) -> tuple[NamedGradientGroup, ...]:
-        return (
-            NamedGradientGroup("audio_encoder", (self.models.audio_encoder,)),
-            NamedGradientGroup("feature_linear", (self.models.feature_linear,)),
-            NamedGradientGroup("decoder", (self.models.decoder,)),
-            NamedGradientGroup("generator", (self.models.generator,)),
-            NamedGradientGroup("discriminators", (self.models.discriminators,)),
-        )
+
+    def gradient_groups(self):
+        return stage1_gradient_groups(self.models)
 
     def checkpoint_payload(
         self,
