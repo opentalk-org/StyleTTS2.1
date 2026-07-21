@@ -24,6 +24,12 @@ from shared.db.speakers.clustering_crud import (
     register_clustering_artifact as register_clustering_artifact,
     replace_cluster_summaries as replace_cluster_summaries,
 )
+from shared.db.speakers.catalog_crud import (
+    clear_matching_speakers as clear_matching_speakers,
+    clear_speaker as clear_speaker,
+    rename_speaker as rename_speaker,
+    search_speakers as search_speakers,
+)
 from shared.db.speakers.models import SpeakerEmbeddingRun, SpeakerEmbeddingShard
 from shared.db.speakers.schemas import (
     EmbeddingRunCreate,

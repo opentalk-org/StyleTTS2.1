@@ -162,3 +162,19 @@ class ClusteringOutcomeCounts(BaseModel):
     provisional_new: int = Field(ge=0)
     ambiguous: int = Field(ge=0)
     rejected: int = Field(ge=0)
+
+
+class SpeakerRead(BaseModel):
+    id: str
+    audio_files: int
+    segments: int
+    datasets: list[UUID]
+
+
+class SpeakerPage(BaseModel):
+    rows: list[SpeakerRead]
+    total: int
+
+
+class SpeakerRename(BaseModel):
+    speaker_id: str = Field(min_length=1)

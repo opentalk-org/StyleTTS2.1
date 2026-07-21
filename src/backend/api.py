@@ -20,7 +20,7 @@ from backend.runners import router as runners_router
 from backend.reviews import review_router
 from backend.settings import router as settings_router
 from backend.statistics import router as statistics_router
-from backend.voices import router as voices_router
+from backend.speakers import router as speakers_router
 from backend.service import BackendManager, DuplicateRunError, IncompatibleSnapshotError
 from backend.workflows import workflow_router
 from runflow.registry.node_registry import NodeRegistry
@@ -70,7 +70,7 @@ app.include_router(runners_router)
 app.include_router(review_router(manager))
 app.include_router(settings_router)
 app.include_router(statistics_router)
-app.include_router(voices_router)
+app.include_router(speakers_router)
 app.include_router(workflow_router(manager))
 
 if "RUNFLOW_UI_STATIC_DIR" in os.environ:
