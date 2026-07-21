@@ -51,6 +51,7 @@ export const useNav = create<NavStore>()(
       // Restore the last-open page and backend on reload instead of dropping back
       // to the Connect screen.
       name: "styletts-nav",
+      version: 1,
       partialize: (s) => ({
         screen: s.screen,
         navCollapsed: s.navCollapsed,
