@@ -1,6 +1,6 @@
 # Beetle Stage 1 Return to Clipping Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Remove the active no-clipping experiment and start clipped Stage 1 training from zero.
 
@@ -20,21 +20,21 @@
 
 ### Task 1: Remove the Active No-Clipping Run
 
-- [ ] Confirm the active PID and its exact configuration/output paths.
-- [ ] Send `SIGINT` and wait for graceful exit.
-- [ ] Remove only `output-kl-off-no-clip` after validating the resolved path.
-- [ ] Mark the associated MLflow run terminated and soft-delete it.
+- [x] Confirm the active PID and its exact configuration/output paths.
+- [x] Send `SIGINT` and wait for graceful exit.
+- [x] Remove only `output-kl-off-no-clip` after validating the resolved path.
+- [x] Mark the associated MLflow run terminated and soft-delete it.
 
 ### Task 2: Launch Fresh Clipped Training
 
-- [ ] Validate both optimizer maximum gradient norms are `10.0`.
-- [ ] Confirm `output-kl-off-clipped-fresh` does not exist.
-- [ ] Launch Stage 1 as `user` through Nix without `--resume`.
-- [ ] Confirm a distinct MLflow run starts at step zero.
+- [x] Validate both optimizer maximum gradient norms are `10.0`.
+- [x] Confirm `output-kl-off-clipped-fresh` does not exist.
+- [x] Launch Stage 1 as `user` through Nix without `--resume`.
+- [x] Confirm a distinct MLflow run starts at step zero.
 
 ### Task 3: Verify Runtime Clipping
 
-- [ ] Wait for step 250 diagnostics.
-- [ ] Confirm all named gradient and clipping metrics exist.
-- [ ] Confirm groups above norm 10 report coefficients below one and clipping flags equal to one.
-- [ ] Confirm the replacement process remains healthy and the deleted run stays absent.
+- [x] Wait for step 250 diagnostics.
+- [x] Confirm all named gradient and clipping metrics exist.
+- [x] Confirm groups above norm 10 report coefficients below one and clipping flags equal to one.
+- [x] Confirm the replacement process remains healthy and the deleted run stays absent.
