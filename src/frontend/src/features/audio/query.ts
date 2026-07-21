@@ -36,7 +36,6 @@ export function useAudioFilesQuery(params: AudioQuery) {
   return useQuery({
     queryKey: [AUDIO_FILES_KEY, params],
     queryFn: () => fetchAudioFiles(params),
-    placeholderData: keepPreviousData,
   });
 }
 

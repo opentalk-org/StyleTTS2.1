@@ -40,7 +40,7 @@ function Header({ allSel, onToggleAll }: { allSel: boolean; onToggleAll: () => v
 
 export function AudioScreen() {
   const { query, dataset, sort, limit, offset, selection, selectAllMatching, selectVisible, clearSelection, setVisibleIds, setFilters } = useAudio();
-  const { data, isLoading, isError, refetch } = useAudioFilesQuery({ query, dataset, sort, limit, offset });
+  const { data, isFetching, isError, refetch } = useAudioFilesQuery({ query, dataset, sort, limit, offset });
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
   const page = Math.floor(offset / limit);
@@ -58,7 +58,7 @@ export function AudioScreen() {
     <div className="mx-auto flex h-full max-w-[1240px] flex-col px-7 pb-6 pt-5">
       <AudioToolbar />
       {hasSelection ? <SelectionBar total={total} /> : null}
-      {isLoading ? (
+      {isFetching ? (
         <Card className="p-6 text-sm text-txt-mute">Loading audio files...</Card>
       ) : isError ? (
         <Card>
