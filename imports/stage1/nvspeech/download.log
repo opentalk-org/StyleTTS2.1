@@ -1,0 +1,9 @@
+warning: Git tree '/workspace/styletts_studio_v2' is dirty
+warning: ignoring untrusted flake configuration setting 'substituters'.
+Pass '--accept-flake-config' to trust it
+warning: ignoring untrusted flake configuration setting 'trusted-public-keys'.
+Pass '--accept-flake-config' to trust it
+  % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current
+                                 Dload  Upload  Total   Spent   Left   Speed
+  0      0   0      0   0      0      0      0                              0
+curl: (22) The requested URL returned error: 403

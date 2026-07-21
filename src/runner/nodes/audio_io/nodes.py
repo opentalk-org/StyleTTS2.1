@@ -9,6 +9,7 @@ from pydantic import Field
 from runflow.core.node import Node
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
+from runner.nodes.audio_io.conversion import normalize_wav_bytes
 from runner.nodes.datatypes import AudioPort, SaveResultPort
 from runner.nodes.models import Audio, SaveResult, stable_id
 from shared.db import database_session
@@ -74,15 +75,22 @@ class LoadAudioNode(Node):
         for audio in audios:
             context.check_cancel()
             data = audio.data if audio.data is not None else stored[audio.audio_file_id]
+            converted = normalize_wav_bytes(data, self.settings.sample_rate, self.settings.channels)
             loaded = replace(
                 audio,
-                data=data,
-                sample_rate=self.settings.sample_rate,
-                channels=self.settings.channels,
+                data=converted.data,
+                sample_rate=converted.sample_rate,
+                channels=converted.channels,
+                end=audio.start + converted.duration,
                 annotations=audio.annotations.model_copy(update={"metadata": {
-                    **audio.metadata, "byte_length": len(data), "source_duration": audio.duration
+                    **audio.metadata,
+                    "duration": converted.duration,
+                    "sample_rate": converted.sample_rate,
+                    "channels": converted.channels,
+                    "byte_length": len(converted.data),
+                    "source_duration": audio.duration,
                 }}),
-                byte_length=len(data),
+                byte_length=len(converted.data),
             )
             outputs.append({"audio": loaded})
         return outputs

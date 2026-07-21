@@ -80,13 +80,13 @@ class AudioSourceNode(Node):
             audio_file_id=item.id,
             name=item.name,
             data=None,
-            sample_rate=int(item.metadata.get("sample_rate", 0) or 0),
-            channels=int(item.metadata.get("channels", 0) or 0),
+            sample_rate=int(item.annotations.metadata.get("sample_rate", 0) or 0),
+            channels=int(item.annotations.metadata.get("channels", 0) or 0),
             start=0.0,
             end=item.duration,
             annotations=item.annotations.model_copy(update={
                 "metadata": {
-                    **item.metadata,
+                    **item.annotations.metadata,
                     "source_batch_id": stable_id("audio_source", context.run_id, self.id),
                     "source_batch_count": self._output_count,
                     "sample_selection": self.settings.selection,

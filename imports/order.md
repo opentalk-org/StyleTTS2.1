@@ -1,17 +1,18 @@
-for each importated data, you need to import/upload:
-- segments (if transcripts are per audio: create full audio segment, set src "dataset", quality None)
-- alignment of words if exist
+for each importated data, you need to import/upload to backend:
+- segments (if transcripts are per audio: create full audio segment, set src "dataset", score, accuracy None)
+- alignment of words if exist to segments
 - audio (24 khz, 24 bit, wav, mono)
 - style prompt (if single keywords put them and use ", " as separator, if prompt place as it is)
 - voice prompt (if single keywords put them and use ", " as separator, if prompt place as it is)
-- mos score (None if not, otherwise value)
+- mos as score (None if not, otherwise value)
+- accuracy as some number if there is transcription accuracy metric (can be not normalized) otherwise none.
 - for each dataset create dataset unique entry.
-- speaker_id (create speaker and assign it to audio) "dataset_unique_name_{speaker_id}"
+- speaker_id (create speaker and assign it to audio) "dataset_unique_name_{speaker_id}" (left none if none in labels, don't invent)
 - if audio contain some effects (laught, cry, moan, etc.) then add them as <do prompt="cry"/> to transcript at valid place.
-- language
+- language (shorcut like pl, en-us, etc.)
 - import every possible other data and original format data as "metadata" of audio file.
 
-Don't import more then 50h of audio per language per dataset.
+Don't import more then 50h of audio per language per dataset. use tqdm for progress of upload do backend. run all imports inside tmux. use nix setup. prefer to download more than target hours, then remove data to have the biggest amount of speakers. avoid fully filling disk so balance it, but prefer as many voices as possible over quantity of single voice.
 
 <do prompt=""/> is something that can be assigned a timing, things like style/voice are only hearable over some texts, the <do/> is real audio.
 laughs

@@ -2,6 +2,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Response, UploadFile, status
+from starlette.concurrency import run_in_threadpool
 
 from backend.audio.schemas import AddToDatasetRequest, AudioFileListItem, AudioFilePage, AudioLanguagePayload, AudioRenamePayload, AudioScorePayload, AudioSegmentRead, AudioSegmentWrite, AudioSort, AudioStylePromptPayload, AudioVoicePromptPayload, WaveformStatusRead, WordAlignment
 from backend.audio.waveform_service import WaveformService
@@ -55,14 +56,19 @@ async def upload_audio_file(
     if file.filename is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Audio filename is required")
     try:
-        with database_session() as session:
-            item = audio_crud.create_audio_file(session, _audio_payload(file, data, duration, sample_rate, speaker_id))
-            if dataset_id:
-                dataset_crud.add_audio_file_to_dataset(session, uuid.UUID(dataset_id), item.id)
-                session.refresh(item, attribute_names=["datasets"])
-            return audio_response(item, None)
+        payload = _audio_payload(file, data, duration, sample_rate, speaker_id)
+        return await run_in_threadpool(_persist_uploaded_audio, payload, dataset_id)
     except (KeyError, ValueError) as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
+def _persist_uploaded_audio(payload: AudioCreate, dataset_id: str) -> AudioFileListItem:
+    with database_session() as session:
+        item = audio_crud.create_audio_file(session, payload)
+        if dataset_id:
+            dataset_crud.add_audio_file_to_dataset(session, uuid.UUID(dataset_id), item.id)
+            session.refresh(item, attribute_names=["datasets"])
+        return audio_response(item, None)
 
 
 @router.post("/dataset-membership", status_code=status.HTTP_204_NO_CONTENT)

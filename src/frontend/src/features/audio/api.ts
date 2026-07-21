@@ -191,6 +191,8 @@ export function ensureWaveform(id: string): Promise<WaveformStatus> {
   return backendRequest<WaveformStatus>(`/audio-files/${encodeURIComponent(id)}/waveform`, { method: "POST" });
 }
 
+const AUDIO_UPLOAD_WORKERS = 10;
+
 export async function uploadAudioFiles(
   files: File[],
   options: AudioUploadOptions,
@@ -199,13 +201,19 @@ export async function uploadAudioFiles(
   const context = new AudioContext();
   try {
     const uploaded: AudioFile[] = [];
-    for (const [index, file] of files.entries()) {
-      onProgress?.(uploadProgress(file, index, files.length, 0, "decoding"));
-      const decoded = await context.decodeAudioData(await file.arrayBuffer());
-      uploaded.push(await uploadAudioFile(file, options, decoded.duration, decoded.sampleRate, (filePercent) => {
-        onProgress?.(uploadProgress(file, index, files.length, filePercent, "uploading"));
+    for (let offset = 0; offset < files.length; offset += AUDIO_UPLOAD_WORKERS) {
+      const batch = files.slice(offset, offset + AUDIO_UPLOAD_WORKERS);
+      const results = await Promise.all(batch.map(async (file, batchIndex) => {
+        const index = offset + batchIndex;
+        onProgress?.(uploadProgress(file, index, files.length, 0, "decoding"));
+        const decoded = await context.decodeAudioData(await file.arrayBuffer());
+        const result = await uploadAudioFile(file, options, decoded.duration, decoded.sampleRate, (filePercent) => {
+          onProgress?.(uploadProgress(file, index, files.length, filePercent, "uploading"));
+        });
+        onProgress?.(uploadProgress(file, index, files.length, 100, "uploading"));
+        return result;
       }));
-      onProgress?.(uploadProgress(file, index, files.length, 100, "uploading"));
+      uploaded.push(...results);
     }
     return uploaded;
   } finally {
