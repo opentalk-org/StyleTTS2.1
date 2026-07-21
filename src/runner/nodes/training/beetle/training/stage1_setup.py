@@ -178,6 +178,7 @@ def build_stage1_optimizers(
                 torch.amp.GradScaler(runtime.device.type, enabled=scale_enabled),
                 discriminator_config.maximum_gradient_norm,
                 runtime,
+                stage1_discriminator_gradient_groups(models),
             ),
             ScheduledOptimizer(
                 "generator",
@@ -186,17 +187,27 @@ def build_stage1_optimizers(
                 torch.amp.GradScaler(runtime.device.type, enabled=scale_enabled),
                 config.generator_optimizer.maximum_gradient_norm,
                 runtime,
+                stage1_generator_gradient_groups(models),
             ),
         )
     )
 
 
-def stage1_gradient_groups(models: Stage1Models) -> tuple[NamedGradientGroup, ...]:
+def stage1_generator_gradient_groups(
+    models: Stage1Models,
+) -> tuple[NamedGradientGroup, ...]:
     return (
         NamedGradientGroup("audio_encoder", (models.audio_encoder,)),
         NamedGradientGroup("feature_linear", (models.feature_linear,)),
         NamedGradientGroup("decoder", (models.decoder,)),
         NamedGradientGroup("generator", (models.generator,)),
+    )
+
+
+def stage1_discriminator_gradient_groups(
+    models: Stage1Models,
+) -> tuple[NamedGradientGroup, ...]:
+    return (
         NamedGradientGroup("discriminators", (models.discriminators,)),
     )
 

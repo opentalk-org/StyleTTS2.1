@@ -49,7 +49,7 @@ Expected: failure because `ScheduledOptimizer` does not accept named gradient gr
 
 - [ ] **Step 4: Implement exact ownership and independent clipping**
 
-Add `gradient_groups` to `ScheduledOptimizer`. In `OptimizerSet.__init__`, compare trainable parameter identities and require every optimizer parameter to appear in exactly one owned group. In `OptimizerSet.step`, record aggregate and group norms before clipping, call `clip_grad_norm_` once per group, then call the unchanged scaler/optimizer step.
+Add `gradient_groups` to `ScheduledOptimizer`. In `OptimizerSet.__init__`, compare parameter identities and require every optimizer-owned parameter to appear in exactly one owned group, including parameters temporarily frozen during Stage 3 construction. Ignore frozen parameters absent from every optimizer. In `OptimizerSet.step`, record aggregate and group norms before clipping, call `clip_grad_norm_` once per group, then call the unchanged scaler/optimizer step.
 
 Keep these metrics:
 

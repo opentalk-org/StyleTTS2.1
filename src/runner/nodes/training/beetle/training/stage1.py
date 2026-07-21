@@ -27,7 +27,6 @@ from .stage1_setup import (
     AlignedSegmentTraining,
     Stage1Schedules,
     build_stage1_optimizers,
-    stage1_gradient_groups,
     tensor_metric,
 )
 from .state import LoopState, StageKind, capture_gradients
@@ -172,15 +171,11 @@ class Stage1Trainer(AlignedSegmentTraining):
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:
         return self.optimizers.step(
             optimizer_step,
-            self.gradient_groups(),
             diagnostics=diagnostics_due(optimizer_step + 1),
         )
 
     def reduce_metrics(self, metrics: tuple[TrainingMetric, ...]) -> tuple[TrainingMetric, ...]:
         return self.runtime.reduce_metrics(metrics)
-
-    def gradient_groups(self):
-        return stage1_gradient_groups(self.models)
 
     def checkpoint_payload(
         self,

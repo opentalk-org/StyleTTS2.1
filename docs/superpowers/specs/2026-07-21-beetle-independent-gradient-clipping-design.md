@@ -16,7 +16,7 @@ Before every optimizer step:
 4. clip each named group independently to the optimizer's configured maximum norm;
 5. perform the unchanged optimizer and scaler step.
 
-The optimizer constructor validates that every trainable optimizer parameter belongs to exactly one named group and that no group crosses optimizer ownership. Missing, duplicated, or foreign parameters fail explicitly before training.
+The optimizer constructor validates that every optimizer-owned parameter belongs to exactly one named group and that no group crosses optimizer ownership. Parameters that are temporarily frozen during Stage 3 construction remain covered; unowned frozen parameters are ignored. Missing, duplicated, or foreign optimizer-owned parameters fail explicitly before training.
 
 ## Stage Groups
 

@@ -8,19 +8,15 @@ from torch import Tensor, nn
 from ..config.training import OptimizerConfig, ScheduledWeight
 from .callbacks import TrainingMetric
 from .checkpoint import NamedState, StateKind, StateTarget, capture_named_state
+from .diagnostics.clipping import (
+    GradientClipObservation,
+    NamedGradientGroup,
+    clip_gradient_group,
+    gradient_norm,
+    optimizer_clipping_metrics,
+    validate_gradient_group_ownership,
+)
 from .distributed import DistributedRuntime
-
-
-@dataclass(frozen=True)
-class NamedGradientGroup:
-    name: str
-    modules: tuple[nn.Module, ...]
-
-    def __post_init__(self) -> None:
-        if not self.name:
-            raise ValueError("gradient group name must not be empty")
-        if not self.modules:
-            raise ValueError("gradient group must contain a module")
 
 
 @dataclass(frozen=True)
@@ -87,12 +83,15 @@ class ScheduledOptimizer:
     scaler: torch.amp.GradScaler
     maximum_gradient_norm: float
     runtime: DistributedRuntime
+    gradient_groups: tuple[NamedGradientGroup, ...]
 
     def __post_init__(self) -> None:
         if not self.name:
             raise ValueError("optimizer name must not be empty")
         if self.maximum_gradient_norm <= 0:
             raise ValueError("maximum_gradient_norm must be positive")
+        if not self.gradient_groups:
+            raise ValueError("optimizer must contain a gradient group")
 
     def parameters(self) -> tuple[nn.Parameter, ...]:
         return tuple(
@@ -114,11 +113,10 @@ class ScheduledOptimizer:
     def finish(
         self,
         learning_rate: float,
+        gradient_norm_value: float,
+        observations: tuple[GradientClipObservation, ...],
         diagnostics: bool,
     ) -> tuple[TrainingMetric, ...]:
-        gradient_norm = torch.nn.utils.clip_grad_norm_(
-            self.parameters(), self.maximum_gradient_norm
-        )
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
@@ -129,7 +127,7 @@ class ScheduledOptimizer:
             ),
             TrainingMetric(
                 f"optimizer/{self.name}_gradient_norm",
-                float(gradient_norm),
+                gradient_norm_value,
             ),
             TrainingMetric(
                 f"optimizer/{self.name}_amp_scale",
@@ -140,10 +138,9 @@ class ScheduledOptimizer:
             return metrics
         return (
             *metrics,
-            *clipping_diagnostic_metrics(
+            *optimizer_clipping_metrics(
                 self.name,
-                float(gradient_norm),
-                self.maximum_gradient_norm,
+                min(item.coefficient for item in observations),
             ),
         )
 
@@ -164,6 +161,20 @@ class OptimizerSet:
                         "optimizer parameter ownership overlaps between "
                         f"{owner} and {group.name}"
                     )
+        gradient_names = tuple(
+            gradient_group.name
+            for group in groups
+            for gradient_group in group.gradient_groups
+        )
+        if len(set(gradient_names)) != len(gradient_names):
+            raise ValueError("gradient group names must be unique")
+        for group in groups:
+            validate_gradient_group_ownership(
+                group.name,
+                group.parameters(),
+                group.gradient_groups,
+                parameter_owners,
+            )
         self.groups = groups
 
     def prepare_distributed(self) -> "OptimizerSet":
@@ -186,27 +197,54 @@ class OptimizerSet:
     def step(
         self,
         optimizer_step: int,
-        gradient_groups: tuple[NamedGradientGroup, ...],
         diagnostics: bool = False,
     ) -> tuple[TrainingMetric, ...]:
         learning_rates = tuple(
             group.prepare(optimizer_step) for group in self.groups
         )
-        module_metrics = tuple(
-            TrainingMetric(
-                f"gradient/{group.name}",
-                _gradient_norm(_unique_parameters(group.modules)),
+        gradient_norms = tuple(
+            gradient_norm(group.parameters()) for group in self.groups
+        )
+        owned_parameter_ids = tuple(
+            {id(parameter) for parameter in group.parameters()}
+            for group in self.groups
+        )
+        observations = tuple(
+            tuple(
+                clip_gradient_group(
+                    gradient_group,
+                    group.maximum_gradient_norm,
+                    owned_parameters,
+                )
+                for gradient_group in group.gradient_groups
             )
-            for group in gradient_groups
+            for group, owned_parameters in zip(
+                self.groups,
+                owned_parameter_ids,
+                strict=True,
+            )
+        )
+        module_metrics = tuple(
+            metric
+            for group_observations in observations
+            for observation in group_observations
+            for metric in observation.metrics(diagnostics)
         )
         optimizer_metrics = tuple(
             metric
-            for group, learning_rate in zip(
+            for group, learning_rate, gradient_norm_value, group_observations in zip(
                 self.groups,
                 learning_rates,
+                gradient_norms,
+                observations,
                 strict=True,
             )
-            for metric in group.finish(learning_rate, diagnostics)
+            for metric in group.finish(
+                learning_rate,
+                gradient_norm_value,
+                group_observations,
+                diagnostics,
+            )
         )
         return (*optimizer_metrics, *module_metrics)
 
@@ -249,44 +287,4 @@ def loss_weight_schedule(config: ScheduledWeight) -> StepSchedule:
         value=config.value,
         start_step=config.start_step,
         warmup_steps=config.warmup_steps,
-    )
-
-
-def _unique_parameters(modules: tuple[nn.Module, ...]) -> tuple[nn.Parameter, ...]:
-    parameters: list[nn.Parameter] = []
-    seen: set[int] = set()
-    for module in modules:
-        for parameter in module.parameters():
-            if id(parameter) not in seen:
-                parameters.append(parameter)
-                seen.add(id(parameter))
-    return tuple(parameters)
-
-
-def _gradient_norm(parameters: tuple[nn.Parameter, ...]) -> float:
-    gradients = tuple(
-        parameter.grad.detach().float().norm(2)
-        for parameter in parameters
-        if parameter.grad is not None
-    )
-    if not gradients:
-        return 0.0
-    return float(torch.stack(gradients).norm(2))
-
-
-def clipping_diagnostic_metrics(
-    optimizer_name: str,
-    gradient_norm: float,
-    maximum_gradient_norm: float,
-) -> tuple[TrainingMetric, ...]:
-    coefficient = min(1.0, maximum_gradient_norm / (gradient_norm + 1e-6))
-    return (
-        TrainingMetric(
-            f"optimizer/{optimizer_name}_clip_coefficient",
-            coefficient,
-        ),
-        TrainingMetric(
-            f"optimizer/{optimizer_name}_was_clipped",
-            float(coefficient < 1.0),
-        ),
     )

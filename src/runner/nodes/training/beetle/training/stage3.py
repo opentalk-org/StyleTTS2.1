@@ -16,17 +16,17 @@ from ..models.stage2 import Stage2Models
 from .callbacks import TrainingMetric
 from .checkpoint import GradientTarget, NamedModuleGradients, StateKind
 from .distributed import DistributedRuntime
+from .diagnostics import diagnostics_due
 from .loop import LoopIntervals
 from .loss_schedules import Stage3Schedules
-from .optimizer import NamedGradientGroup, OptimizerSet
+from .optimizer import OptimizerSet
 from .stage1 import Stage1Trainer
 from .stage1_setup import tensor_metric
 from .stage2_features import ConditionalSynthesis
 from .stage2_setup import Stage2InputBuilder, build_stage3_optimizers
-from .stage2_setup import named_trainable_stage2_modules, stage2_gradient_groups
+from .stage2_setup import named_trainable_stage2_modules
 from .stage2_setup import trainable_stage2_modules, update_latent_flow_ema
 from .state import LoopState, StageKind, capture_gradients
-
 
 class Stage3Trainer(Stage1Trainer):
     stage = StageKind.STAGE3
@@ -191,16 +191,16 @@ class Stage3Trainer(Stage1Trainer):
             tensor_metric("generator_total", total),
         )
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:
-        metrics = self.optimizers.step(optimizer_step, self.gradient_groups())
+        metrics = self.optimizers.step(
+            optimizer_step,
+            diagnostics=diagnostics_due(optimizer_step + 1),
+        )
         update_latent_flow_ema(
             self.ema_latent_flow,
             self.runtime.unwrap(self.stage2_models.latent_flow),
             self.runtime.unwrap(self.stage2_models.latent_flow).config.ema_decay,
         )
         return metrics
-    def gradient_groups(self) -> tuple[NamedGradientGroup, ...]:
-        return (*super().gradient_groups(), *stage2_gradient_groups(self.stage2_models))
-
     def _conditional(
         self,
         inputs: Stage2LossInput,

@@ -15,6 +15,10 @@ from .optimizer import (
     ScheduledOptimizer,
     learning_rate_schedule,
 )
+from .stage1_setup import (
+    stage1_discriminator_gradient_groups,
+    stage1_generator_gradient_groups,
+)
 from .state import LoopState
 
 
@@ -58,6 +62,7 @@ def build_stage2_optimizer(
                 torch.amp.GradScaler(runtime.device.type, enabled=scale_enabled),
                 config.generator_optimizer.maximum_gradient_norm,
                 runtime,
+                stage2_gradient_groups(models),
             ),
         )
     )
@@ -98,6 +103,7 @@ def build_stage3_optimizers(
                 torch.amp.GradScaler(runtime.device.type, enabled=scale_enabled),
                 discriminator_config.maximum_gradient_norm,
                 runtime,
+                stage1_discriminator_gradient_groups(stage1),
             ),
             ScheduledOptimizer(
                 "generator",
@@ -106,6 +112,10 @@ def build_stage3_optimizers(
                 torch.amp.GradScaler(runtime.device.type, enabled=scale_enabled),
                 config.generator_optimizer.maximum_gradient_norm,
                 runtime,
+                (
+                    *stage1_generator_gradient_groups(stage1),
+                    *stage2_gradient_groups(stage2),
+                ),
             ),
         )
     )
@@ -182,6 +192,16 @@ def stage2_gradient_groups(models: Stage2Models) -> tuple[NamedGradientGroup, ..
         NamedGradientGroup("voice_encoder", (models.voice_encoder,)),
         NamedGradientGroup("duration_predictor", (models.duration_predictor,)),
         NamedGradientGroup("latent_flow", (models.latent_flow,)),
+        NamedGradientGroup("aligner", (models.aligner,)),
+        NamedGradientGroup(
+            "style_auxiliaries",
+            (
+                models.style_speaker_classifier,
+                models.style_statistics_head,
+                models.style_ge2e,
+            ),
+        ),
+        NamedGradientGroup("voice_auxiliaries", (models.voice_ge2e,)),
     )
 
 
