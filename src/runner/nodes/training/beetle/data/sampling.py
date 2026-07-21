@@ -100,6 +100,7 @@ class ContinuousBatchPlanner:
         batch_size: int,
         sentence_probability: float,
         seed: int,
+        maximum_seconds: float,
         grouping: GroupSamplingConfig,
         shard: DistributedShard,
     ) -> None:
@@ -111,7 +112,7 @@ class ContinuousBatchPlanner:
         self.seed = seed
         self.grouping = grouping
         self.shard = shard
-        self.cut_planner = CutPlanner(index, 1.0, 45.0)
+        self.cut_planner = CutPlanner(index, maximum_seconds)
         self.sentence = _PermutationPool(index.pools.for_stage(stage), seed, f"stage-{stage}-sentence")
         self.mid_sentence = (
             None

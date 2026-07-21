@@ -9,6 +9,7 @@ from ..config.training import OptimizerConfig, ScheduledWeight
 from .callbacks import TrainingMetric
 from .checkpoint import NamedState, StateKind, StateTarget, capture_named_state
 from .diagnostics.clipping import (
+    GradientClipping,
     GradientClipObservation,
     NamedGradientGroup,
     clip_gradient_group,

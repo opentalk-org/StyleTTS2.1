@@ -92,6 +92,7 @@ class DatabaseSegmentIndex:
         cls,
         selection: DatabaseSelection,
         languages: tuple[str, ...],
+        maximum_seconds: float,
         page_size: int,
         callbacks: IndexCallbacks,
     ) -> "DatabaseSegmentIndex":
@@ -116,6 +117,7 @@ class DatabaseSegmentIndex:
             selection.dataset_id,
             selection.audio_file_ids,
             languages,
+            maximum_seconds,
             references,
         )
 
@@ -125,6 +127,7 @@ class DatabaseSegmentIndex:
         dataset_id: UUID,
         selected_audio_ids: tuple[UUID, ...],
         languages: tuple[str, ...],
+        maximum_seconds: float,
         references: list[SegmentReference],
     ) -> "DatabaseSegmentIndex":
         selected = frozenset(selected_audio_ids)
@@ -153,7 +156,7 @@ class DatabaseSegmentIndex:
                 excluded_external += 1
                 continue
             item = _indexed_segment(reference, reference.language)
-            if item.duration < 1 or item.duration > 45:
+            if item.duration > maximum_seconds:
                 excluded_duration += 1
                 continue
             if item.key in records:

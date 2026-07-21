@@ -77,7 +77,7 @@ class Stage1WindowGeometry:
     def plans(self, item: IndexedSegment) -> tuple[Stage1WindowPlan, ...]:
         latent_count = self.mel_frames(item) // self.posterior_rate
         if latent_count < self.latent_frames:
-            raise ValueError(f"source is shorter than one Stage 1 window: {item.key}")
+            return (Stage1WindowPlan(item.key, 0, 0),)
         final_start = latent_count - self.latent_frames
         starts = list(range(0, final_start + 1, self.latent_frames))
         if starts[-1] != final_start:

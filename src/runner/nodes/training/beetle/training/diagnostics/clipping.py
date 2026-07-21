@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import Enum
 
 import torch
 from torch import nn
@@ -6,10 +7,16 @@ from torch import nn
 from ..callbacks import TrainingMetric
 
 
+class GradientClipping(str, Enum):
+    CLIP = "clip"
+    OBSERVE = "observe"
+
+
 @dataclass(frozen=True)
 class NamedGradientGroup:
     name: str
     modules: tuple[nn.Module, ...]
+    clipping: GradientClipping
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -61,8 +68,12 @@ def clip_gradient_group(
         for parameter in group.parameters()
         if id(parameter) in owned_parameters
     )
-    norm = float(torch.nn.utils.clip_grad_norm_(parameters, maximum_norm))
-    coefficient = min(1.0, maximum_norm / (norm + 1e-6))
+    if group.clipping is GradientClipping.CLIP:
+        norm = float(torch.nn.utils.clip_grad_norm_(parameters, maximum_norm))
+        coefficient = min(1.0, maximum_norm / (norm + 1e-6))
+    else:
+        norm = gradient_norm(parameters)
+        coefficient = 1.0
     return GradientClipObservation(group.name, norm, coefficient)
 
 

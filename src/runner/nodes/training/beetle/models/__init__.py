@@ -1,9 +1,9 @@
+from .acoustic import log_mel_l2_energy
 from .model import (
     ParameterReport,
     Stage1Models,
     Stage1Synthesis,
     build_stage1_models,
-    normalized_log_mel_energy,
 )
 from .compilation import compile_stage1
 from .modules.audio import (
@@ -46,5 +46,5 @@ __all__ = [
     "build_stage2_models",
     "build_styletts_discriminators",
     "compile_stage1",
-    "normalized_log_mel_energy",
+    "log_mel_l2_energy",
 ]

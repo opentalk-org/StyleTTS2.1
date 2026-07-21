@@ -8,11 +8,9 @@ class CutPlanner:
     def __init__(
         self,
         index: DatabaseSegmentIndex,
-        minimum_seconds: float,
         maximum_seconds: float,
     ) -> None:
         self.index = index
-        self.minimum_seconds = minimum_seconds
         self.maximum_seconds = maximum_seconds
 
     def plan_sentence(self, key: SegmentKey, seed: int) -> PlannedExample:
@@ -39,7 +37,7 @@ class CutPlanner:
                 if start_index == 0 and end_index == len(item.words):
                     continue
                 duration = item.words[end_index - 1].end - item.words[start_index].start
-                if self.minimum_seconds <= duration <= self.maximum_seconds:
+                if duration <= self.maximum_seconds:
                     candidates.append((start_index, end_index))
         if not candidates:
             raise ValueError(f"no valid aligned mid-sentence cut: {key}")

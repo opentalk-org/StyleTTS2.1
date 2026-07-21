@@ -66,13 +66,14 @@ class Stage1ValidationEvaluator:
         values = recording.batch.to(self.device)
         latent_generator = self._generator(step, recording.audio_file_id, "latent")
         source_generator = self._generator(step, recording.audio_file_id, "source")
-        synthesis = self.models.reconstruct(
+        targets = self.models.acoustic_targets(values.mel, values.frame_mask)
+        synthesis = self.models.reconstruct_conditioned(
             values.mel,
             values.frame_mask,
+            targets,
             latent_generator,
             source_generator,
         )
-        targets = self.models.acoustic_targets(values.mel, values.frame_mask)
         encoder_kl = masked_kl_standard_normal(
             synthesis.posterior.mean,
             synthesis.posterior.log_scale,

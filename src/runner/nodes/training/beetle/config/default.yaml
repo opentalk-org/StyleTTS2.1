@@ -127,7 +127,7 @@ data:
   selection:
     dataset_id: 00000000-0000-0000-0000-000000000000
     audio_file_ids: []
-  minimum_seconds: 1.0
+  minimum_seconds: 0.0
   maximum_seconds: 45.0
   sentence_probability: 0.5
   prefetch:
@@ -200,7 +200,7 @@ stage1: &stage1
     encoder_kl: {value: 1.0, start_step: 0, warmup_steps: 0}
     f0: {value: 1.0, start_step: 0, warmup_steps: 0}
     n: {value: 1.0, start_step: 0, warmup_steps: 0}
-    reconstruction: {value: 5.0, start_step: 0, warmup_steps: 0}
+    reconstruction: {value: 45.0, start_step: 0, warmup_steps: 0}
     discriminator: {value: 1.0, start_step: 0, warmup_steps: 1000}
     generator_adversarial: {value: 1.0, start_step: 0, warmup_steps: 1000}
     feature_matching: {value: 1.0, start_step: 0, warmup_steps: 1000}

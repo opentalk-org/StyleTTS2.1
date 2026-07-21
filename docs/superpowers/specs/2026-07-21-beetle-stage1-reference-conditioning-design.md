@@ -35,7 +35,8 @@ Beetle stores raw log-magnitude mel values, so the equivalent target is:
 log(norm(exp(log_mel), dim=mel_channels))
 ```
 
-The frame mask is applied to the result. This definition replaces the current
+The frame mask is applied to the result. This `log_mel_l2_energy` definition
+replaces the current
 centered, variance-normalized mean-log-mel energy everywhere Beetle represents
 N, including Stage 1 targets and Stage 2 acoustic statistics. A single energy
 definition is required so FeatureLinear targets and later conditioning remain
@@ -48,7 +49,7 @@ For every Stage 1 batch:
 ```text
 encoder mel -> sampled posterior -> FeatureLinear -> predicted F0/N
 target mel  -> frozen F0 extractor              -> ground-truth F0
-target mel  -> StyleTTS2 log_norm               -> ground-truth N
+target mel  -> log-mel L2 energy                -> ground-truth N
 
 posterior + ground-truth F0/N -> decoder -> generator -> waveform
 predicted F0/N vs ground truth -> supervised FeatureLinear losses

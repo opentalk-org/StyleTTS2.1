@@ -17,6 +17,7 @@ from .callbacks import TrainingMetric
 from .checkpoint import LossScheduleState, LossWeight
 from .distributed import DistributedRuntime
 from .optimizer import (
+    GradientClipping,
     NamedGradientGroup,
     OptimizerSet,
     ScheduledOptimizer,
@@ -80,9 +81,13 @@ class AlignedSegmentTraining:
             "segment",
         )
         generator = torch.Generator(device=self.device).manual_seed(seed)
+        frame_count = self.adversarial_config.segment_samples // self.models.output_hop
+        lengths = frame_mask[:, 0].sum(dim=1).clamp_min(frame_count)
+        positions = torch.arange(frame_mask.shape[-1], device=frame_mask.device)
+        segment_mask = positions.view(1, 1, -1) < lengths.view(-1, 1, 1)
         return AlignedSegments.random(
-            frame_mask,
-            self.adversarial_config.segment_samples // self.models.output_hop,
+            segment_mask,
+            frame_count,
             self.models.latent_downsample_rate,
             self.models.output_hop,
             generator,
@@ -197,10 +202,14 @@ def stage1_generator_gradient_groups(
     models: Stage1Models,
 ) -> tuple[NamedGradientGroup, ...]:
     return (
-        NamedGradientGroup("audio_encoder", (models.audio_encoder,)),
-        NamedGradientGroup("feature_linear", (models.feature_linear,)),
-        NamedGradientGroup("decoder", (models.decoder,)),
-        NamedGradientGroup("generator", (models.generator,)),
+        NamedGradientGroup(
+            "audio_encoder", (models.audio_encoder,), GradientClipping.CLIP
+        ),
+        NamedGradientGroup(
+            "feature_linear", (models.feature_linear,), GradientClipping.OBSERVE
+        ),
+        NamedGradientGroup("decoder", (models.decoder,), GradientClipping.CLIP),
+        NamedGradientGroup("generator", (models.generator,), GradientClipping.CLIP),
     )
 
 
@@ -208,7 +217,9 @@ def stage1_discriminator_gradient_groups(
     models: Stage1Models,
 ) -> tuple[NamedGradientGroup, ...]:
     return (
-        NamedGradientGroup("discriminators", (models.discriminators,)),
+        NamedGradientGroup(
+            "discriminators", (models.discriminators,), GradientClipping.CLIP
+        ),
     )
 
 

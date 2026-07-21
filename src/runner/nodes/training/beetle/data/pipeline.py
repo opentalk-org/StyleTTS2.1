@@ -75,6 +75,7 @@ def build_data_pipeline(
             batch_size=stage_config.batch_size,
             sentence_probability=config.data.sentence_probability,
             seed=config.runtime.seed,
+            maximum_seconds=config.data.maximum_seconds,
             grouping=config.data.grouping,
             shard=shard,
         )
@@ -92,7 +93,8 @@ def build_data_pipeline(
                 config.data.augmentation,
                 config.architecture.language.values,
                 stage,
-                None,
+                config.stage1_window.latent_frames
+                * config.architecture.posterior.downsample_rate,
             ),
         )
     return BoundedBatchPrefetcher(

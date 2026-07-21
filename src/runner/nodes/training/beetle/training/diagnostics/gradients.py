@@ -6,6 +6,7 @@ from torch import Tensor
 from ...losses.acoustic import ReconstructionLoss
 from ...losses.composition import Stage1LossWeights
 from ...models.model import Stage1Synthesis
+from ...models.modules.audio import AudioPosterior
 from ..reporting import TrainingMetric
 
 
@@ -98,6 +99,19 @@ def reconstruction_metrics(loss: ReconstructionLoss) -> tuple[TrainingMetric, ..
     return (*resolutions, *bands)
 
 
+def posterior_log_scale_metrics(
+    posterior: AudioPosterior,
+) -> tuple[TrainingMetric, ...]:
+    mask = posterior.mask.expand_as(posterior.log_scale)
+    values = posterior.log_scale.masked_select(mask).detach().float()
+    return (
+        TrainingMetric("posterior/log_scale_mean", float(values.mean())),
+        TrainingMetric("posterior/log_scale_min", float(values.min())),
+        TrainingMetric("posterior/log_scale_max", float(values.max())),
+        TrainingMetric("posterior/noise_scale_mean", float(values.exp().mean())),
+    )
+
+
 def stage1_gradient_metrics(
     losses: Stage1GradientLosses,
     weights: Stage1LossWeights,
@@ -182,6 +196,7 @@ def stage1_training_metrics(
     return (
         *metrics,
         *reconstruction_metrics(reconstruction),
+        *posterior_log_scale_metrics(synthesis.posterior),
         *stage1_gradient_metrics(losses, weights, synthesis),
     )
 

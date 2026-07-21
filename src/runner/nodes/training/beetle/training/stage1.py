@@ -9,16 +9,13 @@ from ..losses.acoustic import masked_n_smooth_l1
 from ..losses.adversarial import discriminator_step_loss, generator_step_loss
 from ..losses.composition import Stage1LossWeights
 from ..models.model import Stage1Models, Stage1Synthesis
+from ..models.modules.audio import AcousticFeatures
 from .callbacks import TrainingMetric
 from .checkpoint import CHECKPOINT_VERSION, CheckpointPayload, GradientTarget
 from .checkpoint import NamedModuleGradients, StateKind, StateTarget
 from .checkpoint import capture_named_state, restore_checkpoint_gradients
 from .checkpoint import restore_named_states, validate_resume_fingerprints
-from .diagnostics import (
-    Stage1GradientLosses,
-    diagnostics_due,
-    stage1_training_metrics,
-)
+from .diagnostics import Stage1GradientLosses, diagnostics_due, stage1_training_metrics
 from .distributed import DistributedRuntime
 from .loop import LoopIntervals
 from .optimizer import OptimizerSet
@@ -97,7 +94,11 @@ class Stage1Trainer(AlignedSegmentTraining):
     ) -> tuple[TrainingMetric, ...]:
         values = batch.to(self.device)
         with torch.no_grad(), self.runtime.autocast():
-            synthesis = self._synthesize_window(values, "discriminator")
+            targets = self.models.acoustic_targets(
+                values.target_mel,
+                values.frame_mask,
+            )
+            synthesis = self._synthesize_window(values, targets, "discriminator")
         with self.runtime.autocast():
             loss = discriminator_step_loss(
                 self.models.discriminators,
@@ -121,7 +122,8 @@ class Stage1Trainer(AlignedSegmentTraining):
         f0_target = self.models.f0_target(values.target_mel, values.frame_mask)
         n_target = self.models.n_target(values.target_mel, values.frame_mask)
         with self.runtime.autocast():
-            synthesis = self._synthesize_window(values, "generator")
+            targets = AcousticFeatures(f0_target, n_target)
+            synthesis = self._synthesize_window(values, targets, "generator")
             encoder_kl = masked_kl_standard_normal(
                 synthesis.posterior.mean,
                 synthesis.posterior.log_scale,
@@ -223,6 +225,7 @@ class Stage1Trainer(AlignedSegmentTraining):
     def _synthesize_window(
         self,
         batch: Stage1Batch,
+        decoder_acoustic: AcousticFeatures,
         view: str,
     ) -> Stage1Synthesis:
         if self.geometry is None:
@@ -250,6 +253,7 @@ class Stage1Trainer(AlignedSegmentTraining):
             batch.encoder_mel,
             batch.encoder_mask,
             batch.frame_mask,
+            decoder_acoustic,
             self.geometry.posterior_start,
             self.geometry.latent_frames,
             latent,

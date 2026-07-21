@@ -48,7 +48,7 @@ class AugmentationConfig(StrictConfigModel):
 
 class DataConfig(StrictConfigModel):
     selection: DatabaseSelection
-    minimum_seconds: float = Field(ge=1, le=45)
+    minimum_seconds: float = Field(ge=0, le=45)
     maximum_seconds: float = Field(ge=1, le=45)
     sentence_probability: float = Field(gt=0, le=1)
     prefetch: PrefetchConfig
@@ -57,8 +57,6 @@ class DataConfig(StrictConfigModel):
 
     @model_validator(mode="after")
     def validate_durations(self) -> "DataConfig":
-        if self.minimum_seconds > self.maximum_seconds:
-            raise ValueError("minimum_seconds must not exceed maximum_seconds")
         boundaries = self.grouping.duration_boundaries_seconds
         if tuple(sorted(boundaries)) != boundaries:
             raise ValueError("duration boundaries must be sorted")

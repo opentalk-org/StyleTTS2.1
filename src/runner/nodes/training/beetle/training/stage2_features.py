@@ -6,7 +6,7 @@ from torchaudio.transforms import MelSpectrogram
 
 from ..config import BeetleConfig
 from ..data.records import BeetleBatch
-from ..models.model import normalized_log_mel_energy
+from ..models.acoustic import log_mel_l2_energy
 from ..models.modules.audio import AcousticFeatures
 from ..models.modules.decoder import DecoderOutput
 from ..models.modules.embeddings import AcousticStatistics
@@ -105,7 +105,7 @@ def acoustic_statistics(
 ) -> AcousticStatistics:
     with torch.no_grad():
         f0 = models.f0_extractor(batch.mel, batch.frame_mask)
-    n = normalized_log_mel_energy(batch.mel, batch.frame_mask)
+    n = log_mel_l2_energy(batch.mel, batch.frame_mask)
     f0_mask = batch.frame_mask[:, 0] & (f0 > 0)
     n_mask = batch.frame_mask[:, 0]
     f0_mean, f0_std = _masked_statistics(f0, f0_mask)

@@ -2,23 +2,23 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Train Beetle waveform synthesis with 45x mel reconstruction, exact StyleTTS2 energy, ground-truth Stage 1 F0/N, observable posterior variance, and unclipped FeatureLinear gradients.
+**Goal:** Train Beetle waveform synthesis with 45x mel reconstruction, log-L2 mel energy, ground-truth Stage 1 F0/N, observable posterior variance, and unclipped FeatureLinear gradients.
 
-**Architecture:** Keep FeatureLinear predictions and their supervised losses, but pass separately computed ground-truth acoustic features into the Stage 1 decoder/generator. Centralize StyleTTS2 energy in a focused acoustic module, extend existing 250-step diagnostics, and make gradient clipping policy explicit per named module.
+**Architecture:** Keep FeatureLinear predictions and their supervised losses, but pass separately computed ground-truth acoustic features into the Stage 1 decoder/generator. Centralize log-L2 mel energy in a focused acoustic module, extend existing 250-step diagnostics, and make gradient clipping policy explicit per named module.
 
 **Tech Stack:** Python 3.12, PyTorch, Pydantic/YAML configuration, pytest through the Nix development shell.
 
 ## Global Constraints
 
 - Do not change harmonic-source injection, decoder smoothing, KL weighting, or add custom phase/periodicity losses.
-- Stage 1 waveform synthesis uses ground-truth F0 and StyleTTS2 energy; FeatureLinear remains supervised.
+- Stage 1 waveform synthesis uses ground-truth F0 and log-L2 mel energy; FeatureLinear remains supervised.
 - Stages 2 and 3 retain their predicted-conditioning routes.
 - Temporary tests must be deleted before handoff.
 - Run every Python command through `nix develop --command python ...`.
 
 ---
 
-### Task 1: StyleTTS2 energy and 45x reconstruction
+### Task 1: Log-L2 mel energy and 45x reconstruction
 
 **Files:**
 - Create: `src/runner/nodes/training/beetle/models/acoustic.py`
@@ -29,7 +29,7 @@
 - Test temporarily: `src/runner/nodes/training/beetle/_tmp_test_reference_conditioning.py`
 
 **Interfaces:**
-- Produces: `styletts_log_norm(mel: Tensor, frame_mask: Tensor) -> Tensor`.
+- Produces: `log_mel_l2_energy(mel: Tensor, frame_mask: Tensor) -> Tensor`.
 - Consumers: `Stage1Models.n_target` and Stage 2 acoustic statistics.
 
 - [ ] **Step 1: Write failing energy and configuration tests**
@@ -40,7 +40,7 @@ Test exact equivalence to `torch.log(torch.exp(mel).norm(dim=1))`, masking, and 
 
 Run: `nix develop --command python -m pytest src/runner/nodes/training/beetle/_tmp_test_reference_conditioning.py -v`
 
-Expected: FAIL because `styletts_log_norm` does not exist and reconstruction is 5.
+Expected: FAIL because `log_mel_l2_energy` does not exist and reconstruction is 5.
 
 - [ ] **Step 3: Implement the focused energy helper and update consumers**
 

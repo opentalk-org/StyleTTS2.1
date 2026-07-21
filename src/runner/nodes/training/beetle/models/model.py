@@ -5,6 +5,7 @@ from torch import Tensor, nn
 
 from ..config import BeetleConfig
 from ..losses.acoustic import MultiResolutionReconstructionLoss
+from .acoustic import log_mel_l2_energy
 from .modules.audio import (
     AcousticFeatures,
     AudioEncoder,
@@ -39,20 +40,6 @@ class ParameterReport:
     @property
     def total(self) -> int:
         return self.inference + self.frozen_helper + self.training_only
-
-
-def normalized_log_mel_energy(mel: Tensor, frame_mask: Tensor) -> Tensor:
-    if mel.ndim != 3 or frame_mask.shape != (mel.shape[0], 1, mel.shape[2]):
-        raise ValueError("mel energy requires [B,M,T] mel and [B,1,T] mask")
-    numeric_mask = frame_mask[:, 0].to(dtype=mel.dtype)
-    energy = mel.mean(dim=1) * numeric_mask
-    count = numeric_mask.sum(dim=1, keepdim=True)
-    if torch.any(count == 0):
-        raise ValueError("each mel item must contain a valid frame")
-    mean = energy.sum(dim=1, keepdim=True) / count
-    centered = (energy - mean) * numeric_mask
-    variance = centered.square().sum(dim=1, keepdim=True) / count
-    return centered * torch.rsqrt(variance + 1e-5) * numeric_mask
 
 
 def _count_unique_parameters(modules: tuple[nn.Module, ...]) -> tuple[int, set[int]]:
@@ -102,10 +89,48 @@ class Stage1Models(nn.Module):
             posterior.mask,
             frame_mask,
         )
+        return self._render(
+            posterior,
+            acoustic,
+            acoustic,
+            frame_mask,
+            source_generator,
+        )
+
+    def reconstruct_conditioned(
+        self,
+        mel: Tensor,
+        frame_mask: Tensor,
+        decoder_acoustic: AcousticFeatures,
+        latent_generator: torch.Generator,
+        source_generator: torch.Generator,
+    ) -> Stage1Synthesis:
+        posterior = self.audio_encoder(mel, frame_mask, latent_generator)
+        acoustic = self.feature_linear(
+            posterior.latent,
+            posterior.mask,
+            frame_mask,
+        )
+        return self._render(
+            posterior,
+            acoustic,
+            decoder_acoustic,
+            frame_mask,
+            source_generator,
+        )
+
+    def _render(
+        self,
+        posterior: AudioPosterior,
+        acoustic: AcousticFeatures,
+        decoder_acoustic: AcousticFeatures,
+        frame_mask: Tensor,
+        source_generator: torch.Generator,
+    ) -> Stage1Synthesis:
         decoded = self.decoder(
             posterior.latent,
-            acoustic.f0,
-            acoustic.n,
+            decoder_acoustic.f0,
+            decoder_acoustic.n,
             posterior.mask,
             frame_mask,
         )
@@ -172,6 +197,7 @@ class Stage1Models(nn.Module):
         encoder_mel: Tensor,
         encoder_mask: Tensor,
         frame_mask: Tensor,
+        decoder_acoustic: AcousticFeatures,
         posterior_start: int,
         latent_frames: int,
         latent_generator: torch.Generator,
@@ -194,8 +220,8 @@ class Stage1Models(nn.Module):
         )
         decoded = self.decoder(
             posterior.latent,
-            acoustic.f0,
-            acoustic.n,
+            decoder_acoustic.f0,
+            decoder_acoustic.n,
             posterior.mask,
             frame_mask,
         )
@@ -224,7 +250,7 @@ class Stage1Models(nn.Module):
         return self.f0_extractor(mel, frame_mask)
 
     def n_target(self, mel: Tensor, frame_mask: Tensor) -> Tensor:
-        return normalized_log_mel_energy(mel, frame_mask)
+        return log_mel_l2_energy(mel, frame_mask)
 
     def segment_f0_target(
         self,

@@ -65,18 +65,34 @@ class Stage1WindowLoader:
         for plan in fetched.plans:
             source = sources[plan.key]
             target_start = plan.latent_start * self.geometry.posterior_rate
-            target_end = target_start + self.geometry.target_mel_frames
-            target = source.mel[:, target_start:target_end]
+            available_frames = min(
+                self.geometry.target_mel_frames,
+                self.geometry.mel_frames(source.item) - target_start,
+            )
+            target = torch.zeros(
+                source.mel.shape[0],
+                self.geometry.target_mel_frames,
+                dtype=source.mel.dtype,
+            )
+            target[:, :available_frames] = source.mel[
+                :,
+                target_start : target_start + available_frames,
+            ]
             sample_start = target_start * self.geometry.hop_length
-            sample_end = sample_start + self.geometry.target_samples
-            waveform = source.waveform[:, sample_start:sample_end]
-            if target.shape[-1] != self.geometry.target_mel_frames:
-                raise ValueError(f"Stage 1 target mel is incomplete: {plan.key}")
-            if waveform.shape[-1] != self.geometry.target_samples:
-                raise ValueError(f"Stage 1 target waveform is incomplete: {plan.key}")
+            available_samples = available_frames * self.geometry.hop_length
+            waveform = torch.zeros(
+                1,
+                self.geometry.target_samples,
+                dtype=source.waveform.dtype,
+            )
+            waveform[:, :available_samples] = source.waveform[
+                :,
+                sample_start : sample_start + available_samples,
+            ]
             target_mels.append(target)
             waveforms.append(waveform)
-            encoder, mask = self._encoder_window(source.mel, target_start)
+            real_mel = source.mel[:, : self.geometry.mel_frames(source.item)]
+            encoder, mask = self._encoder_window(real_mel, target_start)
             encoder_mels.append(encoder)
             encoder_masks.append(mask)
         batch_size = len(fetched.plans)
@@ -107,7 +123,10 @@ class Stage1WindowLoader:
         if clip.sample_rate != item.sample_rate:
             raise ValueError(f"Stage 1 source sample rate changed: {key}")
         processed = self.preprocessor.decode(clip, key)
-        expected = self.geometry.mel_frames(item)
+        expected = max(
+            self.geometry.mel_frames(item),
+            self.preprocessor.n_fft // self.geometry.hop_length + 1,
+        )
         if processed.mel.shape[-1] != expected:
             raise ValueError(
                 f"Stage 1 planned {expected} mel frames but decoded "

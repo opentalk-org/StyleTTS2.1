@@ -134,6 +134,7 @@ def prepare_run(
     index = DatabaseSegmentIndex.build(
         config.data.selection,
         config.architecture.language.values,
+        config.data.maximum_seconds,
         config.data.prefetch.page_size,
         callbacks,
     )

@@ -45,7 +45,7 @@ class BatchCollator:
         augmentation: AugmentationConfig,
         languages: tuple[str, ...],
         stage: int,
-        frame_count: int | None,
+        minimum_frame_count: int | None,
     ) -> None:
         self.preprocessor = preprocessor
         self.phoneme_tokenizer = phoneme_tokenizer
@@ -55,7 +55,7 @@ class BatchCollator:
             language: index for index, language in enumerate(languages)
         }
         self.stage = stage
-        self.frame_count = frame_count
+        self.minimum_frame_count = minimum_frame_count
 
     def collate(self, fetched: FetchedBatch) -> BeetleBatch:
         prepared = tuple(self._prepare_example(item) for item in fetched.examples)
@@ -64,7 +64,7 @@ class BatchCollator:
         )
         mels, frame_lengths = _pad_mels(
             tuple(item.target.mel for item in prepared),
-            self.frame_count,
+            self.minimum_frame_count,
         )
         target_waveforms = _fit_waveform_frames(target_waveforms, mels.shape[-1])
         phonemes, phoneme_lengths = _pad_ids(tuple(item.phoneme_ids for item in prepared))
@@ -215,15 +215,13 @@ def _pad_waveforms(values: tuple[Tensor, ...]) -> tuple[Tensor, Tensor]:
 
 def _pad_mels(
     values: tuple[Tensor, ...],
-    frame_count: int | None,
+    minimum_frame_count: int | None,
 ) -> tuple[Tensor, Tensor]:
     lengths = torch.tensor([value.shape[-1] for value in values], dtype=torch.long)
     maximum = int(lengths.max())
-    padded_frames = maximum + maximum % 2 if frame_count is None else frame_count
-    if maximum > padded_frames:
-        raise ValueError(
-            f"batch requires {maximum} mel frames, exceeding configured {padded_frames}"
-        )
+    padded_frames = maximum + maximum % 2
+    if minimum_frame_count is not None:
+        padded_frames = max(padded_frames, minimum_frame_count)
     output = torch.zeros(len(values), values[0].shape[0], padded_frames)
     for index, value in enumerate(values):
         output[index, :, : value.shape[-1]] = value

@@ -156,6 +156,7 @@ def initial_pipeline_state(
             stage_config.batch_size,
             config.data.sentence_probability,
             config.runtime.seed,
+            config.data.maximum_seconds,
             config.data.grouping,
             shard,
         )

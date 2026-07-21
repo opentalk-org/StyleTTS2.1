@@ -10,6 +10,7 @@ from ..models.model import Stage1Models
 from ..models.stage2 import Stage2Models
 from .distributed import DistributedRuntime
 from .optimizer import (
+    GradientClipping,
     NamedGradientGroup,
     OptimizerSet,
     ScheduledOptimizer,
@@ -179,20 +180,33 @@ def stage2_gradient_groups(models: Stage2Models) -> tuple[NamedGradientGroup, ..
                 models.latent_phoneme_encoder,
                 models.duration_phoneme_encoder,
             ),
+            GradientClipping.CLIP,
         ),
         NamedGradientGroup(
             "context_encoders",
             (models.context_phoneme_encoder, models.context_audio_encoder),
+            GradientClipping.CLIP,
         ),
         NamedGradientGroup(
             "conditioning",
             (models.language_embedding, models.condition_bank),
+            GradientClipping.CLIP,
         ),
-        NamedGradientGroup("style_encoder", (models.style_encoder,)),
-        NamedGradientGroup("voice_encoder", (models.voice_encoder,)),
-        NamedGradientGroup("duration_predictor", (models.duration_predictor,)),
-        NamedGradientGroup("latent_flow", (models.latent_flow,)),
-        NamedGradientGroup("aligner", (models.aligner,)),
+        NamedGradientGroup(
+            "style_encoder", (models.style_encoder,), GradientClipping.CLIP
+        ),
+        NamedGradientGroup(
+            "voice_encoder", (models.voice_encoder,), GradientClipping.CLIP
+        ),
+        NamedGradientGroup(
+            "duration_predictor",
+            (models.duration_predictor,),
+            GradientClipping.CLIP,
+        ),
+        NamedGradientGroup(
+            "latent_flow", (models.latent_flow,), GradientClipping.CLIP
+        ),
+        NamedGradientGroup("aligner", (models.aligner,), GradientClipping.CLIP),
         NamedGradientGroup(
             "style_auxiliaries",
             (
@@ -200,8 +214,11 @@ def stage2_gradient_groups(models: Stage2Models) -> tuple[NamedGradientGroup, ..
                 models.style_statistics_head,
                 models.style_ge2e,
             ),
+            GradientClipping.CLIP,
         ),
-        NamedGradientGroup("voice_auxiliaries", (models.voice_ge2e,)),
+        NamedGradientGroup(
+            "voice_auxiliaries", (models.voice_ge2e,), GradientClipping.CLIP
+        ),
     )
 
 

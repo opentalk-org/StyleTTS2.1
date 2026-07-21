@@ -107,8 +107,6 @@ class PlannedExample:
     seed: int
 
     def __post_init__(self) -> None:
-        if self.target.duration < 1 or self.target.duration > 45:
-            raise ValueError("target duration must be within 1-45 seconds")
         if self.target_word_start < 0 or self.target_word_end < self.target_word_start:
             raise ValueError("target word range is invalid")
 
