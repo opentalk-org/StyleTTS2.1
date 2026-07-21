@@ -37,7 +37,6 @@ def list_audio_file_references_page(
         AudioFile.name,
         AudioFile.duration,
         AudioFile.speaker_id,
-        AudioFile.voice_id,
         AudioFile.score,
         AudioFile.accuracy,
         AudioFile.metadata_,
@@ -57,7 +56,6 @@ def list_audio_file_references_page(
             duration=row.duration,
             annotations=AudioAnnotations(
                 speaker_id=row.speaker_id,
-                voice_id=row.voice_id,
                 score=row.score,
                 accuracy=row.accuracy,
                 metadata=dict(row.metadata_),

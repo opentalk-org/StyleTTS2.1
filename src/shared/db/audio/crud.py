@@ -49,7 +49,6 @@ from shared.audio_annotations import AudioAnnotations
 def audio_file_annotations(item: AudioFile) -> AudioAnnotations:
     return AudioAnnotations(
         speaker_id=item.speaker_id,
-        voice_id=item.voice_id,
         score=item.score,
         accuracy=item.accuracy,
         metadata=dict(item.metadata_),
@@ -320,7 +319,6 @@ def _update_audio_metadata(item: AudioFile, payload: AudioUpdate) -> None:
     item.name = payload.name
     item.duration = payload.duration
     item.speaker_id = payload.annotations.speaker_id
-    item.voice_id = payload.annotations.voice_id
     item.score = payload.annotations.score
     item.accuracy = payload.annotations.accuracy
     if "language" in payload.model_fields_set:

@@ -13,7 +13,7 @@ from shared.db.audio.segments_crud import bulk_replace_audio_segments
 class AcceptedSpeakerAssignment:
     audio_id: UUID
     segment_id: str
-    voice_id: UUID
+    speaker_id: str
 
 
 @dataclass(frozen=True)
@@ -35,7 +35,7 @@ def bulk_apply_speaker_assignments(
                 f"duplicate speaker assignment: {assignment.audio_id}/"
                 f"{assignment.segment_id}"
             )
-        audio_assignments[assignment.segment_id] = assignment.voice_id
+        audio_assignments[assignment.segment_id] = assignment.speaker_id
         assignment_count += 1
     audio_rows = get_audio_files_bulk(session, list(grouped))
     replacements = {
@@ -58,14 +58,14 @@ def _assigned_segments(
     updated = []
     for segment in segments:
         segment_id = str(segment["id"])
-        voice_id = assignments.get(segment_id)
-        if voice_id is None:
+        speaker_id = assignments.get(segment_id)
+        if speaker_id is None:
             updated.append(segment)
             continue
         annotations = AudioAnnotations.model_validate(segment["annotations"])
         updated.append({
             **segment,
-            "annotations": annotations.model_copy(update={"voice_id": voice_id}).model_dump(mode="json"),
+            "annotations": annotations.model_copy(update={"speaker_id": speaker_id}).model_dump(mode="json"),
         })
         missing.remove(segment_id)
     if missing:

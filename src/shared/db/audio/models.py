@@ -31,7 +31,6 @@ class AudioFile(Base):
     byte_length: Mapped[int] = mapped_column(BigInteger, nullable=False)
     duration: Mapped[float] = mapped_column(Float, nullable=False)
     speaker_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    voice_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
     accuracy: Mapped[float | None] = mapped_column(Float, nullable=True)
     language: Mapped[str | None] = mapped_column(Text, nullable=True)

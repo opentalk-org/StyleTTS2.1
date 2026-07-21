@@ -173,9 +173,6 @@ class SpeakerClusterSummary(Base):
     duration_seconds: Mapped[float] = mapped_column(Float, nullable=False)
     dispersion: Mapped[float] = mapped_column(Float, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
-    voice_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("voices.id", ondelete="SET NULL"), nullable=True
-    )
 
 
 class SpeakerClusterAudit(Base):

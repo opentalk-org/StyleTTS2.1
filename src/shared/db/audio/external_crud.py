@@ -22,7 +22,6 @@ def bulk_create_external_audio_files(
             "byte_length": 0,
             "duration": payload.duration,
             "speaker_id": payload.annotations.speaker_id,
-            "voice_id": payload.annotations.voice_id,
             "score": payload.annotations.score,
             "accuracy": payload.annotations.accuracy,
             "language": payload.language,

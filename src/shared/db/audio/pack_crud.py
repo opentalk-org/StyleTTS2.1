@@ -163,7 +163,6 @@ def _create_item_from_write(writer: AudioPackWriter, payload: AudioCreate) -> Au
         byte_length=write.byte_length,
         duration=payload.duration,
         speaker_id=payload.annotations.speaker_id,
-        voice_id=payload.annotations.voice_id,
         score=payload.annotations.score,
         accuracy=payload.annotations.accuracy,
         language=payload.language,
@@ -188,7 +187,6 @@ def _replace_item_from_write(item: AudioFile, writer: AudioPackWriter, payload: 
     item.byte_length = write.byte_length
     item.duration = payload.duration
     item.speaker_id = payload.annotations.speaker_id
-    item.voice_id = payload.annotations.voice_id
     item.score = payload.annotations.score
     item.accuracy = payload.annotations.accuracy
     item.segments = payload.segments
