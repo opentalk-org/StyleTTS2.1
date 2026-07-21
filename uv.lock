@@ -5692,6 +5692,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pathvalidate"
+version = "3.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fa/2a/52a8da6fe965dea6192eb716b357558e103aea0a1e9a8352ad575a8406ca/pathvalidate-3.3.1.tar.gz", hash = "sha256:b18c07212bfead624345bb8e1d6141cdcf15a39736994ea0b94035ad2b1ba177", size = 63262, upload-time = "2025-06-15T09:07:20.736Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9a/70/875f4a23bfc4731703a5835487d0d2fb999031bd415e7d17c0ae615c18b7/pathvalidate-3.3.1-py3-none-any.whl", hash = "sha256:5263baab691f8e1af96092fa5137ee17df5bdfbd6cff1fcac4d6ef4bc2e1735f", size = 24305, upload-time = "2025-06-15T09:07:19.117Z" },
+]
+
+[[package]]
 name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -5817,6 +5826,23 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/31/5e/03966aedfbfcbb4d5f8aa042452d3361f325b963ebbadddac05b122e47dd/pillow-11.3.0-pp311-pypy311_pp73-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:5418b53c0d59b3824d05e029669efa023bbef0f3e92e75ec8428f3799487f361", size = 4957170, upload-time = "2025-07-01T09:16:23.762Z" },
     { url = "https://files.pythonhosted.org/packages/cc/2d/e082982aacc927fc2cab48e1e731bdb1643a1406acace8bed0900a61464e/pillow-11.3.0-pp311-pypy311_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:504b6f59505f08ae014f724b6207ff6222662aab5cc9542577fb084ed0676ac7", size = 5581505, upload-time = "2025-07-01T09:16:25.593Z" },
     { url = "https://files.pythonhosted.org/packages/34/e7/ae39f538fd6844e982063c3a5e4598b8ced43b9633baa3a85ef33af8c05c/pillow-11.3.0-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:c84d689db21a1c397d001aa08241044aa2069e7587b398c8cc63020390b1c1b8", size = 6984598, upload-time = "2025-07-01T09:16:27.732Z" },
+]
+
+[[package]]
+name = "piper-tts"
+version = "1.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "onnxruntime" },
+    { name = "pathvalidate" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ee/d0/379043e3445b9cca71853282694b68ab5daecb728ff19112da3c93825df7/piper_tts-1.5.0.tar.gz", hash = "sha256:6053a505a61bbc8fa16dc06498355ae202c3470d0571397afa54e2d106ef5259", size = 4424497, upload-time = "2026-07-17T20:06:23.622Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fa/0f/e0e7660853da1369124138b14b2916e102820e4c3f2244b864db4cd30a24/piper_tts-1.5.0-cp39-abi3-macosx_10_9_x86_64.whl", hash = "sha256:7f6db2990c9d27afd360352938efdcc67acdaed33216b40bfe683658266c6b4a", size = 14265832, upload-time = "2026-07-17T20:06:09.07Z" },
+    { url = "https://files.pythonhosted.org/packages/39/80/b09f69bd8cde608f5e6f5068910ecb354291faeb2943501c4980bb11a971/piper_tts-1.5.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:0ceb8548cac9700d1919f9ed69aeb10319cd74ace577667a57528f9538441980", size = 14273787, upload-time = "2026-07-17T20:06:12.129Z" },
+    { url = "https://files.pythonhosted.org/packages/2f/a2/1b75060b5966bc2954b6bde157ce6b0784d5e78b8ee071f5e0daf001d1e4/piper_tts-1.5.0-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:475c7c177edd58250324cfe4b67987f5ecab38940e14e827eb4bfa23f3fc595f", size = 14285756, upload-time = "2026-07-17T20:06:15.069Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/e9/362668ab5c7ec53615fce4f71c9fbba2c0727e867dedffbe94d5e9ee3813/piper_tts-1.5.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:c3c88342559ab0c859163649f0ab77e31c123e4265516e72973ac9a265887de6", size = 14285445, upload-time = "2026-07-17T20:06:17.903Z" },
+    { url = "https://files.pythonhosted.org/packages/15/98/bc24aa72dca6514af02d8d92a774f690a48912b8a626fa3496ac0a3c7492/piper_tts-1.5.0-cp39-abi3-win_amd64.whl", hash = "sha256:d05f0985143f180046d2765eed505a1f5ea1fc30cee4c9c18edb68ef58cce204", size = 14273715, upload-time = "2026-07-17T20:06:20.755Z" },
 ]
 
 [[package]]
@@ -7680,6 +7706,7 @@ dependencies = [
     { name = "orpheus-speech" },
     { name = "pandas" },
     { name = "phonemizer" },
+    { name = "piper-tts" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pyarrow" },
     { name = "pydantic" },
@@ -7731,6 +7758,7 @@ requires-dist = [
     { name = "orpheus-speech" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "phonemizer", specifier = ">=3.3" },
+    { name = "piper-tts", specifier = ">=1.5.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pyarrow", specifier = ">=20.0" },
     { name = "pydantic", specifier = ">=2.9" },

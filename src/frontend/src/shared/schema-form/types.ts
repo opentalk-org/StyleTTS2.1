@@ -12,6 +12,7 @@ export type JsonSchema = {
   $ref?: string;
   $defs?: Record<string, JsonSchema>;
   "x-catalog-items"?: unknown;
+  "x-piper-catalog-url"?: string;
 };
 
 export type SchemaValues = Record<string, unknown>;

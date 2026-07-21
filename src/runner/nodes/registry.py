@@ -65,6 +65,7 @@ from runner.nodes.testing import (
     StyleReferenceSweepNode,
     TestingRunInputNode,
     TestingTextPromptNode,
+    TestingTextSourceNode,
 )
 from runner.nodes.training.common.inputs import (
     ListDatasetAudioIdsNode,
@@ -149,6 +150,7 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         MosModelTrainingNode,
         TestingRunInputNode,
         TestingTextPromptNode,
+        TestingTextSourceNode,
         SelectStyleReferenceNode,
         StyleReferenceSweepNode,
         ResolveStyleReferenceNode,

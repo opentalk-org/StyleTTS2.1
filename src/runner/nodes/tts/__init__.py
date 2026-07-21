@@ -9,6 +9,8 @@ from runner.nodes.tts.synthesis import (
     OrpheusSynthesisNode,
     RaonOpenTtsSynthesisNode,
 )
+from runner.nodes.tts.piper_synthesis import PiperSynthesisNode
+from runner.nodes.tts.piper_voice_node import PiperVoiceSelectionNode
 from runner.nodes.tts.voice_nodes import (
     ChatterboxCloneVoiceNode,
     DiaCloneVoiceNode,
@@ -28,6 +30,7 @@ TTS_SYNTHESIS_NODES = [
     DiaSynthesisNode,
     FishSpeechSynthesisNode,
     RaonOpenTtsSynthesisNode,
+    PiperSynthesisNode,
 ]
 
 TTS_VOICE_NODES = [
@@ -39,6 +42,7 @@ TTS_VOICE_NODES = [
     DiaCloneVoiceNode,
     FishSpeechCloneVoiceNode,
     RaonOpenTtsCloneVoiceNode,
+    PiperVoiceSelectionNode,
 ]
 
 TTS_NODES = TTS_SYNTHESIS_NODES + TTS_VOICE_NODES
