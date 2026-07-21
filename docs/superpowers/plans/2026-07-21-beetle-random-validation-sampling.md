@@ -25,6 +25,7 @@
 **Files:**
 - Modify: `src/runner/nodes/training/beetle/data/index.py`
 - Modify: `src/runner/nodes/training/beetle/data/validation.py`
+- Modify: `src/runner/nodes/training/beetle/data/validation_types.py`
 - Modify: `src/runner/nodes/training/beetle/data/__init__.py`
 - Test: `/tmp/beetle_random_validation_tests.py`
 
@@ -63,7 +64,7 @@ Expected: import failure for `ValidationCandidates` or `select_validation_audio_
 
 - [ ] **Step 3: Add candidate pools to the index**
 
-In `data/index.py`, group the already-loaded, selection-filtered references by audio ID before eligibility filtering. Build sorted Stage 1 candidates from complete packed, non-virtual recordings. Build conditional groups only when every segment has configured language, nonempty text and phonemes, and one consistent nonempty voice ID. Add candidate IDs and voice grouping to the index fingerprint so resume rejects changed validation populations.
+In `data/validation_types.py`, group the already-loaded, selection-filtered references by audio ID before eligibility filtering. Build sorted Stage 1 candidates from complete packed, non-virtual recordings. Build conditional groups only when every segment has configured language, nonempty text and phonemes, and one consistent nonempty voice ID. In `data/index.py`, attach those candidates to `DatabaseSegmentIndex` and add their IDs and voice grouping to the index fingerprint so resume rejects changed validation populations. Keeping the model and builder in `validation_types.py` prevents `index.py` from exceeding 300 lines without adding a seventeenth file to `data/`.
 
 Use a frozen dataclass rather than raw structured dictionaries:
 
@@ -116,6 +117,7 @@ Expected: all deterministic, seed-sensitive, eligibility, count, and voice-diver
 ```bash
 git add src/runner/nodes/training/beetle/data/index.py \
   src/runner/nodes/training/beetle/data/validation.py \
+  src/runner/nodes/training/beetle/data/validation_types.py \
   src/runner/nodes/training/beetle/data/__init__.py
 git commit -m "feat: sample Beetle validation recordings"
 ```
