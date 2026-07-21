@@ -111,10 +111,10 @@ The adapter therefore refreshes F0-derived information after the temporal MRF
 without introducing another temporal upsampling stack or recomputing the
 harmonic source.
 
-The adapter's final projection is initialized to zero. The untrained adapter
-therefore begins as an exact residual no-op, which avoids an abrupt generator
-output change when evaluating the architecture from an existing checkpoint
-copy.
+The adapter's final projection is initialized to zero. The adapter therefore
+begins as an exact residual no-op when the architecture is initialized. This
+does not add compatibility loading for checkpoints created with a different
+model or configuration fingerprint.
 
 ## F0 and N Contracts
 
@@ -157,10 +157,15 @@ receive target F0 and target `N`. Train `FeatureLinear` against the same targets
 in parallel, but do not use its predictions to condition waveform
 reconstruction during this interval.
 
-Before adversarial and feature-matching losses dominate, transition the
-reconstruction path to predicted F0 and `N`. The transition schedule must be
-explicit in configuration and validation must report which conditioning source
-was used. Inference always uses predicted F0 and `N`.
+Transition the reconstruction path to predicted F0 and `N` on an explicit,
+independent schedule. `predicted_start_step: 0` selects predictions immediately;
+a value beyond the training run keeps target conditioning throughout. Other
+values begin a linear blend lasting `transition_steps`. Validation must report
+the predicted-conditioning ratio. Inference always uses predicted F0 and `N`.
+
+Adversarial, generator-adversarial, and feature-matching losses start at step
+zero and warm up over 3,000 steps; they are not coupled to the conditioning
+transition.
 
 This training policy adds no inference parameters or FLOPs. It first establishes
 whether the decoder, harmonic source, multiband iSTFT, and PQMF path can produce
@@ -182,6 +187,28 @@ The synthesis geometry remains unchanged:
 
 PQMF filters, multiband iSTFT construction, magnitude/phase parameterization,
 and output masking are outside the scope of this change.
+
+## Periodic Generator Activation
+
+Use the StyleTTS2 Snake formula in every activation position of the generator's
+`ResBlock1D`:
+
+```text
+Snake(x, alpha) = x + sin(alpha * x)^2 / alpha
+```
+
+`alpha` is a learned per-channel parameter initialized to one and broadcast
+across batch and time, matching the StyleTTS2 implementation.
+
+Both activation positions in each dilated residual layer receive independent
+Snake modules. Because `ResBlock1D` owns the temporal MRF blocks and the
+harmonic-source residual block, the periodic activation applies to both paths,
+matching the relevant StyleTTS2 generator pattern without adding AdaIN. Decoder
+blocks, frequency ShuffleBlocks, frequency upsampling, multiband iSTFT, and PQMF
+remain unchanged.
+
+The running training process is not restarted. It retains the modules already
+loaded in memory; the Snake architecture applies only to a future process.
 
 ## Complexity Requirements
 
@@ -214,6 +241,8 @@ cover:
 - exact waveform length of `300T`;
 - unchanged four-band PQMF synthesis geometry;
 - finite bfloat16-autocast forward and backward passes; and
+- exact Snake output at its initialized effective alpha;
+- finite input and alpha gradients through Snake;
 - measured complexity below 4.25 GFLOPs per generated second.
 
 Quality validation should compare the same held-out recordings under target
@@ -224,6 +253,7 @@ that measures harmonic-track continuity or instantaneous-frequency error.
 ## Non-Goals
 
 - Do not add AdaLN or F0/`N`-generated normalization parameters.
+- Do not add AdaIN around the Snake activations.
 - Do not feed `N` directly into the generator.
 - Do not add style conditioning to Beetle's decoder or generator.
 - Do not reproduce StyleTTS2's full-rate temporal upsampling stack.
