@@ -19,13 +19,18 @@ segments when those boundaries are unavailable. Stages 2 and 3 require enough di
 voices for the configured voice groups, and enough recordings for style groups.
 Empty or ineligible data fails before any model is loaded.
 
-`validation.audio_file_ids` is a required, non-empty, explicitly ordered list
-of stored audio UUIDs. Validation uses each complete recording and all of its
-segments in database order; missing, virtual, unreadable, or incomplete entries
-are rejected instead of skipped. Stage 2/3 validation requires at least two
-recordings with distinct voices because it evaluates the unchanged contrastive
-and GE2E objectives. The nil UUID in the baseline YAML is an intentional
-required-to-replace placeholder.
+`validation.sample_count` selects that many recordings without replacement from
+the configured dataset. A dedicated seed derived from `runtime.seed` and the
+stage fixes the random set for the entire run and reproduces it on resume.
+Validation uses each complete recording and all of its segments in database
+order; missing, virtual, unreadable, or incomplete entries are ineligible.
+Stage 2/3 selection guarantees at least two distinct voices because it evaluates
+the unchanged contrastive and GE2E objectives. Preparation fails when the
+dataset cannot supply the requested count or required voice diversity.
+
+Validation never uses the 9,600-sample adversarial training window. Each loss
+and audio artifact covers the complete selected recording, with only model
+alignment padding removed from the saved WAV.
 
 `architecture.phoneme.model_path` is a local Transformers directory containing
 the custom BERT and `BertTokenizerFast` files. The only configured phoneme token

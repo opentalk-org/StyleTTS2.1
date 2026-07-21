@@ -174,16 +174,20 @@ weighted losses active in the same optimizer step.
 
 ## Validation and reporting
 
-The required `validation.audio_file_ids` list is explicit and ordered. Each ID
-resolves through shared audio CRUD to one full stored recording; all segments
-are concatenated in database order. Validation rejects missing, virtual,
-unreadable, mixed-voice, untranscribed, unphonemized, or unconfigured-language
-samples. Stage 2/3 validation evaluates grouped embedding objectives without
-changing their equations, so it requires at least two configured recordings
-with distinct voices. Validation has no augmentation, context cutting, or
-conditioning dropout. Dedicated seeds are derived from stage, optimizer step,
-audio ID, and view, while global RNG and every module's train/eval mode are
-restored after evaluation.
+`validation.sample_count` requests a random sample without replacement from the
+configured dataset's eligible full recordings. Selection starts from sorted IDs
+and uses a dedicated seed derived from `runtime.seed` and the stage, so the set
+is fixed within a run and reproduced on resume. Stage 2/3 candidates require a
+configured language, complete text and phonemes, one voice per recording, and
+at least two voices across the selected set. Preparation fails when the dataset
+cannot supply the requested count or voice diversity.
+
+Each selected ID resolves through shared audio CRUD to one complete stored
+recording; all segments remain in database order. Validation has no augmentation,
+context cutting, conditioning dropout, or 9,600-sample adversarial crop. Losses
+and WAV artifacts cover the full recording, while global RNG and every module's
+train/eval mode are restored after evaluation. Per-sample synthesis seeds remain
+derived from stage, optimizer step, audio ID, and view.
 
 - Stage 1 uses the posterior AudioEncoder → style-free Decoder → Generator path
   and reports KL, F0, `N`, reconstruction, discriminator,
