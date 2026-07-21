@@ -15,6 +15,7 @@ from shared.db.connection import database_session
 
 from ..config.data import DatabaseSelection
 from .records import IndexedSegment, SegmentKey, WordBoundary
+from .validation_types import ValidationCandidates, build_validation_candidates
 
 
 class IndexCallbacks(Protocol):
@@ -82,6 +83,7 @@ class DatabaseSegmentIndex:
     records: dict[SegmentKey, IndexedSegment]
     by_audio: dict[UUID, tuple[IndexedSegment, ...]]
     pools: StagePools
+    validation: ValidationCandidates
     report: EligibilityReport
     fingerprint: str
 
@@ -131,6 +133,7 @@ class DatabaseSegmentIndex:
             for reference in references
             if not selected or reference.audio_file_id in selected
         ]
+        validation = build_validation_candidates(filtered, languages)
         records: dict[SegmentKey, IndexedSegment] = {}
         by_audio_lists: dict[UUID, list[IndexedSegment]] = defaultdict(list)
         stage1: list[SegmentKey] = []
@@ -196,7 +199,15 @@ class DatabaseSegmentIndex:
             excluded_language=excluded_language,
             excluded_text_or_voice=excluded_text_or_voice,
         )
-        return cls(dataset_id, records, by_audio, pools, report, _fingerprint(dataset_id, records))
+        return cls(
+            dataset_id,
+            records,
+            by_audio,
+            pools,
+            validation,
+            report,
+            _fingerprint(dataset_id, records, validation),
+        )
 
 
 def _indexed_segment(
@@ -235,7 +246,11 @@ def _indexed_segment(
     )
 
 
-def _fingerprint(dataset_id: UUID, records: dict[SegmentKey, IndexedSegment]) -> str:
+def _fingerprint(
+    dataset_id: UUID,
+    records: dict[SegmentKey, IndexedSegment],
+    validation: ValidationCandidates,
+) -> str:
     rows = []
     for key in sorted(records):
         item = records[key]
@@ -249,5 +264,19 @@ def _fingerprint(dataset_id: UUID, records: dict[SegmentKey, IndexedSegment]) ->
                 item.style_prompt, item.voice_prompt,
             )
         )
-    payload = json.dumps((str(dataset_id), rows), separators=(",", ":"), ensure_ascii=True)
+    validation_rows = (
+        tuple(str(audio_id) for audio_id in validation.stage1),
+        tuple(
+            (
+                voice_id,
+                tuple(str(audio_id) for audio_id in audio_ids),
+            )
+            for voice_id, audio_ids in validation.conditional_by_voice.items()
+        ),
+    )
+    payload = json.dumps(
+        (str(dataset_id), rows, validation_rows),
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

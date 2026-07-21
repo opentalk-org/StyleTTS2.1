@@ -21,10 +21,11 @@ from .records import (
 from .sampling import ContinuousBatchPlanner, DistributedShard, PlannerState, derive_seed
 from .stage1_records import Stage1Batch
 from .stage1_sampling import Stage1WindowPlanner
-from .validation import ValidationLoader
+from .validation import ValidationLoader, select_validation_audio_ids
 from .validation_types import (
     StoredValidationAudio,
     ValidationRecording,
+    ValidationCandidates,
     ValidationSegment,
     ValidationSource,
 )
@@ -54,9 +55,11 @@ __all__ = [
     "WordBoundary",
     "StoredValidationAudio",
     "ValidationLoader",
+    "ValidationCandidates",
     "ValidationRecording",
     "ValidationSegment",
     "ValidationSource",
+    "select_validation_audio_ids",
     "derive_seed",
     "build_data_pipeline",
     "build_stage1_window_geometry",

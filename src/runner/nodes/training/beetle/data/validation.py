@@ -1,3 +1,4 @@
+import random
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -7,7 +8,9 @@ from shared.db.connection import database_session
 
 from ..config import BeetleConfig
 from .audio import AudioPreprocessor
+from .index import DatabaseSegmentIndex
 from .records import SegmentKey
+from .sampling import derive_seed
 from .validation_batch import ValidationTokenizer, collate_validation_recording
 from .validation_types import (
     PreparedValidationAudio,
@@ -16,6 +19,46 @@ from .validation_types import (
     ValidationSegment,
     ValidationSource,
 )
+
+
+def select_validation_audio_ids(
+    index: DatabaseSegmentIndex,
+    stage_number: int,
+    sample_count: int,
+    runtime_seed: int,
+) -> tuple[UUID, ...]:
+    candidates = list(index.validation.for_stage(stage_number))
+    if len(candidates) < sample_count:
+        raise ValueError(
+            f"Stage {stage_number} validation requires {sample_count} recordings "
+            f"but only {len(candidates)} are eligible"
+        )
+    rng = random.Random(
+        derive_seed(runtime_seed, stage_number, "validation-recordings")
+    )
+    rng.shuffle(candidates)
+    selected = candidates[:sample_count]
+    if stage_number == 1:
+        return tuple(selected)
+    candidate_voices = {
+        index.validation.voice_for(audio_id) for audio_id in candidates
+    }
+    if len(candidate_voices) < 2 or sample_count < 2:
+        raise ValueError(
+            "conditional validation requires at least two distinct voices"
+        )
+    selected_voices = {
+        index.validation.voice_for(audio_id) for audio_id in selected
+    }
+    if len(selected_voices) == 1:
+        selected_voice = next(iter(selected_voices))
+        replacement = next(
+            audio_id
+            for audio_id in candidates[sample_count:]
+            if index.validation.voice_for(audio_id) != selected_voice
+        )
+        selected[-1] = replacement
+    return tuple(selected)
 
 
 class ValidationDatabase(Protocol):
