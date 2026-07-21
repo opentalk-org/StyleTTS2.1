@@ -154,6 +154,16 @@ class DilatedResidualStack(nn.Module):
         return features * mask
 
 
+class SnakeActivation(nn.Module):
+    def __init__(self, channels: int) -> None:
+        super().__init__()
+        self.alpha = nn.Parameter(torch.ones(1, channels, 1))
+
+    def forward(self, features: Tensor) -> Tensor:
+        scaled = self.alpha * features
+        return features + torch.sin(scaled).square() / self.alpha
+
+
 class ResBlock1D(nn.Module):
     def __init__(
         self,
@@ -181,11 +191,23 @@ class ResBlock1D(nn.Module):
             )
             for _ in dilations
         )
+        self.activations1 = nn.ModuleList(
+            SnakeActivation(channels) for _ in dilations
+        )
+        self.activations2 = nn.ModuleList(
+            SnakeActivation(channels) for _ in dilations
+        )
 
     def forward(self, features: Tensor) -> Tensor:
-        for first, second in zip(self.convs1, self.convs2, strict=True):
-            residual = first(F.leaky_relu(features, negative_slope=0.1))
-            residual = second(F.leaky_relu(residual, negative_slope=0.1))
+        for first, second, activation1, activation2 in zip(
+            self.convs1,
+            self.convs2,
+            self.activations1,
+            self.activations2,
+            strict=True,
+        ):
+            residual = first(activation1(features))
+            residual = second(activation2(residual))
             features = features + residual
         return features
 
