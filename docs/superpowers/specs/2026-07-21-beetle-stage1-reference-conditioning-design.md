@@ -8,7 +8,7 @@ FeatureLinear prediction task intact.
 
 ## Scope
 
-1. Set the Stage 1 reconstruction weight to 45.
+1. Set Beetle's shared waveform reconstruction weight to 45.
 2. Replace Beetle's standardized mean-log-mel energy with the exact StyleTTS2
    `log_norm` quantity expressed for Beetle's raw log-mel representation.
 3. Report posterior log-scale statistics every 250 completed Stage 1 steps.
@@ -64,9 +64,10 @@ is conditional synthesis without ground-truth acoustic tracks.
 
 ## Reconstruction weight
 
-Only `stage1.losses.reconstruction.value` changes from 5 to 45. Later-stage
-reconstruction settings remain unchanged. This matches the successful direct
-iSTFTNet2-MB training signal without silently changing later objectives.
+The shared `losses.reconstruction.value` changes from 5 to 45. The default
+configuration deliberately reuses this loss mapping across stages, so every
+stage that performs waveform reconstruction receives the requested weight.
+This matches the successful direct iSTFTNet2-MB training signal.
 
 ## Posterior diagnostics
 
