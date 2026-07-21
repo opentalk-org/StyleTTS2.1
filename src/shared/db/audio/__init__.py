@@ -21,6 +21,7 @@ from shared.db.audio.crud import (
     update_segment_text,
 )
 from shared.db.audio.pack_store import AudioPackConfig
+from shared.db.audio.repack_crud import RepackResult, repack_legacy_audio_packs
 from shared.db.audio.schemas import AudioCreate, AudioPartRead, AudioUpdate
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "AudioPackConfig",
     "AudioPartRead",
     "AudioUpdate",
+    "RepackResult",
     "bulk_create_audio_files",
     "bulk_delete_audio_files",
     "bulk_read_audio_files",
@@ -43,6 +45,7 @@ __all__ = [
     "list_audio_files",
     "read_audio_file",
     "read_audio_part",
+    "repack_legacy_audio_packs",
     "replace_audio_segments",
     "update_audio_file",
     "update_segment",
