@@ -18,38 +18,53 @@ class HarmonicSource(nn.Module):
     def forward(self, f0: Tensor, generator: torch.Generator) -> Tensor:
         if f0.ndim != 2:
             raise ValueError("harmonic-source F0 must have shape [B,T]")
-        sampled = F.interpolate(
-            f0.unsqueeze(1),
-            scale_factor=self.output_hop,
-            mode="nearest",
-        ).transpose(1, 2)
-        harmonics = torch.arange(
-            1,
-            self.harmonic_count + 2,
-            device=f0.device,
-            dtype=f0.dtype,
-        )
-        frequencies = sampled * harmonics.view(1, 1, -1)
-        increments = frequencies / self.sample_rate * (2 * math.pi)
-        initial = torch.rand(
-            f0.shape[0],
-            self.harmonic_count + 1,
-            device=f0.device,
-            dtype=f0.dtype,
-            generator=generator,
-        ) * (2 * math.pi)
-        initial[:, 0] = 0
-        phase = torch.cumsum(increments, dim=1) + initial.unsqueeze(1)
-        voiced = (sampled > 10).to(dtype=f0.dtype)
-        sine = torch.sin(phase) * 0.1 * voiced
-        noise_scale = voiced * 0.003 + (1 - voiced) * (0.1 / 3)
-        noise = torch.randn(
-            sine.shape,
-            device=sine.device,
-            dtype=sine.dtype,
-            generator=generator,
-        )
-        return torch.tanh(self.merge(sine + noise * noise_scale)).transpose(1, 2)
+        with torch.no_grad():
+            sampled = F.interpolate(
+                f0.float().unsqueeze(1),
+                scale_factor=self.output_hop,
+                mode="nearest",
+            ).transpose(1, 2)
+            harmonics = torch.arange(
+                1,
+                self.harmonic_count + 2,
+                device=f0.device,
+                dtype=torch.float32,
+            )
+            phase_increments = sampled * harmonics.view(1, 1, -1)
+            phase_increments = (phase_increments / self.sample_rate) % 1
+            initial = torch.rand(
+                f0.shape[0],
+                self.harmonic_count + 1,
+                device=f0.device,
+                dtype=torch.float32,
+                generator=generator,
+            )
+            initial[:, 0] = 0
+            phase_increments[:, 0] = phase_increments[:, 0] + initial
+            frame_increments = F.interpolate(
+                phase_increments.transpose(1, 2),
+                size=f0.shape[-1],
+                mode="linear",
+                align_corners=False,
+            )
+            frame_phase = torch.cumsum(frame_increments.transpose(1, 2), dim=1)
+            phase = F.interpolate(
+                (frame_phase * (2 * math.pi * self.output_hop)).transpose(1, 2),
+                size=sampled.shape[1],
+                mode="linear",
+                align_corners=False,
+            ).transpose(1, 2)
+            voiced = (sampled > 10).to(dtype=torch.float32)
+            sine = torch.sin(phase) * 0.1 * voiced
+            noise_scale = voiced * 0.003 + (1 - voiced) * (0.1 / 3)
+            noise = torch.randn(
+                sine.shape,
+                device=sine.device,
+                dtype=torch.float32,
+                generator=generator,
+            )
+            excitation = sine + noise * noise_scale
+        return torch.tanh(self.merge(excitation)).transpose(1, 2)
 
 
 class HarmonicSourceFeatures(nn.Module):
