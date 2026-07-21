@@ -9,7 +9,6 @@ export type WordAlignment = {
 
 export type AudioAnnotations = {
   speaker_id: string | null;
-  voice_id: string | null;
   score: number | null;
   accuracy: number | null;
   metadata: Record<string, unknown>;

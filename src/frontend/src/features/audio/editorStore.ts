@@ -154,7 +154,7 @@ export const useEditor = create<EditorStore>((set) => ({
         end: Math.min(s.dur, start + 2),
         text: "",
         phon: "",
-        annotations: { speaker_id: null, voice_id: null, score: null, accuracy: null, metadata: {} },
+        annotations: { speaker_id: null, score: null, accuracy: null, metadata: {} },
         type_: "manual",
       };
       return { segs: sortSegs([...s.segs, seg]), dirty: true, segSel: seg.id };

@@ -13,16 +13,16 @@ import { cn } from "@/shared/ui/cn";
 import { backendResourceUrl } from "@/app/backend";
 import { showToast } from "@/shared/feedback/Toast";
 import { useCheckpointsQuery } from "../checkpoints/query";
-import { useVoicesQuery } from "../voices/query";
+import { useSpeakersQuery } from "../speakers/query";
 import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../workflows/logic";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
 import { DatasetField } from "./DatasetField";
 import { checkpointOptions, numericSetting, sweepConfigFromGraph, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
 import { useTesting, type SweepDisplay } from "./store";
 
-const VOICE_QUERY = { query: "", limit: 200, offset: 0 };
+const SPEAKER_QUERY = { query: "", limit: 200, offset: 0 };
 
-function VoiceChip({ name, on, onClick }: { name: string; on: boolean; onClick: () => void }) {
+function SpeakerChip({ name, on, onClick }: { name: string; on: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -51,7 +51,7 @@ export function SweepPanel({
   onChange: (graph: WorkflowGraph) => void;
 }) {
   const checkpoints = useCheckpointsQuery();
-  const voicesQuery = useVoicesQuery(VOICE_QUERY);
+  const speakersQuery = useSpeakersQuery(SPEAKER_QUERY);
   const results = useTesting((s) => s.sweepResults);
   const runSweep = useTesting((s) => s.runSweep);
   const pending = results.some((r) => r.state === "running");
@@ -59,18 +59,18 @@ export function SweepPanel({
   const prompt = testingNode(graph, spec.ids.prompt);
   const checkpoint = testingNode(graph, spec.ids.checkpoint);
   const styleSweep = testingNode(graph, spec.ids.styleSweep);
-  const samples = numericSetting(schema, styleSweep, "samples_per_voice");
+  const samples = numericSetting(schema, styleSweep, "samples_per_speaker");
   const alpha = numericSetting(schema, styleSweep, "alpha");
   const beta = numericSetting(schema, styleSweep, "beta");
-  const voices = voicesQuery.data?.rows ?? [];
-  const sweep = sweepConfigFromGraph(graph, spec, voices);
-  const selectedIds = selectedVoiceIds(styleSweep.params.voices);
+  const speakers = speakersQuery.data?.rows ?? [];
+  const sweep = sweepConfigFromGraph(graph, spec, speakers);
+  const selectedIds = selectedSpeakerIds(styleSweep.params.speakers);
   const updateParams = (nodeId: string, params: SchemaValues) => onChange(updateNodeParams(graph, nodeId, params));
-  const toggleVoice = (voiceId: string) => {
-    const nextVoices = selectedIds.includes(voiceId)
-      ? selectedIds.filter((item) => item !== voiceId)
-      : [...selectedIds, voiceId];
-    updateParams(styleSweep.id, { ...styleSweep.params, voices: nextVoices });
+  const toggleSpeaker = (speakerId: string) => {
+    const nextSpeakers = selectedIds.includes(speakerId)
+      ? selectedIds.filter((item) => item !== speakerId)
+      : [...selectedIds, speakerId];
+    updateParams(styleSweep.id, { ...styleSweep.params, speakers: nextSpeakers });
   };
 
   return (
@@ -100,23 +100,23 @@ export function SweepPanel({
           </Field>
           <DatasetField graph={graph} datasetNodeId={spec.ids.dataset} onChange={onChange} />
         </div>
-        <Field label="Voices">
+        <Field label="Speakers">
           <div className="flex flex-wrap gap-2">
-            {voices.length ? (
-              voices.map((voice) => (
-                <VoiceChip key={voice.id} name={voice.name} on={selectedIds.includes(voice.id)} onClick={() => toggleVoice(voice.id)} />
+            {speakers.length ? (
+              speakers.map((speaker) => (
+                <SpeakerChip key={speaker.id} name={speaker.id} on={selectedIds.includes(speaker.id)} onClick={() => toggleSpeaker(speaker.id)} />
               ))
             ) : (
-              <span className="text-xs text-txt-mute">No voices available.</span>
+              <span className="text-xs text-txt-mute">No speakers available.</span>
             )}
           </div>
         </Field>
         <div className="flex flex-wrap items-end gap-4">
           <div className="w-[200px]">
-            <Field label="Samples per voice">
+            <Field label="Samples per speaker">
               <Slider
                 value={sweep.n}
-                onChange={(samples_per_voice) => updateParams(styleSweep.id, { ...styleSweep.params, samples_per_voice })}
+                onChange={(samples_per_speaker) => updateParams(styleSweep.id, { ...styleSweep.params, samples_per_speaker })}
                 min={samples.min}
                 max={samples.max}
                 step={1}
@@ -147,7 +147,7 @@ export function SweepPanel({
           </div>
           <div className="flex-1" />
           <span className="text-xs text-txt-mute">
-            {sweep.voices.length} voices × {sweep.n} = {sweep.voices.length * sweep.n} samples
+            {sweep.speakers.length} speakers × {sweep.n} = {sweep.speakers.length * sweep.n} samples
           </span>
           <Button
             variant="primary"
@@ -155,21 +155,21 @@ export function SweepPanel({
             icon="sparkles"
             disabled={pending}
             onClick={() => {
-              const config = sweepConfigFromGraph(graph, spec, voices);
+              const config = sweepConfigFromGraph(graph, spec, speakers);
               if (!config.ckpt) {
                 showToast("Select a checkpoint first", undefined, "error");
                 return;
               }
-              if (!config.voices.length) {
-                showToast("Select at least one voice", undefined, "error");
+              if (!config.speakers.length) {
+                showToast("Select at least one speaker", undefined, "error");
                 return;
               }
               if (!config.dataset) {
                 showToast("Select a dataset to save to", undefined, "error");
                 return;
               }
-              const display: SweepDisplay[] = config.voices.flatMap((voice) =>
-                Array.from({ length: config.n }, (_unused, sample) => ({ voice: voice.name, sample: sample + 1 })),
+              const display: SweepDisplay[] = config.speakers.flatMap((speaker) =>
+                Array.from({ length: config.n }, (_unused, sample) => ({ speaker: speaker.name, sample: sample + 1 })),
               );
               const runtimeConfig = runtimeConfigForGraph(schema, graph, schema.runtime_config_defaults);
               const payload = graphPayload(graph, null, defaultWorkflowContext(runtimeConfig));
@@ -193,7 +193,7 @@ export function SweepPanel({
                   <Icon name="mic" size={15} strokeWidth={2.2} className="text-emerald-600" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-bold text-txt">{r.voice}</div>
+                  <div className="text-[13px] font-bold text-txt">{r.speaker}</div>
                   <div className="text-[11px] text-txt-mute">sample {r.sample}</div>
                 </div>
               </div>
@@ -216,14 +216,14 @@ export function SweepPanel({
         </div>
       ) : (
         <Card className="rounded-[10px] border-dashed border-line-2 p-12 text-center text-sm text-txt-mute">
-          Select voices and generate to compare the same line across speakers.
+          Select speakers and generate to compare the same line across speakers.
         </Card>
       )}
     </div>
   );
 }
 
-function selectedVoiceIds(value: unknown): string[] {
-  if (!Array.isArray(value)) throw new Error("Testing sweep voices must be an array");
+function selectedSpeakerIds(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new Error("Testing sweep speakers must be an array");
   return value.map((item) => String(item));
 }

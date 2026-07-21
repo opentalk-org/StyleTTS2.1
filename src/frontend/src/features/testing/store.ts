@@ -29,7 +29,7 @@ export type SweepResult = {
   id: string;
   runId: string;
   state: RunState;
-  voice: string;
+  speaker: string;
   sample: number;
   audioFileId?: string;
   duration?: number;
@@ -38,7 +38,7 @@ export type SweepResult = {
 };
 
 export type SingleDisplay = { text: string; steps: number; emb: number };
-export type SweepDisplay = { voice: string; sample: number };
+export type SweepDisplay = { speaker: string; sample: number };
 
 export type TestingStore = {
   testMode: TestMode;
@@ -129,7 +129,7 @@ export const useTesting = create<TestingStore>((set) => ({
       id: `${runId}:${index}`,
       runId,
       state: "running",
-      voice: item.voice,
+      speaker: item.speaker,
       sample: item.sample,
     }));
     set({ sweepResults: pending });

@@ -12,7 +12,7 @@ import { SelectionBar } from "./SelectionBar";
 import { useAudioFilesQuery } from "./query";
 import { useAudio } from "./store";
 
-const HEAD = ["Wave", "File", "Voice", "Dur"];
+const HEAD = ["Wave", "File", "Speaker", "Dur"];
 
 function Header({ allSel, onToggleAll }: { allSel: boolean; onToggleAll: () => void }) {
   return (

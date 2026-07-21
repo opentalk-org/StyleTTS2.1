@@ -1,4 +1,4 @@
-export function VoiceSkeleton() {
+export function SpeakerSkeleton() {
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3.5 p-3.5">
       {Array.from({ length: 6 }).map((_, i) => (

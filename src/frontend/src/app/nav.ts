@@ -5,7 +5,7 @@ export type NavItem = { id: Screen; label: string; icon: IconName };
 
 export const NAV_ITEMS: NavItem[] = [
   { id: "datasets", label: "Datasets", icon: "database" },
-  { id: "voices", label: "Voices", icon: "mic" },
+  { id: "speakers", label: "Speakers", icon: "mic" },
   { id: "audio", label: "Audio Files", icon: "audio-lines" },
   { id: "mos", label: "MOS", icon: "gauge" },
   { id: "statistics", label: "Statistics", icon: "bar-chart" },
@@ -22,7 +22,7 @@ export const NAV_ITEMS: NavItem[] = [
 
 export const SCREEN_META: Record<Screen, { title: string; icon: IconName }> = {
   datasets: { title: "Datasets", icon: "database" },
-  voices: { title: "Voices", icon: "mic" },
+  speakers: { title: "Speakers", icon: "mic" },
   audio: { title: "Audio Files", icon: "audio-lines" },
   editor: { title: "Segment Editor", icon: "audio-lines" },
   mos: { title: "MOS", icon: "gauge" },

@@ -50,8 +50,8 @@ export type StatisticsPayload = {
   speaker_char_count: Pair[];
   speaker_phoneme_count: Pair[];
   speaker_sample_count: Pair[];
-  voice_duration_seconds_histogram: Histogram;
-  voice_sample_count_histogram: Histogram;
+  speaker_duration_seconds_histogram: Histogram;
+  speaker_sample_count_histogram: Histogram;
   words_per_second_scatter: ScatterPoint[];
   chars_per_second_scatter: ScatterPoint[];
   ipa_words_per_second_scatter: ScatterPoint[];

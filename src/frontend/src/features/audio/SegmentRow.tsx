@@ -1,4 +1,4 @@
-import { SPEAKER_NAMES } from "@/features/voices/constants";
+import { useSpeakersQuery } from "@/features/speakers/query";
 import { fmtClock } from "@/shared/format";
 import { Icon } from "@/shared/icons";
 import { cn } from "@/shared/ui/cn";
@@ -24,6 +24,7 @@ function IconBtn({ icon, title, danger, onClick }: { icon: "play" | "merge" | "t
 }
 
 export function SegmentRow({ seg, index, isLast }: { seg: Segment; index: number; isLast: boolean }) {
+  const { data: speakers } = useSpeakersQuery({ query: "", limit: 200, offset: 0 });
   const { segSel, segChecked, playPos, select, toggleCheck, seek, playing, togglePlay, setSegText, setSegPhon, setSegSpeakerId, deleteSeg, mergeNext } = useEditor();
   const sel = seg.id === segSel;
   const checked = segChecked.includes(seg.id);
@@ -66,9 +67,9 @@ export function SegmentRow({ seg, index, isLast }: { seg: Segment; index: number
               className="h-7 w-full appearance-none rounded-md bg-panel-2 pl-2 pr-5 text-[11.5px] font-semibold text-txt-dim outline-none"
             >
               <option value="">None</option>
-              {SPEAKER_NAMES.map((n) => (
-                <option key={n} value={n}>
-                  {n}
+              {(speakers?.rows ?? []).map((speaker) => (
+                <option key={speaker.id} value={speaker.id}>
+                  {speaker.id}
                 </option>
               ))}
             </select>

@@ -1,5 +1,5 @@
 import type { Dataset } from "@/features/datasets/api";
-import { SPEAKER_NAMES } from "@/features/voices/constants";
+import { fetchSpeakers } from "@/features/speakers/api";
 import { showToast } from "@/shared/feedback/Toast";
 import { openParamModal } from "@/shared/feedback/ParamModal";
 
@@ -11,8 +11,9 @@ function datasetSelect(datasets: Dataset[]) {
   return datasets.map((d) => ({ value: d.id, label: `${d.name} (${d.files})` }));
 }
 
-export function uploadAction(datasets: Dataset[]) {
+export async function uploadAction(datasets: Dataset[]) {
   const options = datasetSelect(datasets);
+  const speakers = await fetchSpeakers({ query: "", limit: 200, offset: 0 });
   openParamModal({
     icon: "upload",
     title: "Upload audio",
@@ -20,7 +21,7 @@ export function uploadAction(datasets: Dataset[]) {
     fields: [
       { type: "drop", label: "Drop audio files here or click to browse", hint: "WAV, FLAC, MP3 · up to 2 GB per file" },
       { key: "target", type: "select", label: "Add to dataset", default: options[0]?.value ?? "", options },
-      { key: "speaker_id", type: "select", label: "Assign voice", default: "", options: [{ value: "", label: "None" }, ...SPEAKER_NAMES.map((s) => ({ value: s, label: s }))] },
+      { key: "speaker_id", type: "select", label: "Assign speaker", default: "", options: [{ value: "", label: "None" }, ...speakers.rows.map((speaker) => ({ value: speaker.id, label: speaker.id }))] },
     ],
     onSubmit: () => {
       showToast("Upload queued");
@@ -54,15 +55,16 @@ export function removeDatasetAction(count: number | undefined, datasets: Dataset
   });
 }
 
-export function assignVoiceAction(count?: number) {
+export async function assignSpeakerAction(count?: number) {
+  const speakers = await fetchSpeakers({ query: "", limit: 200, offset: 0 });
   openParamModal({
     icon: "mic",
-    title: "Assign voice to segments",
+    title: "Assign speaker to segments",
     submitLabel: "Assign",
     fields: [
-      { key: "voice", type: "select", label: "Voice", default: "", options: [{ value: "", label: "None" }, ...SPEAKER_NAMES.map((s) => ({ value: s, label: s }))] },
+      { key: "speaker_id", type: "select", label: "Speaker", default: "", options: [{ value: "", label: "None" }, ...speakers.rows.map((speaker) => ({ value: speaker.id, label: speaker.id }))] },
     ],
-    onSubmit: () => showToast(`Assigned voice to ${scope(count)}`),
+    onSubmit: () => showToast(`Assigned speaker to ${scope(count)}`),
   });
 }
 

@@ -2,7 +2,7 @@ import type { JsonSchema, SchemaValues } from "@/shared/schema-form/types";
 import type { Option } from "@/shared/ui/Select";
 
 import type { Checkpoint } from "../checkpoints/api";
-import type { Voice } from "../voices/api";
+import type { Speaker } from "../speakers/api";
 import { typeAccepts } from "../workflows/logic";
 import type { WorkflowGraph, WorkflowNode, WorkflowSchema } from "../workflows/types";
 import type { TestingWorkflowSpec } from "./workflows";
@@ -25,7 +25,7 @@ export type SweepConfig = {
   ckpt: string;
   dataset: string;
   text: string;
-  voices: { id: string; name: string }[];
+  speakers: { id: string; name: string }[];
   n: number;
   alpha: number;
   beta: number;
@@ -70,18 +70,18 @@ export function singleConfigFromGraph(graph: WorkflowGraph, spec: TestingWorkflo
   };
 }
 
-export function sweepConfigFromGraph(graph: WorkflowGraph, spec: TestingWorkflowSpec, availableVoices: Voice[] = []): SweepConfig {
+export function sweepConfigFromGraph(graph: WorkflowGraph, spec: TestingWorkflowSpec, availableSpeakers: Speaker[] = []): SweepConfig {
   const prompt = testingNode(graph, spec.ids.prompt);
   const checkpoint = testingNode(graph, spec.ids.checkpoint);
   const styleSweep = testingNode(graph, requiredNodeId(spec.ids.styleSweep, "sweep style references"));
-  const voiceIds = stringArrayParam(styleSweep.params.voices);
+  const speakerIds = stringArrayParam(styleSweep.params.speakers);
   const dataset = testingNode(graph, spec.ids.dataset);
   return {
     ckpt: String(checkpoint.params.checkpoint_id),
     dataset: String(dataset.params.dataset_id ?? ""),
     text: String(prompt.params.text),
-    voices: voiceIds.map((id) => ({ id, name: voiceName(id, availableVoices) })),
-    n: Number(styleSweep.params.samples_per_voice),
+    speakers: speakerIds.map((id) => ({ id, name: speakerName(id, availableSpeakers) })),
+    n: Number(styleSweep.params.samples_per_speaker),
     alpha: Number(styleSweep.params.alpha),
     beta: Number(styleSweep.params.beta),
   };
@@ -153,11 +153,11 @@ function requiredNodeId(nodeId: string | undefined, label: string): string {
 }
 
 function stringArrayParam(value: unknown): string[] {
-  if (!Array.isArray(value)) throw new Error("Testing sweep voices must be an array");
+  if (!Array.isArray(value)) throw new Error("Testing sweep speakers must be an array");
   return value.map((item) => String(item));
 }
 
-function voiceName(id: string, voices: Voice[]): string {
-  const voice = voices.find((item) => item.id === id);
-  return voice ? voice.name : id;
+function speakerName(id: string, speakers: Speaker[]): string {
+  const speaker = speakers.find((item) => item.id === id);
+  return speaker?.id ?? id;
 }

@@ -26,7 +26,7 @@ class SelectStyleReferenceSettings(StrictSettings):
 
 class StyleReferenceSweepSettings(StrictSettings):
     speakers: list[str] = Field(default_factory=list, title="Style references")
-    samples_per_voice: int = Field(default=2, title="Samples per voice", ge=1, le=5)
+    samples_per_speaker: int = Field(default=2, title="Samples per speaker", ge=1, le=5)
     alpha: float = Field(default=0.7, title="Alpha", ge=0, le=1)
     beta: float = Field(default=0.3, title="Beta", ge=0, le=1)
 
@@ -106,7 +106,7 @@ class StyleReferenceSweepNode(TestingInputPayloadNode):
                 "style_reference": {
                     "kind": "style_reference_batch",
                     "references": references,
-                    "samples_per_voice": self.settings.samples_per_voice,
+                    "samples_per_speaker": self.settings.samples_per_speaker,
                     "source": {"node_type": self.NODE_TYPE, "run": inputs["run"]},
                 }
             }

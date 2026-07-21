@@ -12,7 +12,7 @@ import { RunsScreen } from "@/features/runs/RunsScreen";
 import { SettingsScreen } from "@/features/settings/SettingsScreen";
 import { TestingScreen } from "@/features/testing/TestingScreen";
 import { TrainingScreen } from "@/features/training/TrainingScreen";
-import { VoicesScreen } from "@/features/voices/VoicesScreen";
+import { SpeakersScreen } from "@/features/speakers/SpeakersScreen";
 import { WorkflowsScreen } from "@/features/workflows/WorkflowsScreen";
 import type { Screen } from "./navStore";
 import { useNav } from "./navStore";
@@ -25,7 +25,7 @@ const StatisticsScreen = lazy(() =>
 
 const SCREENS: Record<Screen, ComponentType> = {
   datasets: DatasetsScreen,
-  voices: VoicesScreen,
+  speakers: SpeakersScreen,
   audio: AudioScreen,
   editor: SegmentEditor,
   mos: MosScreen,

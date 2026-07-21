@@ -90,11 +90,11 @@ export function audioHistogramGroups(p: StatisticsPayload): HistogramGroup[] {
     {
       key: "coverage",
       title: "Coverage & balance",
-      caption: "How recording time is spread across files and across voices.",
+      caption: "How recording time is spread across files and across speakers.",
       items: [
         histConfig("Duration per file", "seconds", p.duration_seconds_histogram, "blue", "files"),
-        histConfig("Samples per voice", "samples", p.voice_sample_count_histogram, "emerald", "voices"),
-        histConfig("Duration per voice", "seconds", p.voice_duration_seconds_histogram, "blue", "voices"),
+        histConfig("Samples per speaker", "samples", p.speaker_sample_count_histogram, "emerald", "speakers"),
+        histConfig("Duration per speaker", "seconds", p.speaker_duration_seconds_histogram, "blue", "speakers"),
       ],
     },
     {

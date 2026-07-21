@@ -5,7 +5,7 @@ import { defaultBackendUrl } from "./backendConfig";
 
 export type Screen =
   | "datasets"
-  | "voices"
+  | "speakers"
   | "audio"
   | "editor"
   | "mos"

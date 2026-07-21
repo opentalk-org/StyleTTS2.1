@@ -7,7 +7,7 @@ import { Icon, type IconName } from "@/shared/icons";
 import { cn } from "@/shared/ui/cn";
 import {
   addDatasetAction,
-  assignVoiceAction,
+  assignSpeakerAction,
   removeDatasetAction,
   removeSegmentsAction,
 } from "./actions";
@@ -112,7 +112,7 @@ export function SelectionBar({ total }: { total: number }) {
     { header: "Files & datasets" },
     { label: "Add to dataset", icon: "database", onClick: addSelectedToDataset },
     { label: "Remove from dataset", icon: "database", onClick: () => removeDatasetAction(count, datasets) },
-    { label: "Assign voice to segments", icon: "mic", onClick: () => assignVoiceAction(count) },
+    { label: "Assign speaker to segments", icon: "mic", onClick: () => void assignSpeakerAction(count) },
     { divider: true },
     { label: "Remove all segments", icon: "trash", danger: true, onClick: () => removeSegmentsAction(count) },
   ];

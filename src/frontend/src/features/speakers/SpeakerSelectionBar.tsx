@@ -1,27 +1,27 @@
 import { askConfirm } from "@/shared/feedback/ConfirmDialog";
 import { showToast } from "@/shared/feedback/Toast";
 import { Icon } from "@/shared/icons";
-import { useDeleteVoicesMutation } from "./query";
-import { useVoiceFilters } from "./store";
+import { useDeleteSpeakersMutation } from "./query";
+import { useSpeakerFilters } from "./store";
 
-export function VoiceSelectionBar({ total }: { total: number }) {
-  const { query, selection, selectAllMatching, selectAllFiltered, clearSelection } = useVoiceFilters();
-  const deleteVoices = useDeleteVoicesMutation();
+export function SpeakerSelectionBar({ total }: { total: number }) {
+  const { query, selection, selectAllMatching, selectAllFiltered, clearSelection } = useSpeakerFilters();
+  const deleteSpeakers = useDeleteSpeakersMutation();
   const ids = Object.keys(selection);
   const count = selectAllMatching ? total : ids.length;
-  const label = `${count.toLocaleString()} voice${count === 1 ? "" : "s"}`;
+  const label = `${count.toLocaleString()} speaker${count === 1 ? "" : "s"}`;
 
   const deleteSelected = () =>
     askConfirm({
-      title: "Delete voices?",
-      desc: `Permanently delete ${label}. Segments keep their text but lose these voice labels. This cannot be undone.`,
+      title: "Delete speakers?",
+      desc: `Permanently delete ${label}. Segments keep their text but lose these speaker labels. This cannot be undone.`,
       danger: true,
-      label: "Delete voices",
+      label: "Delete speakers",
       onConfirm: () => {
         const request = selectAllMatching
           ? { mode: "filter" as const, query }
           : { mode: "ids" as const, ids };
-        deleteVoices.mutate(request, {
+        deleteSpeakers.mutate(request, {
           onSuccess: () => {
             clearSelection();
             showToast(`Deleted ${label}`, undefined, "error");
@@ -40,7 +40,7 @@ export function VoiceSelectionBar({ total }: { total: number }) {
       ) : null}
       <div className="flex-1" />
       <button
-        disabled={deleteVoices.isPending || count === 0}
+        disabled={deleteSpeakers.isPending || count === 0}
         onClick={deleteSelected}
         className="flex h-[34px] items-center gap-1.5 rounded-md bg-red-500 px-3 text-[12.5px] font-semibold text-white hover:bg-red-600 disabled:cursor-default disabled:opacity-60"
       >

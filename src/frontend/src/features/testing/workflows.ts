@@ -84,7 +84,7 @@ export const TESTING_WORKFLOWS: Record<TestingMode, TestingWorkflowSpec> = {
   },
   sweep: {
     value: "sweep",
-    label: "Voice sweep",
+    label: "Speaker sweep",
     nodes: SWEEP_NODES,
     edges: SWEEP_EDGES,
     ids: {

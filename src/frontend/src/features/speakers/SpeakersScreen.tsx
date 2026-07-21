@@ -9,13 +9,13 @@ import { cn } from "@/shared/ui/cn";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { SearchInput } from "@/shared/ui/SearchInput";
 import { Select } from "@/shared/ui/Select";
-import { VoiceRow } from "./VoiceRow";
-import { VoiceSelectionBar } from "./VoiceSelectionBar";
-import { VoiceSkeleton } from "./VoiceSkeleton";
-import { useVoiceActions, useVoicesQuery } from "./query";
-import { useVoiceFilters } from "./store";
+import { SpeakerRow } from "./SpeakerRow";
+import { SpeakerSelectionBar } from "./SpeakerSelectionBar";
+import { SpeakerSkeleton } from "./SpeakerSkeleton";
+import { useSpeakersQuery } from "./query";
+import { useSpeakerFilters } from "./store";
 
-export function VoicesScreen() {
+export function SpeakersScreen() {
   const {
     query,
     limit,
@@ -26,9 +26,8 @@ export function VoicesScreen() {
     setVisibleIds,
     selectVisible,
     clearSelection,
-  } = useVoiceFilters();
-  const { data, isLoading, isError, refetch } = useVoicesQuery({ query, limit, offset });
-  const { add } = useVoiceActions();
+  } = useSpeakerFilters();
+  const { data, isLoading, isError, refetch } = useSpeakersQuery({ query, limit, offset });
 
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
@@ -46,13 +45,10 @@ export function VoicesScreen() {
   return (
     <div className="mx-auto flex h-full max-w-[960px] flex-col px-7 pb-4 pt-5">
       <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
-        <Button variant="primary" icon="plus" onClick={add} disabled={isLoading || isError}>
-          New voice
-        </Button>
         <SearchInput
           value={query}
           onChange={(v) => set({ query: v, offset: 0 })}
-          placeholder={total ? `Search ${total.toLocaleString()} voices…` : "Search voices…"}
+          placeholder={total ? `Search ${total.toLocaleString()} speakers…` : "Search speakers…"}
         />
         <Select
           variant="mini"
@@ -66,18 +62,18 @@ export function VoicesScreen() {
         />
       </div>
 
-      {hasSelection ? <VoiceSelectionBar total={total} /> : null}
+      {hasSelection ? <SpeakerSelectionBar total={total} /> : null}
 
       {isLoading ? (
         <Card className="overflow-hidden">
-          <VoiceSkeleton />
+          <SpeakerSkeleton />
         </Card>
       ) : isError ? (
         <Card>
           <EmptyState
             icon="alert"
             title="Couldn't reach the backend"
-            description="The voices service didn't respond."
+            description="The speakers service didn't respond."
             action={
               <Button variant="primary" icon="refresh" onClick={() => refetch()}>
                 Retry
@@ -90,7 +86,7 @@ export function VoicesScreen() {
           <div className="mb-2.5 flex items-center gap-3 text-xs tabular-nums text-txt-mute">
             <span>
               {total ? `${(offset + 1).toLocaleString()}-${visibleEnd.toLocaleString()}` : "0"} of{" "}
-              {total.toLocaleString()} voices
+              {total.toLocaleString()} speakers
             </span>
             <Pager page={page} pages={pages} onChange={(p) => set({ offset: p * limit })} />
           </div>
@@ -120,11 +116,11 @@ export function VoicesScreen() {
                   </span>
                 </div>
               }
-              renderRow={(i) => <VoiceRow voice={rows[i]!} />}
+              renderRow={(i) => <SpeakerRow speaker={rows[i]!} />}
             />
           ) : (
             <Card>
-              <EmptyState icon="mic" title="No voices match your filters." />
+              <EmptyState icon="mic" title="No speakers match your filters." />
             </Card>
           )}
         </>

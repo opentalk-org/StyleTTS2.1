@@ -1,17 +1,17 @@
 import { create } from "zustand";
 
-export type VoiceFilters = {
+export type SpeakerFilters = {
   query: string;
   limit: number;
   offset: number;
   editId: string | null;
 };
 
-type VoiceFiltersStore = VoiceFilters & {
+type SpeakerFiltersStore = SpeakerFilters & {
   selection: Record<string, true>;
   selectAllMatching: boolean;
   visibleIds: string[];
-  set: (patch: Partial<VoiceFilters>) => void;
+  set: (patch: Partial<SpeakerFilters>) => void;
   setVisibleIds: (ids: string[]) => void;
   toggleSelect: (id: string) => void;
   selectVisible: () => void;
@@ -20,15 +20,15 @@ type VoiceFiltersStore = VoiceFilters & {
 };
 
 /**
- * View state for the Voices screen (filter inputs + inline-rename target +
+ * View state for the Speakers screen (filter inputs + inline-rename target +
  * multi-selection). The filter values are sent to the server query — they are
  * NOT used to filter a client-side array. See api.ts.
  *
  * Selection mirrors the audio tab: an explicit id map, plus a `selectAllMatching`
- * flag for "select every voice matching the current filter, across pages".
+ * flag for "select every speaker matching the current filter, across pages".
  * Changing the search query clears `selectAllMatching` since the matching set moved.
  */
-export const useVoiceFilters = create<VoiceFiltersStore>((set) => ({
+export const useSpeakerFilters = create<SpeakerFiltersStore>((set) => ({
   query: "",
   limit: 100,
   offset: 0,
