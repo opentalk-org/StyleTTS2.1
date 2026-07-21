@@ -14,6 +14,7 @@ from .convolution import DecoderResidualBlock
 class DecoderOutput:
     features: Tensor
     f0: Tensor
+    n: Tensor
     mask: Tensor
 
 
@@ -150,5 +151,6 @@ class Decoder(nn.Module):
         return DecoderOutput(
             features * numeric_frame_mask,
             prepared_f0 * numeric_frame_mask[:, 0],
+            prepared_n * numeric_frame_mask[:, 0],
             boolean_frame_mask,
         )

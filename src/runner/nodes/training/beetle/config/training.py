@@ -92,6 +92,11 @@ class Stage1WindowConfig(StrictConfigModel):
     latent_frames: int = Field(gt=0)
 
 
+class Stage1ConditioningConfig(StrictConfigModel):
+    predicted_start_step: int = Field(ge=0)
+    transition_steps: int = Field(gt=0)
+
+
 class ComplexityConfig(StrictConfigModel):
     minimum_inference_parameters: int = Field(gt=0)
     maximum_inference_parameters: int = Field(gt=0)
@@ -129,6 +134,7 @@ class BeetleConfig(StrictConfigModel):
     runtime: RuntimeConfig
     adversarial: AdversarialConfig
     stage1_window: Stage1WindowConfig
+    stage1_conditioning: Stage1ConditioningConfig
     checkpoint: CheckpointConfig
     stage2_objective: Stage2ObjectiveConfig
     stage1: StageConfig

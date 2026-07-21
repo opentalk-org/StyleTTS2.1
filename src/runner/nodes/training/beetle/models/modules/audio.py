@@ -141,6 +141,19 @@ class AcousticFeatures:
     f0: Tensor
     n: Tensor
 
+    def blend(
+        self,
+        predicted: "AcousticFeatures",
+        predicted_ratio: float,
+    ) -> "AcousticFeatures":
+        if predicted_ratio < 0 or predicted_ratio > 1:
+            raise ValueError("predicted acoustic ratio must be between zero and one")
+        target_ratio = 1.0 - predicted_ratio
+        return AcousticFeatures(
+            self.f0 * target_ratio + predicted.f0 * predicted_ratio,
+            self.n * target_ratio + predicted.n * predicted_ratio,
+        )
+
 
 class FeatureLinear(nn.Module):
     def __init__(self, config: FeatureConfig) -> None:

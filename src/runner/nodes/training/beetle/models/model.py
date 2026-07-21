@@ -20,6 +20,7 @@ from .modules.discriminators import (
 )
 from .modules.generator import Generator
 from .modules.segments import AlignedSegments
+from .parameters import ParameterReport, count_unique_parameters
 
 
 @dataclass(frozen=True)
@@ -29,29 +30,6 @@ class Stage1Synthesis:
     decoded: DecoderOutput
     waveform: Tensor
     sample_mask: Tensor
-
-
-@dataclass(frozen=True)
-class ParameterReport:
-    inference: int
-    frozen_helper: int
-    training_only: int
-
-    @property
-    def total(self) -> int:
-        return self.inference + self.frozen_helper + self.training_only
-
-
-def _count_unique_parameters(modules: tuple[nn.Module, ...]) -> tuple[int, set[int]]:
-    identities: set[int] = set()
-    count = 0
-    for module in modules:
-        for parameter in module.parameters():
-            identity = id(parameter)
-            if identity not in identities:
-                identities.add(identity)
-                count += parameter.numel()
-    return count, identities
 
 
 class Stage1Models(nn.Module):
@@ -102,6 +80,7 @@ class Stage1Models(nn.Module):
         mel: Tensor,
         frame_mask: Tensor,
         decoder_acoustic: AcousticFeatures,
+        predicted_ratio: float,
         latent_generator: torch.Generator,
         source_generator: torch.Generator,
     ) -> Stage1Synthesis:
@@ -111,6 +90,7 @@ class Stage1Models(nn.Module):
             posterior.mask,
             frame_mask,
         )
+        decoder_acoustic = decoder_acoustic.blend(acoustic, predicted_ratio)
         return self._render(
             posterior,
             acoustic,
@@ -197,7 +177,8 @@ class Stage1Models(nn.Module):
         encoder_mel: Tensor,
         encoder_mask: Tensor,
         frame_mask: Tensor,
-        decoder_acoustic: AcousticFeatures,
+        target_acoustic: AcousticFeatures,
+        predicted_ratio: float,
         posterior_start: int,
         latent_frames: int,
         latent_generator: torch.Generator,
@@ -218,6 +199,7 @@ class Stage1Models(nn.Module):
             posterior.mask,
             frame_mask,
         )
+        decoder_acoustic = target_acoustic.blend(acoustic, predicted_ratio)
         decoded = self.decoder(
             posterior.latent,
             decoder_acoustic.f0,
@@ -267,9 +249,9 @@ class Stage1Models(nn.Module):
             self.decoder,
             self.generator,
         )
-        inference, inference_ids = _count_unique_parameters(inference_modules)
-        frozen, frozen_ids = _count_unique_parameters((self.f0_extractor,))
-        training, training_ids = _count_unique_parameters((self.discriminators,))
+        inference, inference_ids = count_unique_parameters(inference_modules)
+        frozen, frozen_ids = count_unique_parameters((self.f0_extractor,))
+        training, training_ids = count_unique_parameters((self.discriminators,))
         if (
             inference_ids & frozen_ids
             or inference_ids & training_ids

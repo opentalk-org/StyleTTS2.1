@@ -3,7 +3,7 @@ from uuid import UUID
 import torch
 from torch import Tensor, nn
 
-from ...config.training import StageConfig
+from ...config.training import Stage1ConditioningConfig, StageConfig
 from ...data.sampling import derive_seed
 from ...data.validation_types import ValidationRecording
 from ...losses.acoustic import (
@@ -14,7 +14,7 @@ from ...losses.acoustic import (
 from ...losses.adversarial import discriminator_step_loss, generator_step_loss
 from ...models.model import Stage1Models
 from ..reporting import TrainingMetric
-from ..stage1_setup import Stage1Schedules
+from ..stage1_setup import Stage1ConditioningSchedule, Stage1Schedules
 from ..state import StageKind
 from .types import ValidationSampleResult, trim_waveform_pair
 
@@ -26,11 +26,13 @@ class Stage1ValidationEvaluator:
         self,
         models: Stage1Models,
         stage_config: StageConfig,
+        conditioning_config: Stage1ConditioningConfig,
         runtime_seed: int,
         device: torch.device,
     ) -> None:
         self.models = models
         self.schedules = Stage1Schedules.from_config(stage_config)
+        self.conditioning = Stage1ConditioningSchedule.from_config(conditioning_config)
         self.runtime_seed = runtime_seed
         self.device = device
 
@@ -67,10 +69,12 @@ class Stage1ValidationEvaluator:
         latent_generator = self._generator(step, recording.audio_file_id, "latent")
         source_generator = self._generator(step, recording.audio_file_id, "source")
         targets = self.models.acoustic_targets(values.mel, values.frame_mask)
+        predicted_ratio = self.conditioning.predicted_ratio(step)
         synthesis = self.models.reconstruct_conditioned(
             values.mel,
             values.frame_mask,
             targets,
+            predicted_ratio,
             latent_generator,
             source_generator,
         )
@@ -137,6 +141,7 @@ class Stage1ValidationEvaluator:
                     discriminator * weights.discriminator,
                 ),
                 _metric("generator_total", total),
+                TrainingMetric("conditioning_predicted_ratio", predicted_ratio),
             ),
             ground_truth,
             prediction,

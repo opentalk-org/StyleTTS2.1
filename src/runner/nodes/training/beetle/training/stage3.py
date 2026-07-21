@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor, nn
 
-from ..config.training import AdversarialConfig, StageConfig
+from ..config.training import AdversarialConfig, Stage1ConditioningConfig, StageConfig
 from ..data.records import BeetleBatch
 from ..data.sampling import derive_seed
 from ..losses.acoustic import masked_f0_smooth_l1, masked_kl_standard_normal
@@ -37,6 +37,7 @@ class Stage3Trainer(Stage1Trainer):
         stage2: Stage2Models,
         ema_latent_flow: nn.Module,
         stage_config: StageConfig,
+        conditioning_config: Stage1ConditioningConfig,
         adversarial_config: AdversarialConfig,
         runtime_seed: int,
         runtime: DistributedRuntime,
@@ -54,6 +55,7 @@ class Stage3Trainer(Stage1Trainer):
         super().__init__(
             stage1,
             stage_config,
+            conditioning_config,
             adversarial_config,
             runtime_seed,
             runtime,

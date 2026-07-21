@@ -1,6 +1,6 @@
 import torch
 
-from ..config.training import AdversarialConfig, StageConfig
+from ..config.training import AdversarialConfig, Stage1ConditioningConfig, StageConfig
 from ..data.prefetch import DataPipelineState
 from ..data.sampling import derive_seed
 from ..data.stage1_records import Stage1Batch, Stage1WindowGeometry
@@ -20,12 +20,8 @@ from .distributed import DistributedRuntime
 from .loop import LoopIntervals
 from .optimizer import OptimizerSet
 from .reporting import ReportingState
-from .stage1_setup import (
-    AlignedSegmentTraining,
-    Stage1Schedules,
-    build_stage1_optimizers,
-    tensor_metric,
-)
+from .stage1_setup import AlignedSegmentTraining, Stage1ConditioningSchedule
+from .stage1_setup import Stage1Schedules, build_stage1_optimizers, tensor_metric
 from .state import LoopState, StageKind, capture_gradients
 
 
@@ -37,6 +33,7 @@ class Stage1Trainer(AlignedSegmentTraining):
         self,
         models: Stage1Models,
         stage_config: StageConfig,
+        conditioning_config: Stage1ConditioningConfig,
         adversarial_config: AdversarialConfig,
         runtime_seed: int,
         runtime: DistributedRuntime,
@@ -50,10 +47,11 @@ class Stage1Trainer(AlignedSegmentTraining):
         if initial_loop.stage is not self.stage:
             raise ValueError("Stage 1 trainer requires a Stage 1 loop state")
         self.models = models
-        for module in (
+        modules = (
             models.audio_encoder, models.feature_linear, models.decoder,
             models.generator, models.reconstruction_loss,
-        ):
+        )
+        for module in modules:
             module.to(runtime.device).train()
         models.f0_extractor.to(runtime.device).requires_grad_(False).eval()
         models.discriminators.to(runtime.device).requires_grad_(True).train()
@@ -78,6 +76,7 @@ class Stage1Trainer(AlignedSegmentTraining):
         self.data_fingerprint = data_fingerprint
         self._loop = initial_loop
         self.schedules = Stage1Schedules.from_config(stage_config)
+        self.conditioning = Stage1ConditioningSchedule.from_config(conditioning_config)
         self.accumulation_steps = stage_config.accumulation_steps
 
     def loop_state(self) -> LoopState:
@@ -164,11 +163,11 @@ class Stage1Trainer(AlignedSegmentTraining):
             adversarial.adversarial, adversarial.feature_matching,
         )
         metrics = stage1_training_metrics(
-            completed_step,
-            losses, reconstruction, total, weights, synthesis,
+            completed_step, losses, reconstruction, total, weights, synthesis,
         )
         self.optimizers.group("generator").backward(total / self.accumulation_steps)
-        return metrics
+        predicted_ratio = self.conditioning.predicted_ratio(self._loop.optimizer_step)
+        return (*metrics, TrainingMetric("conditioning_predicted_ratio", predicted_ratio))
 
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:
         return self.optimizers.step(
@@ -254,6 +253,7 @@ class Stage1Trainer(AlignedSegmentTraining):
             batch.encoder_mask,
             batch.frame_mask,
             decoder_acoustic,
+            self.conditioning.predicted_ratio(state.optimizer_step),
             self.geometry.posterior_start,
             self.geometry.latent_frames,
             latent,

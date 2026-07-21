@@ -162,6 +162,9 @@ adversarial:
   segment_samples: 9600
 stage1_window:
   latent_frames: 32
+stage1_conditioning:
+  predicted_start_step: 50000
+  transition_steps: 50000
 checkpoint:
   every_steps: 1000
   keep_last: 5
@@ -201,9 +204,9 @@ stage1: &stage1
     f0: {value: 1.0, start_step: 0, warmup_steps: 0}
     n: {value: 1.0, start_step: 0, warmup_steps: 0}
     reconstruction: {value: 45.0, start_step: 0, warmup_steps: 0}
-    discriminator: {value: 1.0, start_step: 0, warmup_steps: 1000}
-    generator_adversarial: {value: 1.0, start_step: 0, warmup_steps: 1000}
-    feature_matching: {value: 1.0, start_step: 0, warmup_steps: 1000}
+    discriminator: {value: 1.0, start_step: 0, warmup_steps: 3000}
+    generator_adversarial: {value: 1.0, start_step: 0, warmup_steps: 3000}
+    feature_matching: {value: 1.0, start_step: 0, warmup_steps: 3000}
     duration_flow: {value: 1.0, start_step: 0, warmup_steps: 0}
     latent_flow: {value: 1.0, start_step: 0, warmup_steps: 0}
     shortcut: {value: 1.0, start_step: 0, warmup_steps: 0}

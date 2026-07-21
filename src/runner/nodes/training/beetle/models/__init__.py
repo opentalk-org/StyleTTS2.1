@@ -1,10 +1,10 @@
 from .acoustic import log_mel_l2_energy
 from .model import (
-    ParameterReport,
     Stage1Models,
     Stage1Synthesis,
     build_stage1_models,
 )
+from .parameters import ParameterReport
 from .compilation import compile_stage1
 from .modules.audio import (
     AcousticFeatures,

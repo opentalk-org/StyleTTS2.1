@@ -113,6 +113,7 @@ def _run_stage1(
     trainer = Stage1Trainer(
         models,
         config.stage1,
+        config.stage1_conditioning,
         config.adversarial,
         config.runtime.seed,
         runtime,
@@ -135,6 +136,7 @@ def _run_stage1(
             Stage1ValidationEvaluator(
                 models,
                 config.stage1,
+                config.stage1_conditioning,
                 config.runtime.seed,
                 runtime.device,
             )
@@ -242,6 +244,7 @@ def _run_stage3(
         stage2,
         ema,
         config.stage3,
+        config.stage1_conditioning,
         config.adversarial,
         config.runtime.seed,
         runtime,

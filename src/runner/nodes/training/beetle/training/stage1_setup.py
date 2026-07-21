@@ -6,6 +6,7 @@ from ..config.training import (
     AdversarialConfig,
     OptimizerConfig,
     Precision,
+    Stage1ConditioningConfig,
     StageConfig,
 )
 from ..data.records import BeetleBatch
@@ -149,6 +150,26 @@ class Stage1Schedules:
                 LossWeight("feature_matching", weights.feature_matching),
             ),
         )
+
+
+@dataclass(frozen=True)
+class Stage1ConditioningSchedule:
+    predicted_start_step: int
+    transition_steps: int
+
+    @classmethod
+    def from_config(
+        cls,
+        config: Stage1ConditioningConfig,
+    ) -> "Stage1ConditioningSchedule":
+        return cls(config.predicted_start_step, config.transition_steps)
+
+    def predicted_ratio(self, optimizer_step: int) -> float:
+        if self.predicted_start_step == 0:
+            return 1.0
+        transition_position = optimizer_step - self.predicted_start_step
+        bounded = min(max(transition_position, 0), self.transition_steps)
+        return bounded / self.transition_steps
 
 
 def build_stage1_optimizers(
