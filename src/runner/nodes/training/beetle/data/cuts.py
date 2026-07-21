@@ -79,7 +79,7 @@ class CutPlanner:
             audio=CutRange(item.start, item.words[word_start - 1].end),
             word_start=0,
             word_end=word_start,
-            voice_id=item.voice_id,
+            speaker_id=item.speaker_id,
         )
 
     @staticmethod
@@ -91,7 +91,7 @@ class CutPlanner:
             audio=CutRange(item.words[word_end].start, item.end),
             word_start=word_end,
             word_end=len(item.words),
-            voice_id=item.voice_id,
+            speaker_id=item.speaker_id,
         )
 
     @staticmethod
@@ -101,5 +101,5 @@ class CutPlanner:
             audio=CutRange(item.start, item.end),
             word_start=0,
             word_end=len(item.words),
-            voice_id=item.voice_id,
+            speaker_id=item.speaker_id,
         )

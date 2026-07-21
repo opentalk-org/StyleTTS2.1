@@ -48,7 +48,6 @@ def audio_with_transcript_segments(
             segment_id=stable_id("transcript_segment", transcript_id, index),
             annotations=AudioAnnotations(
                 speaker_id=speaker_id,
-                voice_id=audio.voice_id,
                 score=audio.score,
                 accuracy=confidence,
                 metadata={

@@ -79,7 +79,7 @@ class FetchedExample:
     post_clip: WavClip | None
     style_prompt: str | None
     voice_prompt: str | None
-    voice_id: str | None
+    speaker_id: str | None
     language: str | None
 
 
@@ -190,7 +190,7 @@ class DatabaseBatchSource:
             post_clip=_optional_clip(plan.post_context, clips),
             style_prompt=item.style_prompt,
             voice_prompt=item.voice_prompt,
-            voice_id=item.voice_id,
+            speaker_id=item.speaker_id,
             language=item.language,
         )
 

@@ -12,8 +12,6 @@ from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import Field
-from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
 
 from runflow.core.node import Node
 from runflow.core.ports import PortMode
@@ -21,8 +19,6 @@ from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import AudioPort
 from runner.nodes.models import Audio, stable_id
-from shared.db import database_session
-from shared.db.voices.models import Voice
 from shared.audio_annotations import AudioAnnotations
 
 _INFO_FIELDS = (
@@ -71,7 +67,6 @@ class YouTubeAudioSourceSettings(StrictSettings):
     max_parallel: int = Field(default=4, ge=1, le=32, title="Max parallel downloads")
     stagger_seconds: float = Field(default=0.5, ge=0.0, le=10.0, title="Stagger between starts (s)")
     download_retries: int = Field(default=3, ge=1, le=10, title="Download retries")
-    create_voices: bool = Field(default=True, title="Create voices from uploader")
 
 
 class YouTubeAudioSourceNode(Node):
@@ -125,9 +120,8 @@ def _load_audio_items(settings: YouTubeAudioSourceSettings, logger: Any) -> list
                 for index, url in enumerate(urls)
             ]
             downloads = [future.result() for future in futures]
-        voice_ids = _voice_ids_for_uploaders(settings, [info.get("uploader") for _url, _proxy, info, _wav in downloads])
         return [
-            _audio_from_download(url, proxy, info, wav_bytes, settings, voice_ids)
+            _audio_from_download(url, proxy, info, wav_bytes, settings)
             for url, proxy, info, wav_bytes in downloads
         ]
     finally:
@@ -192,7 +186,6 @@ def _audio_from_download(
     info: dict[str, Any],
     wav_bytes: bytes,
     settings: YouTubeAudioSourceSettings,
-    voice_ids: dict[str, UUID],
 ) -> Audio:
     wav = _wav_info(wav_bytes)
     duration = _float_or_none(info.get("duration")) or wav["duration"]
@@ -202,7 +195,6 @@ def _audio_from_download(
     webpage_url = _string_or_none(info.get("webpage_url")) or url
     audio_file_id = uuid5(NAMESPACE_URL, webpage_url)
     uploader = _string_or_none(info.get("uploader"))
-    voice_id = voice_ids.get(uploader) if uploader else None
     name = f"{_safe_prefix(settings.name_prefix)}_{_safe_stem(video_id)}.wav"
     return Audio(
         audio_file_id=audio_file_id,
@@ -214,7 +206,6 @@ def _audio_from_download(
         end=float(duration),
         annotations=AudioAnnotations(
             speaker_id=uploader,
-            voice_id=voice_id,
             metadata=_audio_metadata(url, proxy, info, sample_rate, channels, float(duration)),
         ),
         id=stable_id("youtube_audio", webpage_url),
@@ -245,23 +236,6 @@ def _audio_metadata(
     for field in _INFO_FIELDS:
         metadata[field] = _scalar(info.get(field))
     return metadata
-
-
-def _voice_ids_for_uploaders(settings: YouTubeAudioSourceSettings, uploaders: list[str | None]) -> dict[str, UUID]:
-    if not settings.create_voices:
-        return {}
-    names = sorted({name for raw in uploaders if (name := _string_or_none(raw))})
-    if not names:
-        return {}
-    with database_session() as session:
-        session.execute(
-            insert(Voice)
-            .values([{"name": name} for name in names])
-            .on_conflict_do_nothing(index_elements=["name"])
-        )
-        session.commit()
-        voices = session.execute(select(Voice).where(Voice.name.in_(names))).scalars().all()
-        return {voice.name: voice.id for voice in voices}
 
 
 def _wav_info(wav_bytes: bytes) -> dict[str, float | int]:

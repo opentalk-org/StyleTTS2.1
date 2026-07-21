@@ -23,7 +23,6 @@ from shared.db.reviews import models as review_models
 from shared.db.settings import models as settings_models
 from shared.db.speakers import models as speaker_models
 from shared.db.statistics import models as statistics_models
-from shared.db.voices import models as voice_models
 from shared.db.waveforms import models as waveform_models
 from shared.db.workflows import models as workflow_models
 

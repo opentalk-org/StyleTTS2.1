@@ -52,7 +52,7 @@ class IgnoredTokenizer:
 class DatabaseSpeakerIndex(SpeakerIndex):
     def __init__(self, index: DatabaseSegmentIndex, maximum_classes: int) -> None:
         voices = sorted(
-            {item.voice_id for item in index.records.values() if item.voice_id is not None}
+            {item.speaker_id for item in index.records.values() if item.speaker_id is not None}
         )
         if len(voices) > maximum_classes:
             raise ValueError(
@@ -63,13 +63,13 @@ class DatabaseSpeakerIndex(SpeakerIndex):
 
     def resolve(
         self,
-        voice_ids: tuple[str | None, ...],
+        speaker_ids: tuple[str | None, ...],
         device: torch.device,
     ) -> Tensor:
-        missing = tuple(voice for voice in voice_ids if voice not in self.entries)
+        missing = tuple(voice for voice in speaker_ids if voice not in self.entries)
         if missing:
             raise ValueError(f"batch contains unknown voice labels: {missing}")
-        indices = tuple(self.entries.index(voice) for voice in voice_ids)
+        indices = tuple(self.entries.index(voice) for voice in speaker_ids)
         return torch.tensor(indices, dtype=torch.long, device=device)
 
 

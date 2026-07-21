@@ -38,7 +38,7 @@ class ApplyProgressReporter:
 
 class ApplySpeakerClustersNode(Node):
     NODE_TYPE = "ApplySpeakerClusters"
-    DESCRIPTION = "Create voices and apply only accepted assignments from a completed audit."
+    DESCRIPTION = "Assign speaker IDs for accepted assignments from a completed audit."
     CATEGORY = "Speaker Clustering"
     SETTINGS = ApplySpeakerClustersSettings
     INPUTS = {"audit": SpeakerAuditRefPort()}

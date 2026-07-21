@@ -53,8 +53,8 @@ class AssignmentSpool:
             "cluster_key TEXT NOT NULL, PRIMARY KEY (audio_id, segment_id))"
         )
         self._db.execute(
-            "CREATE TABLE IF NOT EXISTS cluster_voices ("
-            "cluster_key TEXT PRIMARY KEY, voice_id TEXT NOT NULL)"
+            "CREATE TABLE IF NOT EXISTS cluster_speakers ("
+            "cluster_key TEXT PRIMARY KEY, speaker_id TEXT NOT NULL)"
         )
 
     def __enter__(self) -> AssignmentSpool:
@@ -70,7 +70,7 @@ class AssignmentSpool:
         if batch_rows <= 0:
             raise ValueError("assignment spool batch_rows must be positive")
         self._db.execute("DELETE FROM accepted_assignments")
-        self._db.execute("DELETE FROM cluster_voices")
+        self._db.execute("DELETE FROM cluster_speakers")
         counts = [0, 0, 0, 0]
         for shard_index, path in enumerate(paths, start=1):
             check_cancel()
@@ -84,18 +84,18 @@ class AssignmentSpool:
         self._db.commit()
         return ApplyOutcomeCounts(*counts)
 
-    def store_cluster_voices(self, values: dict[str, UUID]) -> None:
+    def store_cluster_speakers(self, values: dict[str, str]) -> None:
         self._db.executemany(
-            "INSERT INTO cluster_voices VALUES (?, ?)",
-            [(key, str(voice_id)) for key, voice_id in values.items()],
+            "INSERT INTO cluster_speakers VALUES (?, ?)",
+            [(key, str(speaker_id)) for key, speaker_id in values.items()],
         )
         self._db.commit()
 
-    def require_cluster_voices(self) -> None:
+    def require_cluster_speakers(self) -> None:
         row = self._db.execute(
             "SELECT a.cluster_key FROM accepted_assignments a "
-            "LEFT JOIN cluster_voices v USING (cluster_key) "
-            "WHERE v.voice_id IS NULL LIMIT 1"
+            "LEFT JOIN cluster_speakers v USING (cluster_key) "
+            "WHERE v.speaker_id IS NULL LIMIT 1"
         ).fetchone()
         if row is not None:
             raise KeyError(f"accepted cluster summary not found: {row[0]}")
@@ -128,12 +128,12 @@ class AssignmentSpool:
             return []
         placeholders = ",".join("?" for _value in audio_ids)
         rows = self._db.execute(
-            "SELECT a.audio_id, a.segment_id, v.voice_id "
-            "FROM accepted_assignments a JOIN cluster_voices v USING (cluster_key) "
+            "SELECT a.audio_id, a.segment_id, v.speaker_id "
+            "FROM accepted_assignments a JOIN cluster_speakers v USING (cluster_key) "
             f"WHERE a.audio_id IN ({placeholders}) ORDER BY a.audio_id, a.segment_id",
             [str(value) for value in audio_ids],
         ).fetchall()
-        return [AcceptedSpeakerAssignment(UUID(a), segment, UUID(v)) for a, segment, v in rows]
+        return [AcceptedSpeakerAssignment(UUID(a), segment, speaker) for a, segment, speaker in rows]
 
     def _ingest_batch(self, values: dict[str, list[object]], counts: list[int]) -> None:
         for index, raw_outcome in enumerate(values["outcome"]):
@@ -158,7 +158,6 @@ def apply_speaker_audit(
 ) -> SaveResult:
     paths, expected, checkpoint = _apply_inputs(audit_ref)
     total = checkpoint.updated_audio_count
-    created = 0
     try:
         with AssignmentSpool(spool_path) as spool:
             counts = spool.ingest(paths, batch_rows, check_cancel, report_progress)
@@ -166,10 +165,10 @@ def apply_speaker_audit(
                 raise ValueError(f"assignment artifact counts {counts} do not match durable run {expected}")
             audio_total = spool.audio_count()
             _record_apply_progress(audit_ref.audit_id, checkpoint, audio_total)
-            created = reconcile_cluster_voices(
+            reconcile_cluster_speakers(
                 spool, audit_ref.cluster_run_id, page_size, check_cancel, report_progress
             )
-            spool.require_cluster_voices()
+            spool.require_cluster_speakers()
             total = _apply_pages(
                 spool, audit_ref.audit_id, page_size, checkpoint,
                 check_cancel, report_progress,
@@ -182,32 +181,30 @@ def apply_speaker_audit(
         "audit_id": str(audit_ref.audit_id), "cluster_run_id": str(audit_ref.cluster_run_id),
         "accepted_count": counts.accepted, "provisional_new_count": counts.provisional_new,
         "ambiguous_count": counts.ambiguous, "rejected_count": counts.rejected,
-        "created_voice_count": created, "updated_audio_count": total,
+        "updated_audio_count": total,
     }
     lineage = stable_id("speaker_audit_apply", audit_ref.audit_id)
     return SaveResult(spool_path, "speaker_assignment_apply", stable_id("save", lineage), lineage, metadata)
 
 
-def reconcile_cluster_voices(
+def reconcile_cluster_speakers(
     spool: AssignmentSpool, run_id: UUID, page_size: int,
     check_cancel: Callable[[], None], report_progress: ProgressReporter,
-) -> int:
+) -> None:
     after = None
-    created = 0
     pages = 0
     while True:
         check_cancel()
         with database_session() as session:
-            page = speaker_crud.reconcile_cluster_summary_voice_page(
+            page = speaker_crud.reconcile_cluster_summary_speaker_page(
                 session, run_id, after, page_size
             )
         if page.after is None:
-            return created
-        spool.store_cluster_voices(page.voice_ids)
+            return
+        spool.store_cluster_speakers(page.speaker_ids)
         after = page.after
-        created += page.created_count
         pages += 1
-        report_progress(pages, pages + 1, f"reconciled speaker voice page {pages}")
+        report_progress(pages, pages + 1, f"reconciled speaker page {pages}")
 
 
 def _apply_inputs(audit_ref: SpeakerAuditRef) -> tuple[list[Path], ApplyOutcomeCounts, ApplyCheckpoint]:

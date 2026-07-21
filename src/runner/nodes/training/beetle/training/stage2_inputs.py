@@ -31,7 +31,7 @@ from .state import LoopState
 
 class SpeakerIndex(Protocol):
     def resolve(
-        self, voice_ids: tuple[str | None, ...], device: torch.device
+        self, speaker_ids: tuple[str | None, ...], device: torch.device
     ) -> Tensor: ...
 
 
@@ -167,7 +167,7 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
             "voice-views",
         )
         style_ids = group_ids(values.style_views, self.device)
-        voice_ids = group_ids(values.voice_views, self.device)
+        speaker_ids = group_ids(values.voice_views, self.device)
         statistics = acoustic_statistics(models, values)
         settings = self.settings
         return Stage2LossInput(
@@ -185,10 +185,10 @@ class DefaultStage2InputBuilder(Stage2InputBuilder):
             style_view_mask=style_mask,
             voice_view_latent=voice_latent,
             voice_view_mask=voice_mask,
-            voice_group_ids=voice_ids,
+            voice_group_ids=speaker_ids,
             style_group_ids=style_ids,
             style_positive_weights=style_weights(values.style_distances),
-            speaker_ids=self.speaker_index.resolve(values.voice_ids, self.device),
+            speaker_ids=self.speaker_index.resolve(values.speaker_ids, self.device),
             statistics_target=statistics,
             contrastive_temperature=settings.contrastive_temperature,
             reversal_scale=settings.reversal_scale,

@@ -11,7 +11,6 @@ from runner.nodes.datatypes import JsonPort
 from runner.nodes.synthesis.style_reference import audio_file_style_reference
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
-from shared.db.voices import crud as voice_crud
 
 
 class TestingTextPromptSettings(StrictSettings):
@@ -26,7 +25,7 @@ class SelectStyleReferenceSettings(StrictSettings):
 
 
 class StyleReferenceSweepSettings(StrictSettings):
-    voices: list[UUID] = Field(default_factory=list, title="Style references")
+    speakers: list[str] = Field(default_factory=list, title="Style references")
     samples_per_voice: int = Field(default=2, title="Samples per voice", ge=1, le=5)
     alpha: float = Field(default=0.7, title="Alpha", ge=0, le=1)
     beta: float = Field(default=0.3, title="Beta", ge=0, le=1)
@@ -99,9 +98,9 @@ class StyleReferenceSweepNode(TestingInputPayloadNode):
     OUTPUTS = {"style_reference": JsonPort()}
 
     async def execute(self, batch, context):
-        if not self.settings.voices:
-            raise ValueError("StyleReferenceSweep requires at least one voice")
-        references = _voice_style_references(self.settings.voices, self.settings.alpha, self.settings.beta)
+        if not self.settings.speakers:
+            raise ValueError("StyleReferenceSweep requires at least one speaker")
+        references = _speaker_style_references(self.settings.speakers, self.settings.alpha, self.settings.beta)
         return [
             {
                 "style_reference": {
@@ -120,26 +119,14 @@ def _selected_style_reference(reference_id: str, alpha: float, beta: float) -> d
     return {**payload, "alpha": alpha, "beta": beta}
 
 
-def _voice_style_references(voice_ids: list[UUID], alpha: float, beta: float) -> list[dict[str, object]]:
+def _speaker_style_references(speaker_ids: list[str], alpha: float, beta: float) -> list[dict[str, object]]:
     with database_session() as session:
-        audio_files = list(audio_crud.list_audio_files(session))
-        voices = {voice.id: voice.name for voice in voice_crud.list_voices(session)}
-        reference_ids = [_voice_reference_audio_id(audio_files, voice_id, voices.get(voice_id, "")) for voice_id in voice_ids]
+        reference_ids = [_speaker_reference_audio_id(session, speaker_id) for speaker_id in speaker_ids]
     return [{**audio_file_style_reference(reference_id), "alpha": alpha, "beta": beta} for reference_id in reference_ids]
 
 
-def _voice_reference_audio_id(audio_files, voice_id: UUID, voice_name: str = "") -> UUID:
-    voice = str(voice_id)
-    name = voice_name.strip()
-    matches = [
-        item
-        for item in audio_files
-        if str(item.voice_id or "") == voice
-        or (name and str(item.speaker_id or "").strip() == name)
-        or any(str(segment["annotations"]["voice_id"] or "") == voice for segment in item.segments)
-        or (name and any(str(segment["annotations"]["speaker_id"] or "").strip() == name for segment in item.segments))
-    ]
-    if not matches:
-        label = f"{voice_name} ({voice_id})" if voice_name else str(voice_id)
-        raise KeyError(f"Voice has no audio reference: {label}")
-    return max(matches, key=lambda item: item.duration).id
+def _speaker_reference_audio_id(session, speaker_id: str) -> UUID:
+    rows, total = audio_crud.search_audio_files(session, speaker_id, "all", "duration", 1, 0)
+    if total == 0 or rows[0][0].speaker_id != speaker_id:
+        raise KeyError(f"Speaker has no audio reference: {speaker_id}")
+    return rows[0][0].id

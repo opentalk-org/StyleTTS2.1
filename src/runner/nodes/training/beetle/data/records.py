@@ -41,7 +41,7 @@ class IndexedSegment:
     sample_rate: int
     estimated_bytes: int
     language: str | None
-    voice_id: str | None
+    speaker_id: str | None
     has_text: bool
     has_phonemes: bool
     phoneme_word_count: int
@@ -88,7 +88,7 @@ class ContextRange:
     audio: CutRange
     word_start: int
     word_end: int
-    voice_id: str | None
+    speaker_id: str | None
 
     def __post_init__(self) -> None:
         if self.word_start < 0 or self.word_end < self.word_start:
@@ -161,7 +161,7 @@ class DecodedExample:
     post_text_ids: Tensor
     style_view: Tensor
     voice_view: Tensor
-    voice_id: str
+    speaker_id: str
     recording_id: UUID
 
 
@@ -206,7 +206,7 @@ class BeetleBatch:
     style_distances: Tensor
     view_seeds: Tensor
     sample_keys: tuple[SegmentKey, ...]
-    voice_ids: tuple[str | None, ...]
+    speaker_ids: tuple[str | None, ...]
     recording_ids: tuple[UUID, ...]
     style_group_ids: tuple[str, ...]
     voice_group_ids: tuple[str, ...]
@@ -284,7 +284,7 @@ class BeetleBatch:
             style_distances=zeros(batch_size, 2),
             view_seeds=torch.arange(batch_size, dtype=torch.long),
             sample_keys=keys,
-            voice_ids=tuple(f"voice-{index}" for index in range(batch_size)),
+            speaker_ids=tuple(f"voice-{index}" for index in range(batch_size)),
             recording_ids=tuple(key.audio_file_id for key in keys),
             style_group_ids=tuple(f"recording-{index}" for index in range(batch_size)),
             voice_group_ids=tuple(f"voice-{index}" for index in range(batch_size)),

@@ -70,7 +70,7 @@ def collate_validation_recording(
     prompt_voice = voice_prompt.unsqueeze(0)
     views = waveform.unsqueeze(1).repeat(1, 2, 1, 1)
     view_lengths = waveform_lengths.unsqueeze(1).repeat(1, 2)
-    voice_id = stored.segments[0].voice_id if stored.segments else None
+    speaker_id = stored.segments[0].speaker_id if stored.segments else None
     batch = BeetleBatch(
         waveform=waveform,
         mel=mel,
@@ -111,10 +111,10 @@ def collate_validation_recording(
         style_distances=torch.zeros(1, 2),
         view_seeds=torch.zeros(1, dtype=torch.long),
         sample_keys=(key,),
-        voice_ids=(voice_id,),
+        speaker_ids=(speaker_id,),
         recording_ids=(stored.audio_file_id,),
         style_group_ids=(str(stored.audio_file_id),),
-        voice_group_ids=(voice_id or "",),
+        voice_group_ids=(speaker_id or "",),
     )
     return ValidationRecording(
         stored.audio_file_id,

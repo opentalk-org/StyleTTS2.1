@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from uuid import UUID
-
-from pydantic import Field
 
 from runflow.core.node import Node
 from runflow.core.settings import StrictSettings
@@ -14,7 +12,6 @@ from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 from shared.db.audio.schemas import AudioUpdate
 from shared.db.datasets import crud as dataset_crud
-from shared.db.voices import crud as voice_crud
 from shared.audio_annotations import AudioAnnotations
 
 
@@ -22,8 +19,8 @@ class DatasetWritebackSettings(StrictSettings):
     dataset_id: UUID
 
 
-class AssignVoiceSettings(StrictSettings):
-    voice: str = Field(title="Voice")
+class AssignSpeakerSettings(StrictSettings):
+    speaker_id: str
 
 
 class AddAudioToDatasetNode(Node):
@@ -68,11 +65,11 @@ class RemoveAudioFromDatasetNode(Node):
         return [{"writeback_result": {"updated": audio.name}} for audio in audios]
 
 
-class AssignVoiceNode(Node):
-    NODE_TYPE = "AssignVoice"
-    DESCRIPTION = "Assign a speaker or voice to each incoming audio item and its segments, saving the change to the database. Enter a voice by name or by voice ID; it updates the audio and segment metadata and passes the tagged audio through along with a JSON result. Use it to label who is speaking before grouping or training on the audio."
+class AssignSpeakerNode(Node):
+    NODE_TYPE = "AssignSpeaker"
+    DESCRIPTION = "Assign a speaker ID to each incoming audio item and its segments, saving the change to the database."
     CATEGORY = "Dataset"
-    SETTINGS = AssignVoiceSettings
+    SETTINGS = AssignSpeakerSettings
     INPUTS = {"audio": AudioPort()}
     OUTPUTS = {"audio": AudioPort(), "writeback_result": JsonPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=64, max_size=256)
@@ -81,7 +78,9 @@ class AssignVoiceNode(Node):
     async def execute(self, batch, context):
         audios: list[Audio] = [inputs["audio"] for inputs in batch]
         with database_session() as session:
-            assignment = _voice_assignment(session, self.settings.voice)
+            speaker_id = self.settings.speaker_id.strip()
+            if not speaker_id:
+                raise ValueError("AssignSpeaker requires speaker_id")
             items = audio_crud.get_audio_files_bulk(
                 session,
                 [audio.audio_file_id for audio in audios],
@@ -90,15 +89,14 @@ class AssignVoiceNode(Node):
             for audio in audios:
                 context.check_cancel()
                 item = items[audio.audio_file_id]
-                segments = [_assigned_segment(segment, assignment) for segment in item.segments]
+                segments = [_assigned_segment(segment, speaker_id) for segment in item.segments]
                 payloads[audio.audio_file_id] = AudioUpdate(
                     name=item.name,
                     wav_bytes=None,
                     duration=item.duration,
                     segments=segments,
                     annotations=audio_crud.audio_file_annotations(item).model_copy(update={
-                        "speaker_id": assignment.speaker_id,
-                        "voice_id": assignment.voice_id,
+                        "speaker_id": speaker_id,
                     }),
                     virtual=item.virtual,
                 )
@@ -113,15 +111,13 @@ class AssignVoiceNode(Node):
                     name=updated.name,
                     annotations=audio_crud.audio_file_annotations(updated),
                     segments=[replace(segment, annotations=segment.annotations.model_copy(update={
-                        "speaker_id": assignment.speaker_id,
-                        "voice_id": assignment.voice_id,
+                        "speaker_id": speaker_id,
                     })) for segment in audio.segments],
                     virtual=updated.virtual,
                 ),
                 "writeback_result": {
                     "audio_file_id": str(updated.id),
-                    "speaker_id": assignment.speaker_id,
-                    "voice_id": str(assignment.voice_id) if assignment.voice_id is not None else None,
+                    "speaker_id": speaker_id,
                 },
             })
         return outputs
@@ -166,38 +162,11 @@ class DeleteAudioRecordsNode(Node):
             self._deleted_any = False
 
 
-@dataclass(frozen=True)
-class VoiceAssignment:
-    speaker_id: str
-    voice_id: UUID | None
-
-
-def _voice_assignment(session, value: str) -> VoiceAssignment:
-    voice = value.strip()
-    if not voice:
-        raise ValueError("AssignVoice requires a voice")
-    voice_id = _parse_uuid(voice)
-    if voice_id is None:
-        return VoiceAssignment(speaker_id=voice, voice_id=None)
-    for item in voice_crud.list_voices(session):
-        if item.id == voice_id:
-            return VoiceAssignment(speaker_id=item.name, voice_id=item.id)
-    raise KeyError(f"Voice not found: {voice_id}")
-
-
-def _parse_uuid(value: str) -> UUID | None:
-    try:
-        return UUID(value)
-    except ValueError:
-        return None
-
-
-def _assigned_segment(segment: dict, assignment: VoiceAssignment) -> dict:
+def _assigned_segment(segment: dict, speaker_id: str) -> dict:
     annotations = AudioAnnotations.model_validate(segment["annotations"])
     return {
         **segment,
         "annotations": annotations.model_copy(update={
-            "speaker_id": assignment.speaker_id,
-            "voice_id": assignment.voice_id,
+            "speaker_id": speaker_id,
         }).model_dump(mode="json"),
     }

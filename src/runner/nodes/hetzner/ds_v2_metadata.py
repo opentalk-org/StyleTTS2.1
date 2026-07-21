@@ -3,24 +3,19 @@ from __future__ import annotations
 from itertools import islice
 from pathlib import Path
 from typing import Any, Iterator, Literal
-from uuid import UUID
 
 from pydantic import Field
-from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
 
 from runflow.core.node import Node
 from runflow.core.ports import PortMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import AudioPort
-from runner.nodes.hetzner.ds_v2_audio import DsV2AudioOptions, audio_from_row, speaker_id
+from runner.nodes.hetzner.ds_v2_audio import DsV2AudioOptions, audio_from_row, row_speaker_id
 from runner.nodes.hetzner.ds_v2_metadata_audio import audio_metadata_from_row
 from runner.nodes.hetzner.ds_v2_metadata_rows import DsV2MetadataRow, DsV2MetadataRows, load_metadata_rows
 from runner.nodes.hetzner.ds_v2_selected_rows import load_selected_audio_rows
 from runner.nodes.models import Audio
-from shared.db import database_session
-from shared.db.voices.models import Voice
 
 
 class HetznerDsV2SourceSettings(StrictSettings):
@@ -31,7 +26,6 @@ class HetznerDsV2SourceSettings(StrictSettings):
     text_column: Literal["text_src", "text_parakeet", "text_whisper", "text_canary"] = "text_src"
     name_prefix: str = Field(default="ds_v2", title="Audio name prefix")
     download_retries: int = Field(default=3, ge=1, le=10, title="SFTP retries")
-    create_voices: bool = Field(default=True, title="Create voices")
 
 
 class HetznerDsV2SourceNode(Node):
@@ -72,8 +66,7 @@ class HetznerDsV2SourceNode(Node):
             self._remaining = 0
             return []
         context.check_cancel()
-        voice_ids = _voice_ids(rows, self.settings.create_voices)
-        items = _audio_items(rows, self.settings, voice_ids, Path(context.cache_dir) / "hetzner")
+        items = _audio_items(rows, self.settings, Path(context.cache_dir) / "hetzner")
         context.check_cancel()
         if self.settings.row_limit is None:
             self._remaining = 1
@@ -89,7 +82,6 @@ class HetznerDsV2SourceNode(Node):
 def _audio_items(
     sources: list[DsV2MetadataRow],
     settings: HetznerDsV2SourceSettings,
-    voice_ids: dict[str, UUID],
     cache_dir: Path,
 ) -> list[Audio]:
     loaded = None
@@ -103,31 +95,18 @@ def _audio_items(
             settings.text_column,
             settings.name_prefix,
         )
-        voice_id = voice_ids.get(speaker_id(source.metadata))
+        speaker_id = row_speaker_id(source.metadata)
         if loaded is not None:
             row = {**source.metadata, "audio": loaded[position].audio}
-            items.append(audio_from_row(row, options, source.index, voice_id))
+            items.append(audio_from_row(row, options, source.index, speaker_id))
         else:
             items.append(
                 audio_metadata_from_row(
                     source.metadata,
                     options,
                     source.index,
-                    voice_id,
+                    speaker_id,
                     source.remote_metadata_path,
                 )
             )
     return items
-
-
-def _voice_ids(rows: list[DsV2MetadataRow], enabled: bool) -> dict[str, UUID]:
-    if not enabled:
-        return {}
-    names = sorted({name for source in rows if (name := speaker_id(source.metadata))})
-    if not names:
-        return {}
-    with database_session() as session:
-        session.execute(insert(Voice).values([{"name": name} for name in names]).on_conflict_do_nothing(index_elements=["name"]))
-        session.commit()
-        voices = session.execute(select(Voice).where(Voice.name.in_(names))).scalars().all()
-        return {voice.name: voice.id for voice in voices}

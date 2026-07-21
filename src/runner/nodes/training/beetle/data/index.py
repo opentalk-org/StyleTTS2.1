@@ -170,9 +170,9 @@ class DatabaseSegmentIndex:
             ):
                 excluded_language += 1
                 continue
-            if item.has_text and item.has_phonemes and item.voice_id is not None:
+            if item.has_text and item.has_phonemes and item.speaker_id is not None:
                 stage2.append(item.key)
-                voice_lists[item.voice_id].append(item.key)
+                voice_lists[item.speaker_id].append(item.key)
                 recording_lists[item.key.audio_file_id].append(item.key)
                 if item.mid_sentence_eligible:
                     mid_sentence.append(item.key)
@@ -223,7 +223,7 @@ def _indexed_segment(
     end = float(raw["end"])
     text = str(raw["text"])
     phonemes = str(raw["phon"])
-    voice_id = str(raw["voice_id"]) if "voice_id" in raw and raw["voice_id"] else None
+    speaker_id = str(raw["speaker_id"]) if "speaker_id" in raw and raw["speaker_id"] else None
     alignment = raw["alignment"] if "alignment" in raw and raw["alignment"] else []
     words = tuple(
         WordBoundary(str(item["word"]), float(item["start"]), float(item["end"]))
@@ -239,7 +239,7 @@ def _indexed_segment(
         sample_rate=int(reference.annotations.metadata["sample_rate"]),
         estimated_bytes=estimated,
         language=language,
-        voice_id=voice_id,
+        speaker_id=speaker_id,
         has_text=bool(text.strip()),
         has_phonemes=bool(phonemes.strip()),
         phoneme_word_count=len(phonemes.split()),
@@ -261,7 +261,7 @@ def _fingerprint(
             (
                 str(key.audio_file_id), key.segment_index, key.segment_id,
                 item.start, item.end, item.sample_rate, item.language,
-                item.voice_id, item.has_text,
+                item.speaker_id, item.has_text,
                 item.has_phonemes, item.phoneme_word_count,
                 tuple((word.word, word.start, word.end) for word in item.words),
                 item.style_prompt, item.voice_prompt,

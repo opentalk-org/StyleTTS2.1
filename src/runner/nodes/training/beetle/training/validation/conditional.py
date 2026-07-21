@@ -207,8 +207,8 @@ class Stage2ValidationEvaluator:
 def _require_contrastive_groups(
     recordings: tuple[ValidationRecording, ...],
 ) -> None:
-    voice_ids = tuple(recording.batch.voice_ids[0] for recording in recordings)
-    if len(recordings) < 2 or len(set(voice_ids)) < 2:
+    speaker_ids = tuple(recording.batch.speaker_ids[0] for recording in recordings)
+    if len(recordings) < 2 or len(set(speaker_ids)) < 2:
         raise ValueError(
             "conditional validation requires at least two recordings with distinct voices"
         )

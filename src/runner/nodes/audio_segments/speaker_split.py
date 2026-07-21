@@ -19,16 +19,13 @@ from runner.nodes.audio_processing.nodes import (
 )
 from runner.nodes.datatypes import AudioPort, CheckpointRefPort
 from runner.nodes.models import Audio, AudioSegment, stable_id, typed_checkpoint
-from shared.db import database_session
-from shared.db.voices import crud as voice_crud
-from shared.db.voices.schemas import VoiceCreate
 from shared.audio_annotations import AudioAnnotations
 
 _PUNCTUATION = ".,!?;:…—"
 
 
 class DiarizeSplitSpeakersSettings(StrictSettings):
-    """Diarize audio, assign voices, and split the transcript into single-speaker clips whose
+    """Diarize audio, assign speakers, and split the transcript into single-speaker clips whose
     durations follow ``[min_segment_sec, max_segment_sec]``. Splits only
     happen at transcript segment boundaries that end on punctuation, so clips are
     never cut mid-word."""
@@ -38,15 +35,14 @@ class DiarizeSplitSpeakersSettings(StrictSettings):
     sample_rate: int = Field(default=16_000, ge=8_000, le=48_000)
     device: Literal["auto", "cpu", "cuda"] = "auto"
     batch_size: int = Field(default=4, ge=1, le=64)
-    create_voices: bool = True
-    voice_prefix: str = "spk"
+    speaker_prefix: str = "spk"
     punctuation: str = _PUNCTUATION
     transcript_type: str = "parakeet"
 
 
 class DiarizeSplitSpeakersNode(Node):
     NODE_TYPE = "DiarizeSplitSpeakers"
-    DESCRIPTION = "Diarize an already-transcribed recording, assign a random voice per detected speaker, and split it into single-speaker clips. Takes audio with a transcript plus a diarization checkpoint and streams out one clip per run of speech, with clip durations following a normal distribution between the minimum and maximum segment lengths. Splits only happen at transcript boundaries that end on punctuation, so clips are never cut mid-word, and a speaker change always starts a new clip. Optionally creates named voice records for each speaker."
+    DESCRIPTION = "Diarize an already-transcribed recording, assign a stable speaker ID per detected speaker, and split it into single-speaker clips."
     CATEGORY = "Audio"
     SETTINGS = DiarizeSplitSpeakersSettings
     INPUTS = {
@@ -88,27 +84,12 @@ class DiarizeSplitSpeakersNode(Node):
         diarized = diarize_audio_batch(self._model, audios, sort_settings)
 
         outputs: list[dict[str, list[Audio]]] = []
-        with database_session() as session:
-            voices_by_name = {}
-            if self.settings.create_voices:
-                voice_names = list(dict.fromkeys(
-                    self._voice_name(audio, speaker_id)
-                    for audio, diar in zip(audios, diarized, strict=True)
-                    for speaker_id in {"speaker_0", *(str(segment.speaker_id) for segment in diar)}
-                ))
-                voices_by_name = voice_crud.get_voices_by_names(session, voice_names)
-                missing_names = [name for name in voice_names if name not in voices_by_name]
-                created = voice_crud.bulk_create_voices(
-                    session,
-                    [VoiceCreate(name=name) for name in missing_names],
-                )
-                voices_by_name.update({voice.name: voice for voice in created})
-            for audio, diar in zip(audios, diarized, strict=True):
-                clips = self._split_audio(audio, diar, voices_by_name)
-                outputs.append({"audio": clips})
+        for audio, diar in zip(audios, diarized, strict=True):
+            clips = self._split_audio(audio, diar)
+            outputs.append({"audio": clips})
         return outputs
 
-    def _split_audio(self, audio: Audio, diar, voices_by_name) -> list[Audio]:
+    def _split_audio(self, audio: Audio, diar) -> list[Audio]:
         assert audio.data is not None, f"audio bytes are required: {audio.id}"
         # Transcript segments carry absolute (source) timestamps; convert to the
         # clip-local timeline that the diarization output uses.
@@ -130,33 +111,28 @@ class DiarizeSplitSpeakersNode(Node):
 
         for item in local_segments:
             item.speaker_id = _speaker_id_for_span(item.start, item.end, diar)
-        voice_map = self._voice_map(audio, {item.speaker_id for item in local_segments}, voices_by_name)
+        speaker_map = self._speaker_map(audio, {item.speaker_id for item in local_segments})
 
         groups = _group_by_speaker_punctuation(local_segments, self.settings)
         info = wav_info(audio.data)
         clips: list[Audio] = []
         for index, group in enumerate(groups):
-            clip = self._build_clip(audio, group, info, index, voice_map)
+            clip = self._build_clip(audio, group, info, index, speaker_map)
             if clip is not None:
                 clips.append(clip)
         return clips
 
-    def _voice_map(self, audio: Audio, speaker_ids, voices_by_name) -> dict[str, tuple[str, uuid.UUID | None]]:
-        mapping: dict[str, tuple[str, uuid.UUID | None]] = {}
+    def _speaker_map(self, audio: Audio, speaker_ids) -> dict[str, str]:
+        mapping = {}
         for speaker_id in sorted(speaker_ids):
-            if not self.settings.create_voices:
-                mapping[speaker_id] = (speaker_id, None)
-                continue
-            name = self._voice_name(audio, speaker_id)
-            voice = voices_by_name[name]
-            mapping[speaker_id] = (name, voice.id)
+            mapping[speaker_id] = self._speaker_name(audio, speaker_id)
         return mapping
 
-    def _voice_name(self, audio: Audio, speaker_id: str) -> str:
-        token = stable_id("voice", audio.audio_file_id, audio.id, speaker_id)[:12]
-        return f"{self.settings.voice_prefix}_{token}"
+    def _speaker_name(self, audio: Audio, speaker_id: str) -> str:
+        token = stable_id("speaker", audio.audio_file_id, audio.id, speaker_id)[:12]
+        return f"{self.settings.speaker_prefix}_{token}"
 
-    def _build_clip(self, audio: Audio, group, info, index, voice_map) -> Audio | None:
+    def _build_clip(self, audio: Audio, group, info, index, speaker_map) -> Audio | None:
         local_start = min(item.start for item in group)
         local_end = max(item.end for item in group)
         duration = local_end - local_start
@@ -164,7 +140,7 @@ class DiarizeSplitSpeakersNode(Node):
             return None
         data = extract_wav_range(audio.data, local_start, local_end, info)
         speaker_id = group[0].speaker_id
-        assigned_speaker_id, voice_id = voice_map.get(speaker_id, (speaker_id, None))
+        assigned_speaker_id = speaker_map[speaker_id]
         text = " ".join(item.text.strip() for item in group if item.text.strip()).strip()
         clip_id = stable_id("audio", audio.audio_file_id, audio.id, index, local_start, local_end)
         transcript_type = self.settings.transcript_type
@@ -182,7 +158,6 @@ class DiarizeSplitSpeakersNode(Node):
             segment_id=stable_id("transcript_segment", clip_id, transcript_type),
             annotations=AudioAnnotations(
                 speaker_id=assigned_speaker_id,
-                voice_id=voice_id,
                 score=audio.score, accuracy=audio.accuracy,
                 metadata={"model": transcript_type, "type_": transcript_type},
             ),
@@ -207,7 +182,7 @@ class DiarizeSplitSpeakersNode(Node):
             start=0.0,
             end=duration,
             annotations=audio.annotations.model_copy(update={
-                "speaker_id": assigned_speaker_id, "voice_id": voice_id, "metadata": metadata,
+                "speaker_id": assigned_speaker_id, "metadata": metadata,
             }),
             id=clip_id,
             lineage_id=stable_id("lineage", audio.lineage_id, clip_id),

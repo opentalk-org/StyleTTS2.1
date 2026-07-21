@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import NAMESPACE_URL, uuid5
 
 from runner.nodes.hetzner.ds_v2_audio import (
     DsV2AudioOptions,
@@ -9,7 +9,7 @@ from runner.nodes.hetzner.ds_v2_audio import (
     _float_or_none,
     _text,
     _transcript_segments,
-    speaker_id,
+    row_speaker_id,
 )
 from runner.nodes.models import Audio, stable_id
 from shared.audio_annotations import AudioAnnotations
@@ -19,7 +19,7 @@ def audio_metadata_from_row(
     row: dict[str, str],
     options: DsV2AudioOptions,
     row_index: int,
-    voice_id: UUID | None,
+    speaker_id: str | None,
     remote_metadata_path: str,
 ) -> Audio:
     duration = _float_or_none(row["duration"])
@@ -31,7 +31,7 @@ def audio_metadata_from_row(
     text = _text(row, options.text_column)
     name = _audio_name(options.name_prefix, row, row_index)
     segments = _transcript_segments(
-        row, options, row_index, audio_file_id, name, duration, 0, 0, score, voice_id
+        row, options, row_index, audio_file_id, name, duration, 0, 0, score, speaker_id
     )
     metadata = _audio_metadata(
         row, options, row_index, 0, 0, duration, text
@@ -45,8 +45,7 @@ def audio_metadata_from_row(
         start=0.0,
         end=duration,
         annotations=AudioAnnotations(
-            speaker_id=speaker_id(row),
-            voice_id=voice_id,
+            speaker_id=speaker_id,
             score=score,
             metadata={
                 **metadata,

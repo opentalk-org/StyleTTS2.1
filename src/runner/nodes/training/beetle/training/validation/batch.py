@@ -10,7 +10,7 @@ from ...data.validation_types import ValidationRecording
 
 _TUPLE_FIELDS = (
     "sample_keys",
-    "voice_ids",
+    "speaker_ids",
     "recording_ids",
     "style_group_ids",
     "voice_group_ids",

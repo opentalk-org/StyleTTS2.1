@@ -178,7 +178,7 @@ def _stored_audio(row: Any, segments: list[dict[str, Any]], payload: bytes) -> S
 
 
 def _segment(value: dict[str, Any]) -> ValidationSegment:
-    voice = value["voice_id"] if "voice_id" in value else None
+    voice = value["speaker_id"] if "speaker_id" in value else None
     return ValidationSegment(
         str(value["id"]),
         float(value["start"]),
@@ -213,11 +213,11 @@ def _validate_stored(
     if any(
         not segment.text.strip()
         or not segment.phonemes.strip()
-        or segment.voice_id is None
+        or segment.speaker_id is None
         for segment in stored.segments
     ):
         raise ValueError(f"validation conditioning is incomplete: {audio_id}")
-    voices = {segment.voice_id for segment in stored.segments}
+    voices = {segment.speaker_id for segment in stored.segments}
     if len(voices) != 1:
         raise ValueError(f"validation recording has mixed voices: {audio_id}")
 

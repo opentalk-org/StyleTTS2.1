@@ -34,7 +34,7 @@ class DsV2AudioOptions:
     name_prefix: str
 
 
-def audio_from_row(row: dict[str, Any], options: DsV2AudioOptions, row_index: int, voice_id: UUID | None) -> Audio:
+def audio_from_row(row: dict[str, Any], options: DsV2AudioOptions, row_index: int, speaker_id: str | None) -> Audio:
     wav_bytes = _required_bytes(row["audio"], row_index)
     info = _wav_info(wav_bytes)
     duration = _float_or_none(row["duration"]) or info["duration"]
@@ -47,7 +47,7 @@ def audio_from_row(row: dict[str, Any], options: DsV2AudioOptions, row_index: in
     name = _audio_name(options.name_prefix, row, row_index)
     audio_id = stable_id("hetzner_ds_v2_audio", options.remote_parquet_path, row_index)
     segments = _transcript_segments(
-        row, options, row_index, audio_file_id, name, duration, sample_rate, channels, score, voice_id
+        row, options, row_index, audio_file_id, name, duration, sample_rate, channels, score, speaker_id
     )
     return Audio(
         audio_file_id=audio_file_id,
@@ -58,8 +58,7 @@ def audio_from_row(row: dict[str, Any], options: DsV2AudioOptions, row_index: in
         start=0.0,
         end=duration,
         annotations=AudioAnnotations(
-            speaker_id=speaker_id(row),
-            voice_id=voice_id,
+            speaker_id=speaker_id,
             score=score,
             metadata=_audio_metadata(row, options, row_index, sample_rate, channels, duration, text),
         ),
@@ -71,7 +70,7 @@ def audio_from_row(row: dict[str, Any], options: DsV2AudioOptions, row_index: in
     )
 
 
-def speaker_id(row: dict[str, Any]) -> str | None:
+def row_speaker_id(row: dict[str, Any]) -> str | None:
     return _string_or_none(row["speaker_id"])
 
 
@@ -85,12 +84,12 @@ def _transcript_segments(
     sample_rate: int,
     channels: int,
     score: float | None,
-    voice_id: UUID | None,
+    speaker_id: str | None,
 ) -> list[AudioSegment]:
     segments = [
         _transcript_segment(
             row, options, row_index, audio_file_id, name, duration, sample_rate,
-            channels, score, voice_id, source, column,
+            channels, score, speaker_id, source, column,
         )
         for source, column in TRANSCRIPT_SEGMENTS
         if _string_or_none(row[column])
@@ -100,7 +99,7 @@ def _transcript_segments(
     return [
         _transcript_segment(
             row, options, row_index, audio_file_id, name, duration, sample_rate,
-            channels, score, voice_id, "empty", options.text_column,
+            channels, score, speaker_id, "empty", options.text_column,
         )
     ]
 
@@ -115,7 +114,7 @@ def _transcript_segment(
     sample_rate: int,
     channels: int,
     score: float | None,
-    voice_id: UUID | None,
+    speaker_id: str | None,
     source: str,
     column: str,
 ) -> AudioSegment:
@@ -138,8 +137,7 @@ def _transcript_segment(
         lineage_id=stable_id("hetzner_ds_v2_segment_lineage", remote_path, row_index, source),
         segment_id=stable_id("hetzner_ds_v2_segment_entry", remote_path, row_index, source),
         annotations=AudioAnnotations(
-            speaker_id=speaker_id(row),
-            voice_id=voice_id,
+            speaker_id=speaker_id,
             score=score,
             metadata={
             "type_": source,

@@ -19,7 +19,7 @@ class ValidationSegment:
     end: float
     text: str
     phonemes: str
-    voice_id: str | None
+    speaker_id: str | None
 
     def __post_init__(self) -> None:
         if not self.segment_id:

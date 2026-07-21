@@ -38,9 +38,8 @@ from shared.db.speakers.schemas import (
     EmbeddingShardCreate,
 )
 from shared.db.speakers.summary_crud import (
-    assign_cluster_summary_voices as assign_cluster_summary_voices,
     list_cluster_summaries as list_cluster_summaries,
-    reconcile_cluster_summary_voice_page as reconcile_cluster_summary_voice_page,
+    reconcile_cluster_summary_speaker_page as reconcile_cluster_summary_speaker_page,
 )
 
 

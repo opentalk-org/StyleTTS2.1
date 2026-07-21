@@ -40,7 +40,7 @@ from runner.nodes.audio_sources import AudioSourceNode
 from runner.nodes.assets.catalog import CatalogDownloadNode
 from runner.nodes.assets.checkpoints import ResolveCheckpointNode
 from runner.nodes.assets.training_assets import ResolveTrainingAssetsNode
-from runner.nodes.dataset_writeback import AddAudioToDatasetNode, AssignVoiceNode, DeleteAudioRecordsNode, RemoveAudioFromDatasetNode
+from runner.nodes.dataset_writeback import AddAudioToDatasetNode, AssignSpeakerNode, DeleteAudioRecordsNode, RemoveAudioFromDatasetNode
 from runner.nodes.datatypes import register_runner_types
 from runner.nodes.hetzner import HetznerDsV1ParquetAudioSourceNode, HetznerDsV2SourceNode
 from runner.nodes.mos import BuildMosTrainingManifestNode, MosModelTrainingNode, PredictMosScoreNode
@@ -127,7 +127,7 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         PersistSplitAudioRecordsNode,
         AddAudioToDatasetNode,
         RemoveAudioFromDatasetNode,
-        AssignVoiceNode,
+        AssignSpeakerNode,
         DeleteAudioRecordsNode,
         CatalogDownloadNode,
         ResolveCheckpointNode,

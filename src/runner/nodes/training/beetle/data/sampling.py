@@ -183,8 +183,8 @@ class ContinuousBatchPlanner:
         if self.stage == 1:
             return
         voices = [
-            voice_id
-            for voice_id, keys in self.index.pools.voice_groups.items()
+            speaker_id
+            for speaker_id, keys in self.index.pools.voice_groups.items()
             if len(keys) >= self.grouping.utterances_per_voice
         ]
         required_voices = (
@@ -213,18 +213,18 @@ class ContinuousBatchPlanner:
             return (), ()
         voice_seed = derive_seed(self.seed, self.stage, self.batch_index, "voice-groups")
         voice_rng = random.Random(voice_seed)
-        voice_ids = sorted(
-            voice_id
-            for voice_id, keys in self.index.pools.voice_groups.items()
+        speaker_ids = sorted(
+            speaker_id
+            for speaker_id, keys in self.index.pools.voice_groups.items()
             if len(keys) >= self.grouping.utterances_per_voice
         )
         global_voice_count = (
             self.grouping.voices_per_batch * self.shard.world_size
         )
-        selected_voices = voice_rng.sample(voice_ids, global_voice_count)
+        selected_voices = voice_rng.sample(speaker_ids, global_voice_count)
         global_voice_groups = tuple(
-            self._voice_group(voice_id, voice_rng)
-            for voice_id in selected_voices
+            self._voice_group(speaker_id, voice_rng)
+            for speaker_id in selected_voices
         )
         style_seed = derive_seed(self.seed, self.stage, self.batch_index, "style-groups")
         style_rng = random.Random(style_seed)
@@ -250,21 +250,21 @@ class ContinuousBatchPlanner:
         ]
         return voice_groups, style_groups
 
-    def _voice_group(self, voice_id: str, rng: random.Random) -> EmbeddingGroupPlan:
+    def _voice_group(self, speaker_id: str, rng: random.Random) -> EmbeddingGroupPlan:
         keys = rng.sample(
-            list(self.index.pools.voice_groups[voice_id]),
+            list(self.index.pools.voice_groups[speaker_id]),
             self.grouping.utterances_per_voice,
         )
         views = tuple(
             EmbeddingViewPlan(
                 key=key,
                 audio=CutRange(self.index.records[key].start, self.index.records[key].end),
-                seed=derive_seed(self.seed, self.batch_index, "voice", voice_id, key),
+                seed=derive_seed(self.seed, self.batch_index, "voice", speaker_id, key),
                 distance_seconds=0,
             )
             for key in keys
         )
-        return EmbeddingGroupPlan(voice_id, views)
+        return EmbeddingGroupPlan(speaker_id, views)
 
     def _style_group(self, recording_id: object, rng: random.Random) -> EmbeddingGroupPlan:
         keys = self.index.pools.recording_groups[recording_id]

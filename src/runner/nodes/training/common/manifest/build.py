@@ -100,15 +100,13 @@ def speaker_id_map(groups: dict[UUID, list[AudioSegment]]) -> dict[str, int]:
 
     The StyleTTS2 dataset loader casts the manifest speaker column with
     ``int(...)`` and uses it as a multispeaker embedding index, so the column
-    must be numeric. Voice UUIDs / free-text speaker names are enumerated to
+    must be numeric. Free-text speaker IDs are enumerated to
     contiguous integers here."""
     keys = sorted({speaker_key(segments[0]) for segments in groups.values() if segments})
     return {key: index for index, key in enumerate(keys)}
 
 
 def speaker_key(segment: AudioSegment) -> str:
-    if segment.voice_id is not None:
-        return str(segment.voice_id)
     if segment.speaker_id is not None and segment.speaker_id.strip():
         return segment.speaker_id.strip()
     return "0"

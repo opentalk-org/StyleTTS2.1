@@ -126,7 +126,7 @@ class BatchCollator:
             style_distances=style_groups.distances,
             view_seeds=torch.tensor([item.source.plan.seed for item in prepared]),
             sample_keys=tuple(item.source.plan.key for item in prepared),
-            voice_ids=tuple(item.source.voice_id for item in prepared),
+            speaker_ids=tuple(item.source.speaker_id for item in prepared),
             recording_ids=tuple(item.source.plan.key.audio_file_id for item in prepared),
             style_group_ids=style_groups.group_ids,
             voice_group_ids=voice_groups.group_ids,

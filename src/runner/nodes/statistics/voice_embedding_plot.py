@@ -25,14 +25,12 @@ from shared.db import database_session
 from shared.db.assets import crud as asset_crud
 from shared.db.assets.schemas import ExtraFileCreate
 from shared.db.audio import crud as audio_crud
-from shared.db.voices import crud as voice_crud
 
 
-UNASSIGNED_VOICE = "unassigned"
+UNASSIGNED_SPEAKER = "unassigned"
 
 
 class VoiceEmbeddingPlotSettings(StrictSettings):
-    label_source: Literal["voice", "speaker_id"] = Field(default="voice", title="Colour by")
     embedding_component: Literal["both", "acoustic", "prosodic"] = Field(default="both", title="Style component")
     title: str = Field(default="Voice style embeddings (PCA)", title="Plot title")
     point_size: int = Field(default=44, title="Point size", ge=4, le=400)
@@ -82,13 +80,12 @@ class EmbedVoicesPcaPlotNode(Node):
 
     async def execute(self, batch, context):
         outputs = []
-        loaded, voice_names = _load_audio_batch(list(batch))
+        loaded = _load_audio_batch(list(batch))
         for item in loaded:
             context.check_cancel()
             result = await asyncio.to_thread(
                 self._ingest,
                 item,
-                voice_names,
                 str(context.run_id),
             )
             if result is not None:
@@ -98,7 +95,6 @@ class EmbedVoicesPcaPlotNode(Node):
     def _ingest(
         self,
         item: LoadedAudioInput,
-        voice_names: dict[str, str],
         run_id: str,
     ) -> dict[str, SaveResult] | None:
         audio = item.audio
@@ -108,7 +104,7 @@ class EmbedVoicesPcaPlotNode(Node):
             )
         batch_id = str(audio.metadata["source_batch_id"])
         expected = int(audio.metadata["source_batch_count"])
-        label = _voice_label(item.segments, voice_names, self.settings.label_source)
+        label = _speaker_label(item.segments)
         vector = _style_vector(
             self._runtime,
             item.data,
@@ -123,7 +119,7 @@ class EmbedVoicesPcaPlotNode(Node):
         return {"artifact": _render_and_store(pending, self.settings, run_id)}
 
 
-def _load_audio_batch(batch: list[dict[str, Any]]) -> tuple[list[LoadedAudioInput], dict[str, str]]:
+def _load_audio_batch(batch: list[dict[str, Any]]) -> list[LoadedAudioInput]:
     audios = [inputs["audio"] for inputs in batch]
     assert all(isinstance(audio, Audio) for audio in audios), "voice embedding inputs must be Audio"
     audio_ids = [audio.audio_file_id for audio in audios]
@@ -135,10 +131,6 @@ def _load_audio_batch(batch: list[dict[str, Any]]) -> tuple[list[LoadedAudioInpu
             if missing_ids
             else {}
         )
-        voice_names = {
-            str(voice.id): voice.name
-            for voice in voice_crud.list_voices(session)
-        }
     loaded = [
         LoadedAudioInput(
             inputs=inputs,
@@ -148,7 +140,7 @@ def _load_audio_batch(batch: list[dict[str, Any]]) -> tuple[list[LoadedAudioInpu
         )
         for inputs, audio in zip(batch, audios, strict=True)
     ]
-    return loaded, voice_names
+    return loaded
 
 
 def _load_style_encoder_runtime(checkpoint: CheckpointRef) -> StyleEncoderRuntime:
@@ -191,20 +183,16 @@ def _style_vector(runtime: StyleEncoderRuntime, wav_bytes: bytes, component: str
     return vector
 
 
-def _voice_label(segments: list[dict[str, Any]], voice_names: dict[str, str], label_source: str) -> str:
+def _speaker_label(segments: list[dict[str, Any]]) -> str:
     weight: Counter[str] = Counter()
     for segment in segments:
         duration = max(0.0, float(segment["end"]) - float(segment["start"]))
         annotations = segment["annotations"]
         assert isinstance(annotations, dict), "segment annotations must be an object"
-        if label_source == "speaker_id":
-            key = str(annotations["speaker_id"]) if annotations["speaker_id"] else UNASSIGNED_VOICE
-        else:
-            voice_id = annotations["voice_id"]
-            key = voice_names.get(str(voice_id), UNASSIGNED_VOICE) if voice_id else UNASSIGNED_VOICE
+        key = str(annotations["speaker_id"]) if annotations["speaker_id"] else UNASSIGNED_SPEAKER
         weight[key] += duration if duration > 0 else 1.0
     if not weight:
-        return UNASSIGNED_VOICE
+        return UNASSIGNED_SPEAKER
     return weight.most_common(1)[0][0]
 
 

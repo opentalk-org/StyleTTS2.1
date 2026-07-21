@@ -101,8 +101,6 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
     speaker_chars: Counter[str] = Counter()
     speaker_phonemes: Counter[str] = Counter()
     speaker_samples: Counter[str] = Counter()
-    voice_seconds: Counter[str] = Counter()
-    voice_samples: Counter[str] = Counter()
     words_per_second: list[list[float]] = []
     chars_per_second: list[list[float]] = []
     ipa_words_per_second: list[list[float]] = []
@@ -114,10 +112,9 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
         audio_id = segment_audio_id(segment)
         text = string_value(segment, "text")
         phon = segment_phon(segment)
-        speaker_id = segment_speaker_id(segment)
         annotations = segment["annotations"]
         assert isinstance(annotations, dict), "segment annotations must be an object"
-        voice_id = str(annotations["voice_id"] or "")
+        speaker_id = str(annotations["speaker_id"] or "")
         duration = segment_duration(segment)
         text_by_file.setdefault(audio_id, []).append(text)
         phon_by_file.setdefault(audio_id, []).append(phon)
@@ -128,9 +125,6 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
         speaker_chars[speaker_id] += len(text)
         speaker_phonemes[speaker_id] += len(phon)
         speaker_samples[speaker_id] += 1
-        if voice_id:
-            voice_seconds[voice_id] += duration
-            voice_samples[voice_id] += 1
         if duration > 0.0:
             words = int(segment.get("word_count", len(text.split())))
             chars = len(text)
@@ -221,8 +215,8 @@ def aggregate_dataset_statistics(features: list[Any], segments: list[Any], setti
         "speaker_char_count": counter_pairs(speaker_chars),
         "speaker_phoneme_count": counter_pairs(speaker_phonemes),
         "speaker_sample_count": counter_pairs(speaker_samples),
-        "voice_duration_seconds_histogram": histogram_counts(list(voice_seconds.values()), settings.histogram_bins),
-        "voice_sample_count_histogram": histogram_counts([float(value) for value in voice_samples.values()], settings.histogram_bins),
+        "speaker_duration_seconds_histogram": histogram_counts(list(speaker_seconds.values()), settings.histogram_bins),
+        "speaker_sample_count_histogram": histogram_counts([float(value) for value in speaker_samples.values()], settings.histogram_bins),
         "words_per_second_scatter": downsample_scatter(words_per_second, settings.rate_scatter_points),
         "chars_per_second_scatter": downsample_scatter(chars_per_second, settings.rate_scatter_points),
         "ipa_words_per_second_scatter": downsample_scatter(ipa_words_per_second, settings.rate_scatter_points),
