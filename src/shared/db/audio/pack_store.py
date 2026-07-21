@@ -5,13 +5,15 @@ from typing import Protocol
 from sqlalchemy.orm import Session
 
 from shared.db.assets.models import BucketFile
+from shared.db.pack_folders import PackFolderAllocator
 from shared.db.staged_objects import register_staged_object
 
 
 @dataclass(frozen=True)
 class AudioPackConfig:
-    target_pack_bytes: int = 128 * 1024 * 1024
+    target_pack_bytes: int = 256 * 1024 * 1024
     path_prefix: str = "audio-packs"
+    folder_target_files: int = 256
     prune_used_ratio: float = 0.5
 
 
@@ -45,6 +47,12 @@ class AudioPackWriter:
         self._pack_data: dict[uuid.UUID, bytearray] = {}
         self._packs: dict[uuid.UUID, BucketFile] = {}
         self._dirty_pack_ids: set[uuid.UUID] = set()
+        self._folders = PackFolderAllocator(
+            session,
+            BucketFile,
+            config.path_prefix,
+            config.folder_target_files,
+        )
 
     def append(self, wav_bytes: bytes) -> PackedWrite:
         if len(wav_bytes) > self._config.target_pack_bytes:
@@ -84,8 +92,10 @@ class AudioPackWriter:
         return self._create_pack(size=0, used_bytes=0, sealed=False)
 
     def _create_pack(self, size: int, used_bytes: int, sealed: bool) -> BucketFile:
+        pack_id = uuid.uuid4()
         pack = BucketFile(
-            path=f"{self._config.path_prefix}/{uuid.uuid4()}.bin",
+            id=pack_id,
+            path=self._folders.path_for(pack_id),
             size=size,
             used_bytes=used_bytes,
             sealed=sealed,

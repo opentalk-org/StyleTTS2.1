@@ -4,14 +4,16 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
+from shared.db.pack_folders import PackFolderAllocator
 from shared.db.staged_objects import register_staged_object
 from shared.db.waveforms.models import WaveformPack
 
 
 @dataclass(frozen=True)
 class WaveformPackConfig:
-    target_pack_bytes: int = 64 * 1024 * 1024
+    target_pack_bytes: int = 256 * 1024 * 1024
     path_prefix: str = "waveform-packs"
+    folder_target_files: int = 256
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,12 @@ class WaveformPackWriter:
         self._pack_data: dict[uuid.UUID, bytearray] = {}
         self._packs: dict[uuid.UUID, WaveformPack] = {}
         self._dirty_pack_ids: set[uuid.UUID] = set()
+        self._folders = PackFolderAllocator(
+            session,
+            WaveformPack,
+            config.path_prefix,
+            config.folder_target_files,
+        )
 
     def append(self, data: bytes) -> WaveformWrite:
         if len(data) > self._config.target_pack_bytes:
@@ -82,7 +90,14 @@ class WaveformPackWriter:
         return self._create_pack(size=0, used_bytes=0, sealed=False)
 
     def _create_pack(self, size: int, used_bytes: int, sealed: bool) -> WaveformPack:
-        pack = WaveformPack(path=f"{self._config.path_prefix}/{uuid.uuid4()}.bin", size=size, used_bytes=used_bytes, sealed=sealed)
+        pack_id = uuid.uuid4()
+        pack = WaveformPack(
+            id=pack_id,
+            path=self._folders.path_for(pack_id),
+            size=size,
+            used_bytes=used_bytes,
+            sealed=sealed,
+        )
         self._session.add(pack)
         self._session.flush()
         self._packs[pack.id] = pack
