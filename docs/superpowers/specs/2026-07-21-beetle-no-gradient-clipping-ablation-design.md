@@ -8,7 +8,7 @@ Run a clean LJSpeech Stage 1 ablation with gradient clipping effectively disable
 
 Leave `output-kl-off` and its configuration unchanged. Gracefully stop the active process only after confirming its exact-resume checkpoint records optimizer step 10,000.
 
-Create a separate configuration from `config-kl-off.yaml` and change only `maximum_gradient_norm` for both the generator and discriminator optimizers from `10.0` to `1.0e30`. This retains the tested optimizer path and raw pre-clip gradient diagnostics while making the clipping coefficient exactly `1.0` for all practical gradients. Keep the seed, model, data, KL-off loss weights, learning rates, schedules, batch size, and 4,000-step validation interval identical.
+Create a separate configuration from `config-kl-off.yaml` and change only `maximum_gradient_norm` for both the generator and discriminator optimizers from `10.0` to `1.0e+30`. This retains the tested optimizer path and raw pre-clip gradient diagnostics while making the clipping coefficient exactly `1.0` for all practical gradients. Keep the seed, model, data, KL-off loss weights, learning rates, schedules, batch size, and 4,000-step validation interval identical.
 
 Launch without `--resume` into the new `output-kl-off-no-clip` directory. The new MLflow run and optimizer state must begin at step zero.
 
