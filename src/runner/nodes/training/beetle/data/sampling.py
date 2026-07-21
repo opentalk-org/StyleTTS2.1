@@ -32,6 +32,13 @@ class PlannerState:
     mid_sentence: PoolState | None
     batch_index: int
 
+    @property
+    def cycle_index(self) -> int:
+        mid_sentence_cycle = (
+            0 if self.mid_sentence is None else self.mid_sentence.cycle_index
+        )
+        return max(self.sentence.cycle_index, mid_sentence_cycle)
+
 
 @dataclass(frozen=True)
 class DistributedShard:

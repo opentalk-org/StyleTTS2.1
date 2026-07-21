@@ -222,7 +222,7 @@ def _indexed_segment(
         start=start,
         end=end,
         audio_duration=reference.audio_duration,
-        sample_rate=int(reference.audio_metadata["sample_rate"]),
+        sample_rate=int(reference.annotations.metadata["sample_rate"]),
         estimated_bytes=estimated,
         language=language,
         voice_id=voice_id,

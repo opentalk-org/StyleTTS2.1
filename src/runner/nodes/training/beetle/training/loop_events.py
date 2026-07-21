@@ -77,15 +77,10 @@ class TrainingLifecycle:
 
 def advance_sampler(state: LoopState, sampler: DataPipelineState) -> LoopState:
     planner = sampler.planner
-    mid_sentence_cycle = (
-        0
-        if planner.mid_sentence is None
-        else planner.mid_sentence.cycle_index
-    )
     return replace(
         state,
         sampler_cursor=planner.batch_index,
-        cycle=max(planner.sentence.cycle_index, mid_sentence_cycle),
+        cycle=planner.cycle_index,
         batch_index=planner.batch_index,
     )
 

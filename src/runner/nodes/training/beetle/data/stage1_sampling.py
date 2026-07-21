@@ -17,6 +17,10 @@ class Stage1PlannerState:
     pending: tuple[tuple[Stage1WindowPlan, ...], ...]
     batch_index: int
 
+    @property
+    def cycle_index(self) -> int:
+        return self.source.cycle_index
+
 
 class _SourcePool:
     def __init__(self, keys: tuple[SegmentKey, ...], seed: int) -> None:
