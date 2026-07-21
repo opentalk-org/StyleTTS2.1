@@ -1,6 +1,9 @@
 import uuid
 from collections.abc import Iterable, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import repeat
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
@@ -10,6 +13,17 @@ from shared.db.audio.models import AudioFile
 from shared.db.audio.pack_store import AudioPackConfig, AudioPackWriter, ObjectStore
 from shared.db.audio.rows_crud import get_audio_files_bulk
 from shared.db.audio.schemas import AudioCreate, AudioPartRead, AudioUpdate
+
+
+PACK_READ_WORKERS = 10
+
+
+@dataclass(frozen=True)
+class PackedRangeRead:
+    audio_file_id: uuid.UUID
+    path: str
+    byte_offset: int
+    byte_length: int
 
 
 def create_packed_audio_file(
@@ -61,8 +75,16 @@ def bulk_read_packed_audio_files(
     items = list(get_audio_files_bulk(session, ids).values())
     for item in items:
         _assert_packed(item)
-    pack_data = _download_packs(store, items)
-    return {item.id: _slice_audio(pack_data, item) for item in items}
+    requests = [
+        PackedRangeRead(
+            audio_file_id=item.id,
+            path=item.bucket_file.path,
+            byte_offset=item.byte_offset,
+            byte_length=item.byte_length,
+        )
+        for item in items
+    ]
+    return _read_packed_ranges(store, requests)
 
 
 def bulk_read_packed_audio_parts(
@@ -74,11 +96,16 @@ def bulk_read_packed_audio_parts(
     for item in items:
         _assert_packed(item)
         _assert_valid_part(item, requests[item.id])
-    pack_data = _download_packs(store, items)
-    return {
-        item.id: _slice_audio_part(pack_data, item, requests[item.id])
+    range_reads = [
+        PackedRangeRead(
+            audio_file_id=item.id,
+            path=item.bucket_file.path,
+            byte_offset=item.byte_offset + requests[item.id].start,
+            byte_length=requests[item.id].length,
+        )
         for item in items
-    }
+    ]
+    return _read_packed_ranges(store, range_reads)
 
 
 def update_packed_audio_file(
@@ -211,24 +238,28 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def _download_packs(store: ObjectStore, items: Sequence[AudioFile]) -> dict[uuid.UUID, bytes]:
-    for item in items:
-        _assert_packed(item)
-        assert item.bucket_file is not None
-    packs = {item.bucket_file.id: item.bucket_file for item in items}
-    return {pack_id: store.download(pack.path) for pack_id, pack in packs.items()}
+def _read_packed_ranges(
+    store: ObjectStore,
+    requests: Sequence[PackedRangeRead],
+) -> dict[uuid.UUID, bytes]:
+    if not requests:
+        return {}
+    workers = min(PACK_READ_WORKERS, len(requests))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        results = executor.map(_read_packed_range, repeat(store), requests)
+        return dict(results)
 
 
-def _slice_audio(pack_data: dict[uuid.UUID, bytes], item: AudioFile) -> bytes:
-    start = item.byte_offset
-    end = start + item.byte_length
-    return pack_data[item.bucket_file.id][start:end]
-
-
-def _slice_audio_part(pack_data: dict[uuid.UUID, bytes], item: AudioFile, payload: AudioPartRead) -> bytes:
-    start = item.byte_offset + payload.start
-    end = start + payload.length
-    return pack_data[item.bucket_file.id][start:end]
+def _read_packed_range(
+    store: ObjectStore,
+    request: PackedRangeRead,
+) -> tuple[uuid.UUID, bytes]:
+    data = store.read_range(
+        request.path,
+        request.byte_offset,
+        request.byte_length,
+    )
+    return request.audio_file_id, data
 
 
 def _assert_valid_part(item: AudioFile, payload: AudioPartRead) -> None:
