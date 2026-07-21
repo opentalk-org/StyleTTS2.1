@@ -1,14 +1,0 @@
-warning: Git tree '/workspace/styletts_studio_v2' is dirty
-warning: ignoring untrusted flake configuration setting 'substituters'.
-Pass '--accept-flake-config' to trust it
-warning: ignoring untrusted flake configuration setting 'trusted-public-keys'.
-Pass '--accept-flake-config' to trust it
-  % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current
-                                 Dload  Upload  Total   Spent   Left   Speed
-  0      0   0      0   0      0      0      0                              0100 326.8k 100 326.8k   0      0 289.8k      0   00:01   00:01              0100 326.8k 100 326.8k   0      0 289.8k      0   00:01   00:01              0100 326.8k 100 326.8k   0      0 289.7k      0   00:01   00:01              0
-  % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current
-                                 Dload  Upload  Total   Spent   Left   Speed
-  0      0   0      0   0      0      0      0                              0  5  6.38M   5 369.1k   0      0 264.8k      0   00:24   00:01   00:23 366.8k 17  6.38M  17  1.12M   0      0 463.5k      0   00:14   00:02   00:12 549.2k 31  6.38M  31  2.01M   0      0 577.3k      0   00:11   00:03   00:08 647.5k 46  6.38M  46  2.99M   0      0 658.4k      0   00:09   00:04   00:05 718.2k 62  6.38M  62  3.99M   0      0 711.3k      0   00:09   00:05   00:04 762.7k 78  6.38M  78  5.00M   0      0 749.7k      0   00:08   00:06   00:02 873.9k 91  6.38M  91  5.83M   0      0 753.6k      0   00:08   00:07   00:01 886.0k100  6.38M 100  6.38M   0      0 756.4k      0   00:08   00:08         886.0k100  6.38M 100  6.38M   0      0 756.3k      0   00:08   00:08         886.0k100  6.38M 100  6.38M   0      0 756.3k      0   00:08   00:08         886.0k
-  % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current
-                                 Dload  Upload  Total   Spent   Left   Speed
-  0      0   0      0   0      0      0      0                              0100   6984 100   6984   0      0  14558      0                              0100   6984 100   6984   0      0  14550      0                              0100   6984 100   6984   0      0  14541      0                              0

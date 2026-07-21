@@ -326,6 +326,8 @@ supervise rclone-s3 --port "$RCLONE_S3_PORT" rclone serve s3 \
   --addr "$RCLONE_S3_HOST:$RCLONE_S3_PORT" \
   --auth-key "$BUCKET_ACCESS_KEY,$BUCKET_SECRET_KEY" \
   --sftp-ssh "$RCLONE_S3_SSH" \
+  --sftp-disable-hashcheck \
+  --sftp-chunk-size 255Ki \
   ":sftp:$RCLONE_S3_PATH" &
 pid_rclone_s3=$!
 
