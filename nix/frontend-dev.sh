@@ -1,8 +1,6 @@
 set -euo pipefail
 
-cd src/frontend
-if [ ! -d node_modules ]; then
-  npm ci
-fi
+sync_frontend_dependencies "$PWD/src/frontend"
 
+cd src/frontend
 exec npm run dev -- --host 127.0.0.1

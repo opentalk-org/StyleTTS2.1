@@ -93,6 +93,8 @@ if [ "$(id -u)" = "0" ]; then
     "$0" "$@"
 fi
 
+sync_frontend_dependencies "$PWD/src/frontend"
+
 mkdir -p "$BUCKET_DATA" "$PGDATA" "$PGHOST" "$pgbouncer_dir"
 chmod 700 "$PGDATA" "$PGHOST" "$pgbouncer_dir"
 
@@ -390,9 +392,6 @@ echo "Starting frontend at http://$FRONTEND_HOST:$FRONTEND_PORT"
 free_port "$FRONTEND_PORT" frontend
 (
   cd src/frontend
-  if [ ! -d node_modules ]; then
-    npm ci
-  fi
   exec npm run dev -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT"
 ) &
 pid_frontend=$!

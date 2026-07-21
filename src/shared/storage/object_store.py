@@ -4,6 +4,7 @@ from pathlib import Path
 
 import boto3
 from botocore.client import BaseClient
+from botocore.config import Config
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ class S3ObjectStore:
             region_name=config.region_name,
             aws_access_key_id=config.access_key_id,
             aws_secret_access_key=config.secret_access_key,
+            config=Config(response_checksum_validation="when_required"),
         )
 
     def upload(self, path: str, data: bytes) -> None:

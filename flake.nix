@@ -140,7 +140,9 @@
               pkgs.rclone
               rustfs
             ] ++ pythonTools;
-            text = (pythonEnvExports pythonRuntime) + builtins.readFile ./nix/runflow-dev.sh;
+            text = (pythonEnvExports pythonRuntime)
+              + builtins.readFile ./nix/frontend-dependencies.sh
+              + builtins.readFile ./nix/runflow-dev.sh;
           };
           runflowDevSession = pkgs.writeShellApplication {
             name = "runflow-dev-session";
@@ -217,7 +219,8 @@
             runtimeInputs = [
               pkgs.nodejs_22
             ];
-            text = builtins.readFile ./nix/frontend-dev.sh;
+            text = builtins.readFile ./nix/frontend-dependencies.sh
+              + builtins.readFile ./nix/frontend-dev.sh;
           };
           runnerLaunch = pkgs.writeShellApplication {
             name = "runflow-runner-launch";
