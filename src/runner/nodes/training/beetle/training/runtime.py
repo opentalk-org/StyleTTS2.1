@@ -8,7 +8,12 @@ from shared.db.assets import crud as asset_crud
 from shared.db.connection import database_session
 
 from ..config import BeetleConfig, config_fingerprint, load_config
-from ..data import DatabaseSegmentIndex, ValidationLoader, ValidationSource
+from ..data import (
+    DatabaseSegmentIndex,
+    ValidationLoader,
+    ValidationSource,
+    select_validation_audio_ids,
+)
 from ..models.modules.aligner import PhonemeAligner
 from ..models.modules.alignment_backbone import StyleTTSAlignerBackbone
 from ..models.modules.audio import F0Extractor
@@ -101,6 +106,21 @@ class RunPreparation:
     resume: CheckpointPayload | None
 
 
+def load_validation_source(
+    config: BeetleConfig,
+    index: DatabaseSegmentIndex,
+    stage_number: int,
+    loader: ValidationLoader,
+) -> ValidationSource:
+    audio_file_ids = select_validation_audio_ids(
+        index,
+        stage_number,
+        config.validation.sample_count,
+        config.runtime.seed,
+    )
+    return loader.load_source(stage_number, audio_file_ids)
+
+
 def prepare_run(
     stage: StageKind,
     config_path: Path,
@@ -123,9 +143,11 @@ def prepare_run(
         StageKind.STAGE3: 3,
     }[stage]
     index.report.require(stage_number, config.data.sentence_probability)
-    validation = ValidationLoader.from_database(config).load_source(
+    validation = load_validation_source(
+        config,
+        index,
         stage_number,
-        config.validation.audio_file_ids,
+        ValidationLoader.from_database(config),
     )
     callbacks.check_cancel()
     manager = CheckpointManager(output_path / "checkpoints")

@@ -151,7 +151,7 @@ data:
     gain_min_db: -6.0
     gain_max_db: 6.0
 validation:
-  audio_file_ids: [00000000-0000-0000-0000-000000000000]
+  sample_count: 16
 runtime:
   seed: 1234
   device: cuda
