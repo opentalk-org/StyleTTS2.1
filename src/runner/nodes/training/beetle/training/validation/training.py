@@ -77,89 +77,47 @@ class TrainingValidationEvaluator(ConditionalValidationEvaluator):
         posterior = self._posterior(recording.audio_file_id, values, step)
         full = conditional.artifacts
         real_waveform = full.ground_truth.unsqueeze(0).to(self.device)
-        conditional_waveform = full.prediction.unsqueeze(0).to(self.device)
         sample_count = real_waveform.shape[-1]
         posterior_waveform = posterior.waveform[:, :, :sample_count]
         sample_mask = posterior.sample_mask[:, :, :sample_count]
         target_f0 = full.f0[0].unsqueeze(0).to(self.device)
-        conditional_f0 = full.f0[1].unsqueeze(0).to(self.device)
         frame_count = target_f0.shape[-1]
         posterior_f0 = posterior.acoustic.f0[:, :frame_count]
         frame_mask = posterior.decoded.mask[:, :, :frame_count]
         target_n = full.n[0].unsqueeze(0).to(self.device)
-        conditional_n = full.n[1].unsqueeze(0).to(self.device)
         posterior_n = posterior.acoustic.n[:, :frame_count]
         encoder_kl = masked_kl_standard_normal(
             posterior.posterior.mean,
             posterior.posterior.log_scale,
             posterior.posterior.mask,
         )
-        f0 = 0.5 * (
-            masked_f0_smooth_l1(
-                posterior_f0,
-                target_f0,
-                frame_mask,
-            )
-            + masked_f0_smooth_l1(
-                conditional_f0,
-                target_f0,
-                frame_mask,
-            )
+        f0 = masked_f0_smooth_l1(
+            posterior_f0,
+            target_f0,
+            frame_mask,
         )
-        n = 0.5 * (
-            masked_n_smooth_l1(
-                posterior_n,
-                target_n,
-                frame_mask,
-            )
-            + masked_n_smooth_l1(
-                conditional_n,
-                target_n,
-                frame_mask,
-            )
+        n = masked_n_smooth_l1(
+            posterior_n,
+            target_n,
+            frame_mask,
         )
-        reconstruction = 0.5 * (
-            self.acoustic.reconstruction_loss(
-                posterior_waveform,
-                real_waveform,
-                sample_mask,
-            ).total
-            + self.acoustic.reconstruction_loss(
-                conditional_waveform,
-                real_waveform,
-                sample_mask,
-            ).total
-        )
-        discriminator = 0.5 * (
-            discriminator_step_loss(
-                self.acoustic.discriminators,
-                real_waveform,
-                posterior_waveform,
-            )
-            + discriminator_step_loss(
-                self.acoustic.discriminators,
-                real_waveform,
-                conditional_waveform,
-            )
-        )
-        posterior_adversarial = generator_step_loss(
+        reconstruction = self.acoustic.reconstruction_loss(
+            posterior_waveform,
+            real_waveform,
+            sample_mask,
+        ).total
+        discriminator = discriminator_step_loss(
             self.acoustic.discriminators,
             real_waveform,
             posterior_waveform,
         )
-        conditional_adversarial = generator_step_loss(
+        adversarial_view = generator_step_loss(
             self.acoustic.discriminators,
             real_waveform,
-            conditional_waveform,
+            posterior_waveform,
         )
-        adversarial = 0.5 * (
-            posterior_adversarial.adversarial
-            + conditional_adversarial.adversarial
-        )
-        feature_matching = 0.5 * (
-            posterior_adversarial.feature_matching
-            + conditional_adversarial.feature_matching
-        )
+        adversarial = adversarial_view.adversarial
+        feature_matching = adversarial_view.feature_matching
         weights = self.training_schedules.acoustic_weights(step)
         conditional_metrics = tuple(
             metric for metric in conditional.losses if metric.name != "conditional_total"

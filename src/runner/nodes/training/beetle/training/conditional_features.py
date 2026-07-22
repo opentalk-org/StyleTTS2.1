@@ -8,7 +8,6 @@ from ..config import BeetleConfig
 from ..data.records import BeetleBatch
 from ..models.acoustic import log_mel_l2_energy
 from ..models.modules.audio import AcousticFeatures
-from ..models.modules.conditioning import ProjectedConditions
 from ..models.modules.decoder import DecoderOutput
 from ..models.modules.embeddings import AcousticStatistics
 from ..models.conditional import ConditionalModels
@@ -32,14 +31,6 @@ class ConditionalSynthesis:
 class ConditionalAcousticTargets:
     features: AcousticFeatures
     statistics: AcousticStatistics
-
-
-@dataclass(frozen=True)
-class ConditionalSynthesisInput:
-    noise: Tensor
-    conditions: ProjectedConditions
-    latent_mask: Tensor
-    acoustic_target: AcousticFeatures
 
 
 class WaveformMelExtractor(nn.Module):

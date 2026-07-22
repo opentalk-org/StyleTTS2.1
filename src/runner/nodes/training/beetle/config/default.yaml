@@ -199,7 +199,7 @@ training:
     encoder_kl: {value: 1.0, start_step: 0, warmup_steps: 0}
     f0: {value: 1.0, start_step: 0, warmup_steps: 0}
     n: {value: 1.0, start_step: 0, warmup_steps: 0}
-    reconstruction: {value: 90.0, start_step: 0, warmup_steps: 0}
+    reconstruction: {value: 45.0, start_step: 0, warmup_steps: 0}
     discriminator: {value: 1.0, start_step: 0, warmup_steps: 1000}
     generator_adversarial: {value: 1.0, start_step: 0, warmup_steps: 1000}
     feature_matching: {value: 1.0, start_step: 0, warmup_steps: 1000}

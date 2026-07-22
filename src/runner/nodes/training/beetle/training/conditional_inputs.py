@@ -10,7 +10,6 @@ from ..models.modules.conditioning import ConditionVectors, align_phoneme_tokens
 from ..models.modules.latent_flow import sample_flow_training_case
 from ..models.conditional import ConditionalModels
 from .conditional_features import (
-    ConditionalSynthesisInput,
     WaveformMelExtractor,
     acoustic_statistics,
     boundary_pool,
@@ -53,32 +52,6 @@ class DefaultConditionalInputBuilder(ConditionalInputBuilder):
         loop: LoopState,
     ) -> ConditionalLossInput:
         return self._build(models, batch, loop, True)
-
-    def build_synthesis(
-        self,
-        models: ConditionalModels,
-        batch: object,
-        loop: LoopState,
-    ) -> ConditionalSynthesisInput:
-        values = require_batch(batch).to(self.device)
-        core = self._core(models, values, loop, False)
-        conditions = models.condition_bank(
-            core.vectors.at_rate(core.aligned_tokens),
-            core.keep,
-        )
-        flow_sample = sample_flow_training_case(
-            core.posterior.latent,
-            core.posterior.mask,
-            self.config.architecture.latent_flow.minimum_steps,
-            self.config.architecture.latent_flow.base_case_probability,
-            self._generator(loop, "flow"),
-        )
-        return ConditionalSynthesisInput(
-            flow_sample.noise,
-            conditions,
-            core.posterior.mask,
-            core.acoustic_targets.features,
-        )
 
     def _build(
         self,

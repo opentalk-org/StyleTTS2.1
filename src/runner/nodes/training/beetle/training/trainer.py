@@ -5,8 +5,12 @@ from ..config.training import AdversarialConfig, TrainingConfig
 from ..data.prefetch import DataPipelineState
 from ..data.records import BeetleBatch
 from ..data.sampling import derive_seed
-from ..losses.acoustic import masked_kl_standard_normal
-from ..losses.adversarial import grouped_discriminator_step_loss, generator_step_loss
+from ..losses.acoustic import (
+    masked_f0_smooth_l1,
+    masked_kl_standard_normal,
+    masked_n_smooth_l1,
+)
+from ..losses.adversarial import discriminator_step_loss, generator_step_loss
 from ..losses.conditional import compute_conditional_losses
 from ..models.model import AcousticModels, AcousticSynthesis
 from ..models.modules.audio import AcousticFeatures
@@ -14,7 +18,7 @@ from ..models.modules.segments import AlignedSegments
 from ..models.conditional import ConditionalModels
 from .callbacks import TrainingMetric
 from .checkpoint import CheckpointPayload
-from .conditional_features import ConditionalSynthesis, ConditionalSynthesisInput
+from .acoustic_synthesis import synthesize_training_posterior
 from .diagnostics import diagnostics_due
 from .distributed import DistributedRuntime
 from .loop import LoopIntervals
@@ -23,12 +27,10 @@ from .optimizer import OptimizerSet
 from .reporting import ReportingState
 from .setup import (
     ConditionalInputBuilder,
-    mean_acoustic_loss,
     prepare_training_modules,
     tensor_metric,
     update_latent_flow_ema,
 )
-from .joint_synthesis import synthesize_training_pair
 from .state import LoopState
 from .trainer_checkpoint import checkpoint_payload, restore_trainer
 
@@ -87,20 +89,20 @@ class BeetleTrainer:
         real = segment.samples(waveform)
         predicted_ratio = self.schedules.predicted_acoustic_ratio(self._loop.optimizer_step)
         with torch.no_grad(), self.runtime.autocast():
-            inputs = self.input_builder.build_synthesis(
-                self.conditional,
-                batch,
-                self._loop,
-            )
-            target = inputs.acoustic_target
-            posterior, conditional = self._synthesize_pair(
-                inputs, mel, frame_mask, segment, target, predicted_ratio, "discriminator"
+            target = self.acoustic.acoustic_targets(mel, frame_mask)
+            posterior = self._synthesize_posterior(
+                mel,
+                frame_mask,
+                segment,
+                target,
+                predicted_ratio,
+                "discriminator",
             )
         with self.runtime.autocast():
-            loss = grouped_discriminator_step_loss(
+            loss = discriminator_step_loss(
                 self.acoustic.discriminators,
                 real,
-                (posterior.waveform, conditional.waveform),
+                posterior.waveform,
             )
             weights = self.schedules.acoustic_weights(self._loop.optimizer_step)
             weighted = loss * weights.discriminator
@@ -116,15 +118,12 @@ class BeetleTrainer:
         real = segment.samples(waveform)
         inputs = self.input_builder.build(self.conditional, batch, self._loop)
         target = inputs.acoustic_target
-        synthesis_inputs = ConditionalSynthesisInput(
-            inputs.flow_sample.noise, inputs.conditions, inputs.latent_mask, target)
         f0_target = segment.frames(target.f0)
         n_target = segment.frames(target.n)
         segment_frame_mask = segment.frames(frame_mask)
         predicted_ratio = self.schedules.predicted_acoustic_ratio(self._loop.optimizer_step)
         with self.runtime.autocast():
-            posterior, conditional = self._synthesize_pair(
-                synthesis_inputs,
+            posterior = self._synthesize_posterior(
                 mel,
                 frame_mask,
                 segment,
@@ -137,70 +136,39 @@ class BeetleTrainer:
                 posterior.posterior.log_scale,
                 posterior.posterior.mask,
             )
-            f0 = mean_acoustic_loss(
-                posterior.acoustic,
-                conditional.acoustic,
+            f0 = masked_f0_smooth_l1(
+                posterior.acoustic.f0,
                 f0_target,
                 segment_frame_mask,
-                True,
             )
-            n = mean_acoustic_loss(
-                posterior.acoustic,
-                conditional.acoustic,
+            n = masked_n_smooth_l1(
+                posterior.acoustic.n,
                 n_target,
                 segment_frame_mask,
-                False,
             )
             posterior_reconstruction = self.acoustic.reconstruction_loss(
                 posterior.waveform, real, posterior.sample_mask
             ).total
-            conditional_reconstruction = self.acoustic.reconstruction_loss(
-                conditional.waveform, real, conditional.sample_mask).total
-            reconstruction = 0.5 * (posterior_reconstruction + conditional_reconstruction)
             weights = self.schedules.acoustic_weights(self._loop.optimizer_step)
-            acoustic_base = (
-                encoder_kl * weights.encoder_kl + f0 * weights.f0 + n * weights.n
-                + reconstruction * weights.reconstruction
+            adversarial_view = generator_step_loss(
+                self.acoustic.discriminators,
+                real,
+                posterior.waveform,
             )
-        generator_optimizer = self.optimizers.group("generator")
-        adversarial_values = []
-        feature_matching_values = []
-        waveform_gradients = []
-        generated_waveforms = (posterior.waveform, conditional.waveform)
-        for generated in generated_waveforms:
-            with self.runtime.autocast():
-                view = generator_step_loss(
-                    self.acoustic.discriminators,
-                    real,
-                    generated,
-                )
-                view_total = (
-                    view.adversarial * weights.generator_adversarial
-                    + view.feature_matching * weights.feature_matching
-                ) / (len(generated_waveforms) * self.accumulation_steps)
-            scaled_view = generator_optimizer.scaler.scale(view_total)
-            waveform_gradient, = torch.autograd.grad(scaled_view, generated)
-            waveform_gradients.append(waveform_gradient)
-            adversarial_values.append(view.adversarial.detach())
-            feature_matching_values.append(view.feature_matching.detach())
-        adversarial = torch.stack(adversarial_values).mean()
-        feature_matching = torch.stack(feature_matching_values).mean()
-        with self.runtime.autocast():
+            adversarial = adversarial_view.adversarial
+            feature_matching = adversarial_view.feature_matching
+            acoustic_total = (
+                encoder_kl * weights.encoder_kl + f0 * weights.f0 + n * weights.n
+                + posterior_reconstruction * weights.reconstruction
+                + adversarial * weights.generator_adversarial
+                + feature_matching * weights.feature_matching
+            )
             conditional_losses = compute_conditional_losses(
                 self.conditional, self.ema_latent_flow, inputs)
-            base_total = acoustic_base + conditional_losses.total(
+            total = acoustic_total + conditional_losses.total(
                 self.schedules.conditional_weights(self._loop.optimizer_step)
             )
-        scaled_base = generator_optimizer.scaler.scale(
-            base_total / self.accumulation_steps
-        )
-        torch.autograd.backward(
-            (scaled_base, *generated_waveforms), (None, *waveform_gradients))
-        total = (
-            base_total.detach()
-            + adversarial * weights.generator_adversarial
-            + feature_matching * weights.feature_matching
-        )
+        self.optimizers.group("generator").backward(total / self.accumulation_steps)
         names = self.schedules.conditional_names
         return (
             TrainingMetric("acoustic_prediction_ratio", predicted_ratio),
@@ -208,7 +176,6 @@ class BeetleTrainer:
             tensor_metric("f0", f0),
             tensor_metric("n", n),
             tensor_metric("posterior_reconstruction", posterior_reconstruction),
-            tensor_metric("conditional_reconstruction", conditional_reconstruction),
             tensor_metric("generator_adversarial", adversarial),
             tensor_metric("feature_matching", feature_matching),
             *(
@@ -262,20 +229,17 @@ class BeetleTrainer:
             generator,
         )
 
-    def _synthesize_pair(
+    def _synthesize_posterior(
         self,
-        inputs: ConditionalSynthesisInput,
         mel: Tensor,
         frame_mask: Tensor,
         segment: AlignedSegments,
         target: AcousticFeatures,
         predicted_ratio: float,
         view: str,
-    ) -> tuple[AcousticSynthesis, ConditionalSynthesis]:
-        return synthesize_training_pair(
+    ) -> AcousticSynthesis:
+        return synthesize_training_posterior(
             self.acoustic,
-            self.conditional,
-            inputs,
             mel,
             frame_mask,
             segment,

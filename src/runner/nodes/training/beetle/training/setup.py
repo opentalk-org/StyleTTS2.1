@@ -5,13 +5,10 @@ import torch
 from torch import Tensor, nn
 
 from ..config.training import OptimizerConfig, Precision, TrainingConfig
-from ..losses.acoustic import masked_f0_smooth_l1, masked_n_smooth_l1
 from ..losses.conditional import ConditionalLossInput
 from ..models.model import AcousticModels
-from ..models.modules.audio import AcousticFeatures
 from ..models.conditional import ConditionalModels
 from .callbacks import TrainingMetric
-from .conditional_features import ConditionalSynthesisInput
 from .distributed import DistributedRuntime
 from .optimizer import (
     GradientClipping,
@@ -24,13 +21,6 @@ from .state import LoopState
 
 
 class ConditionalInputBuilder(Protocol):
-    def build_synthesis(
-        self,
-        models: ConditionalModels,
-        batch: object,
-        loop: LoopState,
-    ) -> ConditionalSynthesisInput: ...
-
     def build(
         self,
         models: ConditionalModels,
@@ -143,24 +133,6 @@ def prepare_training_modules(
     for module in trainable_conditional_modules(conditional):
         module.requires_grad_(True).train()
     conditional.text_encoder.requires_grad_(False).eval()
-
-
-def mean_acoustic_loss(
-    posterior: AcousticFeatures,
-    conditional: AcousticFeatures,
-    target: Tensor,
-    mask: Tensor,
-    pitch: bool,
-) -> Tensor:
-    if pitch:
-        loss = masked_f0_smooth_l1
-        generated = posterior.f0
-        conditioned = conditional.f0
-    else:
-        loss = masked_n_smooth_l1
-        generated = posterior.n
-        conditioned = conditional.n
-    return 0.5 * (loss(generated, target, mask) + loss(conditioned, target, mask))
 
 
 def trainable_conditional_modules(models: ConditionalModels) -> tuple[nn.Module, ...]:
