@@ -166,8 +166,8 @@ def build_conditional_models(
         style=architecture.embeddings.embedding_channels,
         voice=architecture.embeddings.embedding_channels,
         pooled_phoneme=architecture.phoneme.projection_channels,
-        pre_text=architecture.phoneme.cnn_hidden_channels,
-        post_text=architecture.phoneme.cnn_hidden_channels,
+        pre_text=architecture.context.output_channels,
+        post_text=architecture.context.output_channels,
         pre_audio=architecture.context.output_channels,
         post_audio=architecture.context.output_channels,
         language=architecture.language.embedding_channels,
@@ -181,7 +181,10 @@ def build_conditional_models(
         ),
         latent_phoneme_encoder=LatentPhonemeEncoder(architecture.phoneme),
         duration_phoneme_encoder=DurationPhonemeEncoder(architecture.phoneme),
-        context_phoneme_encoder=ContextPhonemeEncoder(architecture.phoneme),
+        context_phoneme_encoder=ContextPhonemeEncoder(
+            architecture.phoneme.projection_channels,
+            architecture.context,
+        ),
         context_audio_encoder=ContextAudioEncoder(
             architecture.posterior.latent_channels,
             architecture.context,

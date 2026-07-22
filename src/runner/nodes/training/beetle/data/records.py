@@ -83,26 +83,11 @@ class CutRange:
 
 
 @dataclass(frozen=True)
-class ContextRange:
-    key: SegmentKey
-    audio: CutRange
-    word_start: int
-    word_end: int
-    speaker_id: str | None
-
-    def __post_init__(self) -> None:
-        if self.word_start < 0 or self.word_end < self.word_start:
-            raise ValueError("context word range is invalid")
-
-
-@dataclass(frozen=True)
 class PlannedExample:
     key: SegmentKey
     target: CutRange
     target_word_start: int
     target_word_end: int
-    pre_context: ContextRange | None
-    post_context: ContextRange | None
     sentence: bool
     seed: int
 
@@ -147,25 +132,6 @@ class PlannedBatch:
 
 
 @dataclass(frozen=True)
-class DecodedExample:
-    plan: PlannedExample
-    waveform: Tensor
-    mel: Tensor
-    phoneme_ids: Tensor
-    text_input_ids: Tensor
-    alignment: Tensor
-    durations: Tensor
-    pre_audio: Tensor
-    post_audio: Tensor
-    pre_text_ids: Tensor
-    post_text_ids: Tensor
-    style_view: Tensor
-    voice_view: Tensor
-    speaker_id: str
-    recording_id: UUID
-
-
-@dataclass(frozen=True)
 class BeetleBatch:
     waveform: Tensor
     mel: Tensor
@@ -174,10 +140,6 @@ class BeetleBatch:
     language_ids: Tensor
     alignments: Tensor
     durations: Tensor
-    pre_audio: Tensor
-    post_audio: Tensor
-    pre_text_ids: Tensor
-    post_text_ids: Tensor
     style_prompt_ids: Tensor
     voice_prompt_ids: Tensor
     style_views: Tensor
@@ -186,10 +148,6 @@ class BeetleBatch:
     frame_lengths: Tensor
     phoneme_lengths: Tensor
     text_lengths: Tensor
-    pre_audio_lengths: Tensor
-    post_audio_lengths: Tensor
-    pre_text_lengths: Tensor
-    post_text_lengths: Tensor
     style_prompt_lengths: Tensor
     voice_prompt_lengths: Tensor
     style_view_lengths: Tensor
@@ -197,10 +155,6 @@ class BeetleBatch:
     frame_mask: Tensor
     phoneme_mask: Tensor
     text_mask: Tensor
-    pre_audio_available: Tensor
-    post_audio_available: Tensor
-    pre_text_available: Tensor
-    post_text_available: Tensor
     style_prompt_available: Tensor
     voice_prompt_available: Tensor
     style_distances: Tensor
@@ -239,7 +193,6 @@ class BeetleBatch:
     def synthetic(cls, batch_size: int, frames: int, samples: int) -> "BeetleBatch":
         phonemes = 3
         texts = 4
-        audio_context = 300
         zeros = torch.zeros
         ones = torch.ones
         keys = tuple(SegmentKey(UUID(int=index + 1), 0, str(index)) for index in range(batch_size))
@@ -252,10 +205,6 @@ class BeetleBatch:
             language_ids=zeros(batch_size, dtype=torch.long),
             alignments=zeros(batch_size, phonemes, frames),
             durations=zeros(batch_size, phonemes),
-            pre_audio=zeros(batch_size, 1, audio_context),
-            post_audio=zeros(batch_size, 1, audio_context),
-            pre_text_ids=zeros(batch_size, texts, dtype=torch.long),
-            post_text_ids=zeros(batch_size, texts, dtype=torch.long),
             style_prompt_ids=zeros(batch_size, texts, dtype=torch.long),
             voice_prompt_ids=zeros(batch_size, texts, dtype=torch.long),
             style_views=zeros(batch_size, 2, 1, samples),
@@ -264,10 +213,6 @@ class BeetleBatch:
             frame_lengths=lengths,
             phoneme_lengths=torch.full((batch_size,), phonemes, dtype=torch.long),
             text_lengths=torch.full((batch_size,), texts, dtype=torch.long),
-            pre_audio_lengths=torch.full((batch_size,), audio_context, dtype=torch.long),
-            post_audio_lengths=torch.full((batch_size,), audio_context, dtype=torch.long),
-            pre_text_lengths=torch.full((batch_size,), texts, dtype=torch.long),
-            post_text_lengths=torch.full((batch_size,), texts, dtype=torch.long),
             style_prompt_lengths=torch.full((batch_size,), texts, dtype=torch.long),
             voice_prompt_lengths=torch.full((batch_size,), texts, dtype=torch.long),
             style_view_lengths=torch.full((batch_size, 2), samples, dtype=torch.long),
@@ -275,10 +220,6 @@ class BeetleBatch:
             frame_mask=ones(batch_size, 1, frames, dtype=torch.bool),
             phoneme_mask=ones(batch_size, phonemes, dtype=torch.bool),
             text_mask=ones(batch_size, texts, dtype=torch.bool),
-            pre_audio_available=ones(batch_size, dtype=torch.bool),
-            post_audio_available=ones(batch_size, dtype=torch.bool),
-            pre_text_available=ones(batch_size, dtype=torch.bool),
-            post_text_available=ones(batch_size, dtype=torch.bool),
             style_prompt_available=ones(batch_size, dtype=torch.bool),
             voice_prompt_available=ones(batch_size, dtype=torch.bool),
             style_distances=zeros(batch_size, 2),

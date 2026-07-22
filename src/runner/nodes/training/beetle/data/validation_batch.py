@@ -58,9 +58,6 @@ def collate_validation_recording(
     frame_mask = _length_mask(frame_lengths, padded_frames).unsqueeze(1)
     phoneme_mask = _length_mask(phoneme_lengths, phoneme_ids.numel())
     text_mask = _length_mask(text_lengths, text_ids.numel())
-    empty_audio = torch.zeros(1, 1, 0)
-    empty_ids = torch.zeros(1, 0, dtype=torch.long)
-    empty_lengths = torch.zeros(1, dtype=torch.long)
     prompt_style = style_prompt.unsqueeze(0)
     prompt_voice = voice_prompt.unsqueeze(0)
     views = waveform.unsqueeze(1).repeat(1, 2, 1, 1)
@@ -74,10 +71,6 @@ def collate_validation_recording(
         language_ids=torch.tensor([language_id], dtype=torch.long),
         alignments=torch.zeros(1, phoneme_ids.numel(), padded_frames),
         durations=torch.zeros(1, phoneme_ids.numel()),
-        pre_audio=empty_audio,
-        post_audio=empty_audio.clone(),
-        pre_text_ids=empty_ids,
-        post_text_ids=empty_ids.clone(),
         style_prompt_ids=prompt_style,
         voice_prompt_ids=prompt_voice,
         style_views=views,
@@ -86,10 +79,6 @@ def collate_validation_recording(
         frame_lengths=frame_lengths,
         phoneme_lengths=phoneme_lengths,
         text_lengths=text_lengths,
-        pre_audio_lengths=empty_lengths,
-        post_audio_lengths=empty_lengths.clone(),
-        pre_text_lengths=empty_lengths.clone(),
-        post_text_lengths=empty_lengths.clone(),
         style_prompt_lengths=torch.tensor([style_prompt.numel()]),
         voice_prompt_lengths=torch.tensor([voice_prompt.numel()]),
         style_view_lengths=view_lengths,
@@ -97,10 +86,6 @@ def collate_validation_recording(
         frame_mask=frame_mask,
         phoneme_mask=phoneme_mask,
         text_mask=text_mask,
-        pre_audio_available=torch.zeros(1, dtype=torch.bool),
-        post_audio_available=torch.zeros(1, dtype=torch.bool),
-        pre_text_available=torch.zeros(1, dtype=torch.bool),
-        post_text_available=torch.zeros(1, dtype=torch.bool),
         style_prompt_available=torch.tensor([style_prompt.numel() > 0]),
         voice_prompt_available=torch.tensor([voice_prompt.numel() > 0]),
         style_distances=torch.zeros(1, 2),

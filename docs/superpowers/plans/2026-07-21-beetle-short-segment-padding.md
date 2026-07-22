@@ -12,7 +12,6 @@
 
 - Keep `src/runflow` domain-agnostic.
 - Run all Python and pytest commands through `nix develop --command python -m ...`.
-- Keep `minimum_seconds` only for the active checkpoint fingerprint; set its default to zero and do not use it for eligibility or cut planning.
 - Do not restart or alter the running Stage 1 process.
 - Temporary regression tests must be removed before handoff.
 

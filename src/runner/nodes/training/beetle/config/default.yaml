@@ -60,7 +60,7 @@ architecture:
   context:
     hidden_channels: 384
     output_channels: 256
-    layers: 5
+    layers: 2
     kernel_size: 3
     dropout: 0.1
   embeddings:
@@ -86,7 +86,7 @@ architecture:
       post_audio: 0.75
       language: 0.01
   duration_flow:
-    condition_channels: 2496
+    condition_channels: 2240
     hidden_channels: 256
     flow_count: 4
     posterior_flow_count: 4
@@ -127,9 +127,7 @@ data:
   selection:
     dataset_id: d74f9522-022a-487d-98dc-f40bbc31853c
     audio_file_ids: []
-  minimum_seconds: 0.0
-  maximum_seconds: 45.0
-  sentence_probability: 1.0
+  maximum_seconds: 8.0
   prefetch:
     page_size: 2000
     window_size: 8
@@ -138,7 +136,6 @@ data:
     audio_fetch_workers: 16
     preprocessing_threads: 4
   grouping:
-    duration_boundaries_seconds: [2.0, 4.0, 8.0, 16.0, 32.0, 45.0]
     voices_per_batch: 8
     utterances_per_voice: 2
     recordings_per_batch: 8
@@ -169,16 +166,17 @@ conditioning_objective:
   consistency_cosine_weight: 1.0
   consistency_mse_weight: 1.0
 training:
-  batch_size: 16
+  batch_size: 64
   accumulation_steps: 1
-  total_steps: 8000
-  validation_every_steps: 2000
-  precision: float16
+  total_steps: 50000
+  validation_every_steps: 5000
+  full_audio_ratio: 0.1
+  precision: bfloat16
   acoustic_prediction: {value: 1.0, start_step: 2000, warmup_steps: 3000}
   generator_optimizer:
-    learning_rate: 0.0002
-    beta1: 0.8
-    beta2: 0.99
+    learning_rate: 0.0006
+    beta1: 0.5
+    beta2: 0.9
     epsilon: 0.000000001
     weight_decay: 0.0001
     warmup_steps: 1000
@@ -186,9 +184,9 @@ training:
     minimum_learning_rate_ratio: 0.1
     maximum_gradient_norm: 10.0
   discriminator_optimizer:
-    learning_rate: 0.00005
-    beta1: 0.8
-    beta2: 0.99
+    learning_rate: 0.0002
+    beta1: 0.5
+    beta2: 0.9
     epsilon: 0.000000001
     weight_decay: 0.0001
     warmup_steps: 1000

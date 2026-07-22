@@ -9,6 +9,7 @@ from ..losses.conditional import ConditionalLossInput
 from ..models.model import AcousticModels
 from ..models.conditional import ConditionalModels
 from .callbacks import TrainingMetric
+from .conditional_features import ConditionalAcousticTargets
 from .distributed import DistributedRuntime
 from .optimizer import (
     GradientClipping,
@@ -21,11 +22,18 @@ from .state import LoopState
 
 
 class ConditionalInputBuilder(Protocol):
+    def acoustic_targets(
+        self,
+        models: ConditionalModels,
+        batch: object,
+    ) -> ConditionalAcousticTargets: ...
+
     def build(
         self,
         models: ConditionalModels,
         batch: object,
         loop: LoopState,
+        acoustic_targets: ConditionalAcousticTargets,
     ) -> ConditionalLossInput: ...
 
     def build_validation(

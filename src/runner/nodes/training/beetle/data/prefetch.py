@@ -200,15 +200,6 @@ class BoundedBatchPrefetcher:
         ranges = set()
         for example in planned.examples:
             ranges.add((example.key.audio_file_id, example.target.start, example.target.end))
-            for context in (example.pre_context, example.post_context):
-                if context is not None:
-                    ranges.add(
-                        (
-                            context.key.audio_file_id,
-                            context.audio.start,
-                            context.audio.end,
-                        )
-                    )
         for group in (*planned.voice_groups, *planned.style_groups):
             for view in group.views:
                 ranges.add((view.key.audio_file_id, view.audio.start, view.audio.end))

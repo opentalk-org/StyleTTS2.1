@@ -19,7 +19,6 @@ class PoolState:
 @dataclass(frozen=True)
 class PlannerState:
     sentence: PoolState
-    mid_sentence: PoolState | None
     batch_index: int
     planning_batch_index: int
     pending_batches: tuple[PlannedBatch, ...]
@@ -93,16 +92,14 @@ class ContinuousBatchPlanner:
         self,
         index: DatabaseSegmentIndex,
         batch_size: int,
-        sentence_probability: float,
         seed: int,
         maximum_seconds: float,
         grouping: GroupSamplingConfig,
         shard: DistributedShard,
     ) -> None:
-        index.report.require(sentence_probability)
+        index.report.require()
         self.index = index
         self.batch_size = batch_size
-        self.sentence_probability = sentence_probability
         self.seed = seed
         self.shard = shard
         self.cut_planner = CutPlanner(index, maximum_seconds)
@@ -110,15 +107,6 @@ class ContinuousBatchPlanner:
             index.pools.segments,
             seed,
             "training-sentence",
-        )
-        self.mid_sentence = (
-            None
-            if sentence_probability == 1
-            else _PermutationPool(
-                index.pools.mid_sentence,
-                seed,
-                "training-mid",
-            )
         )
         self.batch_index = 0
         self.planning_batch_index = 0
@@ -158,15 +146,14 @@ class ContinuousBatchPlanner:
                 planned_batch_index,
                 batch_sample_index,
             )
-            sentence = random.Random(sample_seed).random() < self.sentence_probability
-            pool = self.sentence if sentence else self._require_mid_sentence_pool()
-            key, position = pool.next()
-            cut_seed = derive_seed(sample_seed, pool.cycle_index, position, key)
-            plan = (
-                self.cut_planner.plan_sentence(key, cut_seed)
-                if sentence
-                else self.cut_planner.plan_mid_sentence(key, cut_seed)
+            key, position = self.sentence.next()
+            cut_seed = derive_seed(
+                sample_seed,
+                self.sentence.cycle_index,
+                position,
+                key,
             )
+            plan = self.cut_planner.plan_sentence(key, cut_seed)
             plans.append(plan)
         plans.sort(key=lambda plan: (plan.target.duration, plan.key))
         global_batches = [
@@ -194,15 +181,11 @@ class ContinuousBatchPlanner:
             )
         )
         self.planning_batch_index += batch_count
-        mid_cycle = 0 if self.mid_sentence is None else self.mid_sentence.cycle_index
-        self.last_cycle_index = max(self.sentence.cycle_index, mid_cycle)
+        self.last_cycle_index = self.sentence.cycle_index
 
     def state_dict(self) -> PlannerState:
         return PlannerState(
             sentence=self.sentence.state(),
-            mid_sentence=(
-                None if self.mid_sentence is None else self.mid_sentence.state()
-            ),
             batch_index=self.batch_index,
             planning_batch_index=self.planning_batch_index,
             pending_batches=self.pending_batches,
@@ -215,19 +198,7 @@ class ContinuousBatchPlanner:
         if state.planning_batch_index < state.batch_index:
             raise ValueError("planning batch index precedes consumed batches")
         self.sentence.restore(state.sentence)
-        if self.mid_sentence is None:
-            if state.mid_sentence is not None:
-                raise ValueError("sentence-only planner state contains a mid-sentence pool")
-        else:
-            if state.mid_sentence is None:
-                raise ValueError("mid-sentence planner state is missing its pool")
-            self.mid_sentence.restore(state.mid_sentence)
         self.batch_index = state.batch_index
         self.planning_batch_index = state.planning_batch_index
         self.pending_batches = state.pending_batches
         self.last_cycle_index = state.last_cycle_index
-
-    def _require_mid_sentence_pool(self) -> _PermutationPool:
-        if self.mid_sentence is None:
-            raise RuntimeError("sentence-only planner selected a mid-sentence sample")
-        return self.mid_sentence

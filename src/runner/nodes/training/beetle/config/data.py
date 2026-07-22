@@ -20,7 +20,6 @@ class PrefetchConfig(StrictConfigModel):
 
 
 class GroupSamplingConfig(StrictConfigModel):
-    duration_boundaries_seconds: tuple[float, ...] = Field(min_length=1)
     voices_per_batch: int = Field(gt=1)
     utterances_per_voice: int = Field(gt=1)
     recordings_per_batch: int = Field(gt=1)
@@ -48,18 +47,7 @@ class AugmentationConfig(StrictConfigModel):
 
 class DataConfig(StrictConfigModel):
     selection: DatabaseSelection
-    minimum_seconds: float = Field(ge=0, le=45)
     maximum_seconds: float = Field(ge=1, le=45)
-    sentence_probability: float = Field(gt=0, le=1)
     prefetch: PrefetchConfig
     grouping: GroupSamplingConfig
     augmentation: AugmentationConfig
-
-    @model_validator(mode="after")
-    def validate_durations(self) -> "DataConfig":
-        boundaries = self.grouping.duration_boundaries_seconds
-        if tuple(sorted(boundaries)) != boundaries:
-            raise ValueError("duration boundaries must be sorted")
-        if boundaries[-1] > self.maximum_seconds:
-            raise ValueError("duration boundary exceeds maximum_seconds")
-        return self

@@ -18,7 +18,7 @@ from ..models.modules.segments import AlignedSegments
 from ..models.conditional import ConditionalModels
 from .callbacks import TrainingMetric
 from .checkpoint import CheckpointPayload
-from .acoustic_synthesis import synthesize_training_posterior
+from .acoustic_synthesis import AcousticBackwardMetrics, synthesize_training_posterior
 from .diagnostics import diagnostics_due
 from .distributed import DistributedRuntime
 from .loop import LoopIntervals
@@ -114,10 +114,54 @@ class BeetleTrainer:
 
     def generator_backward(self, batch: BeetleBatch) -> tuple[TrainingMetric, ...]:
         waveform, mel, frame_mask = self._inputs(batch)
+        target = self.input_builder.acoustic_targets(self.conditional, batch)
+        acoustic = self._acoustic_backward(waveform, mel, frame_mask, target.features)
+        inputs = self.input_builder.build(self.conditional, batch, self._loop, target)
+        with self.runtime.autocast():
+            conditional_losses = compute_conditional_losses(
+                self.conditional, self.ema_latent_flow, inputs)
+            conditional_total = conditional_losses.total(
+                self.schedules.conditional_weights(self._loop.optimizer_step)
+            )
+        self.optimizers.group("generator").backward(
+            conditional_total / self.accumulation_steps
+        )
+        names = self.schedules.conditional_names
+        return (
+            TrainingMetric("acoustic_prediction_ratio", acoustic.prediction_ratio),
+            tensor_metric("encoder_kl", acoustic.encoder_kl),
+            tensor_metric("f0", acoustic.f0),
+            tensor_metric("n", acoustic.n),
+            tensor_metric("posterior_reconstruction", acoustic.reconstruction),
+            tensor_metric("generator_adversarial", acoustic.adversarial),
+            tensor_metric("feature_matching", acoustic.feature_matching),
+            *(
+                tensor_metric(name, value)
+                for name, value in zip(
+                    names,
+                    conditional_losses.values(),
+                    strict=True,
+                )
+            ),
+            tensor_metric(
+                "generator_total",
+                acoustic.total + conditional_total.detach(),
+            ),
+            *(
+                tensor_metric(f"conditioning/{name}", value)
+                for name, value in inputs.batch_statistics.named_values()
+            ),
+        )
+
+    def _acoustic_backward(
+        self,
+        waveform: Tensor,
+        mel: Tensor,
+        frame_mask: Tensor,
+        target: AcousticFeatures,
+    ) -> AcousticBackwardMetrics:
         segment = self._segment(frame_mask, "generator")
         real = segment.samples(waveform)
-        inputs = self.input_builder.build(self.conditional, batch, self._loop)
-        target = inputs.acoustic_target
         f0_target = segment.frames(target.f0)
         n_target = segment.frames(target.n)
         segment_frame_mask = segment.frames(frame_mask)
@@ -163,30 +207,18 @@ class BeetleTrainer:
                 + adversarial * weights.generator_adversarial
                 + feature_matching * weights.feature_matching
             )
-            conditional_losses = compute_conditional_losses(
-                self.conditional, self.ema_latent_flow, inputs)
-            total = acoustic_total + conditional_losses.total(
-                self.schedules.conditional_weights(self._loop.optimizer_step)
-            )
-        self.optimizers.group("generator").backward(total / self.accumulation_steps)
-        names = self.schedules.conditional_names
-        return (
-            TrainingMetric("acoustic_prediction_ratio", predicted_ratio),
-            tensor_metric("encoder_kl", encoder_kl),
-            tensor_metric("f0", f0),
-            tensor_metric("n", n),
-            tensor_metric("posterior_reconstruction", posterior_reconstruction),
-            tensor_metric("generator_adversarial", adversarial),
-            tensor_metric("feature_matching", feature_matching),
-            *(
-                tensor_metric(name, value)
-                for name, value in zip(
-                    names,
-                    conditional_losses.values(),
-                    strict=True,
-                )
-            ),
-            tensor_metric("generator_total", total),
+        self.optimizers.group("generator").backward(
+            acoustic_total / self.accumulation_steps
+        )
+        return AcousticBackwardMetrics(
+            predicted_ratio,
+            encoder_kl.detach(),
+            f0.detach(),
+            n.detach(),
+            posterior_reconstruction.detach(),
+            adversarial.detach(),
+            feature_matching.detach(),
+            acoustic_total.detach(),
         )
 
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:

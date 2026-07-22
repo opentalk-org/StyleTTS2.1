@@ -1,5 +1,5 @@
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 from torch import Tensor, nn
 
@@ -63,6 +63,31 @@ class ConditionalLossWeights:
 
 
 @dataclass(frozen=True)
+class ConditionalBatchStatistics:
+    target_seconds: Tensor
+    target_padding_ratio: Tensor
+    full_audio_ratio: Tensor
+    pre_text_available_ratio: Tensor
+    post_text_available_ratio: Tensor
+    pre_audio_available_ratio: Tensor
+    post_audio_available_ratio: Tensor
+    pre_text_random_drop_ratio: Tensor
+    post_text_random_drop_ratio: Tensor
+    pre_audio_random_drop_ratio: Tensor
+    post_audio_random_drop_ratio: Tensor
+    pre_text_effective_drop_ratio: Tensor
+    post_text_effective_drop_ratio: Tensor
+    pre_audio_effective_drop_ratio: Tensor
+    post_audio_effective_drop_ratio: Tensor
+
+    def named_values(self) -> tuple[tuple[str, Tensor], ...]:
+        return tuple(
+            (field.name, getattr(self, field.name))
+            for field in fields(self)
+        )
+
+
+@dataclass(frozen=True)
 class ConditionalLossInput:
     duration_nll: Tensor
     phoneme_mask: Tensor
@@ -90,6 +115,7 @@ class ConditionalLossInput:
     consistency_mse_weight: float
     align_blank_id: int
     minimum_flow_steps: int
+    batch_statistics: ConditionalBatchStatistics
 
 
 @dataclass(frozen=True)

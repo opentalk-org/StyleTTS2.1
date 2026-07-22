@@ -1,9 +1,23 @@
+from dataclasses import dataclass
+
 import torch
 from torch import Tensor
 
 from ..models.model import AcousticModels, AcousticSynthesis
 from ..models.modules.audio import AcousticFeatures, AudioPosterior
 from ..models.modules.segments import AlignedSegments
+
+
+@dataclass(frozen=True)
+class AcousticBackwardMetrics:
+    prediction_ratio: float
+    encoder_kl: Tensor
+    f0: Tensor
+    n: Tensor
+    reconstruction: Tensor
+    adversarial: Tensor
+    feature_matching: Tensor
+    total: Tensor
 
 
 def synthesize_training_posterior(

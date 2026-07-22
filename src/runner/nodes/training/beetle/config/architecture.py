@@ -279,8 +279,7 @@ class ArchitectureConfig(StrictConfigModel):
             self.phoneme.cnn_hidden_channels
             + 2 * self.embeddings.embedding_channels
             + self.phoneme.projection_channels
-            + 2 * self.phoneme.cnn_hidden_channels
-            + 2 * self.context.output_channels
+            + 4 * self.context.output_channels
             + self.language.embedding_channels
         )
         if self.duration_flow.condition_channels != duration_condition:

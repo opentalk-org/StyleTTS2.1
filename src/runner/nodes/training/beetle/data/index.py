@@ -35,15 +35,10 @@ class EligibilityReport:
     excluded_language: int
     excluded_text_or_voice: int
 
-    def require(self, sentence_probability: float) -> None:
+    def require(self) -> None:
         if self.eligible == 0:
             raise ValueError(
                 f"Training has no eligible segments: {self.describe()}"
-            )
-        if sentence_probability < 1 and self.mid_sentence_eligible == 0:
-            raise ValueError(
-                "mid-sentence sampling requested but no aligned segment maps "
-                f"to phoneme word groups: {self.describe()}"
             )
 
     def describe(self) -> str:

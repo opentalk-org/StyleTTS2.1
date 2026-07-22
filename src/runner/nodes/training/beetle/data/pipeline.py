@@ -50,7 +50,6 @@ def build_data_pipeline(
     planner = ContinuousBatchPlanner(
         index=index,
         batch_size=config.training.batch_size,
-        sentence_probability=config.data.sentence_probability,
         seed=config.runtime.seed,
         maximum_seconds=config.data.maximum_seconds,
         grouping=config.data.grouping,

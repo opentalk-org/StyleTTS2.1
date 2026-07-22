@@ -162,7 +162,7 @@ def prepare_run(
         config.data.prefetch.page_size,
         callbacks,
     )
-    index.report.require(config.data.sentence_probability)
+    index.report.require()
     validation = load_validation_source(
         config,
         index,

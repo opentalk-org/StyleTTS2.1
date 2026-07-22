@@ -1,5 +1,6 @@
+from dataclasses import replace
+
 import torch
-from torch import Tensor
 
 from ..config import BeetleConfig
 from ..config.training import ConditioningObjectiveConfig
@@ -9,15 +10,26 @@ from ..losses.conditional import ConditionalLossInput
 from ..models.modules.conditioning import ConditionVectors, align_phoneme_tokens
 from ..models.modules.latent_flow import sample_flow_training_case
 from ..models.conditional import ConditionalModels
+from .conditional_context import (
+    encode_audio_context,
+    encode_text_context,
+    encode_view_latents,
+)
 from .conditional_features import (
+    ConditionalAcousticTargets,
     WaveformMelExtractor,
     acoustic_statistics,
-    boundary_pool,
     group_ids,
     style_weights,
 )
 from .conditional_input_types import CoreConditionalInput, SpeakerIndex
 from .conditional_input_types import build_rate_conditions, keep_all_conditions, require_batch
+from .conditional_statistics import ContextAvailability, conditional_batch_statistics
+from .aligned_window import (
+    apply_window_ranges,
+    sample_window_ranges,
+    seconds_to_latent_frames,
+)
 from .distributed import DistributedRuntime
 from .setup import ConditionalInputBuilder
 from .state import LoopState
@@ -42,8 +54,17 @@ class DefaultConditionalInputBuilder(ConditionalInputBuilder):
         models: ConditionalModels,
         batch: object,
         loop: LoopState,
+        acoustic_targets: ConditionalAcousticTargets,
     ) -> ConditionalLossInput:
-        return self._build(models, batch, loop, False)
+        values = require_batch(batch).to(self.device)
+        return self._build(models, values, loop, acoustic_targets, False)
+
+    def acoustic_targets(
+        self,
+        models: ConditionalModels,
+        batch: object,
+    ) -> ConditionalAcousticTargets:
+        return acoustic_statistics(models, require_batch(batch).to(self.device))
 
     def build_validation(
         self,
@@ -51,17 +72,19 @@ class DefaultConditionalInputBuilder(ConditionalInputBuilder):
         batch: object,
         loop: LoopState,
     ) -> ConditionalLossInput:
-        return self._build(models, batch, loop, True)
+        values = require_batch(batch).to(self.device)
+        targets = acoustic_statistics(models, values)
+        return self._build(models, values, loop, targets, True)
 
     def _build(
         self,
         models: ConditionalModels,
-        batch: object,
+        values: BeetleBatch,
         loop: LoopState,
+        acoustic_targets: ConditionalAcousticTargets,
         validation: bool,
     ) -> ConditionalLossInput:
-        values = require_batch(batch).to(self.device)
-        core = self._core(models, values, loop, validation)
+        core = self._core(models, values, loop, acoustic_targets, validation)
         duration_tokens = models.duration_phoneme_encoder(
             core.phoneme.tokens,
             core.phoneme.mask,
@@ -80,25 +103,25 @@ class DefaultConditionalInputBuilder(ConditionalInputBuilder):
             self._generator(loop, "duration"),
         )
         flow_sample = sample_flow_training_case(
-            core.posterior.latent,
-            core.posterior.mask,
+            core.window.posterior.latent,
+            core.window.posterior.mask,
             self.config.architecture.latent_flow.minimum_steps,
             self.config.architecture.latent_flow.base_case_probability,
             self._generator(loop, "flow"),
         )
-        style_latent, style_mask = self._view_latents(
+        style_latent, style_mask = encode_view_latents(
             models,
+            self.mel_extractor,
             values.style_views,
             values.style_view_lengths,
-            loop,
-            "style-views",
+            self._generator(loop, "style-views"),
         )
-        voice_latent, voice_mask = self._view_latents(
+        voice_latent, voice_mask = encode_view_latents(
             models,
+            self.mel_extractor,
             values.voice_views,
             values.voice_view_lengths,
-            loop,
-            "voice-views",
+            self._generator(loop, "voice-views"),
         )
         style_ids = group_ids(values.style_views, self.device)
         speaker_ids = group_ids(values.voice_views, self.device)
@@ -108,11 +131,11 @@ class DefaultConditionalInputBuilder(ConditionalInputBuilder):
             phoneme_mask=core.phoneme.mask,
             flow_sample=flow_sample,
             conditions=conditions,
-            latent_mask=core.posterior.mask,
+            latent_mask=core.window.posterior.mask,
             alignment=core.alignment,
             phonemes=values.phoneme_ids,
             alignment_mask=core.posterior.mask,
-            target_latent_mask=core.posterior.mask,
+            target_latent_mask=core.window.posterior.mask,
             target_style=core.vectors.style,
             style_view_latent=style_latent,
             style_view_mask=style_mask,
@@ -130,6 +153,7 @@ class DefaultConditionalInputBuilder(ConditionalInputBuilder):
             consistency_mse_weight=settings.consistency_mse_weight,
             align_blank_id=self.config.architecture.aligner.blank_id,
             minimum_flow_steps=self.config.architecture.latent_flow.minimum_steps,
+            batch_statistics=core.batch_statistics,
         )
 
     def _core(
@@ -137,9 +161,9 @@ class DefaultConditionalInputBuilder(ConditionalInputBuilder):
         models: ConditionalModels,
         values: BeetleBatch,
         loop: LoopState,
+        acoustic_targets: ConditionalAcousticTargets,
         validation: bool,
     ) -> CoreConditionalInput:
-        acoustic_targets = acoustic_statistics(models, values)
         target_generator = self._generator(loop, "target-posterior")
         with torch.no_grad():
             posterior = models.audio_encoder(
@@ -165,17 +189,53 @@ class DefaultConditionalInputBuilder(ConditionalInputBuilder):
         )
         target_style = models.style_encoder(posterior.latent, posterior.mask)
         target_voice = models.voice_encoder(posterior.latent, posterior.mask)
+        ranges = sample_window_ranges(
+            posterior.mask[:, 0].sum(dim=1),
+            self._latent_frames(0.4),
+            None if validation else self._latent_frames(self.config.data.maximum_seconds),
+            self._latent_frames(0.4),
+            self._latent_frames(5.0),
+            self.config.training.full_audio_ratio,
+            self._generator(loop, "aligned-window"),
+            validation,
+        )
+        window = apply_window_ranges(
+            posterior,
+            aligned_tokens,
+            alignment.hard_alignment,
+            ranges,
+        )
+        pre_text, pre_text_available = encode_text_context(
+            models,
+            phoneme.tokens,
+            window.pre_phoneme_mask,
+        )
+        post_text, post_text_available = encode_text_context(
+            models,
+            phoneme.tokens,
+            window.post_phoneme_mask,
+        )
+        pre_audio, pre_audio_available = encode_audio_context(
+            models,
+            window.pre_audio,
+            window.pre_audio_mask,
+        )
+        post_audio, post_audio_available = encode_audio_context(
+            models,
+            window.post_audio,
+            window.post_audio_mask,
+        )
         vectors = ConditionVectors(
             style=target_style,
             voice=target_voice,
             pooled_phoneme=phoneme.pooled,
-            pre_text=self._text_context(models, values, loop, True),
-            post_text=self._text_context(models, values, loop, False),
-            pre_audio=self._audio_context(models, values, loop, True),
-            post_audio=self._audio_context(models, values, loop, False),
+            pre_text=pre_text,
+            post_text=post_text,
+            pre_audio=pre_audio,
+            post_audio=post_audio,
             language=models.language_embedding(values.language_ids),
         )
-        keep = (
+        sampled_keep = (
             keep_all_conditions(values.waveform.shape[0], self.device)
             if validation
             else self.runtime.unwrap(models.condition_bank).sample_keep(
@@ -185,81 +245,48 @@ class DefaultConditionalInputBuilder(ConditionalInputBuilder):
                 self._generator(loop, "condition-dropout"),
             )
         )
+        keep = replace(
+            sampled_keep,
+            pre_text=sampled_keep.pre_text & pre_text_available,
+            post_text=sampled_keep.post_text & post_text_available,
+            pre_audio=sampled_keep.pre_audio & pre_audio_available,
+            post_audio=sampled_keep.post_audio & post_audio_available,
+        )
+        statistics = conditional_batch_statistics(
+            window,
+            ContextAvailability(
+                pre_text_available,
+                post_text_available,
+                pre_audio_available,
+                post_audio_available,
+            ),
+            sampled_keep,
+            keep,
+            (
+                self.config.audio.hop_length
+                * self.config.architecture.posterior.downsample_rate
+                / self.config.audio.sample_rate
+            ),
+        )
         return CoreConditionalInput(
             acoustic_targets,
             posterior,
             alignment,
             phoneme,
-            aligned_tokens,
+            window.aligned_phonemes,
             vectors,
             keep,
+            window,
+            statistics,
         )
 
-    def _text_context(
-        self,
-        models: ConditionalModels,
-        batch: BeetleBatch,
-        loop: LoopState,
-        pre: bool,
-    ) -> Tensor:
-        ids = batch.pre_text_ids if pre else batch.post_text_ids
-        lengths = batch.pre_text_lengths if pre else batch.post_text_lengths
-        available = batch.pre_text_available if pre else batch.post_text_available
-        if ids.shape[1] == 0:
-            ids = torch.zeros(ids.shape[0], 1, dtype=torch.long, device=self.device)
-        mask = torch.arange(ids.shape[1], device=self.device).unsqueeze(0)
-        mask = mask < lengths.unsqueeze(1)
-        encoded = models.phoneme_encoder(ids, mask)
-        tokens = models.context_phoneme_encoder(encoded.tokens, encoded.mask)
-        conditioning = self.config.architecture.conditioning
-        counts = torch.randint(
-            conditioning.boundary_k_min,
-            conditioning.boundary_k_max + 1,
-            (ids.shape[0],),
-            device=self.device,
-            generator=self._generator(loop, "pre-text" if pre else "post-text"),
+    def _latent_frames(self, seconds: float) -> int:
+        return seconds_to_latent_frames(
+            seconds,
+            self.config.audio.sample_rate,
+            self.config.audio.hop_length,
+            self.config.architecture.posterior.downsample_rate,
         )
-        return boundary_pool(tokens, mask, available, counts, pre)
-
-    def _audio_context(
-        self,
-        models: ConditionalModels,
-        batch: BeetleBatch,
-        loop: LoopState,
-        pre: bool,
-    ) -> Tensor:
-        waveform = batch.pre_audio if pre else batch.post_audio
-        lengths = batch.pre_audio_lengths if pre else batch.post_audio_lengths
-        available = batch.pre_audio_available if pre else batch.post_audio_available
-        mel = self.mel_extractor(waveform, lengths)
-        with torch.no_grad():
-            posterior = models.audio_encoder(
-                mel.values,
-                mel.mask,
-                self._generator(loop, "pre-audio" if pre else "post-audio"),
-            )
-        pooled = models.context_audio_encoder(posterior.latent, posterior.mask)
-        return pooled * available.unsqueeze(1)
-
-    def _view_latents(
-        self,
-        models: ConditionalModels,
-        waveforms: Tensor,
-        lengths: Tensor,
-        loop: LoopState,
-        label: str,
-    ) -> tuple[Tensor, Tensor]:
-        groups, views, channels, samples = waveforms.shape
-        flattened = waveforms.reshape(groups * views, channels, samples)
-        flat_lengths = lengths.reshape(groups * views)
-        mel = self.mel_extractor(flattened, flat_lengths)
-        with torch.no_grad():
-            posterior = models.audio_encoder(
-                mel.values,
-                mel.mask,
-                self._generator(loop, label),
-            )
-        return posterior.latent, posterior.mask
 
     def _generator(self, loop: LoopState, label: str) -> torch.Generator:
         seed = derive_seed(

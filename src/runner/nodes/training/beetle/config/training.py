@@ -60,6 +60,7 @@ class TrainingConfig(StrictConfigModel):
     accumulation_steps: int = Field(gt=0)
     total_steps: int = Field(gt=0)
     validation_every_steps: int = Field(gt=0)
+    full_audio_ratio: float = Field(ge=0, le=1)
     precision: Precision
     acoustic_prediction: ScheduledWeight
     generator_optimizer: OptimizerConfig

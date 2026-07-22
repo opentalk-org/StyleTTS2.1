@@ -14,7 +14,9 @@ from ..models.modules.conditioning import (
     ProjectedConditions,
 )
 from ..models.modules.text import PhonemeEncoding
+from ..losses.conditional import ConditionalBatchStatistics
 from .conditional_features import ConditionalAcousticTargets
+from .aligned_window import AlignedWindow
 
 
 class SpeakerIndex(Protocol):
@@ -34,6 +36,8 @@ class CoreConditionalInput:
     aligned_tokens: Tensor
     vectors: ConditionVectors
     keep: ConditionKeep
+    window: AlignedWindow
+    batch_statistics: ConditionalBatchStatistics
 
 
 def build_rate_conditions(

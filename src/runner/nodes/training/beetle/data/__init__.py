@@ -7,9 +7,7 @@ from .prefetch import (
 )
 from .records import (
     BeetleBatch,
-    ContextRange,
     CutRange,
-    DecodedExample,
     EmbeddingGroupPlan,
     EmbeddingViewPlan,
     IndexedSegment,
@@ -31,14 +29,12 @@ from .validation_types import (
 __all__ = [
     "BeetleBatch",
     "BoundedBatchPrefetcher",
-    "ContextRange",
     "ContinuousBatchPlanner",
     "DistributedShard",
     "CutPlanner",
     "CutRange",
     "DatabaseSegmentIndex",
     "DataPipelineState",
-    "DecodedExample",
     "EmbeddingGroupPlan",
     "EmbeddingViewPlan",
     "EligibilityReport",

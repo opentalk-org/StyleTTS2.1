@@ -123,7 +123,6 @@ def initial_pipeline_state(
     planner = ContinuousBatchPlanner(
         preparation.index,
         config.training.batch_size,
-        config.data.sentence_probability,
         config.runtime.seed,
         config.data.maximum_seconds,
         config.data.grouping,

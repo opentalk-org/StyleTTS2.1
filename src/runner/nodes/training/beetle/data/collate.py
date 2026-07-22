@@ -19,12 +19,8 @@ class Tokenizer(Protocol):
 class _PreparedExample:
     source: FetchedExample
     target: ProcessedAudio
-    pre_audio: Tensor
-    post_audio: Tensor
     phoneme_ids: Tensor
     text_ids: Tensor
-    pre_text_ids: Tensor
-    post_text_ids: Tensor
     style_prompt_ids: Tensor
     voice_prompt_ids: Tensor
 
@@ -68,10 +64,6 @@ class BatchCollator:
         target_waveforms = _fit_waveform_frames(target_waveforms, mels.shape[-1])
         phonemes, phoneme_lengths = _pad_ids(tuple(item.phoneme_ids for item in prepared))
         texts, text_lengths = _pad_ids(tuple(item.text_ids for item in prepared))
-        pre_audio, pre_audio_lengths = _pad_waveforms(tuple(item.pre_audio for item in prepared))
-        post_audio, post_audio_lengths = _pad_waveforms(tuple(item.post_audio for item in prepared))
-        pre_text, pre_text_lengths = _pad_ids(tuple(item.pre_text_ids for item in prepared))
-        post_text, post_text_lengths = _pad_ids(tuple(item.post_text_ids for item in prepared))
         style_prompt, style_prompt_lengths = _pad_ids(
             tuple(item.style_prompt_ids for item in prepared)
         )
@@ -93,10 +85,6 @@ class BatchCollator:
             ),
             alignments=torch.zeros(batch_size, max_phonemes, max_frames),
             durations=torch.zeros(batch_size, max_phonemes),
-            pre_audio=pre_audio,
-            post_audio=post_audio,
-            pre_text_ids=pre_text,
-            post_text_ids=post_text,
             style_prompt_ids=style_prompt,
             voice_prompt_ids=voice_prompt,
             style_views=style_groups.waveforms,
@@ -105,10 +93,6 @@ class BatchCollator:
             frame_lengths=frame_lengths,
             phoneme_lengths=phoneme_lengths,
             text_lengths=text_lengths,
-            pre_audio_lengths=pre_audio_lengths,
-            post_audio_lengths=post_audio_lengths,
-            pre_text_lengths=pre_text_lengths,
-            post_text_lengths=post_text_lengths,
             style_prompt_lengths=style_prompt_lengths,
             voice_prompt_lengths=voice_prompt_lengths,
             style_view_lengths=style_groups.lengths,
@@ -116,10 +100,6 @@ class BatchCollator:
             frame_mask=_length_mask(frame_lengths, max_frames).unsqueeze(1),
             phoneme_mask=_length_mask(phoneme_lengths, max_phonemes),
             text_mask=_length_mask(text_lengths, texts.shape[-1]),
-            pre_audio_available=pre_audio_lengths > 0,
-            post_audio_available=post_audio_lengths > 0,
-            pre_text_available=pre_text_lengths > 0,
-            post_text_available=post_text_lengths > 0,
             style_prompt_available=style_prompt_lengths > 0,
             voice_prompt_available=voice_prompt_lengths > 0,
             style_distances=style_groups.distances,
@@ -139,25 +119,14 @@ class BatchCollator:
 
     def _prepare_example(self, item: FetchedExample) -> _PreparedExample:
         target = self.preprocessor.decode(item.target_clip, item.plan.key)
-        pre_audio = self._optional_audio(item.pre_clip, item.plan.key)
-        post_audio = self._optional_audio(item.post_clip, item.plan.key)
         return _PreparedExample(
             source=item,
             target=target,
-            pre_audio=pre_audio,
-            post_audio=post_audio,
             phoneme_ids=_ids(self.phoneme_tokenizer, item.phonemes),
             text_ids=_ids(self.text_tokenizer, item.text),
-            pre_text_ids=_ids(self.phoneme_tokenizer, item.pre_text),
-            post_text_ids=_ids(self.phoneme_tokenizer, item.post_text),
             style_prompt_ids=_ids(self.text_tokenizer, item.style_prompt or ""),
             voice_prompt_ids=_ids(self.text_tokenizer, item.voice_prompt or ""),
         )
-
-    def _optional_audio(self, clip, key) -> Tensor:
-        if clip is None:
-            return torch.zeros(1, 0)
-        return self.preprocessor.decode_waveform(clip, key)
 
     def _prepare_groups(
         self,

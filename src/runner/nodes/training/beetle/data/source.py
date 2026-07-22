@@ -72,11 +72,7 @@ class FetchedExample:
     plan: PlannedExample
     text: str
     phonemes: str
-    pre_text: str
-    post_text: str
     target_clip: WavClip
-    pre_clip: WavClip | None
-    post_clip: WavClip | None
     style_prompt: str | None
     voice_prompt: str | None
     speaker_id: str | None
@@ -176,18 +172,12 @@ class DatabaseBatchSource:
     ) -> FetchedExample:
         target = current[plan.key]
         text, phonemes = _target_text(target, plan)
-        pre_text = _context_phonemes(current, plan.pre_context)
-        post_text = _context_phonemes(current, plan.post_context)
         item = self.index.records[plan.key]
         return FetchedExample(
             plan=plan,
             text=text,
             phonemes=phonemes,
-            pre_text=pre_text,
-            post_text=post_text,
             target_clip=clips[_request(plan.key, plan.target.start, plan.target.end)],
-            pre_clip=_optional_clip(plan.pre_context, clips),
-            post_clip=_optional_clip(plan.post_context, clips),
             style_prompt=item.style_prompt,
             voice_prompt=item.voice_prompt,
             speaker_id=item.speaker_id,
@@ -199,10 +189,6 @@ def _batch_keys(planned: PlannedBatch) -> tuple[SegmentKey, ...]:
     keys = []
     for plan in planned.examples:
         keys.append(plan.key)
-        if plan.pre_context is not None:
-            keys.append(plan.pre_context.key)
-        if plan.post_context is not None:
-            keys.append(plan.post_context.key)
     for group in (*planned.voice_groups, *planned.style_groups):
         keys.extend(view.key for view in group.views)
     return tuple(dict.fromkeys(keys))
@@ -212,10 +198,6 @@ def _batch_requests(planned: PlannedBatch) -> tuple[SegmentReadRequest, ...]:
     requests = []
     for plan in planned.examples:
         requests.append(_request(plan.key, plan.target.start, plan.target.end))
-        if plan.pre_context is not None:
-            requests.append(_request(plan.pre_context.key, plan.pre_context.audio.start, plan.pre_context.audio.end))
-        if plan.post_context is not None:
-            requests.append(_request(plan.post_context.key, plan.post_context.audio.start, plan.post_context.audio.end))
     for group in (*planned.voice_groups, *planned.style_groups):
         requests.extend(_request(view.key, view.audio.start, view.audio.end) for view in group.views)
     return tuple(dict.fromkeys(requests))
@@ -225,12 +207,6 @@ def _request(key: SegmentKey, start: float, end: float) -> SegmentReadRequest:
     return SegmentReadRequest(key.audio_file_id, start, end)
 
 
-def _optional_clip(context, clips: dict[SegmentReadRequest, WavClip]) -> WavClip | None:
-    if context is None:
-        return None
-    return clips[_request(context.key, context.audio.start, context.audio.end)]
-
-
 def _target_text(segment: dict[str, Any], plan: PlannedExample) -> tuple[str, str]:
     if plan.sentence:
         return str(segment["text"]), str(segment["phon"])
@@ -238,17 +214,6 @@ def _target_text(segment: dict[str, Any], plan: PlannedExample) -> tuple[str, st
     words = [str(item["word"]) for item in alignment[plan.target_word_start:plan.target_word_end]]
     phonemes = str(segment["phon"]).split()[plan.target_word_start:plan.target_word_end]
     return " ".join(words), " ".join(phonemes)
-
-
-def _context_phonemes(current: dict[SegmentKey, dict[str, Any]], context) -> str:
-    if context is None:
-        return ""
-    segment = current[context.key]
-    alignment = segment["alignment"] if "alignment" in segment and segment["alignment"] else []
-    if alignment:
-        phonemes = str(segment["phon"]).split()
-        return " ".join(phonemes[context.word_start:context.word_end])
-    return str(segment["phon"])
 
 
 def _fetched_group(

@@ -7,9 +7,8 @@ validation, MLflow reporting, and checkpoints use optimizer steps.
 ## Required data and assets
 
 `data.selection.dataset_id` must identify a PostgreSQL dataset containing
-non-virtual audio, text, language, speaker metadata, and the alignment metadata
-required for mid-sentence cuts. `sentence_probability: 1` disables
-mid-sentence sampling when word boundaries are unavailable. The dataset must
+non-virtual audio, text, language, speaker metadata, and alignment metadata.
+The dataset must
 also contain enough distinct voices and recordings for the configured GE2E
 groups.
 
@@ -49,12 +48,21 @@ checkpoint untouched.
 
 ## Sampling and acoustic geometry
 
-The full conditional path sees the complete utterance and its masks. The
-acoustic/GAN path always uses a 19,200-sample, 64-mel-frame crop: 0.8 seconds at
-24 kHz. Shorter targets are right-padded and their crop begins at frame zero,
-so the crop always contains their real prefix and cannot select only padding.
-Longer targets use a deterministic random crop while their conditional losses
-continue to cover the full sequence.
+The audio encoder, phoneme encoder, and aligner first see the complete
+utterance. After hard alignment, each example samples its conditional target
+duration uniformly from `[0.4 s, min(audio_length, data.maximum_seconds)]`.
+With probability `training.full_audio_ratio`, it uses the upper bound instead.
+The target start is sampled from the valid full-audio range. Shorter recordings
+are right-padded to 0.4 seconds.
+
+Pre- and post-context durations are sampled independently from
+`[0.4 s, min(5 s, max(0.4 s, available_side_audio))]`. Missing pre-context is
+left-padded and missing post-context is right-padded. Audio context is sliced
+from the full posterior. Text context uses phonemes selected by the full hard
+alignment. Shared two-layer CNNs and attentive pooling produce all four
+context vectors; a context with no real audio or no aligned phoneme is always
+dropped. The acoustic/GAN path remains a separate 19,200-sample,
+64-mel-frame crop: 0.8 seconds at 24 kHz.
 
 The planner gathers
 `data.prefetch.window_size * training.batch_size * world_size` examples,
