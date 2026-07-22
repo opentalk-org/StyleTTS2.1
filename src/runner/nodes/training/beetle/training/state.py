@@ -4,15 +4,9 @@ from enum import StrEnum
 
 import numpy as np
 import torch
-from torch import Tensor, nn
+from torch import Tensor
 
 from .reporting.metrics import TrainingMetric
-
-
-class StageKind(StrEnum):
-    STAGE1 = "stage1"
-    STAGE2 = "stage2"
-    STAGE3 = "stage3"
 
 
 class TrainingPhase(StrEnum):
@@ -29,7 +23,6 @@ class TrainingPhase(StrEnum):
 
 @dataclass(frozen=True)
 class LoopState:
-    stage: StageKind
     optimizer_step: int
     microstep: int
     phase: TrainingPhase
@@ -91,12 +84,6 @@ class RankState:
     rng: RngState
 
 
-@dataclass(frozen=True)
-class NamedGradient:
-    name: str
-    value: Tensor | None
-
-
 def capture_rng_state() -> RngState:
     python_version, python_internal, python_gaussian = random.getstate()
     bit_generator, keys, position, has_gaussian, cached_gaussian = np.random.get_state()
@@ -144,40 +131,6 @@ def restore_rng_state(state: RngState) -> None:
     )
     torch.set_rng_state(state.torch_cpu)
     torch.cuda.set_rng_state_all(list(state.torch_cuda))
-
-
-def capture_gradients(module: nn.Module) -> tuple[NamedGradient, ...]:
-    return tuple(
-        NamedGradient(
-            name=name,
-            value=None
-            if parameter.grad is None
-            else parameter.grad.detach().cpu().clone(),
-        )
-        for name, parameter in module.named_parameters()
-    )
-
-
-def restore_gradients(
-    module: nn.Module,
-    gradients: tuple[NamedGradient, ...],
-) -> None:
-    parameters = tuple(module.named_parameters())
-    expected_names = tuple(name for name, _ in parameters)
-    saved_names = tuple(gradient.name for gradient in gradients)
-    if saved_names != expected_names:
-        raise ValueError(
-            f"gradient names do not match parameters: {saved_names} != {expected_names}"
-        )
-    for (name, parameter), gradient in zip(parameters, gradients, strict=True):
-        if gradient.value is None:
-            parameter.grad = None
-            continue
-        if gradient.value.shape != parameter.shape:
-            raise ValueError(f"gradient shape does not match parameter: {name}")
-        if gradient.value.dtype != parameter.dtype:
-            raise ValueError(f"gradient dtype does not match parameter: {name}")
-        parameter.grad = gradient.value.to(device=parameter.device).clone()
 
 
 def _validate_rng_tensor(state: Tensor, name: str) -> None:

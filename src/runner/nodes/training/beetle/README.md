@@ -1,187 +1,83 @@
 # Beetle training
 
-Beetle trains as three standalone, finite stages that continuously sample the
-dataset in a circle. There are no epochs. Loss schedules, optimizer schedules,
-validation, MLflow reporting, and atomic checkpoints use optimizer steps. Each
-stage stops exactly at its configured `total_steps`.
+Beetle trains the acoustic model, text conditioning, latent flow, and GAN
+jointly in one finite run. There are no epochs. Loss and optimizer schedules,
+validation, MLflow reporting, and checkpoints use optimizer steps.
 
 ## Required data and assets
 
-The YAML `data.selection.dataset_id` must identify a PostgreSQL dataset. The
-index reads segment references through shared CRUD and accepts packed,
-non-virtual audio with 1–45 second target segments. Stage 1 is audio-only and
-therefore accepts rows without conditioning metadata. Stages 2 and 3 require a
-language from the explicit ordered `architecture.language.values` list plus
-text and voice metadata. The configured order defines checkpoint-stable
-embedding IDs and supports mixed-language batches. Mid-sentence sampling also
-requires aligned word boundaries; `sentence_probability: 1` selects only whole
-segments when those boundaries are unavailable. Stages 2 and 3 require enough distinct
-voices for the configured voice groups, and enough recordings for style groups.
-Empty or ineligible data fails before any model is loaded.
+`data.selection.dataset_id` must identify a PostgreSQL dataset containing
+non-virtual audio, text, language, speaker metadata, and the alignment metadata
+required for mid-sentence cuts. `sentence_probability: 1` disables
+mid-sentence sampling when word boundaries are unavailable. The dataset must
+also contain enough distinct voices and recordings for the configured GE2E
+groups.
 
-`validation.sample_count` selects that many recordings without replacement from
-the configured dataset. A dedicated seed derived from `runtime.seed` and the
-stage fixes the random set for the entire run and reproduces it on resume.
-Validation uses each complete recording and all of its segments in database
-order; missing, virtual, unreadable, or incomplete entries are ineligible.
-Stage 2/3 selection guarantees at least two distinct voices because it evaluates
-the unchanged contrastive and GE2E objectives. Preparation fails when the
-dataset cannot supply the requested count or required voice diversity.
-
-Validation never uses the 9,600-sample adversarial training window. Each loss
-and audio artifact covers the complete selected recording, with only model
-alignment padding removed from the saved WAV.
-
-`architecture.phoneme.model_path` is a local Transformers directory containing
-the custom BERT and `BertTokenizerFast` files. The only configured phoneme token
-count is `architecture.phoneme_token_count`, initially 178. Loading is strictly
-local and intentionally performs no separate BERT metadata check.
-
-The aligner is a checkpoint-folder asset in PostgreSQL. Set
-`architecture.aligner.checkpoint_asset_id` to its real UUID and
-`checkpoint_filename` to the state file inside that folder. The zero UUID in
-the baseline YAML is a required-to-replace placeholder. Shared asset CRUD
-materializes the folder; the training code does not access S3 or caches itself.
-The frozen StyleTTS2 JDC pitch checkpoint is pinned with the local reference
-files.
-Set the final dataset, BERT path, and aligner UUID before Stage 1 because later
-stage dependency checkpoints require the same configuration and data-index
-fingerprints.
+Set the real aligner checkpoint asset in `architecture.aligner`, and ensure
+`architecture.phoneme.model_path` contains the local custom BERT and tokenizer.
+The StyleTTS2 JDC pitch checkpoint is loaded from the bundled external
+reference.
 
 ## Launch
 
-Run every command from the repository root through Nix:
+Run from the repository root through Nix:
 
 ```bash
 export MLFLOW_TRACKING_URI=http://127.0.0.1:5000
-```
-
-MLflow is required. Setup, metric submission, asynchronous completion, and
-artifact failures are fatal; training never falls back to a no-op logger.
-
-```bash
-nix develop --command python -m runner.nodes.training.beetle.scripts.train_stage1 \
+nix develop --command python -m runner.nodes.training.beetle.scripts.train \
   --config src/runner/nodes/training/beetle/config/default.yaml \
-  --output /data/beetle/stage1
+  --output /data/beetle/training
 ```
 
-Launch one process per GPU through Accelerate for data parallel training:
+For data-parallel training:
 
 ```bash
 nix develop --command python -m accelerate.commands.launch \
   --multi_gpu --num_processes 2 --mixed_precision no \
-  -m runner.nodes.training.beetle.scripts.train_stage1 \
+  -m runner.nodes.training.beetle.scripts.train \
   --config src/runner/nodes/training/beetle/config/default.yaml \
-  --output /data/beetle/stage1
+  --output /data/beetle/training
 ```
 
-`batch_size` and the configured voice/style group counts are per GPU. Each rank
-receives a disjoint slice of one deterministic global plan, so two ranks consume
-all 5,000 target samples as 2,500 targets per rank before the shuffled source is
-repeated. Same-voice and same-recording groups are never split between ranks.
-The host-shared WAV cache prevents ranks from downloading the same stored WAV
-twice when context or embedding views overlap. Configured autocast is applied
-inside the trainer, so Accelerate is launched with `--mixed_precision no`.
+Configured autocast is applied inside the trainer, hence Accelerate uses
+`--mixed_precision no`. Add `--resume <checkpoint_folder>` to resume from a
+completed optimizer-step checkpoint. Checkpoints contain the complete model,
+discriminator, EMA, optimizer, scheduler, scaler, sampler, loss schedule,
+reporting state, and per-rank random state. Partial gradients and mid-step
+phases are never saved; cancellation or failure leaves the latest valid
+checkpoint untouched.
 
-Stage 2 initializes its frozen audio path from a completed Stage 1 checkpoint
-folder:
+## Sampling and acoustic geometry
 
-```bash
-nix develop --command python -m runner.nodes.training.beetle.scripts.train_stage2 \
-  --config src/runner/nodes/training/beetle/config/default.yaml \
-  --output /data/beetle/stage2 \
-  --stage1-checkpoint /data/beetle/stage1/checkpoints/checkpoint_<id>
-```
+The full conditional path sees the complete utterance and its masks. The
+acoustic/GAN path always uses a 19,200-sample, 64-mel-frame crop: 0.8 seconds at
+24 kHz. Shorter targets are right-padded and their crop begins at frame zero,
+so the crop always contains their real prefix and cannot select only padding.
+Longer targets use a deterministic random crop while their conditional losses
+continue to cover the full sequence.
 
-Stage 3 initializes both prior stages:
-
-```bash
-nix develop --command python -m runner.nodes.training.beetle.scripts.train_stage3 \
-  --config src/runner/nodes/training/beetle/config/default.yaml \
-  --output /data/beetle/stage3 \
-  --stage1-checkpoint /data/beetle/stage1/checkpoints/checkpoint_<id> \
-  --stage2-checkpoint /data/beetle/stage2/checkpoints/checkpoint_<id>
-```
-
-Add `--resume <checkpoint_folder>` to resume the same stage. Resume validates
-the configuration, compact data-index fingerprint, and stage before allocating
-models. Checkpoints contain model, discriminator, frozen helper, EMA,
-optimizer, scheduler, scaler, accumulated gradient, sampler, loss-schedule, and
-Python/NumPy/Torch RNG state. They also preserve the MLflow run ID, pending
-optimizer observation, metric accumulation, timing, queue counters, and last
-reported/validated steps. SIGINT and SIGTERM request cancellation at the next
-exact state boundary, write an atomic checkpoint, and leave the MLflow run
-active for resume. Normal completion performs mandatory final validation,
-flushes all work, writes a final checkpoint, and marks the run `FINISHED`.
-Distributed checkpoints contain one RNG state per rank and require the same
-world size on resume. Only rank 0 writes shared checkpoints, MLflow events,
-progress events, and validation artifacts; losses are averaged and throughput
-counts all ranks.
-
-`runtime.compile: true` compiles the Stage 1 acoustic path while preserving
-normal checkpoint state-dict keys. `runtime.compile_frame_count` fixes the
-Stage 1 contextual encoder dimension and must equal its derived 196 mel frames.
-The fixed training geometry uses static compiled graphs for AudioEncoder,
-FeatureLinear, and Decoder. Generator remains eager because TorchInductor cannot
-lower its complex harmonic-phase cumulative path. Validation remains dynamic
-and full-utterance.
-
-Stage 1 assigns each complete source segment to one data-parallel rank and
-expands it into sequential 32-posterior-frame windows. Each item contains a
-64-mel-frame, 19,200-sample target plus 66 mel frames of AudioEncoder context on
-each side. The central posterior slice `[33:65]` alone drives KL, F0, `N`,
-Decoder, Generator, reconstruction, discriminator, generator-adversarial, and
-feature-matching losses. A final end-aligned window overlaps its predecessor
-when needed so the source tail is not discarded. Stage 2 remains frozen and
-full-utterance; Stage 3 retains its full-utterance and
-`adversarial.segment_samples` behavior.
+The planner gathers
+`data.prefetch.window_size * training.batch_size * world_size` examples,
+sorts them by duration, forms homogeneous global batches, deterministically
+shuffles batch order, then shards each batch across ranks. The prefetcher keeps
+one active and one standby window, giving two buffers of
+`window_size * batch_size` examples per rank. A checkpoint advances the sampler
+only through batches the trainer actually consumed, including exact pending
+batch order within a window.
 
 ## Runtime reports
 
-Startup reports the complete inference parameter count after loading the custom
-BERT. A BERT-base-shaped 178-token fixture measures 195,786,815 parameters,
-45,786,815 above the configured 150M ceiling, so the local BERT must be smaller
-to meet the target. The report excludes prompt TextEncoder, frozen helpers,
-discriminators, and training-only heads. The latent-to-audio path is profiled
-and must remain strictly below 15 GFLOPs per generated second.
+MLflow uses the `beetle_training` experiment. Reports include losses, learning
+rates, AMP scales, gradient norms, throughput, ETA, queue occupancy, system
+metrics, full-recording validation metrics, and validation artifacts. The
+latent-to-audio path remains subject to the configured inference parameter and
+GFLOPs budgets. `runtime.compile_frame_count` must match the derived contextual
+encoder geometry; the default 0.8-second acoustic crop derives 196 input mel
+frames.
 
-All stages log to the `beetle_training` experiment. A completed optimizer step
-uses one asynchronous MLflow metric batch containing every `train/*` loss,
-learning rates and AMP scales under `optimizer/*`, pre-clipping optimizer norms
-under `optimizer/*`, module norms under `gradient/*`, items/s, steps/s, elapsed
-time, exact ETA, foreground overhead percentages, metric/artifact queue
-occupancy, and host/process/GPU metrics. The first step is excluded from rate
-and ETA estimates. Validation adds only aggregate `validation/*` metrics; there
-are no epoch or per-sample MLflow metrics.
-
-Validation disables augmentation and every conditioning dropout source and
-restores model modes plus Python/NumPy/Torch RNG state byte-for-byte. Stage 1
-evaluates posterior reconstruction with the current StyleTTS discriminator
-families. Stages 2 and 3 use the latent-flow EMA for exactly one shortcut
-integration step and save the alignment. Stages 1 and 3 train and evaluate the
-discriminators. Artifacts live under
-`validation/<stage>/step_<step>/sample_<one-based-position>/`: every stage
-saves ground-truth audio, latent/F0/`N`/mel/STFT-magnitude/phase plots; Stage 1
-saves `recon.wav`, while Stages 2/3 save `pred.wav` and `alignment.png`.
-`metrics.json` retains the ordered position-to-audio-ID mapping and per-sample
-losses.
-
-Audio preparation uses one ordered producer per rank. It fetches one byte range
-per distinct cold WAV through a persistent client, reuses complete WAV bytes
-from the bounded host cache, and overlaps the next batch's audio fetch with the
-current batch's collation and GPU step. Stage 1 preprocesses each distinct
-source at most once per prefetched batch and reuses it for adjacent windows.
-Its checkpointed planner preserves the source permutation and every pending
-window for exact distributed resume. Prefetched batches do not advance the
-checkpointed sampler until the trainer consumes them.
-
-One learned vector represents each configured language. Duration prediction and
-latent flow receive that same vector together with phoneme, pooled phoneme,
-style, voice, and pre/post text/audio conditions. Duration consumes the complete
-set at phoneme rate through its existing linear input projection; latent flow
-projects each source independently at latent rate for AdaLN and configured
-concatenation layers. Per-source dropout decisions are shared between rates.
-
-The reusable execution package depends only on callback protocols. A future
-Runflow node can map cancellation, progress, and artifact callbacks to node
-context while keeping model, data, optimizer, and exact-resume behavior intact.
+Each validation step writes two complete reports beneath
+`validation/training/step_<step>/`: `full/` contains end-to-end conditional
+synthesis and `audio/` contains AudioEncoder posterior reconstruction. Both
+branches contain ground-truth/prediction WAVs and latent, F0, N, mel, STFT
+magnitude, phase, and alignment plots for direct comparison. Shared loss
+metrics remain in the step-level `metrics.json` manifest.

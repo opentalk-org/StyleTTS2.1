@@ -47,6 +47,18 @@ class AudioPreprocessor:
         )
 
     def decode(self, clip: WavClip, key: SegmentKey) -> ProcessedAudio:
+        waveform = self.decode_waveform(clip, key)
+        if waveform.shape[-1] < self.n_fft:
+            waveform = F.pad(waveform, (0, self.n_fft - waveform.shape[-1]))
+        mel = self.mel_transform(waveform).squeeze(0)
+        mel = torch.log(mel.clamp_min(1e-5))
+        target_samples = mel.shape[-1] * self.hop_length
+        waveform = _fit_length(waveform, target_samples)
+        if not torch.isfinite(mel).all():
+            raise ValueError(f"non-finite mel features for {key}")
+        return ProcessedAudio(waveform.contiguous(), mel.contiguous())
+
+    def decode_waveform(self, clip: WavClip, key: SegmentKey) -> Tensor:
         try:
             values, sample_rate = soundfile.read(
                 io.BytesIO(clip.data),
@@ -63,15 +75,7 @@ class AudioPreprocessor:
         if sample_rate != self.sample_rate:
             waveform = torchaudio.functional.resample(waveform, sample_rate, self.sample_rate)
         waveform = waveform.clamp(-1, 1)
-        if waveform.shape[-1] < self.n_fft:
-            waveform = F.pad(waveform, (0, self.n_fft - waveform.shape[-1]))
-        mel = self.mel_transform(waveform).squeeze(0)
-        mel = torch.log(mel.clamp_min(1e-5))
-        target_samples = mel.shape[-1] * self.hop_length
-        waveform = _fit_length(waveform, target_samples)
-        if not torch.isfinite(mel).all():
-            raise ValueError(f"non-finite mel features for {key}")
-        return ProcessedAudio(waveform.contiguous(), mel.contiguous())
+        return waveform.contiguous()
 
     def augment(
         self,

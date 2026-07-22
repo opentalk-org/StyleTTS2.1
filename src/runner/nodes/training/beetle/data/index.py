@@ -27,9 +27,7 @@ class IndexCallbacks(Protocol):
 @dataclass(frozen=True)
 class EligibilityReport:
     total_references: int
-    stage1_eligible: int
-    stage2_eligible: int
-    stage3_eligible: int
+    eligible: int
     mid_sentence_eligible: int
     excluded_virtual: int
     excluded_external: int
@@ -37,15 +35,10 @@ class EligibilityReport:
     excluded_language: int
     excluded_text_or_voice: int
 
-    def require(self, stage: int, sentence_probability: float) -> None:
-        stage_count = {
-            1: self.stage1_eligible,
-            2: self.stage2_eligible,
-            3: self.stage3_eligible,
-        }[stage]
-        if stage_count == 0:
+    def require(self, sentence_probability: float) -> None:
+        if self.eligible == 0:
             raise ValueError(
-                f"Stage {stage} has no eligible segments: {self.describe()}"
+                f"Training has no eligible segments: {self.describe()}"
             )
         if sentence_probability < 1 and self.mid_sentence_eligible == 0:
             raise ValueError(
@@ -55,8 +48,7 @@ class EligibilityReport:
 
     def describe(self) -> str:
         return (
-            f"total={self.total_references}, stage1={self.stage1_eligible}, "
-            f"stage2={self.stage2_eligible}, stage3={self.stage3_eligible}, "
+            f"total={self.total_references}, eligible={self.eligible}, "
             f"mid_sentence={self.mid_sentence_eligible}, virtual={self.excluded_virtual}, "
             f"external={self.excluded_external}, duration={self.excluded_duration}, "
             f"language={self.excluded_language}, "
@@ -65,24 +57,18 @@ class EligibilityReport:
 
 
 @dataclass(frozen=True)
-class StagePools:
-    stage1: tuple[SegmentKey, ...]
-    stage2: tuple[SegmentKey, ...]
-    stage3: tuple[SegmentKey, ...]
+class TrainingPools:
+    segments: tuple[SegmentKey, ...]
     mid_sentence: tuple[SegmentKey, ...]
     voice_groups: dict[str, tuple[SegmentKey, ...]]
     recording_groups: dict[UUID, tuple[SegmentKey, ...]]
-
-    def for_stage(self, stage: int) -> tuple[SegmentKey, ...]:
-        return {1: self.stage1, 2: self.stage2, 3: self.stage3}[stage]
-
 
 @dataclass(frozen=True)
 class DatabaseSegmentIndex:
     dataset_id: UUID
     records: dict[SegmentKey, IndexedSegment]
     by_audio: dict[UUID, tuple[IndexedSegment, ...]]
-    pools: StagePools
+    pools: TrainingPools
     validation: ValidationCandidates
     report: EligibilityReport
     fingerprint: str
@@ -139,8 +125,7 @@ class DatabaseSegmentIndex:
         validation = build_validation_candidates(filtered, languages)
         records: dict[SegmentKey, IndexedSegment] = {}
         by_audio_lists: dict[UUID, list[IndexedSegment]] = defaultdict(list)
-        stage1: list[SegmentKey] = []
-        stage2: list[SegmentKey] = []
+        eligible: list[SegmentKey] = []
         mid_sentence: list[SegmentKey] = []
         voice_lists: dict[str, list[SegmentKey]] = defaultdict(list)
         recording_lists: dict[UUID, list[SegmentKey]] = defaultdict(list)
@@ -163,7 +148,6 @@ class DatabaseSegmentIndex:
                 raise ValueError(f"duplicate segment key: {item.key}")
             records[item.key] = item
             by_audio_lists[item.key.audio_file_id].append(item)
-            stage1.append(item.key)
             if (
                 reference.language is None
                 or reference.language not in configured_languages
@@ -171,7 +155,7 @@ class DatabaseSegmentIndex:
                 excluded_language += 1
                 continue
             if item.has_text and item.has_phonemes and item.speaker_id is not None:
-                stage2.append(item.key)
+                eligible.append(item.key)
                 voice_lists[item.speaker_id].append(item.key)
                 recording_lists[item.key.audio_file_id].append(item.key)
                 if item.mid_sentence_eligible:
@@ -182,19 +166,15 @@ class DatabaseSegmentIndex:
             audio_id: tuple(sorted(items, key=lambda item: item.key.segment_index))
             for audio_id, items in by_audio_lists.items()
         }
-        pools = StagePools(
-            stage1=tuple(sorted(stage1)),
-            stage2=tuple(sorted(stage2)),
-            stage3=tuple(sorted(stage2)),
+        pools = TrainingPools(
+            segments=tuple(sorted(eligible)),
             mid_sentence=tuple(sorted(mid_sentence)),
             voice_groups={key: tuple(sorted(value)) for key, value in voice_lists.items()},
             recording_groups={key: tuple(sorted(value)) for key, value in recording_lists.items()},
         )
         report = EligibilityReport(
             total_references=len(filtered),
-            stage1_eligible=len(stage1),
-            stage2_eligible=len(stage2),
-            stage3_eligible=len(stage2),
+            eligible=len(eligible),
             mid_sentence_eligible=len(mid_sentence),
             excluded_virtual=excluded_virtual,
             excluded_external=excluded_external,
@@ -268,7 +248,7 @@ def _fingerprint(
             )
         )
     validation_rows = (
-        tuple(str(audio_id) for audio_id in validation.stage1),
+        tuple(str(audio_id) for audio_id in validation.audio_file_ids),
         tuple(
             (
                 voice_id,

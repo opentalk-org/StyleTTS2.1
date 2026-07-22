@@ -59,8 +59,7 @@ def _expanded_mask(values: Tensor, mask: Tensor) -> Tensor:
 def _masked_mean(values: Tensor, mask: Tensor) -> Tensor:
     expanded = _expanded_mask(values, mask)
     count = expanded.sum()
-    if count == 0:
-        raise ValueError("loss mask must select at least one element")
+    torch._assert_async(count > 0, "loss mask must select at least one element")
     return (values * expanded.to(dtype=values.dtype)).sum() / count
 
 
@@ -168,32 +167,35 @@ class MultiResolutionReconstructionLoss(nn.Module):
         lengths: Tensor,
         include_diagnostics: bool,
     ) -> tuple[Tensor, tuple[Tensor, ...]]:
-        total = predicted.new_zeros(())
+        sample_positions = torch.arange(
+            predicted.shape[-1], device=predicted.device
+        ).unsqueeze(0)
+        sample_mask = sample_positions < lengths.unsqueeze(1)
+        predicted_mel = transform(predicted[:, 0] * sample_mask)
+        target_mel = transform(target[:, 0] * sample_mask)
+        difference = (target_mel - predicted_mel).abs()
+        frame_positions = torch.arange(
+            difference.shape[-1], device=predicted.device
+        ) * transform.resolution.hop_length
+        frame_mask = frame_positions.unsqueeze(0) <= lengths.unsqueeze(1)
+        numeric_mask = frame_mask.unsqueeze(1).to(dtype=difference.dtype)
+        numerator = (difference * numeric_mask).sum(dim=(1, 2))
+        denominator = (target_mel.abs() * numeric_mask).sum(dim=(1, 2))
+        total = (numerator / denominator).mean()
         band_totals = (
-            tuple(predicted.new_zeros(()) for _ in FREQUENCY_BANDS)
+            tuple(
+                self._band_loss(
+                    transform,
+                    difference,
+                    target_mel,
+                    frame_mask,
+                    band_index,
+                )
+                for band_index in range(len(FREQUENCY_BANDS))
+            )
             if include_diagnostics
             else ()
         )
-        for length in torch.unique(lengths):
-            selected = lengths == length
-            sample_count = selected.sum()
-            valid_samples = int(length.item())
-            predicted_mel = transform(predicted[selected, 0, :valid_samples])
-            target_mel = transform(target[selected, 0, :valid_samples])
-            difference = (target_mel - predicted_mel).abs()
-            convergence = difference.sum()
-            convergence = convergence / torch.norm(target_mel, p=1)
-            total = total + convergence * sample_count / predicted.shape[0]
-            if include_diagnostics:
-                band_totals = tuple(
-                    band_total
-                    + self._band_loss(transform, difference, target_mel, band_index)
-                    * sample_count
-                    / predicted.shape[0]
-                    for band_index, band_total in enumerate(
-                        band_totals,
-                    )
-                )
         return total, band_totals
 
     @staticmethod
@@ -201,11 +203,14 @@ class MultiResolutionReconstructionLoss(nn.Module):
         transform: StyleTTSMelTransform,
         difference: Tensor,
         target: Tensor,
+        frame_mask: Tensor,
         band_index: int,
     ) -> Tensor:
         selected = transform.frequency_band_masks[band_index]
-        denominator = target[:, selected, :].abs().sum()
-        return difference[:, selected, :].sum() / denominator
+        numeric_mask = frame_mask.unsqueeze(1).to(dtype=difference.dtype)
+        numerator = (difference[:, selected, :] * numeric_mask).sum(dim=(1, 2))
+        denominator = (target[:, selected, :].abs() * numeric_mask).sum(dim=(1, 2))
+        return (numerator / denominator).mean()
 
     def forward(
         self,
@@ -214,11 +219,28 @@ class MultiResolutionReconstructionLoss(nn.Module):
         sample_mask: Tensor,
         include_diagnostics: bool = False,
     ) -> ReconstructionLoss:
+        with torch.autocast(predicted.device.type, enabled=False):
+            return self._forward_float32(
+                predicted.float(),
+                target.float(),
+                sample_mask,
+                include_diagnostics,
+            )
+
+    def _forward_float32(
+        self,
+        predicted: Tensor,
+        target: Tensor,
+        sample_mask: Tensor,
+        include_diagnostics: bool,
+    ) -> ReconstructionLoss:
         if predicted.shape != target.shape or predicted.shape != sample_mask.shape:
             raise ValueError("waveforms and sample mask must have equal shapes")
         lengths = sample_mask.sum(dim=(1, 2))
-        if torch.any(lengths == 0):
-            raise ValueError("reconstruction loss requires valid waveform samples")
+        torch._assert_async(
+            torch.all(lengths > 0),
+            "reconstruction loss requires valid waveform samples",
+        )
         results = tuple(
             self._resolution_loss(
                 transform,

@@ -6,9 +6,8 @@ from pathlib import Path
 from typing import Protocol
 
 from ..reporting import TrainingMetric
-from ..state import StageKind
 from .render import artifact_names, render_validation_sample
-from .types import ValidationResult, ValidationSampleResult
+from .types import ValidationArtifactSet, ValidationResult
 
 
 class ArtifactUploader(Protocol):
@@ -84,7 +83,6 @@ class SampleManifest:
 
 @dataclass(frozen=True)
 class ValidationManifest:
-    stage: str
     optimizer_step: int
     audio_file_ids: tuple[str, ...]
     aggregates: tuple[MetricManifest, ...]
@@ -93,8 +91,7 @@ class ValidationManifest:
 
 @dataclass(frozen=True)
 class _SampleJob:
-    sample: ValidationSampleResult
-    stage: StageKind
+    sample: ValidationArtifactSet
     directory: Path
     sample_rate: int
     uploader: ArtifactUploader
@@ -103,7 +100,6 @@ class _SampleJob:
     def __call__(self) -> None:
         paths = render_validation_sample(
             self.sample,
-            self.stage,
             self.directory,
             self.sample_rate,
         )
@@ -139,23 +135,26 @@ class ValidationArtifacts:
     def publish(self, result: ValidationResult) -> None:
         relative_root = Path(
             "validation",
-            result.stage.value,
+            "training",
             f"step_{result.step}",
         )
         local_root = self.output_root / relative_root
         local_root.mkdir(parents=True, exist_ok=True)
         for position, sample in enumerate(result.samples, start=1):
             sample_name = f"sample_{position}"
-            self.queue.enqueue(
-                _SampleJob(
-                    sample,
-                    result.stage,
-                    local_root / sample_name,
-                    self.sample_rate,
-                    self.uploader,
-                    str(relative_root / sample_name),
+            for branch, artifacts in (
+                ("full", sample.full),
+                ("audio", sample.audio),
+            ):
+                self.queue.enqueue(
+                    _SampleJob(
+                        artifacts,
+                        local_root / branch / sample_name,
+                        self.sample_rate,
+                        self.uploader,
+                        str(relative_root / branch / sample_name),
+                    )
                 )
-            )
         self.queue.flush()
         manifest_path = local_root / "metrics.json"
         manifest = _manifest(result)
@@ -174,7 +173,6 @@ class ValidationArtifacts:
 
 def _manifest(result: ValidationResult) -> ValidationManifest:
     return ValidationManifest(
-        result.stage.value,
         result.step,
         tuple(str(sample.audio_file_id) for sample in result.samples),
         _metrics(result.aggregates),
@@ -184,7 +182,7 @@ def _manifest(result: ValidationResult) -> ValidationManifest:
                 str(sample.audio_file_id),
                 sample.seed,
                 _metrics(sample.losses),
-                artifact_names(result.stage),
+                artifact_names(),
             )
             for position, sample in enumerate(result.samples, start=1)
         ),

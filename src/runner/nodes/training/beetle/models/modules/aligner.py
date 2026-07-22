@@ -38,7 +38,7 @@ class PhonemeAligner(nn.Module):
         self.frame_reduction = frame_reduction
 
     def load_checkpoint(self, checkpoint_path: Path) -> None:
-        payload = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+        payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         state = payload["model"]
         self.backbone.load_state_dict(state, strict=True)
 
@@ -57,8 +57,10 @@ class PhonemeAligner(nn.Module):
             raise ValueError("aligner mel and phoneme batch sizes must match")
         frame_lengths = frame_mask.sum(dim=(1, 2))
         phoneme_lengths = phoneme_mask.sum(dim=1)
-        if torch.any(phoneme_lengths > frame_lengths):
-            raise ValueError("phoneme count must not exceed valid mel frames")
+        torch._assert_async(
+            torch.all(phoneme_lengths <= frame_lengths),
+            "phoneme count must not exceed valid mel frames",
+        )
         reduced_frames = (
             mel.shape[2] + self.frame_reduction - 1
         ) // self.frame_reduction
@@ -108,8 +110,8 @@ class PhonemeAligner(nn.Module):
         soft_alignment = soft_alignment / normalization * valid_matrix
         alignment_scores = torch.log(soft_alignment.clamp_min(1e-8))
         hard_alignment = maximum_path(
-            alignment_scores,
-            valid_matrix.to(dtype=alignment_scores.dtype),
+            alignment_scores.contiguous(),
+            valid_matrix.to(dtype=alignment_scores.dtype).contiguous(),
         )
         hard_alignment = hard_alignment * valid_matrix
         durations = hard_alignment.sum(dim=2)

@@ -1,14 +1,22 @@
+import torch
 from torch import nn
 
-from .model import Stage1Models
+from .model import AcousticModels
 
 
-def compile_stage1(models: Stage1Models) -> None:
+def compile_acoustic(models: AcousticModels) -> None:
     modules: tuple[nn.Module, ...] = (
-        models.audio_encoder,
         models.feature_linear,
         models.decoder.encode,
         *models.decoder.decode,
+        models.generator,
+        models.discriminators,
     )
     for module in modules:
-        module.compile()
+        # Module.compile targets nn.Module._call_impl, so independently compiled
+        # modules share one Dynamo code cache and exhaust its recompile budget.
+        # Compiling each concrete forward keeps graph ownership with the model.
+        module.forward = torch.compile(
+            module.forward,
+            dynamic=False,
+        )

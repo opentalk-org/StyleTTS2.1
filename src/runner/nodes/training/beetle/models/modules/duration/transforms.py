@@ -26,8 +26,10 @@ class LogTransform(nn.Module):
             transformed = torch.exp(values)
             logdet = (values * numeric_mask).sum(dim=(1, 2))
         else:
-            if torch.any(values.masked_select(mask) <= 0):
-                raise ValueError("log transform requires positive valid values")
+            torch._assert_async(
+                torch.all(values.masked_select(mask) > 0),
+                "log transform requires positive valid values",
+            )
             valid_values = torch.where(mask, values, torch.ones_like(values))
             transformed = torch.log(valid_values)
             logdet = -(transformed * numeric_mask).sum(dim=(1, 2))
@@ -84,7 +86,7 @@ class ChannelLayerNorm(nn.Module):
         return self.normalization(values.transpose(1, 2)).transpose(1, 2)
 
 
-class DepthwiseSeparableStack(nn.Module):
+class DurationConvolutionStack(nn.Module):
     def __init__(
         self,
         channels: int,
@@ -93,25 +95,24 @@ class DepthwiseSeparableStack(nn.Module):
         dropout: float,
     ) -> None:
         super().__init__()
-        self.depthwise = nn.ModuleList()
+        self.convolutions = nn.ModuleList()
         self.pointwise = nn.ModuleList()
-        self.depthwise_norms = nn.ModuleList()
+        self.convolution_norms = nn.ModuleList()
         self.pointwise_norms = nn.ModuleList()
         for layer_index in range(layer_count):
             dilation = kernel_size**layer_index
             padding = (kernel_size * dilation - dilation) // 2
-            self.depthwise.append(
+            self.convolutions.append(
                 nn.Conv1d(
                     channels,
                     channels,
                     kernel_size,
                     padding=padding,
                     dilation=dilation,
-                    groups=channels,
                 )
             )
             self.pointwise.append(nn.Conv1d(channels, channels, 1))
-            self.depthwise_norms.append(ChannelLayerNorm(channels))
+            self.convolution_norms.append(ChannelLayerNorm(channels))
             self.pointwise_norms.append(ChannelLayerNorm(channels))
         self.dropout = nn.Dropout(dropout)
 
@@ -126,14 +127,14 @@ class DepthwiseSeparableStack(nn.Module):
             if condition.shape != values.shape:
                 raise ValueError("flow condition must match hidden values")
             values = values + condition
-        for depthwise, pointwise, depth_norm, point_norm in zip(
-            self.depthwise,
+        for convolution, pointwise, convolution_norm, point_norm in zip(
+            self.convolutions,
             self.pointwise,
-            self.depthwise_norms,
+            self.convolution_norms,
             self.pointwise_norms,
             strict=True,
         ):
-            hidden = F.gelu(depth_norm(depthwise(values * numeric_mask)))
+            hidden = F.gelu(convolution_norm(convolution(values * numeric_mask)))
             hidden = F.gelu(point_norm(pointwise(hidden)))
             values = values + self.dropout(hidden)
         return values * numeric_mask
@@ -157,7 +158,7 @@ class ConvFlow(nn.Module):
         self.spline_bins = spline_bins
         self.spline_tail_bound = spline_tail_bound
         self.input_projection = nn.Conv1d(self.half_channels, hidden_channels, 1)
-        self.conditioner = DepthwiseSeparableStack(
+        self.conditioner = DurationConvolutionStack(
             hidden_channels,
             kernel_size,
             layer_count,

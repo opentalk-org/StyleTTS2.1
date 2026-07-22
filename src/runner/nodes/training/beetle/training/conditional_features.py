@@ -8,9 +8,10 @@ from ..config import BeetleConfig
 from ..data.records import BeetleBatch
 from ..models.acoustic import log_mel_l2_energy
 from ..models.modules.audio import AcousticFeatures
+from ..models.modules.conditioning import ProjectedConditions
 from ..models.modules.decoder import DecoderOutput
 from ..models.modules.embeddings import AcousticStatistics
-from ..models.stage2 import Stage2Models
+from ..models.conditional import ConditionalModels
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,20 @@ class ConditionalSynthesis:
     decoded: DecoderOutput
     waveform: Tensor
     sample_mask: Tensor
+
+
+@dataclass(frozen=True)
+class ConditionalAcousticTargets:
+    features: AcousticFeatures
+    statistics: AcousticStatistics
+
+
+@dataclass(frozen=True)
+class ConditionalSynthesisInput:
+    noise: Tensor
+    conditions: ProjectedConditions
+    latent_mask: Tensor
+    acoustic_target: AcousticFeatures
 
 
 class WaveformMelExtractor(nn.Module):
@@ -100,17 +115,21 @@ def style_weights(distances: Tensor) -> Tensor:
 
 
 def acoustic_statistics(
-    models: Stage2Models,
+    models: ConditionalModels,
     batch: BeetleBatch,
-) -> AcousticStatistics:
+) -> ConditionalAcousticTargets:
     with torch.no_grad():
         f0 = models.f0_extractor(batch.mel, batch.frame_mask)
     n = log_mel_l2_energy(batch.mel, batch.frame_mask)
     f0_mask = batch.frame_mask[:, 0] & (f0 > 0)
     n_mask = batch.frame_mask[:, 0]
-    f0_mean, f0_std = _masked_statistics(f0, f0_mask)
+    log_f0 = torch.log(f0.clamp_min(1))
+    f0_mean, f0_std = _masked_statistics(log_f0, f0_mask)
     n_mean, n_std = _masked_statistics(n, n_mask)
-    return AcousticStatistics(f0_mean, f0_std, n_mean, n_std)
+    return ConditionalAcousticTargets(
+        AcousticFeatures(f0, n),
+        AcousticStatistics(f0_mean, f0_std, n_mean, n_std),
+    )
 
 
 def _masked_statistics(values: Tensor, mask: Tensor) -> tuple[Tensor, Tensor]:

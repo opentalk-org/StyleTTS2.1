@@ -1,22 +1,12 @@
-import hashlib
 import random
 from dataclasses import dataclass
 
 from ..config.data import GroupSamplingConfig
 from .cuts import CutPlanner
 from .index import DatabaseSegmentIndex
-from .records import (
-    CutRange,
-    EmbeddingGroupPlan,
-    EmbeddingViewPlan,
-    PlannedBatch,
-    SegmentKey,
-)
-
-
-def derive_seed(*parts: object) -> int:
-    payload = "\x1f".join(str(part) for part in parts).encode("utf-8")
-    return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big", signed=False) & ((1 << 63) - 1)
+from .embedding_sampling import EmbeddingGroupPlanner
+from .records import PlannedBatch, SegmentKey
+from .seeding import derive_seed
 
 
 @dataclass(frozen=True)
@@ -31,13 +21,19 @@ class PlannerState:
     sentence: PoolState
     mid_sentence: PoolState | None
     batch_index: int
+    planning_batch_index: int
+    pending_batches: tuple[PlannedBatch, ...]
+    last_cycle_index: int
 
     @property
     def cycle_index(self) -> int:
-        mid_sentence_cycle = (
-            0 if self.mid_sentence is None else self.mid_sentence.cycle_index
-        )
-        return max(self.sentence.cycle_index, mid_sentence_cycle)
+        return self.last_cycle_index
+
+
+@dataclass(frozen=True)
+class PlannedWindowBatch:
+    batch: PlannedBatch
+    state_after: PlannerState
 
 
 @dataclass(frozen=True)
@@ -96,7 +92,6 @@ class ContinuousBatchPlanner:
     def __init__(
         self,
         index: DatabaseSegmentIndex,
-        stage: int,
         batch_size: int,
         sentence_probability: float,
         seed: int,
@@ -104,37 +99,64 @@ class ContinuousBatchPlanner:
         grouping: GroupSamplingConfig,
         shard: DistributedShard,
     ) -> None:
-        index.report.require(stage, sentence_probability)
+        index.report.require(sentence_probability)
         self.index = index
-        self.stage = stage
         self.batch_size = batch_size
         self.sentence_probability = sentence_probability
         self.seed = seed
-        self.grouping = grouping
         self.shard = shard
         self.cut_planner = CutPlanner(index, maximum_seconds)
-        self.sentence = _PermutationPool(index.pools.for_stage(stage), seed, f"stage-{stage}-sentence")
+        self.sentence = _PermutationPool(
+            index.pools.segments,
+            seed,
+            "training-sentence",
+        )
         self.mid_sentence = (
             None
             if sentence_probability == 1
             else _PermutationPool(
                 index.pools.mid_sentence,
                 seed,
-                f"stage-{stage}-mid",
+                "training-mid",
             )
         )
         self.batch_index = 0
-        self._validate_embedding_pools()
+        self.planning_batch_index = 0
+        self.pending_batches: tuple[PlannedBatch, ...] = ()
+        self.last_cycle_index = 0
+        self.embedding_groups = EmbeddingGroupPlanner(
+            index, grouping, shard, self.cut_planner, seed
+        )
 
     def next_batch(self) -> PlannedBatch:
+        return self.next_window(1)[0].batch
+
+    def next_window(self, batch_count: int) -> tuple[PlannedWindowBatch, ...]:
+        if batch_count <= 0:
+            raise ValueError("window batch count must be positive")
+        if not self.pending_batches:
+            self._plan_window(batch_count)
+        take = min(batch_count, len(self.pending_batches))
+        output = []
+        for _ in range(take):
+            batch = self.pending_batches[0]
+            self.pending_batches = self.pending_batches[1:]
+            self.batch_index += 1
+            output.append(PlannedWindowBatch(batch, self.state_dict()))
+        return tuple(output)
+
+    def _plan_window(self, batch_count: int) -> None:
         plans = []
         global_batch_size = self.batch_size * self.shard.world_size
-        for sample_index in range(global_batch_size):
+        global_window_size = global_batch_size * batch_count
+        start_batch_index = self.planning_batch_index
+        for sample_index in range(global_window_size):
+            planned_batch_index = start_batch_index + sample_index // global_batch_size
+            batch_sample_index = sample_index % global_batch_size
             sample_seed = derive_seed(
                 self.seed,
-                self.stage,
-                self.batch_index,
-                sample_index,
+                planned_batch_index,
+                batch_sample_index,
             )
             sentence = random.Random(sample_seed).random() < self.sentence_probability
             pool = self.sentence if sentence else self._require_mid_sentence_pool()
@@ -146,11 +168,34 @@ class ContinuousBatchPlanner:
                 else self.cut_planner.plan_mid_sentence(key, cut_seed)
             )
             plans.append(plan)
-        start = self.shard.rank * self.batch_size
-        examples = tuple(plans[start : start + self.batch_size])
-        voice_groups, style_groups = self._embedding_groups()
-        self.batch_index += 1
-        return PlannedBatch(examples, voice_groups, style_groups)
+        plans.sort(key=lambda plan: (plan.target.duration, plan.key))
+        global_batches = [
+            tuple(plans[start : start + global_batch_size])
+            for start in range(0, len(plans), global_batch_size)
+        ]
+        random.Random(
+            derive_seed(self.seed, start_batch_index, "window-order")
+        ).shuffle(global_batches)
+        group_batches = tuple(
+            self.embedding_groups.plan(planned_batch_index)
+            for planned_batch_index in range(
+                start_batch_index,
+                start_batch_index + batch_count,
+            )
+        )
+        local_start = self.shard.rank * self.batch_size
+        local_end = local_start + self.batch_size
+        self.pending_batches = tuple(
+            PlannedBatch(global_batch[local_start:local_end], voice_groups, style_groups)
+            for global_batch, (voice_groups, style_groups) in zip(
+                global_batches,
+                group_batches,
+                strict=True,
+            )
+        )
+        self.planning_batch_index += batch_count
+        mid_cycle = 0 if self.mid_sentence is None else self.mid_sentence.cycle_index
+        self.last_cycle_index = max(self.sentence.cycle_index, mid_cycle)
 
     def state_dict(self) -> PlannerState:
         return PlannerState(
@@ -159,11 +204,16 @@ class ContinuousBatchPlanner:
                 None if self.mid_sentence is None else self.mid_sentence.state()
             ),
             batch_index=self.batch_index,
+            planning_batch_index=self.planning_batch_index,
+            pending_batches=self.pending_batches,
+            last_cycle_index=self.last_cycle_index,
         )
 
     def load_state_dict(self, state: PlannerState) -> None:
         if state.batch_index < 0:
             raise ValueError("batch_index must be non-negative")
+        if state.planning_batch_index < state.batch_index:
+            raise ValueError("planning batch index precedes consumed batches")
         self.sentence.restore(state.sentence)
         if self.mid_sentence is None:
             if state.mid_sentence is not None:
@@ -173,119 +223,11 @@ class ContinuousBatchPlanner:
                 raise ValueError("mid-sentence planner state is missing its pool")
             self.mid_sentence.restore(state.mid_sentence)
         self.batch_index = state.batch_index
+        self.planning_batch_index = state.planning_batch_index
+        self.pending_batches = state.pending_batches
+        self.last_cycle_index = state.last_cycle_index
 
     def _require_mid_sentence_pool(self) -> _PermutationPool:
         if self.mid_sentence is None:
             raise RuntimeError("sentence-only planner selected a mid-sentence sample")
         return self.mid_sentence
-
-    def _validate_embedding_pools(self) -> None:
-        if self.stage == 1:
-            return
-        voices = [
-            speaker_id
-            for speaker_id, keys in self.index.pools.voice_groups.items()
-            if len(keys) >= self.grouping.utterances_per_voice
-        ]
-        required_voices = (
-            self.grouping.voices_per_batch * self.shard.world_size
-        )
-        if len(voices) < required_voices:
-            raise ValueError(
-                "voice GE2E sampling requires "
-                f"{required_voices} voices with "
-                f"{self.grouping.utterances_per_voice} utterances; found {len(voices)}"
-            )
-        required_recordings = (
-            self.grouping.recordings_per_batch * self.shard.world_size
-        )
-        if len(self.index.pools.recording_groups) < required_recordings:
-            raise ValueError(
-                "style GE2E sampling requires "
-                f"{required_recordings} recordings; found "
-                f"{len(self.index.pools.recording_groups)}"
-            )
-
-    def _embedding_groups(
-        self,
-    ) -> tuple[tuple[EmbeddingGroupPlan, ...], tuple[EmbeddingGroupPlan, ...]]:
-        if self.stage == 1:
-            return (), ()
-        voice_seed = derive_seed(self.seed, self.stage, self.batch_index, "voice-groups")
-        voice_rng = random.Random(voice_seed)
-        speaker_ids = sorted(
-            speaker_id
-            for speaker_id, keys in self.index.pools.voice_groups.items()
-            if len(keys) >= self.grouping.utterances_per_voice
-        )
-        global_voice_count = (
-            self.grouping.voices_per_batch * self.shard.world_size
-        )
-        selected_voices = voice_rng.sample(speaker_ids, global_voice_count)
-        global_voice_groups = tuple(
-            self._voice_group(speaker_id, voice_rng)
-            for speaker_id in selected_voices
-        )
-        style_seed = derive_seed(self.seed, self.stage, self.batch_index, "style-groups")
-        style_rng = random.Random(style_seed)
-        recording_ids = sorted(self.index.pools.recording_groups, key=str)
-        global_recording_count = (
-            self.grouping.recordings_per_batch * self.shard.world_size
-        )
-        selected_recordings = style_rng.sample(
-            recording_ids,
-            global_recording_count,
-        )
-        global_style_groups = tuple(
-            self._style_group(recording_id, style_rng)
-            for recording_id in selected_recordings
-        )
-        voice_start = self.shard.rank * self.grouping.voices_per_batch
-        style_start = self.shard.rank * self.grouping.recordings_per_batch
-        voice_groups = global_voice_groups[
-            voice_start : voice_start + self.grouping.voices_per_batch
-        ]
-        style_groups = global_style_groups[
-            style_start : style_start + self.grouping.recordings_per_batch
-        ]
-        return voice_groups, style_groups
-
-    def _voice_group(self, speaker_id: str, rng: random.Random) -> EmbeddingGroupPlan:
-        keys = rng.sample(
-            list(self.index.pools.voice_groups[speaker_id]),
-            self.grouping.utterances_per_voice,
-        )
-        views = tuple(
-            EmbeddingViewPlan(
-                key=key,
-                audio=CutRange(self.index.records[key].start, self.index.records[key].end),
-                seed=derive_seed(self.seed, self.batch_index, "voice", speaker_id, key),
-                distance_seconds=0,
-            )
-            for key in keys
-        )
-        return EmbeddingGroupPlan(speaker_id, views)
-
-    def _style_group(self, recording_id: object, rng: random.Random) -> EmbeddingGroupPlan:
-        keys = self.index.pools.recording_groups[recording_id]
-        selected = [rng.choice(keys) for _ in range(self.grouping.cuts_per_recording)]
-        views = []
-        first_center = None
-        for view_index, key in enumerate(selected):
-            item = self.index.records[key]
-            seed = derive_seed(self.seed, self.batch_index, "style", recording_id, view_index)
-            if item.mid_sentence_eligible:
-                audio = self.cut_planner.plan_mid_sentence(key, seed).target
-            else:
-                audio = CutRange(item.start, item.end)
-            center = (audio.start + audio.end) / 2
-            first_center = center if first_center is None else first_center
-            views.append(
-                EmbeddingViewPlan(
-                    key=key,
-                    audio=audio,
-                    seed=seed,
-                    distance_seconds=abs(center - first_center),
-                )
-            )
-        return EmbeddingGroupPlan(str(recording_id), tuple(views))

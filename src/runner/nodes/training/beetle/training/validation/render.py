@@ -6,8 +6,7 @@ from matplotlib.figure import Figure
 from torch import Tensor
 from torch.nn import functional as F
 
-from ..state import StageKind
-from .types import SignalPair, ValidationSampleResult
+from .types import SignalPair, ValidationArtifactSet
 
 
 _COMMON_NAMES = (
@@ -21,23 +20,19 @@ _COMMON_NAMES = (
 )
 
 
-def artifact_names(stage: StageKind) -> tuple[str, ...]:
-    audio = "recon.wav" if stage is StageKind.STAGE1 else "pred.wav"
-    alignment = () if stage is StageKind.STAGE1 else ("alignment.png",)
-    return tuple(sorted((*_COMMON_NAMES, audio, *alignment)))
+def artifact_names() -> tuple[str, ...]:
+    return tuple(sorted((*_COMMON_NAMES, "pred.wav", "alignment.png")))
 
 
 def render_validation_sample(
-    sample: ValidationSampleResult,
-    stage: StageKind,
+    sample: ValidationArtifactSet,
     directory: Path,
     sample_rate: int,
 ) -> tuple[Path, ...]:
     _validate_cpu_sample(sample)
     directory.mkdir(parents=True, exist_ok=True)
-    generated_name = "recon.wav" if stage is StageKind.STAGE1 else "pred.wav"
     _write_wave(directory / "gt.wav", sample.ground_truth, sample_rate)
-    _write_wave(directory / generated_name, sample.prediction, sample_rate)
+    _write_wave(directory / "pred.wav", sample.prediction, sample_rate)
     _matrix_plot(directory / "latent.png", sample.latent, "Latent")
     _line_pair(directory / "f0.png", sample.f0, "F0")
     _line_pair(directory / "n.png", sample.n, "N")
@@ -45,14 +40,13 @@ def render_validation_sample(
     magnitude, phase = _spectrogram_pairs(sample.ground_truth, sample.prediction)
     _matrix_pair(directory / "stft_magnitude.png", magnitude, "STFT magnitude")
     _matrix_pair(directory / "phase.png", phase, "STFT phase")
-    if stage is not StageKind.STAGE1:
-        if sample.alignment is None:
-            raise ValueError("conditional validation requires an alignment artifact")
-        _matrix_plot(directory / "alignment.png", sample.alignment, "Alignment")
-    return tuple(directory / name for name in artifact_names(stage))
+    if sample.alignment is None:
+        raise ValueError("training validation requires an alignment artifact")
+    _matrix_plot(directory / "alignment.png", sample.alignment, "Alignment")
+    return tuple(directory / name for name in artifact_names())
 
 
-def _validate_cpu_sample(sample: ValidationSampleResult) -> None:
+def _validate_cpu_sample(sample: ValidationArtifactSet) -> None:
     tensors = (
         sample.ground_truth,
         sample.prediction,

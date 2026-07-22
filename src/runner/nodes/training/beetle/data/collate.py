@@ -1,3 +1,4 @@
+import random
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -44,7 +45,6 @@ class BatchCollator:
         text_tokenizer: Tokenizer,
         augmentation: AugmentationConfig,
         languages: tuple[str, ...],
-        stage: int,
         minimum_frame_count: int | None,
     ) -> None:
         self.preprocessor = preprocessor
@@ -54,7 +54,6 @@ class BatchCollator:
         self.language_ids = {
             language: index for index, language in enumerate(languages)
         }
-        self.stage = stage
         self.minimum_frame_count = minimum_frame_count
 
     def collate(self, fetched: FetchedBatch) -> BeetleBatch:
@@ -133,8 +132,6 @@ class BatchCollator:
         )
 
     def _resolve_language_ids(self, languages: tuple[str | None, ...]) -> Tensor:
-        if self.stage == 1:
-            return torch.zeros(len(languages), dtype=torch.long)
         return torch.tensor(
             [self.language_ids[language] for language in languages],
             dtype=torch.long,
@@ -160,7 +157,7 @@ class BatchCollator:
     def _optional_audio(self, clip, key) -> Tensor:
         if clip is None:
             return torch.zeros(1, 0)
-        return self.preprocessor.decode(clip, key).waveform
+        return self.preprocessor.decode_waveform(clip, key)
 
     def _prepare_groups(
         self,
@@ -171,11 +168,19 @@ class BatchCollator:
             return _PreparedGroups(empty, torch.zeros(0, 0, dtype=torch.long), torch.zeros(0, 0), ())
         prepared = []
         distances = []
+        if self.minimum_frame_count is None:
+            raise ValueError("embedding views require a fixed acoustic frame count")
+        maximum_samples = self.minimum_frame_count * self.preprocessor.hop_length
         for group in groups:
             group_audio = []
             group_distances = []
             for view in group.views:
-                audio = self.preprocessor.decode(view.clip, view.plan.key).waveform
+                audio = self.preprocessor.decode_waveform(view.clip, view.plan.key)
+                audio = _crop_embedding_view(
+                    audio,
+                    maximum_samples,
+                    view.plan.seed,
+                )
                 group_audio.append(
                     self.preprocessor.augment(audio, view.plan.seed, self.augmentation)
                 )
@@ -189,6 +194,14 @@ class BatchCollator:
             torch.tensor(distances, dtype=torch.float32),
             tuple(group.group_id for group in groups),
         )
+
+
+def _crop_embedding_view(waveform: Tensor, maximum_samples: int, seed: int) -> Tensor:
+    excess = waveform.shape[-1] - maximum_samples
+    if excess <= 0:
+        return waveform
+    start = random.Random(seed).randrange(excess + 1)
+    return waveform[..., start : start + maximum_samples].contiguous()
 
 
 def _ids(tokenizer: Tokenizer, text: str) -> Tensor:

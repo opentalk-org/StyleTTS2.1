@@ -17,7 +17,6 @@ from .loop_events import (
     cancel_run,
     complete_step_work,
     finish_run,
-    save_emergency_checkpoint,
 )
 from .reporting import (
     ForegroundCategory,
@@ -25,7 +24,7 @@ from .reporting import (
     StepObservationTracker,
     StepTimer,
 )
-from .state import LoopState, StageKind, TrainingPhase
+from .state import LoopState, TrainingPhase
 
 
 @dataclass(frozen=True)
@@ -50,8 +49,7 @@ class TrainingPipeline(Protocol):
     def state_dict(self) -> DataPipelineState: ...
 
 
-class StageTrainer(Protocol):
-    stage: StageKind
+class TrainingController(Protocol):
     accumulation_steps: int
     trains_discriminator: bool
     intervals: LoopIntervals
@@ -85,7 +83,7 @@ class StageTrainer(Protocol):
 
 def run_continuously(
     pipeline: TrainingPipeline,
-    trainer: StageTrainer,
+    trainer: TrainingController,
     callbacks: TrainingCallbacks,
     checkpoint_manager: CheckpointManager,
     reporting: StepObservationTracker,
@@ -149,12 +147,8 @@ def run_continuously(
         reporting.capture_partial_timing(elapsed, foreground)
         return cancel_run(
             trainer,
-            pipeline,
-            callbacks,
-            checkpoint_manager,
             reporting,
             lifecycle,
-            timer,
         )
     except Exception as error:
         elapsed, foreground = timer.snapshot()
@@ -165,28 +159,16 @@ def run_continuously(
             except Exception:
                 pass
             raise error
-        state = trainer.loop_state()
         try:
-            save_emergency_checkpoint(
-                trainer,
-                pipeline,
-                callbacks,
-                checkpoint_manager,
-                reporting.snapshot(),
-                state,
-                timer,
-            )
-        finally:
-            try:
-                lifecycle.reporter.fail()
-            except Exception:
-                pass
+            lifecycle.reporter.fail()
+        except Exception:
+            pass
         raise error
 
 
 def _run_batch(
     pipeline: TrainingPipeline,
-    trainer: StageTrainer,
+    trainer: TrainingController,
     callbacks: TrainingCallbacks,
     checkpoint_manager: CheckpointManager,
     reporting: StepObservationTracker,
@@ -254,7 +236,7 @@ def _run_batch(
 
 
 def _complete_accumulation(
-    trainer: StageTrainer,
+    trainer: TrainingController,
     pipeline: TrainingPipeline,
     callbacks: TrainingCallbacks,
     checkpoint_manager: CheckpointManager | None,

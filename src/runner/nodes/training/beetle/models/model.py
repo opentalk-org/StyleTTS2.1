@@ -24,7 +24,7 @@ from .parameters import ParameterReport, count_unique_parameters
 
 
 @dataclass(frozen=True)
-class Stage1Synthesis:
+class AcousticSynthesis:
     posterior: AudioPosterior
     acoustic: AcousticFeatures
     decoded: DecoderOutput
@@ -32,7 +32,7 @@ class Stage1Synthesis:
     sample_mask: Tensor
 
 
-class Stage1Models(nn.Module):
+class AcousticModels(nn.Module):
     def __init__(
         self,
         audio_encoder: AudioEncoder,
@@ -53,6 +53,7 @@ class Stage1Models(nn.Module):
         self.reconstruction_loss = reconstruction_loss
         self.output_hop = generator.config.output_hop()
         self.latent_downsample_rate = audio_encoder.config.downsample_rate
+        self.encoder_context_frames = audio_encoder.config.receptive_field_mel_frames()
 
     def reconstruct(
         self,
@@ -60,7 +61,7 @@ class Stage1Models(nn.Module):
         frame_mask: Tensor,
         latent_generator: torch.Generator,
         source_generator: torch.Generator,
-    ) -> Stage1Synthesis:
+    ) -> AcousticSynthesis:
         posterior = self.audio_encoder(mel, frame_mask, latent_generator)
         acoustic = self.feature_linear(
             posterior.latent,
@@ -83,7 +84,7 @@ class Stage1Models(nn.Module):
         predicted_ratio: float,
         latent_generator: torch.Generator,
         source_generator: torch.Generator,
-    ) -> Stage1Synthesis:
+    ) -> AcousticSynthesis:
         posterior = self.audio_encoder(mel, frame_mask, latent_generator)
         acoustic = self.feature_linear(
             posterior.latent,
@@ -106,7 +107,7 @@ class Stage1Models(nn.Module):
         decoder_acoustic: AcousticFeatures,
         frame_mask: Tensor,
         source_generator: torch.Generator,
-    ) -> Stage1Synthesis:
+    ) -> AcousticSynthesis:
         decoded = self.decoder(
             posterior.latent,
             decoder_acoustic.f0,
@@ -124,7 +125,7 @@ class Stage1Models(nn.Module):
             self.output_hop,
             dim=-1,
         )
-        return Stage1Synthesis(
+        return AcousticSynthesis(
             posterior=posterior,
             acoustic=acoustic,
             decoded=decoded,
@@ -137,20 +138,23 @@ class Stage1Models(nn.Module):
         mel: Tensor,
         frame_mask: Tensor,
         segment: AlignedSegments,
+        target_acoustic: AcousticFeatures,
+        predicted_ratio: float,
         latent_generator: torch.Generator,
         source_generator: torch.Generator,
-    ) -> Stage1Synthesis:
+    ) -> AcousticSynthesis:
         posterior = self.audio_encoder(mel, frame_mask, latent_generator)
         acoustic = self.feature_linear(
             posterior.latent,
             posterior.mask,
             frame_mask,
         )
+        decoder_acoustic = target_acoustic.blend(acoustic, predicted_ratio)
         segment_frame_mask = segment.frames(frame_mask)
         decoded = self.decoder(
             segment.latents(posterior.latent),
-            segment.frames(acoustic.f0),
-            segment.frames(acoustic.n),
+            segment.frames(decoder_acoustic.f0),
+            segment.frames(decoder_acoustic.n),
             segment.latents(posterior.mask),
             segment_frame_mask,
         )
@@ -164,7 +168,7 @@ class Stage1Models(nn.Module):
             self.output_hop,
             dim=-1,
         )
-        return Stage1Synthesis(
+        return AcousticSynthesis(
             posterior=posterior,
             acoustic=acoustic,
             decoded=decoded,
@@ -183,7 +187,7 @@ class Stage1Models(nn.Module):
         latent_frames: int,
         latent_generator: torch.Generator,
         source_generator: torch.Generator,
-    ) -> Stage1Synthesis:
+    ) -> AcousticSynthesis:
         full = self.audio_encoder(encoder_mel, encoder_mask, latent_generator)
         posterior_end = posterior_start + latent_frames
         if posterior_end > full.latent.shape[-1]:
@@ -214,7 +218,7 @@ class Stage1Models(nn.Module):
             source_generator,
         )
         sample_mask = frame_mask.repeat_interleave(self.output_hop, dim=-1)
-        return Stage1Synthesis(
+        return AcousticSynthesis(
             posterior=posterior,
             acoustic=acoustic,
             decoded=decoded,
@@ -257,16 +261,16 @@ class Stage1Models(nn.Module):
             or inference_ids & training_ids
             or frozen_ids & training_ids
         ):
-            raise ValueError("Stage 1 parameter categories must be disjoint")
+            raise ValueError("acoustic parameter categories must be disjoint")
         return ParameterReport(inference, frozen, training)
 
 
-def build_stage1_models(
+def build_acoustic_models(
     config: BeetleConfig,
     f0_extractor: F0Extractor,
-) -> Stage1Models:
+) -> AcousticModels:
     architecture = config.architecture
-    return Stage1Models(
+    return AcousticModels(
         audio_encoder=AudioEncoder(architecture.posterior),
         feature_linear=FeatureLinear(architecture.feature),
         decoder=Decoder(architecture.decoder),

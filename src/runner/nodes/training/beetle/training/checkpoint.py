@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import os
+import shutil
 import uuid
 from dataclasses import dataclass
 from enum import StrEnum
@@ -9,20 +10,16 @@ from typing import Any, Protocol
 
 import torch
 from pydantic import BaseModel, ConfigDict, Field
-from torch import nn
 
 from ..data.prefetch import DataPipelineState
 from .reporting import ReportingState
 from .state import (
     LoopState,
-    NamedGradient,
     RankState,
-    StageKind,
     TrainingPhase,
-    restore_gradients,
 )
 
-CHECKPOINT_VERSION = 5
+CHECKPOINT_VERSION = 7
 _PAYLOAD_NAME = "payload.pt"
 _MANIFEST_NAME = "manifest.json"
 _LATEST_NAME = "latest.json"
@@ -59,18 +56,6 @@ class StateTarget:
 
 
 @dataclass(frozen=True)
-class NamedModuleGradients:
-    name: str
-    gradients: tuple[NamedGradient, ...]
-
-
-@dataclass(frozen=True)
-class GradientTarget:
-    name: str
-    module: nn.Module
-
-
-@dataclass(frozen=True)
 class LossWeight:
     name: str
     value: float
@@ -90,7 +75,6 @@ class CheckpointPayload:
     loop: LoopState
     rank_states: tuple[RankState, ...]
     states: tuple[NamedState, ...]
-    gradients: tuple[NamedModuleGradients, ...]
     sampler_state: DataPipelineState
     loss_schedule: LossScheduleState
     reporting: ReportingState
@@ -113,8 +97,11 @@ class _LatestManifest(BaseModel):
 
 
 class CheckpointManager:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, keep_last: int) -> None:
+        if keep_last <= 0:
+            raise ValueError("checkpoint retention must be positive")
         self.root = root
+        self.keep_last = keep_last
         self.root.mkdir(parents=True, exist_ok=True)
 
     def save(self, payload: CheckpointPayload) -> Path:
@@ -139,6 +126,7 @@ class CheckpointManager:
         temporary.rename(destination)
         _fsync_directory(self.root)
         self._write_latest(destination.name, digest, identifier)
+        self._prune(destination)
         return destination
 
     def latest(self) -> Path | None:
@@ -187,6 +175,20 @@ class CheckpointManager:
         os.replace(temporary, self.root / _LATEST_NAME)
         _fsync_directory(self.root)
 
+    def _prune(self, current: Path) -> None:
+        previous = sorted(
+            (
+                path
+                for path in self.root.glob("checkpoint_*")
+                if path.is_dir() and path != current
+            ),
+            key=lambda path: (path.stat().st_mtime_ns, path.name),
+            reverse=True,
+        )
+        for path in previous[self.keep_last - 1 :]:
+            shutil.rmtree(path)
+        _fsync_directory(self.root)
+
 
 def capture_named_state(name: str, kind: StateKind, source: Stateful) -> NamedState:
     return NamedState(name, kind, copy.deepcopy(source.state_dict()))
@@ -204,26 +206,11 @@ def restore_named_states(
         target.target.load_state_dict(copy.deepcopy(state.value))
 
 
-def restore_checkpoint_gradients(
-    gradients: tuple[NamedModuleGradients, ...],
-    targets: tuple[GradientTarget, ...],
-) -> None:
-    saved_names = tuple(item.name for item in gradients)
-    target_names = tuple(item.name for item in targets)
-    if saved_names != target_names:
-        raise ValueError("checkpoint gradient module names do not match targets")
-    for saved, target in zip(gradients, targets, strict=True):
-        restore_gradients(target.module, saved.gradients)
-
-
 def validate_resume_fingerprints(
     payload: CheckpointPayload,
-    stage: StageKind,
     config_fingerprint: str,
     data_fingerprint: str,
 ) -> None:
-    if payload.loop.stage is not stage:
-        raise ValueError("stage does not match checkpoint")
     if payload.config_fingerprint != config_fingerprint:
         raise ValueError("config_fingerprint does not match checkpoint")
     if payload.data_fingerprint != data_fingerprint:
@@ -235,6 +222,10 @@ def _validate_payload(payload: CheckpointPayload) -> None:
         raise ValueError("checkpoint payload version is unsupported")
     if payload.loss_schedule.optimizer_step != payload.loop.optimizer_step:
         raise ValueError("loss schedule step does not match loop optimizer_step")
+    if payload.loop.microstep != 0 or payload.loop.phase is not TrainingPhase.READY:
+        raise ValueError("checkpoint must describe a completed optimizer step")
+    if payload.loop.discriminator_metrics:
+        raise ValueError("checkpoint must not contain partial discriminator metrics")
     if payload.sampler_state.data_fingerprint != payload.data_fingerprint:
         raise ValueError("sampler data fingerprint does not match checkpoint")
     if len(payload.rank_states) != payload.sampler_state.world_size:
@@ -243,14 +234,8 @@ def _validate_payload(payload: CheckpointPayload) -> None:
         raise ValueError("reported step exceeds checkpoint optimizer step")
     if payload.reporting.last_validated_step > payload.loop.optimizer_step:
         raise ValueError("validated step exceeds checkpoint optimizer step")
-    pending = payload.reporting.pending_step
-    if pending is not None:
-        if pending.optimizer_step != payload.loop.optimizer_step:
-            raise ValueError("pending reporting step does not match optimizer step")
-        if payload.loop.phase is not TrainingPhase.OPTIMIZER_COMPLETE:
-            raise ValueError("pending reporting step requires optimizer-complete phase")
-        if payload.reporting.accumulator.microsteps == 0:
-            raise ValueError("pending reporting step requires accumulated losses")
+    if payload.reporting.pending_step is not None:
+        raise ValueError("checkpoint must not contain pending reporting work")
 def _write_new_text(path: Path, value: str) -> None:
     with path.open("x", encoding="utf-8") as output:
         output.write(value)

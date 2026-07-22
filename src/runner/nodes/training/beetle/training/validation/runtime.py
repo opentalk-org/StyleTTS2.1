@@ -9,7 +9,7 @@ from ..distributed import DistributedRuntime
 from ..state import capture_rng_state, restore_rng_state
 from .artifacts import ValidationArtifacts
 from .types import (
-    StageValidator,
+    ValidationRunner,
     ValidationEvaluator,
     ValidationResult,
     ValidationSampleResult,
@@ -43,13 +43,13 @@ class ValidationRuntime:
         finally:
             _restore_modes(modes)
             restore_rng_state(rng)
-        return ValidationResult(self.evaluator.stage, step, samples, aggregates)
+        return ValidationResult(step, samples, aggregates)
 
 
 class ValidationCoordinator:
     def __init__(
         self,
-        validator: StageValidator,
+        validator: ValidationRunner,
         recordings: tuple[ValidationRecording, ...],
         artifacts: ValidationArtifacts | None,
         distributed: DistributedRuntime,

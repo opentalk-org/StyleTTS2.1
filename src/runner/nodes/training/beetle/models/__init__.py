@@ -1,11 +1,11 @@
 from .acoustic import log_mel_l2_energy
 from .model import (
-    Stage1Models,
-    Stage1Synthesis,
-    build_stage1_models,
+    AcousticModels,
+    AcousticSynthesis,
+    build_acoustic_models,
 )
 from .parameters import ParameterReport
-from .compilation import compile_stage1
+from .compilation import compile_acoustic
 from .modules.audio import (
     AcousticFeatures,
     AudioEncoder,
@@ -19,11 +19,11 @@ from .modules.discriminators import (
     build_styletts_discriminators,
 )
 from .modules.generator import Generator
-from .stage2 import (
-    Stage2Dependencies,
-    Stage2Models,
-    Stage2ParameterReport,
-    build_stage2_models,
+from .conditional import (
+    ConditionalDependencies,
+    ConditionalModels,
+    ConditionalParameterReport,
+    build_conditional_models,
 )
 
 __all__ = [
@@ -36,15 +36,15 @@ __all__ = [
     "FeatureLinear",
     "Generator",
     "ParameterReport",
-    "Stage1Models",
-    "Stage1Synthesis",
-    "Stage2Dependencies",
-    "Stage2Models",
-    "Stage2ParameterReport",
+    "AcousticModels",
+    "AcousticSynthesis",
+    "ConditionalDependencies",
+    "ConditionalModels",
+    "ConditionalParameterReport",
     "StyleTTSDiscriminators",
-    "build_stage1_models",
-    "build_stage2_models",
+    "build_acoustic_models",
+    "build_conditional_models",
     "build_styletts_discriminators",
-    "compile_stage1",
+    "compile_acoustic",
     "log_mel_l2_energy",
 ]

@@ -1,17 +1,17 @@
 from .gradients import (
     DIAGNOSTICS_EVERY_STEPS,
-    Stage1GradientLosses,
+    AcousticGradientLosses,
     diagnostics_due,
     reconstruction_metrics,
-    stage1_gradient_metrics,
-    stage1_training_metrics,
+    acoustic_gradient_metrics,
+    acoustic_training_metrics,
 )
 
 __all__ = [
     "DIAGNOSTICS_EVERY_STEPS",
-    "Stage1GradientLosses",
+    "AcousticGradientLosses",
     "diagnostics_due",
     "reconstruction_metrics",
-    "stage1_gradient_metrics",
-    "stage1_training_metrics",
+    "acoustic_gradient_metrics",
+    "acoustic_training_metrics",
 ]

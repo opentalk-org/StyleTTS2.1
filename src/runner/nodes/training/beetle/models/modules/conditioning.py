@@ -223,8 +223,10 @@ class MaskedAttentivePool1d(nn.Module):
             features.shape[2],
         ):
             raise ValueError("attentive pooling requires [B,C,T] and [B,1,T]")
-        if torch.any(mask.sum(dim=2) == 0):
-            raise ValueError("attentive pooling requires a valid token per item")
+        torch._assert_async(
+            torch.all(mask.sum(dim=2) > 0),
+            "attentive pooling requires a valid token per item",
+        )
         logits = self.attention(features * mask).masked_fill(~mask, -torch.inf)
         weights = torch.softmax(logits, dim=2)
         mean = (features * weights).sum(dim=2)

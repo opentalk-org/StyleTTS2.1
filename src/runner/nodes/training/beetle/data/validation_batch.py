@@ -18,7 +18,6 @@ class ValidationTokenizer(Protocol):
 
 def collate_validation_recording(
     config: BeetleConfig,
-    stage_number: int,
     item: PreparedValidationAudio,
     phoneme_tokenizer: ValidationTokenizer,
     text_tokenizer: ValidationTokenizer,
@@ -38,15 +37,11 @@ def collate_validation_recording(
     phonemes = " ".join(
         segment.phonemes.strip() for segment in stored.segments
     ).strip()
-    phoneme_ids = _ids(phoneme_tokenizer, phonemes, stage_number > 1)
-    text_ids = _ids(text_tokenizer, text, stage_number > 1)
+    phoneme_ids = _ids(phoneme_tokenizer, phonemes, True)
+    text_ids = _ids(text_tokenizer, text, True)
     style_prompt = _ids(text_tokenizer, stored.style_prompt or "", False)
     voice_prompt = _ids(text_tokenizer, stored.voice_prompt or "", False)
-    language_id = (
-        config.architecture.language.values.index(stored.language)
-        if stage_number > 1
-        else 0
-    )
+    language_id = config.architecture.language.values.index(stored.language)
     segment_id = (
         stored.segments[0].segment_id
         if stored.segments

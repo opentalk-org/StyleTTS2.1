@@ -3,7 +3,7 @@ from uuid import UUID
 import torch
 from torch import Tensor, nn
 
-from ...config.training import StageConfig
+from ...config.training import TrainingConfig
 from ...data.sampling import derive_seed
 from ...data.validation_types import ValidationRecording
 from ...losses.acoustic import (
@@ -12,46 +12,49 @@ from ...losses.acoustic import (
     masked_n_smooth_l1,
 )
 from ...losses.adversarial import discriminator_step_loss, generator_step_loss
-from ...models.model import Stage1Models, Stage1Synthesis
-from ...models.stage2 import Stage2Models
-from ..loss_schedules import Stage3Schedules
+from ...models.model import AcousticModels, AcousticSynthesis
+from ...models.conditional import ConditionalModels
+from ..loss_schedules import TrainingSchedules
 from ..reporting import TrainingMetric
-from ..stage2_setup import Stage2InputBuilder
-from ..state import StageKind
-from .conditional import Stage2ValidationEvaluator
-from .types import ValidationSampleResult
+from ..setup import ConditionalInputBuilder
+from .conditional import ConditionalValidationEvaluator
+from .types import (
+    ConditionalValidationSample,
+    ValidationArtifactSet,
+    ValidationSampleResult,
+    trim_signal_pair,
+    trim_waveform_pair,
+)
 
 
-class Stage3ValidationEvaluator(Stage2ValidationEvaluator):
-    stage = StageKind.STAGE3
-
+class TrainingValidationEvaluator(ConditionalValidationEvaluator):
     def __init__(
         self,
-        stage1: Stage1Models,
-        models: Stage2Models,
+        acoustic: AcousticModels,
+        models: ConditionalModels,
         ema_latent_flow: nn.Module,
-        input_builder: Stage2InputBuilder,
-        stage_config: StageConfig,
+        input_builder: ConditionalInputBuilder,
+        training_config: TrainingConfig,
         runtime_seed: int,
         device: torch.device,
     ) -> None:
         super().__init__(
-            stage1,
+            acoustic,
             models,
             ema_latent_flow,
             input_builder,
-            stage_config,
+            training_config,
             runtime_seed,
             device,
         )
-        self.stage3_schedules = Stage3Schedules.from_config(stage_config)
+        self.training_schedules = TrainingSchedules.from_config(training_config)
 
     @staticmethod
     def required_model_names() -> tuple[str, ...]:
-        return (*Stage2ValidationEvaluator.required_model_names(), "discriminators")
+        return (*ConditionalValidationEvaluator.required_model_names(), "discriminators")
 
     def modules(self) -> tuple[nn.Module, ...]:
-        return (*super().modules(), self.stage1.discriminators)
+        return (*super().modules(), self.acoustic.discriminators)
 
     def evaluate_samples(
         self,
@@ -67,15 +70,25 @@ class Stage3ValidationEvaluator(Stage2ValidationEvaluator):
     def _combined_sample(
         self,
         recording: ValidationRecording,
-        conditional: ValidationSampleResult,
+        conditional: ConditionalValidationSample,
         step: int,
     ) -> ValidationSampleResult:
         values = recording.batch.to(self.device)
         posterior = self._posterior(recording.audio_file_id, values, step)
-        targets = self.stage1.acoustic_targets(values.mel, values.frame_mask)
-        conditional_waveform = conditional.prediction.unsqueeze(0).to(self.device)
-        conditional_f0 = conditional.f0[1].unsqueeze(0).to(self.device)
-        conditional_n = conditional.n[1].unsqueeze(0).to(self.device)
+        full = conditional.artifacts
+        real_waveform = full.ground_truth.unsqueeze(0).to(self.device)
+        conditional_waveform = full.prediction.unsqueeze(0).to(self.device)
+        sample_count = real_waveform.shape[-1]
+        posterior_waveform = posterior.waveform[:, :, :sample_count]
+        sample_mask = posterior.sample_mask[:, :, :sample_count]
+        target_f0 = full.f0[0].unsqueeze(0).to(self.device)
+        conditional_f0 = full.f0[1].unsqueeze(0).to(self.device)
+        frame_count = target_f0.shape[-1]
+        posterior_f0 = posterior.acoustic.f0[:, :frame_count]
+        frame_mask = posterior.decoded.mask[:, :, :frame_count]
+        target_n = full.n[0].unsqueeze(0).to(self.device)
+        conditional_n = full.n[1].unsqueeze(0).to(self.device)
+        posterior_n = posterior.acoustic.n[:, :frame_count]
         encoder_kl = masked_kl_standard_normal(
             posterior.posterior.mean,
             posterior.posterior.log_scale,
@@ -83,60 +96,60 @@ class Stage3ValidationEvaluator(Stage2ValidationEvaluator):
         )
         f0 = 0.5 * (
             masked_f0_smooth_l1(
-                posterior.acoustic.f0,
-                targets.f0,
-                posterior.decoded.mask,
+                posterior_f0,
+                target_f0,
+                frame_mask,
             )
             + masked_f0_smooth_l1(
                 conditional_f0,
-                targets.f0,
-                posterior.decoded.mask,
+                target_f0,
+                frame_mask,
             )
         )
         n = 0.5 * (
             masked_n_smooth_l1(
-                posterior.acoustic.n,
-                targets.n,
-                posterior.decoded.mask,
+                posterior_n,
+                target_n,
+                frame_mask,
             )
             + masked_n_smooth_l1(
                 conditional_n,
-                targets.n,
-                posterior.decoded.mask,
+                target_n,
+                frame_mask,
             )
         )
         reconstruction = 0.5 * (
-            self.stage1.reconstruction_loss(
-                posterior.waveform,
-                values.waveform,
-                posterior.sample_mask,
+            self.acoustic.reconstruction_loss(
+                posterior_waveform,
+                real_waveform,
+                sample_mask,
             ).total
-            + self.stage1.reconstruction_loss(
+            + self.acoustic.reconstruction_loss(
                 conditional_waveform,
-                values.waveform,
-                posterior.sample_mask,
+                real_waveform,
+                sample_mask,
             ).total
         )
         discriminator = 0.5 * (
             discriminator_step_loss(
-                self.stage1.discriminators,
-                values.waveform,
-                posterior.waveform,
+                self.acoustic.discriminators,
+                real_waveform,
+                posterior_waveform,
             )
             + discriminator_step_loss(
-                self.stage1.discriminators,
-                values.waveform,
+                self.acoustic.discriminators,
+                real_waveform,
                 conditional_waveform,
             )
         )
         posterior_adversarial = generator_step_loss(
-            self.stage1.discriminators,
-            values.waveform,
-            posterior.waveform,
+            self.acoustic.discriminators,
+            real_waveform,
+            posterior_waveform,
         )
         conditional_adversarial = generator_step_loss(
-            self.stage1.discriminators,
-            values.waveform,
+            self.acoustic.discriminators,
+            real_waveform,
             conditional_waveform,
         )
         adversarial = 0.5 * (
@@ -147,14 +160,14 @@ class Stage3ValidationEvaluator(Stage2ValidationEvaluator):
             posterior_adversarial.feature_matching
             + conditional_adversarial.feature_matching
         )
-        weights = self.stage3_schedules.weights(step)
-        stage2_metrics = tuple(
-            metric for metric in conditional.losses if metric.name != "stage2_total"
+        weights = self.training_schedules.acoustic_weights(step)
+        conditional_metrics = tuple(
+            metric for metric in conditional.losses if metric.name != "conditional_total"
         )
         flow_total = next(
             metric.value
             for metric in conditional.losses
-            if metric.name == "stage2_total"
+            if metric.name == "conditional_total"
         )
         acoustic_total = (
             encoder_kl * weights.encoder_kl
@@ -173,20 +186,30 @@ class Stage3ValidationEvaluator(Stage2ValidationEvaluator):
             _metric("discriminator", discriminator),
             _metric("generator_adversarial", adversarial),
             _metric("feature_matching", feature_matching),
-            *stage2_metrics,
+            *conditional_metrics,
             _metric("discriminator_total", discriminator * weights.discriminator),
             _metric("generator_total", generator_total),
+        )
+        _, posterior_prediction = trim_waveform_pair(
+            real_waveform,
+            posterior_waveform,
+            sample_count,
+        )
+        posterior_mel = self._artifact_mels(real_waveform, posterior_waveform)[1]
+        audio = ValidationArtifactSet(
+            full.ground_truth,
+            posterior_prediction,
+            _cpu(posterior.posterior.latent[0]),
+            trim_signal_pair(target_f0[0], posterior_f0[0], frame_count),
+            trim_signal_pair(target_n[0], posterior_n[0], frame_count),
+            (full.mel[0], _cpu(posterior_mel[0])),
+            full.alignment,
         )
         return ValidationSampleResult(
             recording.audio_file_id,
             losses,
-            conditional.ground_truth,
-            conditional.prediction,
-            conditional.latent,
-            conditional.f0,
-            conditional.n,
-            conditional.mel,
-            conditional.alignment,
+            full,
+            audio,
             conditional.seed,
         )
 
@@ -195,10 +218,10 @@ class Stage3ValidationEvaluator(Stage2ValidationEvaluator):
         audio_file_id: UUID,
         batch: object,
         step: int,
-    ) -> Stage1Synthesis:
+    ) -> AcousticSynthesis:
         latent = self._generator(step, audio_file_id, "posterior-latent")
         source = self._generator(step, audio_file_id, "posterior-source")
-        return self.stage1.reconstruct(batch.mel, batch.frame_mask, latent, source)
+        return self.acoustic.reconstruct(batch.mel, batch.frame_mask, latent, source)
 
     def _generator(
         self,
@@ -208,7 +231,6 @@ class Stage3ValidationEvaluator(Stage2ValidationEvaluator):
     ) -> torch.Generator:
         seed = derive_seed(
             self.runtime_seed,
-            self.stage,
             step,
             audio_file_id,
             view,
@@ -219,3 +241,7 @@ class Stage3ValidationEvaluator(Stage2ValidationEvaluator):
 def _metric(name: str, value: Tensor | float) -> TrainingMetric:
     scalar = float(value.detach().cpu()) if isinstance(value, Tensor) else value
     return TrainingMetric(name, scalar)
+
+
+def _cpu(value: Tensor) -> Tensor:
+    return value.detach().cpu().clone()

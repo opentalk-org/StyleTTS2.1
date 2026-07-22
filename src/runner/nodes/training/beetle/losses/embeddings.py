@@ -36,24 +36,28 @@ def supervised_contrastive_loss(
         device=embeddings.device,
     )
     positives = same_group & not_self
-    if torch.any(positives.sum(dim=1) == 0):
-        raise ValueError("every contrastive embedding requires a positive partner")
-    if torch.unique(group_ids).numel() < 2:
-        raise ValueError("contrastive loss requires at least two groups")
+    torch._assert_async(
+        torch.all(positives.sum(dim=1) > 0),
+        "every contrastive embedding requires a positive partner",
+    )
     if positive_weights is None:
         weights = positives.to(dtype=embeddings.dtype)
     else:
-        if positive_weights.shape != positives.shape or torch.any(positive_weights < 0):
+        if positive_weights.shape != positives.shape:
             raise ValueError("positive weights must be a nonnegative [B,B] tensor")
+        torch._assert_async(
+            torch.all(positive_weights >= 0),
+            "positive weights must be a nonnegative [B,B] tensor",
+        )
         weights = torch.where(
             positives,
             positive_weights.to(dtype=embeddings.dtype),
             torch.zeros_like(positive_weights, dtype=embeddings.dtype),
         )
-        if torch.any(weights.sum(dim=1) == 0):
-            raise ValueError(
-                "positive weights must select a partner for every embedding"
-            )
+        torch._assert_async(
+            torch.all(weights.sum(dim=1) > 0),
+            "positive weights must select a partner for every embedding",
+        )
     normalized = F.normalize(embeddings, dim=1)
     logits = normalized @ normalized.transpose(0, 1) / temperature
     logits = logits - logits.max(dim=1, keepdim=True).values.detach()
@@ -84,8 +88,12 @@ class GE2ELoss(nn.Module):
             return_inverse=True,
             return_counts=True,
         )
-        if groups.numel() < 2 or torch.any(counts < 2):
+        if groups.numel() < 2:
             raise ValueError("GE2E requires at least two groups with two views each")
+        torch._assert_async(
+            torch.all(counts >= 2),
+            "GE2E requires at least two groups with two views each",
+        )
         normalized = F.normalize(embeddings, dim=1)
         group_sums = embeddings.new_zeros(groups.shape[0], embeddings.shape[1])
         group_sums.index_add_(0, inverse, normalized)

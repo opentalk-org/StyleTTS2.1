@@ -5,19 +5,16 @@ from pathlib import Path
 from typing import Sequence
 
 from ..training.callbacks import ArtifactEvent, ProgressEvent, StandaloneCallbacks
-from ..training.execution import run_stage
-from ..training.state import StageKind
+from ..training.execution import run_training
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class StageArguments:
+class Arguments:
     config: Path
     output: Path
     resume: Path | None
-    stage1_checkpoint: Path | None
-    stage2_checkpoint: Path | None
 
 
 class CliCallbacks(StandaloneCallbacks):
@@ -28,54 +25,31 @@ class CliCallbacks(StandaloneCallbacks):
         logger.info("indexed %d/%d database segments", scanned, total)
 
 
-def parse_stage_arguments(
-    stage: StageKind,
-    argv: Sequence[str] | None = None,
-) -> StageArguments:
-    parser = argparse.ArgumentParser(prog=f"beetle-{stage.value}")
+def parse_arguments(argv: Sequence[str] | None = None) -> Arguments:
+    parser = argparse.ArgumentParser(prog="beetle-train")
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--resume", type=Path)
-    if stage in (StageKind.STAGE2, StageKind.STAGE3):
-        parser.add_argument("--stage1-checkpoint", type=Path, required=True)
-    if stage is StageKind.STAGE3:
-        parser.add_argument("--stage2-checkpoint", type=Path, required=True)
     values = parser.parse_args(argv)
-    return StageArguments(
-        config=values.config,
-        output=values.output,
-        resume=values.resume,
-        stage1_checkpoint=(
-            values.stage1_checkpoint
-            if stage in (StageKind.STAGE2, StageKind.STAGE3)
-            else None
-        ),
-        stage2_checkpoint=(
-            values.stage2_checkpoint if stage is StageKind.STAGE3 else None
-        ),
-    )
+    return Arguments(values.config, values.output, values.resume)
 
 
-def run_cli(stage: StageKind, argv: Sequence[str] | None = None) -> None:
-    arguments = parse_stage_arguments(stage, argv)
+def run_cli(argv: Sequence[str] | None = None) -> None:
+    arguments = parse_arguments(argv)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     callbacks = CliCallbacks()
     callbacks.install_signal_handlers()
-    final = run_stage(
-        stage,
+    final = run_training(
         arguments.config,
         arguments.output,
         arguments.resume,
         callbacks,
-        arguments.stage1_checkpoint,
-        arguments.stage2_checkpoint,
     )
     logger.info(
-        "%s stopped at optimizer_step=%d microstep=%d phase=%s",
-        stage.value,
+        "training stopped at optimizer_step=%d microstep=%d phase=%s",
         final.optimizer_step,
         final.microstep,
         final.phase,
@@ -83,12 +57,9 @@ def run_cli(stage: StageKind, argv: Sequence[str] | None = None) -> None:
 
 
 def _log_progress(event: ProgressEvent) -> None:
-    metrics = " ".join(
-        f"{metric.name}={metric.value:.6g}" for metric in event.metrics
-    )
+    metrics = " ".join(f"{metric.name}={metric.value:.6g}" for metric in event.metrics)
     logger.info(
-        "%s step=%d microstep=%d phase=%s%s",
-        event.stage.value,
+        "training step=%d microstep=%d phase=%s%s",
         event.optimizer_step,
         event.microstep,
         event.phase.value,

@@ -121,6 +121,7 @@ class ScheduledOptimizer:
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
+        finite_gradient = math.isfinite(gradient_norm_value)
         metrics = (
             TrainingMetric(
                 f"optimizer/{self.name}_learning_rate",
@@ -128,7 +129,11 @@ class ScheduledOptimizer:
             ),
             TrainingMetric(
                 f"optimizer/{self.name}_gradient_norm",
-                gradient_norm_value,
+                gradient_norm_value if finite_gradient else 0.0,
+            ),
+            TrainingMetric(
+                f"optimizer/{self.name}_gradient_nonfinite",
+                float(not finite_gradient),
             ),
             TrainingMetric(
                 f"optimizer/{self.name}_amp_scale",

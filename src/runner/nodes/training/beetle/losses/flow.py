@@ -11,8 +11,7 @@ def base_flow_loss(prediction: Tensor, target: Tensor, mask: Tensor) -> Tensor:
     if mask.shape != (prediction.shape[0], 1, prediction.shape[2]):
         raise ValueError("flow loss mask must have shape [B,1,T]")
     valid_elements = mask.sum() * prediction.shape[1]
-    if valid_elements == 0:
-        raise ValueError("flow loss requires a valid token")
+    torch._assert_async(valid_elements > 0, "flow loss requires a valid token")
     squared_error = (prediction - target).square() * mask
     return squared_error.sum() / valid_elements.to(dtype=prediction.dtype)
 
@@ -29,17 +28,11 @@ def shortcut_loss(
     if minimum_steps <= 1 or minimum_steps & (minimum_steps - 1):
         raise ValueError("minimum_steps must be a power of two above one")
     half_step = sample.step / 2
-    smallest_half_step = 1.0 / minimum_steps
-    query_step = torch.where(
-        half_step <= smallest_half_step,
-        torch.zeros_like(half_step),
-        half_step,
-    )
     with torch.no_grad():
         first_velocity = ema_model(
             sample.state,
             sample.time,
-            query_step,
+            half_step,
             conditions,
             model_mask,
         )
@@ -47,7 +40,7 @@ def shortcut_loss(
         second_velocity = ema_model(
             midpoint,
             sample.time + half_step,
-            query_step,
+            half_step,
             conditions,
             model_mask,
         )

@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 from enum import Enum
 
@@ -42,7 +43,11 @@ class GradientClipObservation:
     coefficient: float
 
     def metrics(self, diagnostics: bool) -> tuple[TrainingMetric, ...]:
-        metrics = (TrainingMetric(f"gradient/{self.name}", self.norm),)
+        finite = math.isfinite(self.norm)
+        metrics = (
+            TrainingMetric(f"gradient/{self.name}", self.norm if finite else 0.0),
+            TrainingMetric(f"gradient/{self.name}_nonfinite", float(not finite)),
+        )
         if not diagnostics:
             return metrics
         return (

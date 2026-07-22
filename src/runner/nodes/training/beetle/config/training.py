@@ -55,12 +55,13 @@ class LossWeights(StrictConfigModel):
     style_reencoding: ScheduledWeight
 
 
-class StageConfig(StrictConfigModel):
+class TrainingConfig(StrictConfigModel):
     batch_size: int = Field(gt=0)
     accumulation_steps: int = Field(gt=0)
     total_steps: int = Field(gt=0)
     validation_every_steps: int = Field(gt=0)
     precision: Precision
+    acoustic_prediction: ScheduledWeight
     generator_optimizer: OptimizerConfig
     discriminator_optimizer: OptimizerConfig | None
     losses: LossWeights
@@ -88,15 +89,6 @@ class AdversarialConfig(StrictConfigModel):
     segment_samples: int = Field(gt=0)
 
 
-class Stage1WindowConfig(StrictConfigModel):
-    latent_frames: int = Field(gt=0)
-
-
-class Stage1ConditioningConfig(StrictConfigModel):
-    predicted_start_step: int = Field(ge=0)
-    transition_steps: int = Field(gt=0)
-
-
 class ComplexityConfig(StrictConfigModel):
     minimum_inference_parameters: int = Field(gt=0)
     maximum_inference_parameters: int = Field(gt=0)
@@ -118,7 +110,7 @@ class CheckpointConfig(StrictConfigModel):
     keep_last: int = Field(gt=0)
 
 
-class Stage2ObjectiveConfig(StrictConfigModel):
+class ConditioningObjectiveConfig(StrictConfigModel):
     contrastive_temperature: float = Field(gt=0)
     reversal_scale: float = Field(ge=0)
     consistency_cosine_weight: float = Field(ge=0)
@@ -133,13 +125,9 @@ class BeetleConfig(StrictConfigModel):
     validation: ValidationConfig
     runtime: RuntimeConfig
     adversarial: AdversarialConfig
-    stage1_window: Stage1WindowConfig
-    stage1_conditioning: Stage1ConditioningConfig
     checkpoint: CheckpointConfig
-    stage2_objective: Stage2ObjectiveConfig
-    stage1: StageConfig
-    stage2: StageConfig
-    stage3: StageConfig
+    conditioning_objective: ConditioningObjectiveConfig
+    training: TrainingConfig
 
     @model_validator(mode="before")
     @classmethod
@@ -170,11 +158,11 @@ class BeetleConfig(StrictConfigModel):
         receptive_field = posterior.receptive_field_mel_frames()
         if receptive_field % 2:
             raise ValueError("posterior receptive field must be even")
-        target_frames = self.stage1_window.latent_frames * posterior.downsample_rate
+        target_frames = self.adversarial.segment_samples // self.audio.hop_length
         encoder_frames = target_frames + receptive_field
         if self.runtime.compile and self.runtime.compile_frame_count != encoder_frames:
             raise ValueError(
-                "compile_frame_count must match Stage 1 contextual encoder frames"
+                "compile_frame_count must match contextual encoder frames"
             )
         segment_samples = self.adversarial.segment_samples
         if segment_samples % self.audio.hop_length:
@@ -184,10 +172,6 @@ class BeetleConfig(StrictConfigModel):
             raise ValueError(
                 "adversarial segment_samples must align with posterior downsampling"
             )
-        if self.stage1.discriminator_optimizer is None:
-            raise ValueError("stage1 requires discriminator_optimizer")
-        if self.stage2.discriminator_optimizer is not None:
-            raise ValueError("stage2 must not configure discriminator_optimizer")
-        if self.stage3.discriminator_optimizer is None:
-            raise ValueError("stage3 requires discriminator_optimizer")
+        if self.training.discriminator_optimizer is None:
+            raise ValueError("training requires discriminator_optimizer")
         return self

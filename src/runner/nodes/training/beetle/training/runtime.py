@@ -2,7 +2,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from transformers import BertModel, BertTokenizerFast
+import torch
+import yaml
+from huggingface_hub import snapshot_download
+from transformers import AlbertConfig, AlbertModel, BertModel, BertTokenizerFast
 
 from shared.db.assets import crud as asset_crud
 from shared.db.connection import database_session
@@ -17,12 +20,12 @@ from ..data import (
 from ..models.modules.aligner import PhonemeAligner
 from ..models.modules.alignment_backbone import StyleTTSAlignerBackbone
 from ..models.modules.audio import F0Extractor
+from ..external.StyleTTS2.text_utils import symbols
 from .checkpoint import (
     CheckpointManager,
     CheckpointPayload,
     validate_resume_fingerprints,
 )
-from .state import StageKind
 
 
 class PreparationCallbacks(Protocol):
@@ -33,8 +36,8 @@ class PreparationCallbacks(Protocol):
 
 @dataclass(frozen=True)
 class PhonemeResources:
-    model: BertModel
-    tokenizer: BertTokenizerFast
+    model: AlbertModel
+    tokenizer: "PhonemeTokenizer"
 
 
 @dataclass(frozen=True)
@@ -43,18 +46,43 @@ class TextResources:
     tokenizer: BertTokenizerFast
 
 
+class PhonemeTokenizer:
+    def __init__(self) -> None:
+        self._token_ids = {symbol: index for index, symbol in enumerate(symbols)}
+
+    def encode(self, text: str) -> list[int]:
+        unknown = sorted(set(text).difference(self._token_ids))
+        if unknown:
+            raise ValueError(f"phonemes are outside the StyleTTS2 vocabulary: {unknown}")
+        return [self._token_ids[symbol] for symbol in text]
+
+
 def load_phoneme_resources(model_path: Path) -> PhonemeResources:
-    model = BertModel.from_pretrained(model_path, local_files_only=True)
-    tokenizer = BertTokenizerFast.from_pretrained(
-        model_path,
-        local_files_only=True,
+    settings = yaml.safe_load((model_path / "config.yml").read_text())
+    model = AlbertModel(AlbertConfig(**settings["model_params"]))
+    checkpoints = sorted(
+        model_path.glob("step_*.t7"),
+        key=lambda path: int(path.stem.removeprefix("step_")),
     )
-    return PhonemeResources(model, tokenizer)
+    if not checkpoints:
+        raise ValueError(f"PL-BERT checkpoint is missing from {model_path}")
+    payload = torch.load(checkpoints[-1], map_location="cpu", weights_only=False)
+    prefix = "module.encoder."
+    state = {
+        key.removeprefix(prefix): value
+        for key, value in payload["net"].items()
+        if key.startswith(prefix) and not key.endswith("position_ids")
+    }
+    incompatible = model.load_state_dict(state, strict=False)
+    if incompatible.missing_keys or incompatible.unexpected_keys:
+        raise ValueError(f"PL-BERT checkpoint keys do not match: {incompatible}")
+    return PhonemeResources(model, PhonemeTokenizer())
 
 
 def load_text_resources(model_name: str) -> TextResources:
-    model = BertModel.from_pretrained(model_name)
-    tokenizer = BertTokenizerFast.from_pretrained(model_name)
+    snapshot = Path(snapshot_download(model_name, local_files_only=True))
+    model = BertModel.from_pretrained(snapshot)
+    tokenizer = BertTokenizerFast.from_pretrained(snapshot)
     return TextResources(model, tokenizer)
 
 
@@ -97,7 +125,6 @@ def load_aligner(config: BeetleConfig) -> PhonemeAligner:
 
 @dataclass(frozen=True)
 class RunPreparation:
-    stage: StageKind
     config: BeetleConfig
     config_fingerprint: str
     index: DatabaseSegmentIndex
@@ -109,20 +136,17 @@ class RunPreparation:
 def load_validation_source(
     config: BeetleConfig,
     index: DatabaseSegmentIndex,
-    stage_number: int,
     loader: ValidationLoader,
 ) -> ValidationSource:
     audio_file_ids = select_validation_audio_ids(
         index,
-        stage_number,
         config.validation.sample_count,
         config.runtime.seed,
     )
-    return loader.load_source(stage_number, audio_file_ids)
+    return loader.load_source(audio_file_ids)
 
 
 def prepare_run(
-    stage: StageKind,
     config_path: Path,
     output_path: Path,
     resume_path: Path | None,
@@ -138,30 +162,25 @@ def prepare_run(
         config.data.prefetch.page_size,
         callbacks,
     )
-    stage_number = {
-        StageKind.STAGE1: 1,
-        StageKind.STAGE2: 2,
-        StageKind.STAGE3: 3,
-    }[stage]
-    index.report.require(stage_number, config.data.sentence_probability)
+    index.report.require(config.data.sentence_probability)
     validation = load_validation_source(
         config,
         index,
-        stage_number,
         ValidationLoader.from_database(config),
     )
     callbacks.check_cancel()
-    manager = CheckpointManager(output_path / "checkpoints")
+    manager = CheckpointManager(
+        output_path / "checkpoints",
+        config.checkpoint.keep_last,
+    )
     resume = manager.load(resume_path) if resume_path is not None else None
     if resume is not None:
         validate_resume_fingerprints(
             resume,
-            stage,
             fingerprint,
             index.fingerprint,
         )
     return RunPreparation(
-        stage,
         config,
         fingerprint,
         index,

@@ -49,27 +49,13 @@ class PreparedValidationAudio:
 
 @dataclass(frozen=True)
 class ValidationSource:
-    stage_number: int
     items: tuple[PreparedValidationAudio, ...]
 
 
 @dataclass(frozen=True)
 class ValidationCandidates:
-    stage1: tuple[UUID, ...]
+    audio_file_ids: tuple[UUID, ...]
     conditional_by_voice: dict[str, tuple[UUID, ...]]
-
-    def for_stage(self, stage_number: int) -> tuple[UUID, ...]:
-        if stage_number == 1:
-            return self.stage1
-        if stage_number not in (2, 3):
-            raise ValueError("validation stage number must be 1, 2, or 3")
-        return tuple(
-            sorted(
-                audio_id
-                for audio_ids in self.conditional_by_voice.values()
-                for audio_id in audio_ids
-            )
-        )
 
     def voice_for(self, audio_file_id: UUID) -> str:
         matches = tuple(
@@ -97,18 +83,22 @@ def build_validation_candidates(
     for reference in references:
         grouped[reference.audio_file_id].append(reference)
     languages = frozenset(configured_languages)
-    stage1 = []
     conditional: dict[str, list[UUID]] = defaultdict(list)
     for audio_id in sorted(grouped):
         items = grouped[audio_id]
         if any(item.audio_virtual or item.audio_storage_kind != "packed" for item in items):
             continue
-        stage1.append(audio_id)
         voices = {_conditional_voice(item, languages) for item in items}
         if None not in voices and len(voices) == 1:
             conditional[next(iter(voices))].append(audio_id)
     return ValidationCandidates(
-        tuple(stage1),
+        tuple(
+            sorted(
+                audio_id
+                for audio_ids in conditional.values()
+                for audio_id in audio_ids
+            )
+        ),
         {
             voice_id: tuple(sorted(audio_ids))
             for voice_id, audio_ids in sorted(conditional.items())

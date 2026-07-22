@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from torch import Tensor
 
-from ..models.model import Stage1Models, Stage1Synthesis
+from ..models.model import AcousticModels, AcousticSynthesis
 from ..models.modules.audio import AcousticFeatures
 from .acoustic import (
     masked_f0_smooth_l1,
@@ -10,26 +10,26 @@ from .acoustic import (
     masked_n_smooth_l1,
 )
 from .adversarial import discriminator_step_loss, generator_step_loss
-from .stage2 import (
-    Stage2LossInput,
-    Stage2LossOutput,
-    Stage2LossWeights,
-    compute_stage2_losses,
+from .conditional import (
+    ConditionalLossInput,
+    ConditionalLossOutput,
+    ConditionalLossWeights,
+    compute_conditional_losses,
 )
 
 __all__ = [
-    "Stage1Losses",
-    "Stage1LossWeights",
-    "Stage2LossInput",
-    "Stage2LossOutput",
-    "Stage2LossWeights",
-    "compute_stage1_losses",
-    "compute_stage2_losses",
+    "AcousticLosses",
+    "AcousticLossWeights",
+    "ConditionalLossInput",
+    "ConditionalLossOutput",
+    "ConditionalLossWeights",
+    "compute_acoustic_losses",
+    "compute_conditional_losses",
 ]
 
 
 @dataclass(frozen=True)
-class Stage1LossWeights:
+class AcousticLossWeights:
     encoder_kl: float
     f0: float
     n: float
@@ -49,11 +49,11 @@ class Stage1LossWeights:
             self.feature_matching,
         )
         if any(value < 0 for value in values):
-            raise ValueError("Stage 1 loss weights must be nonnegative")
+            raise ValueError("acoustic loss weights must be nonnegative")
 
 
 @dataclass(frozen=True)
-class Stage1Losses:
+class AcousticLosses:
     encoder_kl: Tensor
     f0: Tensor
     n: Tensor
@@ -73,10 +73,10 @@ class Stage1Losses:
             "feature_matching": self.feature_matching,
         }
 
-    def discriminator_total(self, weights: Stage1LossWeights) -> Tensor:
+    def discriminator_total(self, weights: AcousticLossWeights) -> Tensor:
         return self.discriminator * weights.discriminator
 
-    def generator_total(self, weights: Stage1LossWeights) -> Tensor:
+    def generator_total(self, weights: AcousticLossWeights) -> Tensor:
         return (
             self.encoder_kl * weights.encoder_kl
             + self.f0 * weights.f0
@@ -87,12 +87,12 @@ class Stage1Losses:
         )
 
 
-def compute_stage1_losses(
-    models: Stage1Models,
-    synthesis: Stage1Synthesis,
+def compute_acoustic_losses(
+    models: AcousticModels,
+    synthesis: AcousticSynthesis,
     targets: AcousticFeatures,
     target_waveform: Tensor,
-) -> Stage1Losses:
+) -> AcousticLosses:
     if target_waveform.shape != synthesis.waveform.shape:
         raise ValueError("target and generated waveforms must have equal shapes")
     reconstruction = models.reconstruction_loss(
@@ -110,7 +110,7 @@ def compute_stage1_losses(
         target_waveform,
         synthesis.waveform,
     )
-    return Stage1Losses(
+    return AcousticLosses(
         encoder_kl=masked_kl_standard_normal(
             synthesis.posterior.mean,
             synthesis.posterior.log_scale,

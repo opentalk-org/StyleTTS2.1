@@ -23,23 +23,18 @@ from .validation_types import (
 
 def select_validation_audio_ids(
     index: DatabaseSegmentIndex,
-    stage_number: int,
     sample_count: int,
     runtime_seed: int,
 ) -> tuple[UUID, ...]:
-    candidates = list(index.validation.for_stage(stage_number))
+    candidates = list(index.validation.audio_file_ids)
     if len(candidates) < sample_count:
         raise ValueError(
-            f"Stage {stage_number} validation requires {sample_count} recordings "
+            f"Validation requires {sample_count} recordings "
             f"but only {len(candidates)} are eligible"
         )
-    rng = random.Random(
-        derive_seed(runtime_seed, stage_number, "validation-recordings")
-    )
+    rng = random.Random(derive_seed(runtime_seed, "validation-recordings"))
     rng.shuffle(candidates)
     selected = candidates[:sample_count]
-    if stage_number == 1:
-        return tuple(selected)
     candidate_voices = {
         index.validation.voice_for(audio_id) for audio_id in candidates
     }
@@ -107,11 +102,8 @@ class ValidationLoader:
 
     def load_source(
         self,
-        stage_number: int,
         audio_file_ids: tuple[UUID, ...],
     ) -> ValidationSource:
-        if stage_number not in (1, 2, 3):
-            raise ValueError("validation stage number must be 1, 2, or 3")
         if not audio_file_ids or len(set(audio_file_ids)) != len(audio_file_ids):
             raise ValueError("validation audio_file_ids must be nonempty and unique")
         loaded = self.database.load(audio_file_ids)
@@ -123,14 +115,14 @@ class ValidationLoader:
             stored = loaded[audio_id]
             if stored.audio_file_id != audio_id:
                 raise ValueError(f"validation audio ID mismatch: {audio_id}")
-            _validate_stored(stored, stage_number, self.config)
+            _validate_stored(stored, self.config)
             key = _validation_key(stored)
             try:
                 processed = self.preprocessor.decode(stored.clip, key)
             except ValueError as error:
                 raise ValueError(f"invalid validation audio {audio_id}: {error}") from error
             prepared.append(PreparedValidationAudio(stored, processed))
-        return ValidationSource(stage_number, tuple(prepared))
+        return ValidationSource(tuple(prepared))
 
     def collate(
         self,
@@ -141,7 +133,6 @@ class ValidationLoader:
         return tuple(
             collate_validation_recording(
                 self.config,
-                source.stage_number,
                 item,
                 phoneme_tokenizer,
                 text_tokenizer,
@@ -151,12 +142,11 @@ class ValidationLoader:
 
     def load(
         self,
-        stage_number: int,
         audio_file_ids: tuple[UUID, ...],
         phoneme_tokenizer: ValidationTokenizer,
         text_tokenizer: ValidationTokenizer,
     ) -> tuple[ValidationRecording, ...]:
-        source = self.load_source(stage_number, audio_file_ids)
+        source = self.load_source(audio_file_ids)
         return self.collate(source, phoneme_tokenizer, text_tokenizer)
 
 
@@ -191,7 +181,6 @@ def _segment(value: dict[str, Any]) -> ValidationSegment:
 
 def _validate_stored(
     stored: StoredValidationAudio,
-    stage_number: int,
     config: BeetleConfig,
 ) -> None:
     audio_id = stored.audio_file_id
@@ -204,8 +193,6 @@ def _validate_stored(
         if segment.start < previous_start or segment.end > stored.duration:
             raise ValueError(f"validation segment order is invalid: {audio_id}")
         previous_start = segment.start
-    if stage_number == 1:
-        return
     if stored.language not in config.architecture.language.values:
         raise ValueError(f"validation language is incomplete: {audio_id}")
     if not stored.segments:

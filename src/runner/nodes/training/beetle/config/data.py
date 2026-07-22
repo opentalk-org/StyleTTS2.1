@@ -12,7 +12,7 @@ class DatabaseSelection(StrictConfigModel):
 
 class PrefetchConfig(StrictConfigModel):
     page_size: int = Field(gt=0)
-    planned_batches: int = Field(gt=0)
+    window_size: int = Field(gt=0)
     decoded_bytes: int = Field(gt=0)
     audio_cache_bytes: int = Field(gt=0)
     audio_fetch_workers: int = Field(gt=0)

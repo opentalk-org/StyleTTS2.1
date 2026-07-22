@@ -56,11 +56,19 @@ class DistributedRuntime:
     def __init__(self, precision: Precision, requested_device: torch.device) -> None:
         self.precision = precision
         ddp = DistributedDataParallelKwargs(find_unused_parameters=False)
+        mixed_precision = {
+            Precision.FLOAT32: "no",
+            Precision.BFLOAT16: "bf16",
+            Precision.FLOAT16: "fp16",
+        }[precision]
         self.accelerator = Accelerator(
             cpu=requested_device.type == "cpu",
-            mixed_precision="no",
+            mixed_precision=mixed_precision,
             kwargs_handlers=[ddp],
         )
+        # Each optimizer has an independent scaler because discriminator and
+        # generator losses are backpropagated separately in one training step.
+        self.accelerator.scaler = None
         if self.device.type != requested_device.type:
             raise ValueError("Accelerate device type does not match runtime.device")
 

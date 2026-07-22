@@ -1,16 +1,16 @@
 from .artifacts import ArtifactQueue, ValidationArtifacts
 from .batch import merge_validation_recordings
-from .conditional import Stage2ValidationEvaluator, one_step_ema_latent
+from .conditional import ConditionalValidationEvaluator, one_step_ema_latent
 from .runtime import (
     ValidationCoordinator,
     ValidationRuntime,
     aggregate_losses,
     validation_metrics,
 )
-from .stage1 import Stage1ValidationEvaluator
-from .stage3 import Stage3ValidationEvaluator
+from .training import TrainingValidationEvaluator
 from .types import (
-    StageValidator,
+    ValidationRunner,
+    ValidationArtifactSet,
     ValidationEvaluator,
     ValidationResult,
     ValidationSampleResult,
@@ -18,14 +18,14 @@ from .types import (
 )
 
 __all__ = [
-    "Stage1ValidationEvaluator",
-    "Stage2ValidationEvaluator",
-    "Stage3ValidationEvaluator",
-    "StageValidator",
+    "ConditionalValidationEvaluator",
+    "TrainingValidationEvaluator",
+    "ValidationRunner",
     "ValidationEvaluator",
     "ValidationResult",
     "ValidationRuntime",
     "ValidationSampleResult",
+    "ValidationArtifactSet",
     "ArtifactQueue",
     "ValidationArtifacts",
     "ValidationCoordinator",

@@ -1,6 +1,6 @@
 from .cuts import CutPlanner
-from .index import DatabaseSegmentIndex, EligibilityReport, StagePools
-from .pipeline import build_data_pipeline, build_stage1_window_geometry
+from .index import DatabaseSegmentIndex, EligibilityReport, TrainingPools
+from .pipeline import build_data_pipeline
 from .prefetch import (
     BoundedBatchPrefetcher,
     DataPipelineState,
@@ -19,8 +19,6 @@ from .records import (
     WordBoundary,
 )
 from .sampling import ContinuousBatchPlanner, DistributedShard, PlannerState, derive_seed
-from .stage1_records import Stage1Batch
-from .stage1_sampling import Stage1WindowPlanner
 from .validation import ValidationLoader, select_validation_audio_ids
 from .validation_types import (
     StoredValidationAudio,
@@ -49,9 +47,7 @@ __all__ = [
     "PlannedBatch",
     "PlannerState",
     "SegmentKey",
-    "StagePools",
-    "Stage1Batch",
-    "Stage1WindowPlanner",
+    "TrainingPools",
     "WordBoundary",
     "StoredValidationAudio",
     "ValidationLoader",
@@ -62,5 +58,4 @@ __all__ = [
     "select_validation_audio_ids",
     "derive_seed",
     "build_data_pipeline",
-    "build_stage1_window_geometry",
 ]

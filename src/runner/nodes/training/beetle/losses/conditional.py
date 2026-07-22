@@ -1,12 +1,14 @@
+import math
 from dataclasses import dataclass
 
 from torch import Tensor, nn
 
 from ..models.modules.aligner import AlignerOutput
+from ..models.modules.audio import AcousticFeatures
 from ..models.modules.conditioning import ProjectedConditions
 from ..models.modules.embeddings import AcousticStatistics
 from ..models.modules.latent_flow import FlowTrainingSample
-from ..models.stage2 import Stage2Models
+from ..models.conditional import ConditionalModels
 from .alignment import compute_alignment_losses
 from .duration import duration_flow_loss
 from .embeddings import (
@@ -19,7 +21,7 @@ from .flow import base_flow_loss, shortcut_loss
 
 
 @dataclass(frozen=True)
-class Stage2LossWeights:
+class ConditionalLossWeights:
     duration_flow: float
     latent_flow: float
     shortcut: float
@@ -36,10 +38,10 @@ class Stage2LossWeights:
 
     def __post_init__(self) -> None:
         if any(value < 0 for value in self.values()):
-            raise ValueError("Stage 2 loss weights must be nonnegative")
+            raise ValueError("conditional loss weights must be nonnegative")
 
     @classmethod
-    def from_shared(cls, value: float) -> "Stage2LossWeights":
+    def from_shared(cls, value: float) -> "ConditionalLossWeights":
         return cls(*(value for _ in range(13)))
 
     def values(self) -> tuple[float, ...]:
@@ -61,7 +63,7 @@ class Stage2LossWeights:
 
 
 @dataclass(frozen=True)
-class Stage2LossInput:
+class ConditionalLossInput:
     duration_nll: Tensor
     phoneme_mask: Tensor
     flow_sample: FlowTrainingSample
@@ -81,6 +83,7 @@ class Stage2LossInput:
     style_positive_weights: Tensor
     speaker_ids: Tensor
     statistics_target: AcousticStatistics
+    acoustic_target: AcousticFeatures
     contrastive_temperature: float
     reversal_scale: float
     consistency_cosine_weight: float
@@ -90,7 +93,7 @@ class Stage2LossInput:
 
 
 @dataclass(frozen=True)
-class Stage2LossOutput:
+class ConditionalLossOutput:
     duration_flow: Tensor
     latent_flow: Tensor
     shortcut: Tensor
@@ -122,7 +125,7 @@ class Stage2LossOutput:
             self.style_reencoding,
         )
 
-    def total(self, weights: Stage2LossWeights) -> Tensor:
+    def total(self, weights: ConditionalLossWeights) -> Tensor:
         products = tuple(
             loss * weight
             for loss, weight in zip(self.values(), weights.values(), strict=True)
@@ -130,11 +133,11 @@ class Stage2LossOutput:
         return sum(products[1:], products[0])
 
 
-def compute_stage2_losses(
-    models: Stage2Models,
+def compute_conditional_losses(
+    models: ConditionalModels,
     ema_latent_flow: nn.Module,
-    inputs: Stage2LossInput,
-) -> Stage2LossOutput:
+    inputs: ConditionalLossInput,
+) -> ConditionalLossOutput:
     style_views = models.style_encoder(inputs.style_view_latent, inputs.style_view_mask)
     voice_views = models.voice_encoder(inputs.voice_view_latent, inputs.voice_view_mask)
     prediction = models.latent_flow(
@@ -151,8 +154,9 @@ def compute_stage2_losses(
         generated_latent,
         inputs.target_latent_mask,
     )
-    base_mask = inputs.latent_mask & (inputs.flow_sample.step == 0)
-    shortcut_mask = inputs.latent_mask & (inputs.flow_sample.step > 0)
+    flow_index = int(math.log2(inputs.minimum_flow_steps))
+    base_mask = inputs.latent_mask & (inputs.flow_sample.step_index == flow_index)
+    shortcut_mask = inputs.latent_mask & (inputs.flow_sample.step_index < flow_index)
     alignment = compute_alignment_losses(
         inputs.alignment,
         inputs.phonemes,
@@ -164,7 +168,7 @@ def compute_stage2_losses(
         inputs.target_style, inputs.reversal_scale
     )
     statistics = models.style_statistics_head(inputs.target_style)
-    return Stage2LossOutput(
+    return ConditionalLossOutput(
         duration_flow=duration_flow_loss(inputs.duration_nll, inputs.phoneme_mask),
         latent_flow=base_flow_loss(
             prediction,

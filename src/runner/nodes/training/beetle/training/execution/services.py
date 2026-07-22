@@ -15,10 +15,9 @@ from ..reporting import (
     configured_mlflow_client,
 )
 from ..runtime import RunPreparation
-from ..state import StageKind
 from ..validation import (
     ArtifactQueue,
-    StageValidator,
+    ValidationRunner,
     ValidationArtifacts,
     ValidationCoordinator,
 )
@@ -80,23 +79,18 @@ class _DistributedReporter:
 
 def build_runtime_services(
     preparation: RunPreparation,
-    stage: StageKind,
-    validator: StageValidator,
+    validator: ValidationRunner,
     phoneme_tokenizer: object,
     text_tokenizer: object,
     runtime: DistributedRuntime,
 ) -> RuntimeServices:
-    stage_config = {
-        StageKind.STAGE1: preparation.config.stage1,
-        StageKind.STAGE2: preparation.config.stage2,
-        StageKind.STAGE3: preparation.config.stage3,
-    }[stage]
+    training_config = preparation.config.training
     recordings = ValidationLoader.from_database(preparation.config).collate(
         preparation.validation,
         phoneme_tokenizer,
         text_tokenizer,
     )
-    session, state = _reporting_session(preparation, stage, runtime)
+    session, state = _reporting_session(preparation, runtime)
     try:
         reporter = None
         artifacts = None
@@ -104,7 +98,7 @@ def build_runtime_services(
             if session is None:
                 raise RuntimeError("main process MLflow session is unavailable")
             system = SystemMetricsSampler(runtime.device.index or 0)
-            reporter = TrainingReporter(session, stage_config.total_steps, system)
+            reporter = TrainingReporter(session, training_config.total_steps, system)
             artifacts = ValidationArtifacts(
                 preparation.checkpoint_manager.root.parent,
                 preparation.config.audio.sample_rate,
@@ -121,8 +115,8 @@ def build_runtime_services(
             runtime,
         )
         lifecycle = TrainingLifecycle(
-            stage_config.total_steps,
-            stage_config.validation_every_steps,
+            training_config.total_steps,
+            training_config.validation_every_steps,
             _DistributedReporter(runtime, reporter),
             validation,
         )
@@ -135,7 +129,6 @@ def build_runtime_services(
 
 def _reporting_session(
     preparation: RunPreparation,
-    stage: StageKind,
     runtime: DistributedRuntime,
 ) -> tuple[MlflowSession | None, ReportingState]:
     session = None
@@ -145,12 +138,11 @@ def _reporting_session(
         if state is None:
             session = MlflowSession.start(
                 client,
-                stage,
                 preparation.config.model_dump(mode="json"),
             )
             state = ReportingState.initial(session.run_id)
         else:
-            session = MlflowSession.resume(client, state.require_started(), stage)
+            session = MlflowSession.resume(client, state.require_started())
     shared = runtime.broadcast_object(state)
     if not isinstance(shared, ReportingState):
         raise TypeError("main process did not broadcast reporting state")

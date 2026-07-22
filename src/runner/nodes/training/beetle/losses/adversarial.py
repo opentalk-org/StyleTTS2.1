@@ -65,6 +65,22 @@ def discriminator_step_loss(
     return discriminator_lsgan_loss(output.real.logits, output.fake.logits)
 
 
+def grouped_discriminator_step_loss(
+    discriminators: PairedDiscriminator,
+    real: Tensor,
+    generated: tuple[Tensor, ...],
+) -> Tensor:
+    """Evaluate equivalent generated views in one larger discriminator batch."""
+    if not generated:
+        raise ValueError("grouped discriminator loss requires generated views")
+    repeated_real = torch.cat((real,) * len(generated), dim=0)
+    return discriminator_step_loss(
+        discriminators,
+        repeated_real,
+        torch.cat(generated, dim=0),
+    )
+
+
 def generator_step_loss(
     discriminators: PairedDiscriminator,
     real: Tensor,
@@ -88,6 +104,22 @@ def generator_step_loss(
     )
 
 
+def grouped_generator_step_loss(
+    discriminators: PairedDiscriminator,
+    real: Tensor,
+    generated: tuple[Tensor, ...],
+) -> GeneratorAdversarialLoss:
+    """Evaluate equivalent generated views in one larger discriminator batch."""
+    if not generated:
+        raise ValueError("grouped generator loss requires generated views")
+    repeated_real = torch.cat((real,) * len(generated), dim=0)
+    return generator_step_loss(
+        discriminators,
+        repeated_real,
+        torch.cat(generated, dim=0),
+    )
+
+
 __all__ = [
     "DiscriminatorEvaluation",
     "GeneratorAdversarialLoss",
@@ -97,4 +129,6 @@ __all__ = [
     "feature_matching_loss",
     "generator_lsgan_loss",
     "generator_step_loss",
+    "grouped_discriminator_step_loss",
+    "grouped_generator_step_loss",
 ]

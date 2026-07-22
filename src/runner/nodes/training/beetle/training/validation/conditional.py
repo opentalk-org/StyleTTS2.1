@@ -3,21 +3,26 @@ from uuid import UUID
 import torch
 from torch import Tensor, nn
 
-from ...config.training import StageConfig
+from ...config.training import TrainingConfig
 from ...data.sampling import derive_seed
 from ...data.validation_types import ValidationRecording
-from ...losses.stage2 import compute_stage2_losses
-from ...models.model import Stage1Models
+from ...losses.conditional import compute_conditional_losses
+from ...models.model import AcousticModels
 from ...models.modules.conditioning import ProjectedConditions
 from ...models.modules.latent_flow import integrate_latent_flow
-from ...models.stage2 import Stage2Models
+from ...models.conditional import ConditionalModels
 from ..reporting import TrainingMetric
-from ..loss_schedules import Stage2Schedules
-from ..stage2_features import ConditionalSynthesis
-from ..stage2_setup import Stage2InputBuilder
-from ..state import LoopState, StageKind, TrainingPhase
+from ..loss_schedules import TrainingSchedules
+from ..conditional_features import ConditionalSynthesis
+from ..setup import ConditionalInputBuilder
+from ..state import LoopState, TrainingPhase
 from .batch import merge_validation_recordings
-from .types import ValidationSampleResult, trim_waveform_pair
+from .types import (
+    ConditionalValidationSample,
+    ValidationArtifactSet,
+    trim_signal_pair,
+    trim_waveform_pair,
+)
 
 
 def one_step_ema_latent(
@@ -29,24 +34,22 @@ def one_step_ema_latent(
     return integrate_latent_flow(ema_latent_flow, noise, conditions, mask, 1)
 
 
-class Stage2ValidationEvaluator:
-    stage = StageKind.STAGE2
-
+class ConditionalValidationEvaluator:
     def __init__(
         self,
-        stage1: Stage1Models,
-        models: Stage2Models,
+        acoustic: AcousticModels,
+        models: ConditionalModels,
         ema_latent_flow: nn.Module,
-        input_builder: Stage2InputBuilder,
-        stage_config: StageConfig,
+        input_builder: ConditionalInputBuilder,
+        training_config: TrainingConfig,
         runtime_seed: int,
         device: torch.device,
     ) -> None:
-        self.stage1 = stage1
+        self.acoustic = acoustic
         self.models = models
         self.ema_latent_flow = ema_latent_flow
         self.input_builder = input_builder
-        self.schedules = Stage2Schedules.from_config(stage_config)
+        self.schedules = TrainingSchedules.from_config(training_config)
         self.runtime_seed = runtime_seed
         self.device = device
 
@@ -71,9 +74,9 @@ class Stage2ValidationEvaluator:
     def modules(self) -> tuple[nn.Module, ...]:
         return (
             *tuple(self.models.children()),
-            self.stage1.feature_linear,
-            self.stage1.decoder,
-            self.stage1.generator,
+            self.acoustic.feature_linear,
+            self.acoustic.decoder,
+            self.acoustic.generator,
             self.ema_latent_flow,
         )
 
@@ -81,11 +84,10 @@ class Stage2ValidationEvaluator:
         self,
         recordings: tuple[ValidationRecording, ...],
         step: int,
-    ) -> tuple[ValidationSampleResult, ...]:
+    ) -> tuple[ConditionalValidationSample, ...]:
         _require_contrastive_groups(recordings)
         batch = merge_validation_recordings(recordings).to(self.device)
         loop = LoopState(
-            self.stage,
             step,
             0,
             TrainingPhase.READY,
@@ -95,7 +97,7 @@ class Stage2ValidationEvaluator:
             (),
         )
         inputs = self.input_builder.build_validation(self.models, batch, loop)
-        losses = compute_stage2_losses(self.models, self.ema_latent_flow, inputs)
+        losses = compute_conditional_losses(self.models, self.ema_latent_flow, inputs)
         latent = one_step_ema_latent(
             self.ema_latent_flow,
             inputs.flow_sample.noise,
@@ -103,42 +105,54 @@ class Stage2ValidationEvaluator:
             inputs.latent_mask,
         )
         synthesis = self._synthesize(latent, inputs.latent_mask, batch, step)
-        targets = self.stage1.acoustic_targets(batch.mel, batch.frame_mask)
+        targets = self.acoustic.acoustic_targets(batch.mel, batch.frame_mask)
         target_mel, predicted_mel = self._artifact_mels(
             batch.waveform,
             synthesis.waveform,
         )
-        weights = self.schedules.weights(step)
+        weights = self.schedules.conditional_weights(step)
         metrics = tuple(
-            _metric(weight.name, value)
-            for weight, value in zip(
-                self.schedules.state(step).weights,
+            _metric(name, value)
+            for name, value in zip(
+                self.schedules.conditional_names,
                 losses.values(),
                 strict=True,
             )
         )
-        metrics = (*metrics, _metric("stage2_total", losses.total(weights)))
+        metrics = (*metrics, _metric("conditional_total", losses.total(weights)))
         samples = []
         for index, recording in enumerate(recordings):
+            frame_count = int(batch.frame_lengths[index])
             ground_truth, prediction = trim_waveform_pair(
                 batch.waveform[index : index + 1],
                 synthesis.waveform[index : index + 1],
                 int(batch.waveform_lengths[index]),
             )
+            f0 = trim_signal_pair(
+                targets.f0[index],
+                synthesis.acoustic.f0[index],
+                frame_count,
+            )
+            n = trim_signal_pair(
+                targets.n[index],
+                synthesis.acoustic.n[index],
+                frame_count,
+            )
             samples.append(
-                ValidationSampleResult(
+                ConditionalValidationSample(
                     recording.audio_file_id,
                     metrics,
-                    ground_truth,
-                    prediction,
-                    _cpu(latent[index]),
-                    (_cpu(targets.f0[index]), _cpu(synthesis.acoustic.f0[index])),
-                    (_cpu(targets.n[index]), _cpu(synthesis.acoustic.n[index])),
-                    (_cpu(target_mel[index]), _cpu(predicted_mel[index])),
-                    _cpu(inputs.alignment.soft_alignment[index]),
+                    ValidationArtifactSet(
+                        ground_truth,
+                        prediction,
+                        _cpu(latent[index]),
+                        f0,
+                        n,
+                        (_cpu(target_mel[index]), _cpu(predicted_mel[index])),
+                        _cpu(inputs.alignment.soft_alignment[index]),
+                    ),
                     derive_seed(
                         self.runtime_seed,
-                        self.stage,
                         step,
                         recording.audio_file_id,
                         "validation",
@@ -154,8 +168,8 @@ class Stage2ValidationEvaluator:
         batch: object,
         step: int,
     ) -> ConditionalSynthesis:
-        acoustic = self.stage1.feature_linear(latent, latent_mask, batch.frame_mask)
-        decoded = self.stage1.decoder(
+        acoustic = self.acoustic.feature_linear(latent, latent_mask, batch.frame_mask)
+        decoded = self.acoustic.decoder(
             latent,
             acoustic.f0,
             acoustic.n,
@@ -166,7 +180,7 @@ class Stage2ValidationEvaluator:
         for index, audio_id in enumerate(batch.recording_ids):
             generator = self._generator(step, audio_id, "source")
             generated.append(
-                self.stage1.generator(
+                self.acoustic.generator(
                     decoded.features[index : index + 1],
                     decoded.f0[index : index + 1],
                     decoded.mask[index : index + 1],
@@ -175,7 +189,7 @@ class Stage2ValidationEvaluator:
             )
         waveform = torch.cat(generated, dim=0)
         sample_mask = batch.frame_mask.repeat_interleave(
-            self.stage1.output_hop,
+            self.acoustic.output_hop,
             dim=-1,
         )
         return ConditionalSynthesis(acoustic, decoded, waveform, sample_mask)
@@ -185,7 +199,7 @@ class Stage2ValidationEvaluator:
         target: Tensor,
         prediction: Tensor,
     ) -> tuple[Tensor, Tensor]:
-        transform = self.stage1.reconstruction_loss.transforms[0]
+        transform = self.acoustic.reconstruction_loss.transforms[0]
         return transform(target[:, 0]), transform(prediction[:, 0])
 
     def _generator(
@@ -196,7 +210,6 @@ class Stage2ValidationEvaluator:
     ) -> torch.Generator:
         seed = derive_seed(
             self.runtime_seed,
-            self.stage,
             step,
             audio_file_id,
             view,

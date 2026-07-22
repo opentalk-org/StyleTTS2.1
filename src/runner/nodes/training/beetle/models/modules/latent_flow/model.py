@@ -16,6 +16,7 @@ class FlowTrainingSample:
     state: Tensor
     time: Tensor
     step: Tensor
+    step_index: Tensor
     velocity: Tensor
     noise: Tensor
 
@@ -62,21 +63,21 @@ def sample_flow_training_case(
         if torch.all(valid_base):
             flat_base[valid_indices[-1]] = False
         is_base = flat_base.view_as(is_base)
-    continuous_time = torch.rand(
-        scalar_shape,
-        dtype=latent.dtype,
-        device=latent.device,
-        generator=generator,
-    )
-    level = torch.randint(
-        1,
-        int(math.log2(minimum_steps)) + 1,
+    maximum_index = int(math.log2(minimum_steps))
+    shortcut_index = torch.randint(
+        0,
+        maximum_index,
         scalar_shape,
         device=latent.device,
         generator=generator,
     )
-    shortcut_step = torch.pow(2.0, level.to(dtype=latent.dtype)) / minimum_steps
-    start_count = torch.round(shortcut_step.reciprocal())
+    step_index = torch.where(
+        is_base,
+        torch.full_like(shortcut_index, maximum_index),
+        shortcut_index,
+    )
+    step = torch.pow(2.0, -step_index.to(dtype=latent.dtype))
+    start_count = torch.pow(2.0, step_index.to(dtype=latent.dtype))
     start_index = torch.floor(
         torch.rand(
             scalar_shape,
@@ -86,13 +87,12 @@ def sample_flow_training_case(
         )
         * start_count
     )
-    shortcut_time = start_index * shortcut_step
-    step = torch.where(is_base, torch.zeros_like(shortcut_step), shortcut_step)
-    time = torch.where(is_base, continuous_time, shortcut_time) * numeric_mask
+    time = start_index * step * numeric_mask
     step = step * numeric_mask
+    step_index = step_index * mask
     state = ((1 - time) * noise + time * latent) * numeric_mask
     velocity = (latent - noise) * numeric_mask
-    return FlowTrainingSample(state, time, step, velocity, noise)
+    return FlowTrainingSample(state, time, step, step_index, velocity, noise)
 
 
 class ScalarEmbedding(nn.Module):

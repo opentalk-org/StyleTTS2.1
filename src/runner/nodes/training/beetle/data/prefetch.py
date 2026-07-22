@@ -1,29 +1,23 @@
 import queue
 import threading
-from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Protocol
 
 from .records import BeetleBatch, PlannedBatch
-from .sampling import ContinuousBatchPlanner, PlannerState
+from .sampling import ContinuousBatchPlanner, PlannedWindowBatch, PlannerState
 from .source import FetchedBatch
-from .stage1_records import FetchedStage1Batch, Stage1Batch, Stage1PlannedBatch
-from .stage1_sampling import Stage1PlannerState, Stage1WindowPlanner
 
-TrainingBatch = BeetleBatch | Stage1Batch
-BatchPlan = PlannedBatch | Stage1PlannedBatch
-FetchedPlan = FetchedBatch | FetchedStage1Batch
-PlannerStateType = PlannerState | Stage1PlannerState
-BatchPlanner = ContinuousBatchPlanner | Stage1WindowPlanner
+TrainingBatch = BeetleBatch
+
 
 class PrefetchCallbacks(Protocol):
     def check_cancel(self) -> None: ...
 
 
 class PlannedBatchLoader(Protocol):
-    def fetch(self, planned: BatchPlan) -> FetchedPlan: ...
+    def fetch(self, planned: PlannedBatch) -> FetchedBatch: ...
 
-    def collate(self, fetched: FetchedPlan) -> TrainingBatch: ...
+    def collate(self, fetched: FetchedBatch) -> TrainingBatch: ...
 
     def close(self) -> None: ...
 
@@ -31,7 +25,7 @@ class PlannedBatchLoader(Protocol):
 @dataclass(frozen=True)
 class DataPipelineState:
     data_fingerprint: str
-    planner: PlannerStateType
+    planner: PlannerState
     world_size: int
 
     def __post_init__(self) -> None:
@@ -42,21 +36,13 @@ class DataPipelineState:
 @dataclass(frozen=True)
 class _QueuedBatch:
     batch: TrainingBatch
-    state_after: PlannerStateType
+    state_after: PlannerState
     decoded_bytes: int
 
 
 @dataclass(frozen=True)
-class _PlannedCandidate:
-    batch: BatchPlan
-    state_after: PlannerStateType
-    decoded_bytes: int
-
-
-@dataclass(frozen=True)
-class _PendingFetch:
-    candidate: _PlannedCandidate
-    future: Future[FetchedPlan]
+class _QueuedWindow:
+    batches: tuple[_QueuedBatch, ...]
 
 
 @dataclass(frozen=True)
@@ -67,29 +53,32 @@ class _ProducerFailure:
 class BoundedBatchPrefetcher:
     def __init__(
         self,
-        planner: BatchPlanner,
+        planner: ContinuousBatchPlanner,
         loader: PlannedBatchLoader,
         callbacks: PrefetchCallbacks,
-        maximum_batches: int,
+        window_size: int,
         maximum_decoded_bytes: int,
         sample_rate: int,
         initial_state: DataPipelineState,
     ) -> None:
+        if window_size <= 0:
+            raise ValueError("prefetch window size must be positive")
         if initial_state.data_fingerprint != planner.index.fingerprint:
             raise ValueError("data fingerprint does not match planner index")
         if initial_state.world_size != planner.shard.world_size:
             raise ValueError("pipeline world size does not match planner shard")
-        _restore_planner_state(planner, initial_state.planner)
+        planner.load_state_dict(initial_state.planner)
         self.planner = planner
         self.loader = loader
         self.callbacks = callbacks
-        self.maximum_batches = maximum_batches
+        self.window_size = window_size
         self.maximum_decoded_bytes = maximum_decoded_bytes
         self.sample_rate = sample_rate
         self._committed_state = initial_state
-        self._queue: queue.Queue[_QueuedBatch | _ProducerFailure] = queue.Queue(maximum_batches)
+        self._windows: queue.Queue[_QueuedWindow | _ProducerFailure] = queue.Queue(1)
         self._condition = threading.Condition()
-        self._queued_bytes = 0
+        self._reserved_bytes = 0
+        self._active: list[_QueuedBatch] = []
         self._in_flight: _QueuedBatch | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -98,24 +87,15 @@ class BoundedBatchPrefetcher:
     @property
     def queued_bytes(self) -> int:
         with self._condition:
-            return self._queued_bytes
+            return self._reserved_bytes
 
     def next_batch(self) -> TrainingBatch:
         if self._in_flight is not None:
             raise RuntimeError("mark the current batch consumed before requesting another")
-        while True:
-            self.callbacks.check_cancel()
-            try:
-                item = self._queue.get(timeout=0.1)
-                break
-            except queue.Empty:
-                if self._thread is not None and not self._thread.is_alive():
-                    raise RuntimeError("prefetch producer stopped without a result")
-        if isinstance(item, _ProducerFailure):
-            raise item.error
-        self._release_bytes(item.decoded_bytes)
-        self._in_flight = item
-        return item.batch
+        if not self._active:
+            self._active.extend(self._next_window().batches)
+        self._in_flight = self._active.pop(0)
+        return self._in_flight.batch
 
     def mark_consumed(self) -> None:
         if self._in_flight is None:
@@ -125,6 +105,7 @@ class BoundedBatchPrefetcher:
             self._in_flight.state_after,
             self.planner.shard.world_size,
         )
+        self._release_bytes(self._in_flight.decoded_bytes)
         self._in_flight = None
 
     def state_dict(self) -> DataPipelineState:
@@ -138,16 +119,30 @@ class BoundedBatchPrefetcher:
         if state.world_size != self.planner.shard.world_size:
             raise ValueError("restored world size does not match planner shard")
         self._stop_producer()
-        _restore_planner_state(self.planner, state.planner)
+        self.planner.load_state_dict(state.planner)
         self._committed_state = state
-        self._queue = queue.Queue(self.maximum_batches)
-        self._queued_bytes = 0
+        self._windows = queue.Queue(1)
+        self._active = []
+        self._reserved_bytes = 0
         self._stop = threading.Event()
         self._start()
 
     def close(self) -> None:
         self._stop_producer()
         self.loader.close()
+
+    def _next_window(self) -> _QueuedWindow:
+        while True:
+            self.callbacks.check_cancel()
+            try:
+                item = self._windows.get(timeout=0.1)
+                break
+            except queue.Empty:
+                if self._thread is not None and not self._thread.is_alive():
+                    raise RuntimeError("prefetch producer stopped without a result")
+        if isinstance(item, _ProducerFailure):
+            raise item.error
+        return item
 
     def _stop_producer(self) -> None:
         self._stop.set()
@@ -162,136 +157,91 @@ class BoundedBatchPrefetcher:
     def _start(self) -> None:
         self._thread = threading.Thread(
             target=self._produce,
-            name="beetle-batch-prefetch",
+            name="beetle-window-prefetch",
             daemon=True,
         )
         self._thread.start()
 
     def _produce(self) -> None:
-        candidate: _PlannedCandidate | None = None
-        pending: _PendingFetch | None = None
-        completed: _PendingFetch | None = None
+        reserved = 0
         try:
-            with ThreadPoolExecutor(
-                max_workers=1,
-                thread_name_prefix="beetle-audio-prefetch",
-            ) as executor:
-                while not self._stop.is_set():
-                    if pending is None:
-                        candidate = candidate or self._plan_candidate()
-                        if not self._reserve_bytes(candidate.decoded_bytes, True):
-                            break
-                        pending = _PendingFetch(
-                            candidate,
-                            executor.submit(self.loader.fetch, candidate.batch),
-                        )
-                        candidate = None
-                    completed = pending
-                    pending = None
-                    fetched = completed.future.result()
-                    candidate = self._plan_candidate()
-                    if self._reserve_bytes(candidate.decoded_bytes, False):
-                        pending = _PendingFetch(
-                            candidate,
-                            executor.submit(self.loader.fetch, candidate.batch),
-                        )
-                        candidate = None
-                    batch = self.loader.collate(fetched)
-                    queued = _QueuedBatch(
-                        batch,
-                        completed.candidate.state_after,
-                        completed.candidate.decoded_bytes,
-                    )
-                    if not self._put(queued):
-                        self._release_bytes(
-                            completed.candidate.decoded_bytes
-                        )
-                        completed = None
-                        break
-                    completed = None
-            if pending is not None:
-                pending.future.cancel()
-                self._release_bytes(pending.candidate.decoded_bytes)
+            while not self._stop.is_set():
+                plans = self.planner.next_window(self.window_size)
+                estimates = tuple(self._estimate(item.batch) for item in plans)
+                reserved = sum(estimates)
+                if not self._reserve_bytes(reserved):
+                    return
+                queued = tuple(
+                    self._prepare_batch(item, decoded_bytes)
+                    for item, decoded_bytes in zip(plans, estimates, strict=True)
+                )
+                if not self._put(_QueuedWindow(queued)):
+                    self._release_bytes(reserved)
+                    return
+                reserved = 0
         except BaseException as error:
-            if pending is not None:
-                pending.future.cancel()
-                self._release_bytes(pending.candidate.decoded_bytes)
-            if completed is not None:
-                self._release_bytes(completed.candidate.decoded_bytes)
+            if reserved:
+                self._release_bytes(reserved)
             self._put(_ProducerFailure(error))
 
-    def _plan_candidate(self) -> _PlannedCandidate:
-        planned = self.planner.next_batch()
-        decoded_bytes = _estimated_decoded_bytes(
-            planned,
-            self.planner,
-            self.sample_rate,
+    def _prepare_batch(
+        self,
+        planned: PlannedWindowBatch,
+        decoded_bytes: int,
+    ) -> _QueuedBatch:
+        fetched = self.loader.fetch(planned.batch)
+        return _QueuedBatch(
+            self.loader.collate(fetched),
+            planned.state_after,
+            decoded_bytes,
         )
+
+    def _estimate(self, planned: PlannedBatch) -> int:
+        ranges = set()
+        for example in planned.examples:
+            ranges.add((example.key.audio_file_id, example.target.start, example.target.end))
+            for context in (example.pre_context, example.post_context):
+                if context is not None:
+                    ranges.add(
+                        (
+                            context.key.audio_file_id,
+                            context.audio.start,
+                            context.audio.end,
+                        )
+                    )
+        for group in (*planned.voice_groups, *planned.style_groups):
+            for view in group.views:
+                ranges.add((view.key.audio_file_id, view.audio.start, view.audio.end))
+        seconds = sum(end - start for _, start, end in ranges)
+        return max(1, round(seconds * self.sample_rate * 4))
+
+    def _reserve_bytes(self, decoded_bytes: int) -> bool:
         if decoded_bytes > self.maximum_decoded_bytes:
             raise ValueError(
-                "one planned batch exceeds prefetch decoded-byte limit: "
+                "one prefetch window exceeds decoded-byte limit: "
                 f"{decoded_bytes} > {self.maximum_decoded_bytes}"
             )
-        return _PlannedCandidate(planned, self.planner.state_dict(), decoded_bytes)
-
-    def _reserve_bytes(self, decoded_bytes: int, wait: bool) -> bool:
         with self._condition:
-            if wait:
-                self._condition.wait_for(
-                    lambda: self._stop.is_set()
-                    or self._queued_bytes + decoded_bytes
-                    <= self.maximum_decoded_bytes
-                )
-            fits = self._queued_bytes + decoded_bytes <= self.maximum_decoded_bytes
-            if not self._stop.is_set() and fits:
-                self._queued_bytes += decoded_bytes
-                return True
-            return False
+            self._condition.wait_for(
+                lambda: self._stop.is_set()
+                or self._reserved_bytes + decoded_bytes
+                <= self.maximum_decoded_bytes
+            )
+            if self._stop.is_set():
+                return False
+            self._reserved_bytes += decoded_bytes
+            return True
 
     def _release_bytes(self, decoded_bytes: int) -> None:
         with self._condition:
-            self._queued_bytes -= decoded_bytes
+            self._reserved_bytes -= decoded_bytes
             self._condition.notify_all()
 
-    def _put(self, item: _QueuedBatch | _ProducerFailure) -> bool:
+    def _put(self, item: _QueuedWindow | _ProducerFailure) -> bool:
         while not self._stop.is_set():
             try:
-                self._queue.put(item, timeout=0.1)
+                self._windows.put(item, timeout=0.1)
                 return True
             except queue.Full:
                 continue
         return False
-
-
-def _estimated_decoded_bytes(planned: BatchPlan, planner: BatchPlanner, sample_rate: int) -> int:
-    if isinstance(planned, Stage1PlannedBatch):
-        if not isinstance(planner, Stage1WindowPlanner):
-            raise TypeError("Stage 1 plans require the Stage 1 planner")
-        keys = set(plan.key for plan in planned.windows)
-        seconds = sum(planner.index.records[key].duration for key in keys)
-        return max(1, round(seconds * sample_rate * 4))
-    ranges = set()
-    for example in planned.examples:
-        ranges.add((example.key.audio_file_id, example.target.start, example.target.end))
-        if example.pre_context is not None:
-            context = example.pre_context
-            ranges.add((context.key.audio_file_id, context.audio.start, context.audio.end))
-        if example.post_context is not None:
-            context = example.post_context
-            ranges.add((context.key.audio_file_id, context.audio.start, context.audio.end))
-    for group in (*planned.voice_groups, *planned.style_groups):
-        for view in group.views:
-            ranges.add((view.key.audio_file_id, view.audio.start, view.audio.end))
-    seconds = sum(end - start for _, start, end in ranges)
-    return max(1, round(seconds * sample_rate * 4))
-
-
-def _restore_planner_state(planner: BatchPlanner, state: PlannerStateType) -> None:
-    if isinstance(planner, Stage1WindowPlanner):
-        if not isinstance(state, Stage1PlannerState):
-            raise TypeError("Stage 1 pipeline requires Stage1PlannerState")
-        planner.load_state_dict(state)
-        return
-    if not isinstance(state, PlannerState):
-        raise TypeError("Stage 2/3 pipeline requires PlannerState")
-    planner.load_state_dict(state)

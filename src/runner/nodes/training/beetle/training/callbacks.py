@@ -9,7 +9,7 @@ from types import FrameType
 from typing import Protocol, runtime_checkable
 
 from .reporting import ForegroundCategory, StepTimer, TrainingMetric
-from .state import LoopState, StageKind, TrainingPhase
+from .state import LoopState, TrainingPhase
 
 
 class CancellationRequested(RuntimeError):
@@ -18,7 +18,6 @@ class CancellationRequested(RuntimeError):
 
 @dataclass(frozen=True)
 class ProgressEvent:
-    stage: StageKind
     optimizer_step: int
     microstep: int
     phase: TrainingPhase
@@ -97,7 +96,6 @@ def report_only(
     try:
         callbacks.report_progress(
             ProgressEvent(
-                state.stage,
                 state.optimizer_step,
                 state.microstep,
                 state.phase,

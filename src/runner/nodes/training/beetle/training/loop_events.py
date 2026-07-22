@@ -97,7 +97,6 @@ def announce(
         owner.set_loop_state(state)
         callbacks.report_progress(
             ProgressEvent(
-                state.stage,
                 state.optimizer_step,
                 state.microstep,
                 state.phase,
@@ -152,7 +151,7 @@ def save_checkpoint(
     started_at = time.monotonic()
     checkpointing = replace(state, phase=TrainingPhase.CHECKPOINTING)
     trainer.set_loop_state(checkpointing)
-    complete = replace(checkpointing, phase=TrainingPhase.CHECKPOINT_COMPLETE)
+    complete = replace(state, phase=TrainingPhase.READY)
     payload = trainer.checkpoint_payload(
         complete,
         pipeline.state_dict(),
@@ -165,36 +164,10 @@ def save_checkpoint(
     return complete
 
 
-def save_emergency_checkpoint(
-    trainer: LifecycleTrainer,
-    pipeline: LifecyclePipeline,
-    callbacks: TrainingCallbacks,
-    checkpoint_manager: CheckpointManager,
-    reporting: ReportingState,
-    state: LoopState,
-    timer: StepTimer,
-) -> Path:
-    started_at = time.monotonic()
-    payload = trainer.checkpoint_payload(
-        state,
-        pipeline.state_dict(),
-        reporting,
-    )
-    path = checkpoint_manager.save(payload)
-    callbacks.publish_artifact(path, _CHECKPOINT_MEDIA_TYPE)
-    trainer.set_loop_state(state)
-    timer.record(ForegroundCategory.CHECKPOINT, started_at)
-    return path
-
-
 def cancel_run(
     trainer: LifecycleTrainer,
-    pipeline: LifecyclePipeline,
-    callbacks: TrainingCallbacks,
-    checkpoint_manager: CheckpointManager,
     reporting: StepObservationTracker,
     lifecycle: TrainingLifecycle,
-    timer: StepTimer,
 ) -> LoopState:
     flush_error: Exception | None = None
     try:
@@ -202,20 +175,10 @@ def cancel_run(
         reporting.mark_flushed()
     except Exception as error:
         flush_error = error
-    state = trainer.loop_state()
-    save_emergency_checkpoint(
-        trainer,
-        pipeline,
-        callbacks,
-        checkpoint_manager,
-        reporting.snapshot(),
-        state,
-        timer,
-    )
     if flush_error is not None:
         lifecycle.reporter.fail()
         raise flush_error
-    return state
+    return trainer.loop_state()
 
 
 def complete_step_work(

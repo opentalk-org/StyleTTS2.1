@@ -1,13 +1,21 @@
 from dataclasses import dataclass
 
-from ..config.training import StageConfig
-from ..losses.composition import Stage1LossWeights
-from ..losses.stage2 import Stage2LossWeights
+from ..config.training import TrainingConfig
+from ..losses.composition import AcousticLossWeights
+from ..losses.conditional import ConditionalLossWeights
 from .checkpoint import LossScheduleState, LossWeight
 from .optimizer import StepSchedule, loss_weight_schedule
-from .stage1_setup import Stage1Schedules
 
-_STAGE2_LOSS_NAMES = (
+_ACOUSTIC_NAMES = (
+    "encoder_kl",
+    "f0",
+    "n",
+    "reconstruction",
+    "discriminator",
+    "generator_adversarial",
+    "feature_matching",
+)
+_CONDITIONAL_NAMES = (
     "duration_flow",
     "latent_flow",
     "shortcut",
@@ -25,56 +33,51 @@ _STAGE2_LOSS_NAMES = (
 
 
 @dataclass(frozen=True)
-class Stage2Schedules:
-    values: tuple[StepSchedule, ...]
+class TrainingSchedules:
+    acoustic: tuple[StepSchedule, ...]
+    conditional: tuple[StepSchedule, ...]
+    acoustic_prediction: StepSchedule
 
     @classmethod
-    def from_config(cls, config: StageConfig) -> "Stage2Schedules":
+    def from_config(cls, config: TrainingConfig) -> "TrainingSchedules":
         losses = config.losses
-        scheduled = tuple(
-            loss_weight_schedule(getattr(losses, name))
-            for name in _STAGE2_LOSS_NAMES
+        return cls(
+            tuple(loss_weight_schedule(getattr(losses, name)) for name in _ACOUSTIC_NAMES),
+            tuple(
+                loss_weight_schedule(getattr(losses, name))
+                for name in _CONDITIONAL_NAMES
+            ),
+            loss_weight_schedule(config.acoustic_prediction),
         )
-        return cls(scheduled)
 
-    def weights(self, optimizer_step: int) -> Stage2LossWeights:
-        values = tuple(schedule.value(optimizer_step) for schedule in self.values)
-        return Stage2LossWeights(*values)
+    def acoustic_weights(self, optimizer_step: int) -> AcousticLossWeights:
+        values = tuple(schedule.value(optimizer_step) for schedule in self.acoustic)
+        return AcousticLossWeights(*values)
+
+    def conditional_weights(self, optimizer_step: int) -> ConditionalLossWeights:
+        values = tuple(schedule.value(optimizer_step) for schedule in self.conditional)
+        return ConditionalLossWeights(*values)
+
+    def predicted_acoustic_ratio(self, optimizer_step: int) -> float:
+        return self.acoustic_prediction.value(optimizer_step)
 
     def state(self, optimizer_step: int) -> LossScheduleState:
-        weights = self.weights(optimizer_step)
+        values = (
+            *(schedule.value(optimizer_step) for schedule in self.acoustic),
+            *(schedule.value(optimizer_step) for schedule in self.conditional),
+        )
         return LossScheduleState(
             optimizer_step,
             tuple(
                 LossWeight(name, value)
                 for name, value in zip(
-                    _STAGE2_LOSS_NAMES,
-                    weights.values(),
+                    (*_ACOUSTIC_NAMES, *_CONDITIONAL_NAMES),
+                    values,
                     strict=True,
                 )
             ),
         )
 
-
-@dataclass(frozen=True)
-class Stage3Schedules:
-    stage1: Stage1Schedules
-    stage2: Stage2Schedules
-
-    @classmethod
-    def from_config(cls, config: StageConfig) -> "Stage3Schedules":
-        return cls(
-            Stage1Schedules.from_config(config),
-            Stage2Schedules.from_config(config),
-        )
-
-    def weights(self, optimizer_step: int) -> Stage1LossWeights:
-        return self.stage1.weights(optimizer_step)
-
-    def state(self, optimizer_step: int) -> LossScheduleState:
-        stage1 = self.stage1.state(optimizer_step)
-        stage2 = self.stage2.state(optimizer_step)
-        return LossScheduleState(
-            optimizer_step,
-            (*stage1.weights, *stage2.weights),
-        )
+    @property
+    def conditional_names(self) -> tuple[str, ...]:
+        return _CONDITIONAL_NAMES

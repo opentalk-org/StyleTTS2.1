@@ -48,7 +48,7 @@ architecture:
     source_hop_length: 60
   phoneme_token_count: 178
   phoneme:
-    model_path: src/runner/nodes/training/beetle/files/phoneme_bert
+    model_path: src/runner/nodes/training/beetle/external/StyleTTS2/Utils/PLBERT
     projection_channels: 256
     cnn_hidden_channels: 384
     cnn_layers: 5
@@ -107,11 +107,11 @@ architecture:
     base_case_probability: 0.75
     ema_decay: 0.999
   aligner:
-    checkpoint_asset_id: 00000000-0000-0000-0000-000000000000
+    checkpoint_asset_id: 653025b8-9aea-403e-86f4-2ca9ef98ff74
     checkpoint_filename: epoch_00080.pth
     hidden_channels: 256
     layer_count: 6
-    token_embedding_channels: 256
+    token_embedding_channels: 512
     frame_reduction: 2
     blank_id: 0
   text_encoder:
@@ -125,14 +125,14 @@ complexity:
   benchmark_seconds: 1.0
 data:
   selection:
-    dataset_id: 00000000-0000-0000-0000-000000000000
+    dataset_id: d74f9522-022a-487d-98dc-f40bbc31853c
     audio_file_ids: []
   minimum_seconds: 0.0
   maximum_seconds: 45.0
-  sentence_probability: 0.5
+  sentence_probability: 1.0
   prefetch:
     page_size: 2000
-    planned_batches: 8
+    window_size: 8
     decoded_bytes: 2147483648
     audio_cache_bytes: 8589934592
     audio_fetch_workers: 16
@@ -144,10 +144,10 @@ data:
     recordings_per_batch: 8
     cuts_per_recording: 2
   augmentation:
-    time_stretch_min: 0.9
-    time_stretch_max: 1.1
-    pitch_shift_min_semitones: -2.0
-    pitch_shift_max_semitones: 2.0
+    time_stretch_min: 1.0
+    time_stretch_max: 1.0
+    pitch_shift_min_semitones: 0.0
+    pitch_shift_max_semitones: 0.0
     gain_min_db: -6.0
     gain_max_db: 6.0
 validation:
@@ -159,27 +159,23 @@ runtime:
   compile_frame_count: 196
   log_every_steps: 100
 adversarial:
-  segment_samples: 9600
-stage1_window:
-  latent_frames: 32
-stage1_conditioning:
-  predicted_start_step: 50000
-  transition_steps: 50000
+  segment_samples: 19200
 checkpoint:
-  every_steps: 1000
-  keep_last: 5
-stage2_objective:
+  every_steps: 8000
+  keep_last: 1
+conditioning_objective:
   contrastive_temperature: 0.2
   reversal_scale: 0.1
   consistency_cosine_weight: 1.0
   consistency_mse_weight: 1.0
-stage1: &stage1
+training:
   batch_size: 16
   accumulation_steps: 1
-  total_steps: 1000000
-  validation_every_steps: 10000
-  precision: bfloat16
-  generator_optimizer: &generator_optimizer
+  total_steps: 8000
+  validation_every_steps: 2000
+  precision: float16
+  acoustic_prediction: {value: 1.0, start_step: 2000, warmup_steps: 3000}
+  generator_optimizer:
     learning_rate: 0.0002
     beta1: 0.8
     beta2: 0.99
@@ -189,8 +185,8 @@ stage1: &stage1
     decay_steps: 1000000
     minimum_learning_rate_ratio: 0.1
     maximum_gradient_norm: 10.0
-  discriminator_optimizer: &discriminator_optimizer
-    learning_rate: 0.0002
+  discriminator_optimizer:
+    learning_rate: 0.00005
     beta1: 0.8
     beta2: 0.99
     epsilon: 0.000000001
@@ -199,16 +195,16 @@ stage1: &stage1
     decay_steps: 1000000
     minimum_learning_rate_ratio: 0.1
     maximum_gradient_norm: 10.0
-  losses: &all_losses
+  losses:
     encoder_kl: {value: 1.0, start_step: 0, warmup_steps: 0}
     f0: {value: 1.0, start_step: 0, warmup_steps: 0}
     n: {value: 1.0, start_step: 0, warmup_steps: 0}
-    reconstruction: {value: 45.0, start_step: 0, warmup_steps: 0}
-    discriminator: {value: 1.0, start_step: 0, warmup_steps: 3000}
-    generator_adversarial: {value: 1.0, start_step: 0, warmup_steps: 3000}
-    feature_matching: {value: 1.0, start_step: 0, warmup_steps: 3000}
+    reconstruction: {value: 90.0, start_step: 0, warmup_steps: 0}
+    discriminator: {value: 1.0, start_step: 0, warmup_steps: 1000}
+    generator_adversarial: {value: 1.0, start_step: 0, warmup_steps: 1000}
+    feature_matching: {value: 1.0, start_step: 0, warmup_steps: 1000}
     duration_flow: {value: 1.0, start_step: 0, warmup_steps: 0}
-    latent_flow: {value: 1.0, start_step: 0, warmup_steps: 0}
+    latent_flow: {value: 10.0, start_step: 0, warmup_steps: 0}
     shortcut: {value: 1.0, start_step: 0, warmup_steps: 0}
     align_s2s: {value: 1.0, start_step: 0, warmup_steps: 0}
     align_mono: {value: 1.0, start_step: 0, warmup_steps: 0}
@@ -220,19 +216,3 @@ stage1: &stage1
     style_speaker_adversarial: {value: 0.1, start_step: 0, warmup_steps: 1000}
     style_statistics: {value: 1.0, start_step: 0, warmup_steps: 0}
     style_reencoding: {value: 1.0, start_step: 0, warmup_steps: 0}
-stage2:
-  <<: *stage1
-  batch_size: 32
-  generator_optimizer:
-    <<: *generator_optimizer
-    learning_rate: 0.0001
-  discriminator_optimizer: null
-stage3:
-  <<: *stage1
-  batch_size: 8
-  generator_optimizer:
-    <<: *generator_optimizer
-    learning_rate: 0.00005
-  discriminator_optimizer:
-    <<: *discriminator_optimizer
-    learning_rate: 0.00005

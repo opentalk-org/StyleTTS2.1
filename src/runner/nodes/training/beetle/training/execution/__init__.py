@@ -1,4 +1,4 @@
-from .stages import run_stage
+from .training import run_training
 from .support import RuntimeCallbacks
 
-__all__ = ["RuntimeCallbacks", "run_stage"]
+__all__ = ["RuntimeCallbacks", "run_training"]

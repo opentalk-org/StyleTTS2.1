@@ -7,7 +7,6 @@ from typing import Any, Protocol
 from mlflow import MlflowClient
 from mlflow.entities import Metric
 
-from ..state import StageKind
 from .metrics import TrainingMetric
 
 EXPERIMENT_NAME = "beetle_training"
@@ -60,7 +59,6 @@ class MlflowSession:
     def start(
         cls,
         client: TrackingClient,
-        stage: StageKind,
         resolved_config: Mapping[str, Any],
     ) -> "MlflowSession":
         experiment = client.get_experiment_by_name(EXPERIMENT_NAME)
@@ -69,10 +67,7 @@ class MlflowSession:
             if experiment is None
             else str(experiment.experiment_id)
         )
-        tags = {
-            "mlflow.runName": f"beetle-{stage.value}",
-            "beetle.stage": stage.value,
-        }
+        tags = {"mlflow.runName": "beetle-training"}
         run = client.create_run(experiment_id, tags=tags)
         run_id = str(run.info.run_id)
         client.log_dict(run_id, dict(resolved_config), "config.json")
@@ -83,14 +78,8 @@ class MlflowSession:
         cls,
         client: TrackingClient,
         run_id: str,
-        stage: StageKind,
     ) -> "MlflowSession":
         run = client.get_run(run_id)
-        recorded_stage = run.data.tags["beetle.stage"]
-        if recorded_stage != stage.value:
-            raise ValueError(
-                f"MLflow run stage mismatch: {recorded_stage} != {stage.value}"
-            )
         if run.info.status not in ("RUNNING", "FINISHED"):
             raise ValueError(f"MLflow run is not active: {run.info.status}")
         session = cls(client, run_id)

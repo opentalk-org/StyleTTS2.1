@@ -14,10 +14,8 @@ from .training import (
     LossWeights,
     OptimizerConfig,
     RuntimeConfig,
-    Stage1ConditioningConfig,
-    Stage1WindowConfig,
-    Stage2ObjectiveConfig,
-    StageConfig,
+    ConditioningObjectiveConfig,
+    TrainingConfig,
 )
 from .validation import ValidationConfig
 
@@ -35,10 +33,8 @@ __all__ = [
     "LossWeights",
     "OptimizerConfig",
     "RuntimeConfig",
-    "Stage1ConditioningConfig",
-    "Stage2ObjectiveConfig",
-    "Stage1WindowConfig",
-    "StageConfig",
+    "ConditioningObjectiveConfig",
+    "TrainingConfig",
     "ValidationConfig",
     "config_fingerprint",
     "load_config",

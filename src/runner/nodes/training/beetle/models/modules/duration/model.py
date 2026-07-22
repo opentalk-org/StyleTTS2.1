@@ -1,4 +1,4 @@
-"""Duration likelihood locked to ``papers/duration-flow.md`` and Piper 73c04d8."""
+"""Duration likelihood derived from ``papers/duration-flow.md`` and Piper 73c04d8."""
 
 import math
 
@@ -9,7 +9,7 @@ from torch.nn import functional as F
 from ....config.architecture import DurationFlowConfig
 from .transforms import (
     ConvFlow,
-    DepthwiseSeparableStack,
+    DurationConvolutionStack,
     ElementwiseAffine,
     Flip,
     LogTransform,
@@ -38,7 +38,7 @@ class DurationConditionEncoder(nn.Module):
     ) -> None:
         super().__init__()
         self.input_projection = nn.Conv1d(input_channels, config.hidden_channels, 1)
-        self.convolutions = DepthwiseSeparableStack(
+        self.convolutions = DurationConvolutionStack(
             config.hidden_channels,
             config.kernel_size,
             config.convolution_layers,
@@ -120,8 +120,6 @@ class DurationPredictor(nn.Module):
             raise ValueError("duration must have shape [B,1,T] matching condition")
         if mask.shape != duration.shape:
             raise ValueError("duration mask must match duration shape")
-        if torch.any(duration.masked_select(mask) <= 0):
-            raise ValueError("valid durations must be positive")
         numeric_mask = mask.to(dtype=condition.dtype)
         encoded_condition = self.condition_encoder(condition, mask)
         encoded_duration = self.duration_encoder(duration, mask)

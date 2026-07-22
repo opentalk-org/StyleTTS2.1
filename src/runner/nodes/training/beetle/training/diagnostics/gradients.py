@@ -4,8 +4,8 @@ import torch
 from torch import Tensor
 
 from ...losses.acoustic import ReconstructionLoss
-from ...losses.composition import Stage1LossWeights
-from ...models.model import Stage1Synthesis
+from ...losses.composition import AcousticLossWeights
+from ...models.model import AcousticSynthesis
 from ...models.modules.audio import AudioPosterior
 from ..reporting import TrainingMetric
 
@@ -15,7 +15,7 @@ GradientTuple = tuple[Tensor | None, ...]
 
 
 @dataclass(frozen=True)
-class Stage1GradientLosses:
+class AcousticGradientLosses:
     encoder_kl: Tensor
     f0: Tensor
     n: Tensor
@@ -112,10 +112,10 @@ def posterior_log_scale_metrics(
     )
 
 
-def stage1_gradient_metrics(
-    losses: Stage1GradientLosses,
-    weights: Stage1LossWeights,
-    synthesis: Stage1Synthesis,
+def acoustic_gradient_metrics(
+    losses: AcousticGradientLosses,
+    weights: AcousticLossWeights,
+    synthesis: AcousticSynthesis,
 ) -> tuple[TrainingMetric, ...]:
     waveform_target = (synthesis.waveform,)
     shared_targets = (*waveform_target, synthesis.decoded.features)
@@ -174,13 +174,13 @@ def stage1_gradient_metrics(
     )
 
 
-def stage1_training_metrics(
+def acoustic_training_metrics(
     completed_step: int,
-    losses: Stage1GradientLosses,
+    losses: AcousticGradientLosses,
     reconstruction: ReconstructionLoss,
     total: Tensor,
-    weights: Stage1LossWeights,
-    synthesis: Stage1Synthesis,
+    weights: AcousticLossWeights,
+    synthesis: AcousticSynthesis,
 ) -> tuple[TrainingMetric, ...]:
     metrics = (
         _tensor_metric("encoder_kl", losses.encoder_kl),
@@ -197,7 +197,7 @@ def stage1_training_metrics(
         *metrics,
         *reconstruction_metrics(reconstruction),
         *posterior_log_scale_metrics(synthesis.posterior),
-        *stage1_gradient_metrics(losses, weights, synthesis),
+        *acoustic_gradient_metrics(losses, weights, synthesis),
     )
 
 

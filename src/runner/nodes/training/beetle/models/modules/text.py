@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import torch
 from torch import Tensor, nn
-from transformers import BertModel
+from transformers import BertModel, PreTrainedModel
 
 from ...config.architecture import ContextConfig, PhonemeConfig
 from .conditioning import MaskedAttentivePool1d
@@ -17,7 +17,7 @@ class PhonemeEncoding:
 
 
 class PhonemeEncoder(nn.Module):
-    def __init__(self, bert: BertModel, output_channels: int) -> None:
+    def __init__(self, bert: PreTrainedModel, output_channels: int) -> None:
         super().__init__()
         self.bert = bert
         self.projection = nn.Conv1d(bert.config.hidden_size, output_channels, 1)
@@ -25,11 +25,21 @@ class PhonemeEncoder(nn.Module):
     def forward(self, input_ids: Tensor, mask: Tensor) -> PhonemeEncoding:
         if input_ids.shape != mask.shape:
             raise ValueError("phoneme ids and mask must have equal shapes")
-        encoded = self.bert(
-            input_ids=input_ids,
-            attention_mask=mask,
-            return_dict=True,
-        ).last_hidden_state.transpose(1, 2)
+        # PL-BERT has learned positions for 512 tokens, while a recording may be
+        # much longer. Independent windows preserve every phoneme without
+        # inventing positional embeddings outside the pretrained range.
+        window_size = self.bert.config.max_position_embeddings
+        windows = []
+        for start in range(0, input_ids.shape[1], window_size):
+            end = start + window_size
+            windows.append(
+                self.bert(
+                    input_ids=input_ids[:, start:end],
+                    attention_mask=mask[:, start:end],
+                    return_dict=True,
+                ).last_hidden_state
+            )
+        encoded = torch.cat(windows, dim=1).transpose(1, 2)
         numeric_mask = mask.unsqueeze(1).to(dtype=encoded.dtype)
         tokens = self.projection(encoded) * numeric_mask
         pooled = tokens.sum(dim=2) / numeric_mask.sum(dim=2).clamp_min(1)

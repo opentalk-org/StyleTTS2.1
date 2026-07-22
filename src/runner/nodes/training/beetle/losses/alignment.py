@@ -32,8 +32,7 @@ def compute_alignment_losses(
     ):
         raise ValueError("alignment mask must match alignment frames")
     token_count = phoneme_mask.sum()
-    if token_count == 0:
-        raise ValueError("alignment loss requires a valid phoneme")
+    torch._assert_async(token_count > 0, "alignment loss requires a valid phoneme")
     sequence_loss = F.cross_entropy(
         output.s2s_logits.transpose(1, 2),
         phonemes,
@@ -49,11 +48,13 @@ def compute_alignment_losses(
 
     input_lengths = alignment_mask.sum(dim=(1, 2))
     target_lengths = phoneme_mask.sum(dim=1)
-    if torch.any(target_lengths > input_lengths):
-        raise ValueError("CTC target length exceeds reduced input length")
+    torch._assert_async(
+        torch.all(target_lengths <= input_lengths),
+        "CTC target length exceeds reduced input length",
+    )
     ctc = (
         F.ctc_loss(
-            output.ctc_logits.log_softmax(dim=2).transpose(0, 1),
+            output.ctc_logits.float().log_softmax(dim=2).transpose(0, 1),
             phonemes.masked_select(phoneme_mask),
             input_lengths,
             target_lengths,

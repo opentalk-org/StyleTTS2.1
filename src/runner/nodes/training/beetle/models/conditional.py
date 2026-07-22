@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from torch import nn
-from transformers import BertModel
+from transformers import BertModel, PreTrainedModel
 
 from ..config import BeetleConfig
 from ..losses.embeddings import GE2ELoss
@@ -27,14 +27,14 @@ from .modules.text import (
 
 
 @dataclass(frozen=True)
-class Stage2Dependencies:
-    phoneme_bert: BertModel
+class ConditionalDependencies:
+    phoneme_bert: PreTrainedModel
     text_bert: BertModel
     aligner: PhonemeAligner
 
 
 @dataclass(frozen=True)
-class Stage2ParameterReport:
+class ConditionalParameterReport:
     inference: int
     frozen_helper: int
     training_only: int
@@ -62,7 +62,7 @@ def _parameter_count(modules: tuple[nn.Module, ...]) -> tuple[int, set[int]]:
     return count, identities
 
 
-class Stage2Models(nn.Module):
+class ConditionalModels(nn.Module):
     def __init__(
         self,
         audio_encoder: nn.Module,
@@ -107,8 +107,8 @@ class Stage2Models(nn.Module):
         self.style_ge2e = style_ge2e
 
     def parameter_report(
-        self, stage1_inference_parameters: int
-    ) -> Stage2ParameterReport:
+        self, acoustic_inference_parameters: int
+    ) -> ConditionalParameterReport:
         inference_modules = (
             self.phoneme_encoder,
             self.latent_phoneme_encoder,
@@ -136,27 +136,27 @@ class Stage2Models(nn.Module):
         categories = (inference_ids, helper_ids, training_ids, text_ids)
         for index, identities in enumerate(categories):
             if any(identities & other for other in categories[index + 1 :]):
-                raise ValueError("Stage 2 parameter categories must be disjoint")
-        return Stage2ParameterReport(
-            inference=stage1_inference_parameters + inference,
+                raise ValueError("conditional parameter categories must be disjoint")
+        return ConditionalParameterReport(
+            inference=acoustic_inference_parameters + inference,
             frozen_helper=helper,
             training_only=training,
             excluded_text=text,
         )
 
 
-def build_stage2_models(
+def build_conditional_models(
     config: BeetleConfig,
-    stage1: nn.Module,
-    dependencies: Stage2Dependencies,
-) -> Stage2Models:
+    acoustic: nn.Module,
+    dependencies: ConditionalDependencies,
+) -> ConditionalModels:
     architecture = config.architecture
     if (
         dependencies.text_bert.config.hidden_size
         != architecture.text_encoder.hidden_channels
     ):
         raise ValueError("text BERT hidden width does not match text configuration")
-    stage1.requires_grad_(False)
+    acoustic.requires_grad_(False)
     text_encoder = TextEncoder(
         dependencies.text_bert,
         architecture.text_encoder.projection_channels,
@@ -172,9 +172,9 @@ def build_stage2_models(
         post_audio=architecture.context.output_channels,
         language=architecture.language.embedding_channels,
     )
-    return Stage2Models(
-        audio_encoder=stage1.audio_encoder,
-        f0_extractor=stage1.f0_extractor,
+    return ConditionalModels(
+        audio_encoder=acoustic.audio_encoder,
+        f0_extractor=acoustic.f0_extractor,
         phoneme_encoder=PhonemeEncoder(
             dependencies.phoneme_bert,
             architecture.phoneme.projection_channels,

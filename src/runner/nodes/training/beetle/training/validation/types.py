@@ -6,16 +6,13 @@ from torch import Tensor, nn
 
 from ...data.validation_types import ValidationRecording
 from ..reporting import TrainingMetric
-from ..state import StageKind
 
 
 SignalPair = tuple[Tensor, Tensor]
 
 
 @dataclass(frozen=True)
-class ValidationSampleResult:
-    audio_file_id: UUID
-    losses: tuple[TrainingMetric, ...]
+class ValidationArtifactSet:
     ground_truth: Tensor
     prediction: Tensor
     latent: Tensor
@@ -23,6 +20,29 @@ class ValidationSampleResult:
     n: SignalPair
     mel: SignalPair
     alignment: Tensor | None
+
+
+@dataclass(frozen=True)
+class ConditionalValidationSample:
+    audio_file_id: UUID
+    losses: tuple[TrainingMetric, ...]
+    artifacts: ValidationArtifactSet
+    seed: int
+
+    def __post_init__(self) -> None:
+        names = tuple(metric.name for metric in self.losses)
+        if not self.losses or len(set(names)) != len(names):
+            raise ValueError("validation sample losses must be nonempty and unique")
+        if self.seed < 0:
+            raise ValueError("validation seed must be non-negative")
+
+
+@dataclass(frozen=True)
+class ValidationSampleResult:
+    audio_file_id: UUID
+    losses: tuple[TrainingMetric, ...]
+    full: ValidationArtifactSet
+    audio: ValidationArtifactSet
     seed: int
 
     def __post_init__(self) -> None:
@@ -35,7 +55,6 @@ class ValidationSampleResult:
 
 @dataclass(frozen=True)
 class ValidationResult:
-    stage: StageKind
     step: int
     samples: tuple[ValidationSampleResult, ...]
     aggregates: tuple[TrainingMetric, ...]
@@ -46,8 +65,6 @@ class ValidationResult:
 
 
 class ValidationEvaluator(Protocol):
-    stage: StageKind
-
     def modules(self) -> tuple[nn.Module, ...]: ...
 
     def evaluate_samples(
@@ -57,7 +74,7 @@ class ValidationEvaluator(Protocol):
     ) -> tuple[ValidationSampleResult, ...]: ...
 
 
-class StageValidator(Protocol):
+class ValidationRunner(Protocol):
     def evaluate(
         self,
         recordings: tuple[ValidationRecording, ...],
@@ -79,4 +96,19 @@ def trim_waveform_pair(
     return (
         target[0, :, :sample_count].detach().cpu().clone(),
         prediction[0, :, :sample_count].detach().cpu().clone(),
+    )
+
+
+def trim_signal_pair(
+    target: Tensor,
+    prediction: Tensor,
+    frame_count: int,
+) -> SignalPair:
+    if target.ndim != 1 or prediction.shape != target.shape:
+        raise ValueError("validation signals must have equal [T] shapes")
+    if frame_count <= 0 or frame_count > target.shape[0]:
+        raise ValueError("validation signal length is invalid")
+    return (
+        target[:frame_count].detach().cpu().clone(),
+        prediction[:frame_count].detach().cpu().clone(),
     )

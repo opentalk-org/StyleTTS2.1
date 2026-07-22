@@ -61,12 +61,18 @@ class SpectrogramDiscriminator(nn.Module):
             ]
         )
         self.output = normalize(nn.Conv2d(32, 1, 3, padding=1))
+        for convolution in (*self.convolutions, self.output):
+            convolution.to(memory_format=torch.channels_last)
         self.gradient_checkpointing = gradient_checkpointing
         self.checkpoint_anchor = nn.Parameter(torch.zeros(1), requires_grad=True)
 
     def _convolution(self, features: Tensor, index: int, anchor: Tensor) -> Tensor:
         del anchor
-        return F.leaky_relu(self.convolutions[index](features), LEAKY_RELU_SLOPE)
+        convolved = self.convolutions[index](features)
+        return F.leaky_relu(
+            convolved.contiguous(memory_format=torch.channels_last),
+            LEAKY_RELU_SLOPE,
+        )
 
     def _output(self, features: Tensor, anchor: Tensor) -> Tensor:
         del anchor
@@ -79,7 +85,7 @@ class SpectrogramDiscriminator(nn.Module):
             self.shift_size,
             self.win_length,
             self.window,
-        ).unsqueeze(1)
+        ).unsqueeze(1).contiguous(memory_format=torch.channels_last)
         feature_maps: list[Tensor] = []
         for index in range(len(self.convolutions)):
             if self.gradient_checkpointing:
@@ -148,12 +154,18 @@ class PeriodDiscriminator(nn.Module):
             ]
         )
         self.output = normalize(nn.Conv2d(1024, 1, (3, 1), padding=(1, 0)))
+        for convolution in (*self.convolutions, self.output):
+            convolution.to(memory_format=torch.channels_last)
         self.gradient_checkpointing = gradient_checkpointing
         self.checkpoint_anchor = nn.Parameter(torch.zeros(1), requires_grad=True)
 
     def _convolution(self, features: Tensor, index: int, anchor: Tensor) -> Tensor:
         del anchor
-        return F.leaky_relu(self.convolutions[index](features), LEAKY_RELU_SLOPE)
+        convolved = self.convolutions[index](features)
+        return F.leaky_relu(
+            convolved.contiguous(memory_format=torch.channels_last),
+            LEAKY_RELU_SLOPE,
+        )
 
     def _output(self, features: Tensor, anchor: Tensor) -> Tensor:
         del anchor
@@ -165,7 +177,12 @@ class PeriodDiscriminator(nn.Module):
         if remainder:
             waveform = F.pad(waveform, (0, self.period - remainder), "reflect")
             samples = waveform.shape[-1]
-        features = waveform.view(batch, channels, samples // self.period, self.period)
+        features = waveform.view(
+            batch,
+            channels,
+            samples // self.period,
+            self.period,
+        ).contiguous(memory_format=torch.channels_last)
         feature_maps: list[Tensor] = []
         for index in range(len(self.convolutions)):
             if self.gradient_checkpointing:
