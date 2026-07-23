@@ -131,7 +131,10 @@ def _select_piper_models(
         selected[language] = min(
             candidates,
             key=lambda voice: (
-                -voice.num_speakers,
+                sum(
+                    file.size_bytes
+                    for file in voice.files.values()
+                ),
                 QUALITY_ORDER[voice.quality],
                 voice.key,
             ),
