@@ -15,6 +15,30 @@ def list_datasets(session: Session) -> Sequence[Dataset]:
     return many(session, Dataset)
 
 
+def get_dataset_by_name(session: Session, name: str) -> Dataset | None:
+    return session.execute(select(Dataset).where(Dataset.name == name)).scalar_one_or_none()
+
+
+def list_dataset_audio_files_by_stage1_slug(
+    session: Session,
+    dataset_id: uuid.UUID,
+    slug: str,
+) -> Sequence[AudioFile]:
+    statement = (
+        select(AudioFile)
+        .join(
+            dataset_audio_files,
+            dataset_audio_files.c.audio_file_id == AudioFile.id,
+        )
+        .where(
+            dataset_audio_files.c.dataset_id == dataset_id,
+            AudioFile.metadata_["stage1_dataset"].astext == slug,
+        )
+        .order_by(AudioFile.id)
+    )
+    return session.execute(statement).scalars().all()
+
+
 def list_dataset_file_counts(session: Session) -> Sequence[tuple[Dataset, int]]:
     statement = (
         select(Dataset, func.count(dataset_audio_files.c.audio_file_id))
@@ -23,6 +47,27 @@ def list_dataset_file_counts(session: Session) -> Sequence[tuple[Dataset, int]]:
         .order_by(Dataset.name)
     )
     return [(dataset, file_count) for dataset, file_count in session.execute(statement).all()]
+
+
+def list_dataset_metadata_values(
+    session: Session,
+    dataset_id: uuid.UUID,
+    key: str,
+) -> set[str]:
+    one(session, Dataset, dataset_id)
+    value = AudioFile.metadata_[key].astext
+    statement = (
+        select(value)
+        .join(
+            dataset_audio_files,
+            dataset_audio_files.c.audio_file_id == AudioFile.id,
+        )
+        .where(
+            dataset_audio_files.c.dataset_id == dataset_id,
+            value.is_not(None),
+        )
+    )
+    return {str(item) for item in session.scalars(statement)}
 
 
 def create_dataset(session: Session, payload: DatasetCreate) -> Dataset:
