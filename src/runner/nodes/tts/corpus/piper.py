@@ -27,8 +27,12 @@ from runner.nodes.tts.corpus.state import completed_source_keys
 from runner.nodes.tts.engines.piper import (
     PiperRuntime,
     PiperSynthesisOptions,
+    synthesize_many_with_cpu_recovery,
 )
-from runner.nodes.tts.piper_catalog import fetch_piper_catalog
+from runner.nodes.tts.piper_catalog import (
+    PiperVoiceEntry,
+    fetch_piper_catalog,
+)
 from runner.nodes.tts.piper_download import download_piper_voice
 
 
@@ -36,7 +40,9 @@ class PiperCorpusSynthesisSettings(StrictSettings):
     corpus_dir: Path
     dataset_id: UUID
     dataset_name: Literal["tts_piper"] = "tts_piper"
-    workers: int = Field(default=15, ge=1, le=32)
+    device: Literal["cpu", "cuda"] = "cuda"
+    workers: int = Field(default=3, ge=1, le=3)
+    gpu_memory_per_worker_mb: int = Field(default=3072, ge=128, le=3072)
     jobs_per_worker: int = Field(default=8, ge=1, le=64)
     max_jobs: int | None = Field(default=None, ge=1)
 
@@ -46,9 +52,12 @@ class PiperShard:
     jobs: tuple[CorpusJob, ...]
     model_paths: dict[str, Path]
     jobs_per_worker: int
+    device: Literal["cpu", "cuda"]
+    gpu_memory_per_worker_mb: int
     cursor: int = 0
     loaded_voice_id: str | None = None
     runtime: PiperRuntime | None = None
+    cpu_runtime: PiperRuntime | None = None
 
     @property
     def remaining(self) -> int:
@@ -68,8 +77,11 @@ class PiperShard:
             self.runtime = PiperRuntime(
                 self.model_paths[first.voice_id],
                 threads=1,
+                device=self.device,
+                gpu_memory_mb=self.gpu_memory_per_worker_mb,
             )
             self.loaded_voice_id = first.voice_id
+            self.cpu_runtime = None
         if self.runtime is None:
             raise RuntimeError("Piper shard runtime was not loaded")
         options = PiperSynthesisOptions(
@@ -79,8 +91,17 @@ class PiperShard:
             0.8,
             1.0,
         )
-        results = self.runtime.synthesize_many(
-            [job.text for job in selected],
+        texts = [job.text for job in selected]
+        if self.cpu_runtime is None:
+            self.cpu_runtime = PiperRuntime(
+                self.model_paths[first.voice_id],
+                threads=1,
+                device="cpu",
+            )
+        results = synthesize_many_with_cpu_recovery(
+            self.runtime,
+            self.cpu_runtime,
+            texts,
             options,
             check_cancel,
         )
@@ -103,7 +124,11 @@ class PiperCorpusSynthesisNode(Node):
     INPUTS: dict[str, Any] = {}
     OUTPUTS = {"audio": AudioPort(mode=PortMode.STREAM)}
     RESOURCE_POLICY = ResourcePolicy(
-        resources={"cpu_workers": 15},
+        resources={
+            "accelerator": 1,
+            "cpu_workers": 3,
+            "vram_gb": 9,
+        },
         keep_loaded=True,
     )
     QUEUE_MAX_SIZE = 256
@@ -138,23 +163,16 @@ class PiperCorpusSynthesisNode(Node):
             for voice in catalog
             if voice.voice_id in voice_ids
         }
-        checkpoints = await asyncio.gather(
-            *(
-                asyncio.to_thread(download_piper_voice, selected[voice_id])
-                for voice_id in sorted(voice_ids)
-            )
-        )
-        model_paths = {
-            voice_id: checkpoint.path
-            for voice_id, checkpoint in zip(
-                sorted(voice_ids),
-                checkpoints,
-                strict=True,
-            )
-        }
+        model_paths = await download_piper_models(selected, voice_ids)
         shards = shard_piper_jobs(pending, self.settings.workers)
         self._shards = tuple(
-            PiperShard(shard, model_paths, self.settings.jobs_per_worker)
+            PiperShard(
+                shard,
+                model_paths,
+                self.settings.jobs_per_worker,
+                self.settings.device,
+                self.settings.gpu_memory_per_worker_mb,
+            )
             for shard in shards
             if shard
         )
@@ -225,6 +243,35 @@ def shard_piper_jobs(
         tuple(sorted(shard, key=_job_group_key))
         for shard in shards
     )
+
+
+async def download_piper_models(
+    selected: dict[str, PiperVoiceEntry],
+    voice_ids: set[str],
+) -> dict[str, Path]:
+    ordered = sorted(voice_ids)
+    checkpoints = []
+    for start in range(0, len(ordered), 8):
+        batch = ordered[start:start + 8]
+        checkpoints.extend(
+            await asyncio.gather(
+                *(
+                    asyncio.to_thread(
+                        download_piper_voice,
+                        selected[voice_id],
+                    )
+                    for voice_id in batch
+                )
+            )
+        )
+    return {
+        voice_id: checkpoint.path
+        for voice_id, checkpoint in zip(
+            ordered,
+            checkpoints,
+            strict=True,
+        )
+    }
 
 
 def _job_group_key(job: CorpusJob) -> tuple[str, int, str, int]:

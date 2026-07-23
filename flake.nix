@@ -94,6 +94,25 @@
         export LD_LIBRARY_PATH="${pythonRuntime.env.LD_LIBRARY_PATH}"
         export LIBRARY_PATH="${pythonRuntime.env.LIBRARY_PATH}"
         export CPATH="${pythonRuntime.env.CPATH}"
+        if [[ -e /usr/lib/x86_64-linux-gnu/libcuda.so.1 ]]; then
+          runflow_driver_dir="''${XDG_RUNTIME_DIR:-/tmp}/runflow-nvidia-driver-$UID"
+          mkdir -p "$runflow_driver_dir"
+          ln -sfn /usr/lib/x86_64-linux-gnu/libcuda.so.1 "$runflow_driver_dir/libcuda.so.1"
+          ln -sfn /usr/lib/x86_64-linux-gnu/libcuda.so "$runflow_driver_dir/libcuda.so"
+          ln -sfn /usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.1 \
+            "$runflow_driver_dir/libnvidia-ptxjitcompiler.so.1"
+          ln -sfn /usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.4 \
+            "$runflow_driver_dir/libnvidia-nvvm.so.4"
+          for runflow_driver_library in \
+            /usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.* \
+            /usr/lib/x86_64-linux-gnu/libnvidia-gpucomp.so.*; do
+            ln -sfn "$runflow_driver_library" \
+              "$runflow_driver_dir/$(basename "$runflow_driver_library")"
+          done
+          export LD_LIBRARY_PATH="$runflow_driver_dir:$LD_LIBRARY_PATH"
+          export LIBRARY_PATH="$runflow_driver_dir:$LIBRARY_PATH"
+          export TRITON_LIBCUDA_PATH="$runflow_driver_dir"
+        fi
         export UV_PYTHON="${pythonRuntime.python}/bin/python${pythonRuntime.python.pythonVersion}"
         export UV_PYTHON_PREFERENCE="only-system"
         export UV_PYTHON_DOWNLOADS="never"

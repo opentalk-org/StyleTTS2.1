@@ -219,7 +219,11 @@ def _stored_payload(audio: Audio, virtual: bool) -> AudioCreate:
         language=_audio_language(audio),
         style_prompt=audio.style_prompt,
         voice_prompt=audio.voice_prompt,
-        segments=[],
+        segments=_new_group_segments(
+            _segment_group_from_audio(audio),
+            "replace",
+            [],
+        ),
         virtual=virtual,
     )
 

@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from time import sleep
+from urllib.parse import quote
+
+from botocore.exceptions import ClientError
+from urllib3.exceptions import ProtocolError
 
 from runner.nodes.assets.catalog_runtime.persistence import ensure_checkpoint_bundle
 from runner.nodes.assets.catalog_runtime.types import CatalogFile, CheckpointSpec, CheckpointType
@@ -18,8 +23,14 @@ def download_piper_voice(voice: PiperVoiceEntry) -> CheckpointRef:
         name=f"Piper · {voice.language.name_english} · {voice.name} · {voice.quality}",
         type_=CheckpointType.PIPER,
         files=(
-            CatalogFile(f"{PIPER_VOICES_BASE_URL}/{voice.model_path}", Path(voice.model_path).name),
-            CatalogFile(f"{PIPER_VOICES_BASE_URL}/{voice.config_path}", Path(voice.config_path).name),
+            CatalogFile(
+                f"{PIPER_VOICES_BASE_URL}/{quote(voice.model_path, safe='/')}",
+                Path(voice.model_path).name,
+            ),
+            CatalogFile(
+                f"{PIPER_VOICES_BASE_URL}/{quote(voice.config_path, safe='/')}",
+                Path(voice.config_path).name,
+            ),
         ),
         metadata={
             "source": "rhasspy/piper-voices",
@@ -32,8 +43,23 @@ def download_piper_voice(voice: PiperVoiceEntry) -> CheckpointRef:
         is_valid=_piper_bundle_valid,
         metadata_from_path=_sample_rate_metadata,
     )
-    checkpoint, _skipped = ensure_checkpoint_bundle(spec)
-    return resolve_checkpoint_ref(str(checkpoint.id), CheckpointType.PIPER.value)
+    for attempt in range(5):
+        try:
+            checkpoint, _skipped = ensure_checkpoint_bundle(spec)
+            return resolve_checkpoint_ref(
+                str(checkpoint.id),
+                CheckpointType.PIPER.value,
+            )
+        except (ClientError, ProtocolError) as error:
+            if (
+                isinstance(error, ClientError)
+                and error.response["Error"]["Code"] != "NoSuchKey"
+            ):
+                raise
+            if attempt == 4:
+                raise
+            sleep(2**attempt)
+    raise AssertionError("Piper checkpoint retry loop exhausted")
 
 
 def resolve_downloaded_piper_voice(voice_id: str) -> CheckpointRef:

@@ -43,7 +43,9 @@ def build_campaign_request(
                 **common,
                 "dataset_id": str(piper_dataset_id),
                 "dataset_name": "tts_piper",
-                "workers": 15,
+                "device": "cuda",
+                "workers": 3,
+                "gpu_memory_per_worker_mb": 3072,
                 "jobs_per_worker": 8,
             },
         ),
@@ -99,7 +101,7 @@ def build_campaign_request(
         config=RuntimeConfig(
             resources={
                 "io": 4,
-                "cpu_workers": 15,
+                "cpu_workers": 3,
                 "accelerator": 1,
                 "vram_gb": 30,
             },

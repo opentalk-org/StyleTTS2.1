@@ -15,7 +15,7 @@ from runner.nodes.tts.voices import PRESET_VOICES, TtsEngine
 
 EXPECTED_LINES = 101_250
 EXPECTED_STREAMS = 741
-EXPECTED_PIPER_JOBS = 101_250
+EXPECTED_PIPER_JOBS = 98_100
 KOKORO_PREFIXES = {
     "en": ("a", "b"),
     "es": ("e",),
@@ -59,19 +59,30 @@ def build_corpus_plan(root: Path, catalog: PiperCatalog) -> CorpusPlan:
         voice.identity: _engine_for(voice)
         for voice in manifest.voices
     }
-    piper_languages = {
+    piper_stream_counts = Counter(
         voice.language
         for voice in manifest.voices
         if routed_engines[voice.identity] is TtsEngine.PIPER
+    )
+    selected_models = _select_piper_models(
+        catalog,
+        set(piper_stream_counts),
+    )
+    voice_slots = {
+        language: _piper_voice_slots(
+            selected_models[language],
+            stream_count,
+        )
+        for language, stream_count in piper_stream_counts.items()
     }
-    selected_models = _select_piper_models(catalog, piper_languages)
     piper_models = {
-        language: PiperModelPlan(
+        voice.voice_id: PiperModelPlan(
             voice.voice_id,
             language,
             voice.num_speakers,
         )
-        for language, voice in selected_models.items()
+        for language, voices in selected_models.items()
+        for voice in voices
     }
     stream_positions: Counter[tuple[TtsEngine, str]] = Counter()
     piper_jobs: list[CorpusJob] = []
@@ -85,7 +96,7 @@ def build_corpus_plan(root: Path, catalog: PiperCatalog) -> CorpusPlan:
             engine,
             voice.language,
             stream_position,
-            selected_models,
+            voice_slots,
         )
         lines = _voice_lines(root, voice)
         target = piper_jobs if engine is TtsEngine.PIPER else kokoro_jobs
@@ -111,51 +122,73 @@ def without_completed(
 def _engine_for(voice: VoiceRecord) -> TtsEngine:
     if voice.kind not in {"registered", "piper"}:
         raise ValueError(f"{voice.identity}: unknown stream kind {voice.kind}")
+    if voice.language == "ja":
+        return TtsEngine.KOKORO
     return TtsEngine.PIPER
 
 
 def _select_piper_models(
     catalog: PiperCatalog,
     languages: set[str],
-) -> dict[str, PiperVoiceEntry]:
-    selected: dict[str, PiperVoiceEntry] = {}
+) -> dict[str, tuple[PiperVoiceEntry, ...]]:
+    selected: dict[str, tuple[PiperVoiceEntry, ...]] = {}
     for language in sorted(languages):
         catalog_language = "zh" if language == "ja" else language
         candidates = [
             voice
             for voice in catalog
             if voice.language.family == catalog_language
+            and not voice.name.startswith("libritts")
         ]
         if not candidates:
             raise ValueError(f"piper catalog has no {language} voice")
-        selected[language] = min(
-            candidates,
-            key=lambda voice: (
-                sum(
-                    file.size_bytes
-                    for file in voice.files.values()
-                ),
-                QUALITY_ORDER[voice.quality],
-                voice.key,
-            ),
+        highest_by_name: dict[str, PiperVoiceEntry] = {}
+        for voice in candidates:
+            if (
+                voice.name not in highest_by_name
+                or QUALITY_ORDER[voice.quality]
+                > QUALITY_ORDER[highest_by_name[voice.name].quality]
+            ):
+                highest_by_name[voice.name] = voice
+        selected[language] = tuple(
+            sorted(highest_by_name.values(), key=lambda voice: voice.key)
         )
     return selected
+
+
+def _piper_voice_slots(
+    models: tuple[PiperVoiceEntry, ...],
+    stream_count: int,
+) -> tuple[tuple[str, int | None], ...]:
+    if stream_count < len(models):
+        raise ValueError(
+            f"{stream_count} streams cannot cover {len(models)} Piper models"
+        )
+    slots: list[tuple[str, int | None]] = []
+    speaker_positions = {model.voice_id: 0 for model in models}
+    while len(slots) < stream_count:
+        for model in models:
+            speaker_position = speaker_positions[model.voice_id]
+            speaker_id = (
+                speaker_position % model.num_speakers
+                if model.num_speakers > 1
+                else None
+            )
+            slots.append((model.voice_id, speaker_id))
+            speaker_positions[model.voice_id] += 1
+            if len(slots) == stream_count:
+                break
+    return tuple(slots)
 
 
 def _resolved_voice(
     engine: TtsEngine,
     language: str,
     stream_position: int,
-    piper_models: dict[str, PiperVoiceEntry],
+    piper_voice_slots: dict[str, tuple[tuple[str, int | None], ...]],
 ) -> tuple[str, int | None]:
     if engine is TtsEngine.PIPER:
-        model = piper_models[language]
-        speaker_id = (
-            stream_position % model.num_speakers
-            if model.num_speakers > 1
-            else None
-        )
-        return model.voice_id, speaker_id
+        return piper_voice_slots[language][stream_position]
     prefixes = KOKORO_PREFIXES[language]
     presets = [
         voice_id
@@ -196,7 +229,9 @@ def _jobs_for_voice(
             voice_id=voice_id,
             speaker_id=speaker_id,
             source_key=(
-                f"{engine.value}:{voice.identity}:{index:04d}"
+                f"{engine.value}:{voice_id}:"
+                f"{speaker_id if speaker_id is not None else 'default'}:"
+                f"{voice.identity}:{index:04d}"
             ),
         )
         for index, text in enumerate(lines)

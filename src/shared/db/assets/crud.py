@@ -10,6 +10,7 @@ from shared.db.assets.file_store import (
     checkpoint_cache_path,
     checkpoint_tar,
     extra_file_cache_path,
+    populate_checkpoint_cache,
     stored_bytes,
     stored_path,
 )
@@ -61,6 +62,8 @@ def create_checkpoint(session: Session, payload: CheckpointCreate) -> Checkpoint
     session.add(item)
     session.commit()
     session.refresh(item)
+    if payload.folder_path is not None:
+        populate_checkpoint_cache(payload.folder_path, item.content_hash)
     return item
 
 
