@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from runner.nodes.tts.corpus import TTS_CORPUS_NODES
 from runner.nodes.tts.synthesis import (
     ChatterboxSynthesisNode,
     DiaSynthesisNode,
@@ -45,6 +46,11 @@ TTS_VOICE_NODES = [
     PiperVoiceSelectionNode,
 ]
 
-TTS_NODES = TTS_SYNTHESIS_NODES + TTS_VOICE_NODES
+TTS_NODES = TTS_SYNTHESIS_NODES + TTS_VOICE_NODES + TTS_CORPUS_NODES
 
-__all__ = [cls.__name__ for cls in TTS_NODES] + ["TTS_NODES", "TTS_SYNTHESIS_NODES", "TTS_VOICE_NODES"]
+__all__ = [cls.__name__ for cls in TTS_NODES] + [
+    "TTS_NODES",
+    "TTS_SYNTHESIS_NODES",
+    "TTS_VOICE_NODES",
+    "TTS_CORPUS_NODES",
+]

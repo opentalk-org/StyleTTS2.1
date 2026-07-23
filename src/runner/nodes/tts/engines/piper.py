@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable
 
 import numpy as np
-from piper import PiperVoice, SynthesisConfig
+import onnxruntime
+from piper import PiperConfig, PiperVoice, SynthesisConfig
 
 
 @dataclass(frozen=True)
@@ -18,12 +20,20 @@ class PiperSynthesisOptions:
 
 
 class PiperRuntime:
-    def __init__(self, checkpoint_dir: Path):
+    def __init__(self, checkpoint_dir: Path, threads: int = 1):
         model_paths = tuple(checkpoint_dir.glob("*.onnx"))
         config_paths = tuple(checkpoint_dir.glob("*.onnx.json"))
         if len(model_paths) != 1 or len(config_paths) != 1:
             raise ValueError(f"piper_checkpoint_requires_model_and_config:{checkpoint_dir}")
-        self._voice = PiperVoice.load(model_paths[0], config_path=config_paths[0])
+        config = PiperConfig.from_dict(
+            json.loads(config_paths[0].read_text(encoding="utf-8"))
+        )
+        session = onnxruntime.InferenceSession(
+            str(model_paths[0]),
+            sess_options=piper_session_options(threads),
+            providers=["CPUExecutionProvider"],
+        )
+        self._voice = PiperVoice(session=session, config=config)
 
     def synthesize_many(
         self,
@@ -47,3 +57,13 @@ class PiperRuntime:
             samples = np.concatenate([chunk.audio_float_array for chunk in chunks]).astype(np.float32)
             outputs.append((samples, chunks[0].sample_rate))
         return outputs
+
+
+def piper_session_options(threads: int) -> onnxruntime.SessionOptions:
+    if threads < 1:
+        raise ValueError("Piper ONNX thread count must be positive")
+    options = onnxruntime.SessionOptions()
+    options.intra_op_num_threads = threads
+    options.inter_op_num_threads = 1
+    options.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
+    return options
