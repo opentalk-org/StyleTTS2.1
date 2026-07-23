@@ -16,7 +16,12 @@ from runner.nodes.assets.checkpoints import resolve_checkpoint_ref
 from runner.nodes.datatypes import AudioPort
 from runner.nodes.tts.corpus.audio import corpus_audio
 from runner.nodes.tts.corpus.models import CorpusJob
-from runner.nodes.tts.corpus.plan import build_corpus_plan, without_completed
+from runner.nodes.tts.corpus.plan import (
+    EXPECTED_LINES,
+    EXPECTED_PIPER_JOBS,
+    build_corpus_plan,
+    without_completed,
+)
 from runner.nodes.tts.corpus.state import completed_source_keys
 from runner.nodes.tts.engines import load_engine
 from runner.nodes.tts.engines.base import (
@@ -88,7 +93,9 @@ class KokoroCorpusSynthesisNode(Node):
 
     def remaining_items(self, context: Any) -> int | None:
         if not self._initialized:
-            return None
+            return self.settings.max_jobs or (
+                EXPECTED_LINES - EXPECTED_PIPER_JOBS
+            )
         return len(self._jobs) - self._cursor
 
     async def execute(self, batch, context):

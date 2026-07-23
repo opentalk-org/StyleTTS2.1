@@ -18,7 +18,11 @@ from runner.nodes.datatypes import AudioPort
 from runner.nodes.models import Audio
 from runner.nodes.tts.corpus.audio import corpus_audio
 from runner.nodes.tts.corpus.models import CorpusJob
-from runner.nodes.tts.corpus.plan import build_corpus_plan, without_completed
+from runner.nodes.tts.corpus.plan import (
+    EXPECTED_PIPER_JOBS,
+    build_corpus_plan,
+    without_completed,
+)
 from runner.nodes.tts.corpus.state import completed_source_keys
 from runner.nodes.tts.engines.piper import (
     PiperRuntime,
@@ -163,7 +167,7 @@ class PiperCorpusSynthesisNode(Node):
 
     def remaining_items(self, context: Any) -> int | None:
         if not self._initialized:
-            return None
+            return self.settings.max_jobs or EXPECTED_PIPER_JOBS
         return sum(shard.remaining for shard in self._shards)
 
     async def execute(self, batch, context):

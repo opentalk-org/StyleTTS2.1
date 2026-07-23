@@ -15,7 +15,7 @@ from runner.nodes.tts.voices import PRESET_VOICES, TtsEngine
 
 EXPECTED_LINES = 101_250
 EXPECTED_STREAMS = 741
-EXPECTED_PIPER_JOBS = 71_100
+EXPECTED_PIPER_JOBS = 98_100
 KOKORO_PREFIXES = {
     "en": ("a", "b"),
     "es": ("e",),
@@ -111,9 +111,7 @@ def without_completed(
 def _engine_for(voice: VoiceRecord) -> TtsEngine:
     if voice.kind not in {"registered", "piper"}:
         raise ValueError(f"{voice.identity}: unknown stream kind {voice.kind}")
-    if voice.kind == "piper" and voice.language != "ja":
-        return TtsEngine.PIPER
-    if voice.language in KOKORO_PREFIXES:
+    if voice.language == "ja":
         return TtsEngine.KOKORO
     return TtsEngine.PIPER
 
