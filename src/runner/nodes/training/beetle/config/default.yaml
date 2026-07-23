@@ -118,14 +118,9 @@ architecture:
     pretrained_model: bert-base-multilingual-cased
     hidden_channels: 768
     projection_channels: 256
-complexity:
-  minimum_inference_parameters: 100000000
-  maximum_inference_parameters: 150000000
-  latent_audio_max_gflops_per_second: 15.0
-  benchmark_seconds: 1.0
 data:
   selection:
-    dataset_id: d74f9522-022a-487d-98dc-f40bbc31853c
+    dataset_id: 022c31b6-83be-4cd6-9835-25aa3830357b
     audio_file_ids: []
   maximum_seconds: 8.0
   prefetch:
@@ -174,9 +169,9 @@ training:
   precision: bfloat16
   acoustic_prediction: {value: 1.0, start_step: 2000, warmup_steps: 3000}
   generator_optimizer:
-    learning_rate: 0.0006
-    beta1: 0.5
-    beta2: 0.9
+    learning_rate: 0.0002
+    beta1: 0.8
+    beta2: 0.99
     epsilon: 0.000000001
     weight_decay: 0.0001
     warmup_steps: 1000
@@ -185,8 +180,8 @@ training:
     maximum_gradient_norm: 10.0
   discriminator_optimizer:
     learning_rate: 0.0002
-    beta1: 0.5
-    beta2: 0.9
+    beta1: 0.8
+    beta2: 0.99
     epsilon: 0.000000001
     weight_decay: 0.0001
     warmup_steps: 1000
@@ -194,15 +189,15 @@ training:
     minimum_learning_rate_ratio: 0.1
     maximum_gradient_norm: 10.0
   losses:
-    encoder_kl: {value: 1.0, start_step: 0, warmup_steps: 0}
+    encoder_kl: {value: 0.0, start_step: 0, warmup_steps: 5000}
     f0: {value: 1.0, start_step: 0, warmup_steps: 0}
     n: {value: 1.0, start_step: 0, warmup_steps: 0}
     reconstruction: {value: 45.0, start_step: 0, warmup_steps: 0}
     discriminator: {value: 1.0, start_step: 0, warmup_steps: 1000}
     generator_adversarial: {value: 1.0, start_step: 0, warmup_steps: 1000}
     feature_matching: {value: 1.0, start_step: 0, warmup_steps: 1000}
-    duration_flow: {value: 1.0, start_step: 0, warmup_steps: 0}
-    latent_flow: {value: 10.0, start_step: 0, warmup_steps: 0}
+    duration_flow: {value: 10.0, start_step: 0, warmup_steps: 0}
+    latent_flow: {value: 100.0, start_step: 0, warmup_steps: 0}
     shortcut: {value: 1.0, start_step: 0, warmup_steps: 0}
     align_s2s: {value: 1.0, start_step: 0, warmup_steps: 0}
     align_mono: {value: 1.0, start_step: 0, warmup_steps: 0}

@@ -27,7 +27,6 @@ from .support import (
     RuntimeCallbacks,
     initial_loop,
     intervals,
-    report_models,
     train,
 )
 
@@ -36,6 +35,7 @@ def run_training(
     config_path: Path,
     output_path: Path,
     resume_path: Path | None,
+    reset_optimizers: bool,
     callbacks: RuntimeCallbacks,
 ) -> LoopState:
     preparation = prepare_run(config_path, output_path, resume_path, callbacks)
@@ -47,10 +47,15 @@ def run_training(
     )
     distributed_callbacks = DistributedCallbacks(callbacks, runtime)
     distributed_callbacks.check_cancel()
-    return _run(preparation, distributed_callbacks, runtime)
+    return _run(preparation, distributed_callbacks, runtime, reset_optimizers)
 
 
-def _run(preparation, callbacks: TrainingCallbacks, runtime: DistributedRuntime) -> LoopState:
+def _run(
+    preparation,
+    callbacks: TrainingCallbacks,
+    runtime: DistributedRuntime,
+    reset_optimizers: bool,
+) -> LoopState:
     config = preparation.config
     acoustic = build_acoustic_models(config, load_f0_extractor())
     phoneme = load_phoneme_resources(Path(config.architecture.phoneme.model_path))
@@ -63,7 +68,7 @@ def _run(preparation, callbacks: TrainingCallbacks, runtime: DistributedRuntime)
     if config.runtime.compile:
         compile_acoustic(acoustic)
     ema = build_latent_flow_ema(conditional)
-    report_models(acoustic, conditional, config, runtime.device, retain_audio_path=True)
+    acoustic.to(runtime.device)
     input_builder = _input_builder(preparation, runtime)
     trainer = BeetleTrainer(
         acoustic,
@@ -80,7 +85,11 @@ def _run(preparation, callbacks: TrainingCallbacks, runtime: DistributedRuntime)
         initial_loop(),
         input_builder,
     )
-    sampler = trainer.restore(preparation.resume) if preparation.resume else None
+    sampler = (
+        trainer.restore(preparation.resume, reset_optimizers)
+        if preparation.resume
+        else None
+    )
     evaluator = TrainingValidationEvaluator(
         acoustic,
         conditional,

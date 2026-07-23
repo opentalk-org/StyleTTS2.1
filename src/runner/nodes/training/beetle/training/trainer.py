@@ -72,6 +72,7 @@ class BeetleTrainer:
         self.config_fingerprint = config_fingerprint
         self.data_fingerprint = data_fingerprint
         self._loop = initial_loop
+        self.skipped_steps = 0
         self.input_builder = input_builder
         self.schedules = TrainingSchedules.from_config(config)
         self.accumulation_steps = config.accumulation_steps
@@ -222,16 +223,17 @@ class BeetleTrainer:
         )
 
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:
-        metrics = self.optimizers.step(
-            optimizer_step,
-            diagnostics=diagnostics_due(optimizer_step + 1),
-        )
-        update_latent_flow_ema(
-            self.ema_latent_flow,
-            self.runtime.unwrap(self.conditional.latent_flow),
-            self.runtime.unwrap(self.conditional.latent_flow).config.ema_decay,
-        )
+        metrics = self.optimizers.step(optimizer_step, diagnostics_due(optimizer_step + 1))
+        online_flow = self.runtime.unwrap(self.conditional.latent_flow)
+        update_latent_flow_ema(self.ema_latent_flow, online_flow, online_flow.config.ema_decay)
+        metrics = (*metrics, TrainingMetric("skipped_steps", float(self.skipped_steps)))
+        self.skipped_steps = 0
         return metrics
+
+    def discard_step(self) -> None:
+        for group in self.optimizers.groups:
+            group.optimizer.zero_grad(set_to_none=True)
+        self.skipped_steps += 1
 
     def reduce_metrics(self, metrics: tuple[TrainingMetric, ...]) -> tuple[TrainingMetric, ...]:
         return self.runtime.reduce_metrics(metrics)
@@ -244,8 +246,12 @@ class BeetleTrainer:
     ) -> CheckpointPayload:
         return checkpoint_payload(self, loop, sampler_state, reporting)
 
-    def restore(self, payload: CheckpointPayload) -> DataPipelineState:
-        return restore_trainer(self, payload)
+    def restore(
+        self,
+        payload: CheckpointPayload,
+        reset_optimizers: bool,
+    ) -> DataPipelineState:
+        return restore_trainer(self, payload, reset_optimizers)
 
     def _segment(self, frame_mask: Tensor, view: str) -> AlignedSegments:
         generator = self._generator(view, "segment")

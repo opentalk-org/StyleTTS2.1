@@ -38,7 +38,11 @@ def checkpoint_payload(
     )
 
 
-def restore_trainer(trainer, payload: CheckpointPayload) -> DataPipelineState:
+def restore_trainer(
+    trainer,
+    payload: CheckpointPayload,
+    reset_optimizers: bool,
+) -> DataPipelineState:
     validate_resume_fingerprints(
         payload,
         trainer.config_fingerprint,
@@ -51,7 +55,12 @@ def restore_trainer(trainer, payload: CheckpointPayload) -> DataPipelineState:
         StateTarget(name, kind, module)
         for name, kind, module in state_modules(trainer)
     ) + trainer.optimizers.state_targets()
-    restore_named_states(payload.states, targets)
+    states = payload.states
+    if reset_optimizers:
+        reset_kinds = (StateKind.OPTIMIZER, StateKind.SCHEDULER, StateKind.SCALER)
+        states = tuple(state for state in states if state.kind not in reset_kinds)
+        targets = tuple(target for target in targets if target.kind not in reset_kinds)
+    restore_named_states(states, targets)
     if len(payload.rank_states) != trainer.runtime.world_size:
         raise ValueError("checkpoint world size does not match distributed runtime")
     trainer.runtime.restore_rank_state(payload.rank_states[trainer.runtime.rank])

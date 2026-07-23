@@ -10,8 +10,6 @@ class TrainingMetric:
     def __post_init__(self) -> None:
         if not self.name:
             raise ValueError("training metric name must not be empty")
-        if not math.isfinite(self.value):
-            raise ValueError(f"training metric must be finite: {self.name}")
 
 
 @dataclass(frozen=True)

@@ -111,6 +111,10 @@ class ScheduledOptimizer:
         self.scaler.unscale_(self.optimizer)
         return learning_rate
 
+    def discard(self) -> None:
+        self.scaler.update()
+        self.optimizer.zero_grad(set_to_none=True)
+
     def finish(
         self,
         learning_rate: float,
@@ -211,6 +215,17 @@ class OptimizerSet:
         gradient_norms = tuple(
             gradient_norm(group.parameters()) for group in self.groups
         )
+        invalid = tuple(
+            group.name
+            for group, norm in zip(self.groups, gradient_norms, strict=True)
+            if not math.isfinite(norm)
+        )
+        if invalid:
+            for group in self.groups:
+                group.discard()
+            raise FloatingPointError(
+                f"non-finite optimizer gradients: {', '.join(invalid)}"
+            )
         owned_parameter_ids = tuple(
             {id(parameter) for parameter in group.parameters()}
             for group in self.groups

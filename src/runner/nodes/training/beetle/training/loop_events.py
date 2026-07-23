@@ -10,6 +10,7 @@ from .callbacks import (
     TrainingMetric,
     is_due,
     report_only,
+    validate_metrics,
 )
 from .checkpoint import CheckpointManager, CheckpointPayload
 from .reporting import (
@@ -33,6 +34,10 @@ class LifecyclePipeline(Protocol):
     def state_dict(self) -> DataPipelineState: ...
 
 
+class SkippedBatchPipeline(LifecyclePipeline, Protocol):
+    def mark_consumed(self) -> None: ...
+
+
 class LifecycleTrainer(LoopStateOwner, Protocol):
     def loop_state(self) -> LoopState: ...
 
@@ -42,6 +47,18 @@ class LifecycleTrainer(LoopStateOwner, Protocol):
         sampler_state: DataPipelineState,
         reporting: ReportingState,
     ) -> CheckpointPayload: ...
+
+
+class SkippedBatchTrainer(LoopStateOwner, Protocol):
+    skipped_steps: int
+
+    def loop_state(self) -> LoopState: ...
+
+    def discard_step(self) -> None: ...
+
+
+class AccumulationTracker(Protocol):
+    def discard_accumulation(self) -> None: ...
 
 
 class StepReporter(Protocol):
@@ -82,6 +99,42 @@ def advance_sampler(state: LoopState, sampler: DataPipelineState) -> LoopState:
         sampler_cursor=planner.batch_index,
         cycle=planner.cycle_index,
         batch_index=planner.batch_index,
+    )
+
+
+def skip_batch(
+    trainer: SkippedBatchTrainer,
+    pipeline: SkippedBatchPipeline,
+    callbacks: TrainingCallbacks,
+    reporting: AccumulationTracker,
+    timer: StepTimer,
+) -> None:
+    pipeline.mark_consumed()
+    skip_optimizer_step(trainer, pipeline, callbacks, reporting, timer)
+
+
+def skip_optimizer_step(
+    trainer: SkippedBatchTrainer,
+    pipeline: LifecyclePipeline,
+    callbacks: TrainingCallbacks,
+    reporting: AccumulationTracker,
+    timer: StepTimer,
+) -> None:
+    trainer.discard_step()
+    reporting.discard_accumulation()
+    state = advance_sampler(trainer.loop_state(), pipeline.state_dict())
+    state = replace(
+        state,
+        microstep=0,
+        phase=TrainingPhase.READY,
+        discriminator_metrics=(),
+    )
+    announce(
+        trainer,
+        callbacks,
+        state,
+        (TrainingMetric("skipped_steps", float(trainer.skipped_steps)),),
+        timer,
     )
 
 
@@ -204,6 +257,7 @@ def complete_step_work(
     if validation_due:
         started_at = time.monotonic()
         validation_metrics = lifecycle.validator.run(state.optimizer_step)
+        validate_metrics(validation_metrics)
         timer.record(ForegroundCategory.VALIDATION, started_at)
         reporting.update(
             replace(

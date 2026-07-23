@@ -90,22 +90,6 @@ class AdversarialConfig(StrictConfigModel):
     segment_samples: int = Field(gt=0)
 
 
-class ComplexityConfig(StrictConfigModel):
-    minimum_inference_parameters: int = Field(gt=0)
-    maximum_inference_parameters: int = Field(gt=0)
-    latent_audio_max_gflops_per_second: float = Field(gt=0)
-    benchmark_seconds: float = Field(gt=0)
-
-    @model_validator(mode="after")
-    def validate_parameter_bounds(self) -> "ComplexityConfig":
-        if self.minimum_inference_parameters >= self.maximum_inference_parameters:
-            raise ValueError(
-                "minimum_inference_parameters must be below "
-                "maximum_inference_parameters"
-            )
-        return self
-
-
 class CheckpointConfig(StrictConfigModel):
     every_steps: int = Field(gt=0)
     keep_last: int = Field(gt=0)
@@ -121,7 +105,6 @@ class ConditioningObjectiveConfig(StrictConfigModel):
 class BeetleConfig(StrictConfigModel):
     audio: AudioConfig
     architecture: ArchitectureConfig
-    complexity: ComplexityConfig
     data: DataConfig
     validation: ValidationConfig
     runtime: RuntimeConfig

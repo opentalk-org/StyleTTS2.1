@@ -67,7 +67,7 @@ def masked_kl_standard_normal(mean: Tensor, log_scale: Tensor, mask: Tensor) -> 
     if mean.shape != log_scale.shape:
         raise ValueError("posterior mean and log scale must have equal shapes")
     divergence = 0.5 * (mean.square() + torch.exp(2 * log_scale) - 1 - 2 * log_scale)
-    return _masked_mean(divergence, mask)
+    return _masked_mean(divergence.sum(dim=1, keepdim=True), mask)
 
 
 def masked_f0_smooth_l1(

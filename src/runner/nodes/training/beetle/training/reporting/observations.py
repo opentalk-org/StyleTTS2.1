@@ -32,6 +32,10 @@ class StepObservationTracker:
         self._accumulator.add(items, losses)
         self._state = replace(self._state, accumulator=self._accumulator.state)
 
+    def discard_accumulation(self) -> None:
+        self._accumulator = MetricAccumulator()
+        self._state = replace(self._state, accumulator=self._accumulator.state)
+
     def complete_step(
         self,
         optimizer_step: int,

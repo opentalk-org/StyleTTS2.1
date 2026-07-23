@@ -15,6 +15,7 @@ class Arguments:
     config: Path
     output: Path
     resume: Path | None
+    reset_optimizers: bool
 
 
 class CliCallbacks(StandaloneCallbacks):
@@ -30,8 +31,14 @@ def parse_arguments(argv: Sequence[str] | None = None) -> Arguments:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--resume", type=Path)
+    parser.add_argument("--reset-optimizers", action="store_true")
     values = parser.parse_args(argv)
-    return Arguments(values.config, values.output, values.resume)
+    return Arguments(
+        values.config,
+        values.output,
+        values.resume,
+        values.reset_optimizers,
+    )
 
 
 def run_cli(argv: Sequence[str] | None = None) -> None:
@@ -46,6 +53,7 @@ def run_cli(argv: Sequence[str] | None = None) -> None:
         arguments.config,
         arguments.output,
         arguments.resume,
+        arguments.reset_optimizers,
         callbacks,
     )
     logger.info(
