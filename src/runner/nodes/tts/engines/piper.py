@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,6 +11,11 @@ import numpy as np
 import onnxruntime
 from onnxruntime.capi.onnxruntime_pybind11_state import RuntimeException
 from piper import PiperConfig, PiperVoice, SynthesisConfig
+
+
+# Some voice maps intentionally omit combining marks emitted by espeak. Piper
+# skips them safely, but warning once per mark floods long corpus-run logs.
+logging.getLogger("piper.phoneme_ids").setLevel(logging.ERROR)
 
 
 class PiperCudaMemoryError(RuntimeError):
