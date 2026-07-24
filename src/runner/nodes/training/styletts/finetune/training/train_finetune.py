@@ -1,4 +1,3 @@
-# load packages
 import random
 from contextlib import nullcontext
 import yaml
@@ -155,8 +154,6 @@ def train(config_path: str, *, run: TrackerRun) -> None:
     model = build_model(model_params, text_aligner, pitch_extractor, plbert)
     _ = [model[key].to(device) for key in model]
     
-    # DP
-            
     start_epoch = 0
     iters = 0
 
@@ -174,7 +171,7 @@ def train(config_path: str, *, run: TrackerRun) -> None:
     sampler = DiffusionSampler(
         model.diffusion.diffusion,
         sampler=ADPM2Sampler(),
-        sigma_schedule=KarrasSchedule(sigma_min=0.0001, sigma_max=3.0, rho=9.0), # empirical parameters
+        sigma_schedule=KarrasSchedule(sigma_min=0.0001, sigma_max=3.0, rho=9.0),
         clamp=False
     )
     
@@ -192,7 +189,6 @@ def train(config_path: str, *, run: TrackerRun) -> None:
     optimizer = build_optimizer({key: model[key].parameters() for key in model},
                                           scheduler_params_dict=scheduler_params_dict, lr=optimizer_params.lr)
     
-    # adjust BERT learning rate
     for g in optimizer.optimizers['bert'].param_groups:
         g['betas'] = (0.9, 0.99)
         g['lr'] = optimizer_params.bert_lr
@@ -200,7 +196,6 @@ def train(config_path: str, *, run: TrackerRun) -> None:
         g['min_lr'] = 0
         g['weight_decay'] = 0.01
         
-    # adjust acoustic module learning rate
     for module in ["decoder", "style_encoder"]:
         for g in optimizer.optimizers[module].param_groups:
             g['betas'] = (0.0, 0.99)
@@ -279,7 +274,6 @@ def train(config_path: str, *, run: TrackerRun) -> None:
                 mel_mask = length_to_mask(mel_input_length).to(device)
                 text_mask = length_to_mask(input_lengths).to(texts.device)
 
-                # compute reference styles
                 if multispeaker and epoch >= diff_epoch:
                     ref_ss = model.style_encoder(ref_mels.unsqueeze(1))
                     ref_sp = model.predictor_encoder(ref_mels.unsqueeze(1))
@@ -415,7 +409,6 @@ def train(config_path: str, *, run: TrackerRun) -> None:
                 optimizer.step('msd')
                 optimizer.step('mpd')
 
-            # generator loss
             optimizer.zero_grad()
             autocast_ctx = (
                 torch.autocast(device_type="cuda", dtype=autocast_dtype)
@@ -513,7 +506,6 @@ def train(config_path: str, *, run: TrackerRun) -> None:
 
             d_loss_slm, loss_gen_lm = 0, 0
             if epoch >= joint_epoch:
-                # randomly pick whether to use in-distribution text
                 if np.random.rand() < 0.5:
                     use_ind = True
                 else:
@@ -545,14 +537,12 @@ def train(config_path: str, *, run: TrackerRun) -> None:
                 if slm_out is not None:
                     d_loss_slm, loss_gen_lm, y_pred = slm_out
 
-                    # SLM generator loss
                     optimizer.zero_grad()
                     if use_grad_scaler:
                         scaler.scale(loss_gen_lm).backward()
                     else:
                         loss_gen_lm.backward()
 
-                    # compute the gradient norm
                     total_norm = {}
                     for key in model.keys():
                         total_norm[key] = 0
@@ -562,7 +552,6 @@ def train(config_path: str, *, run: TrackerRun) -> None:
                             total_norm[key] += param_norm.item() ** 2
                         total_norm[key] = total_norm[key] ** 0.5
 
-                    # gradient scaling
                     if total_norm['predictor'] > slmadv_params.thresh:
                         for key in model.keys():
                             for p in model[key].parameters():
@@ -592,7 +581,6 @@ def train(config_path: str, *, run: TrackerRun) -> None:
                         optimizer.step('predictor')
                         optimizer.step('diffusion')
 
-                    # SLM discriminator loss
                     if d_loss_slm != 0:
                         optimizer.zero_grad()
                         if use_grad_scaler:
@@ -699,7 +687,6 @@ def train(config_path: str, *, run: TrackerRun) -> None:
                             bert_dur = model.bert(texts, attention_mask=(~text_mask).int())
                             d_en = model.bert_encoder(bert_dur).transpose(-1, -2)
                             d, p = model.predictor(d_en, s, input_lengths, s2s_attn_mono, text_mask)
-                    # get clips
                     mel_len = int(mel_input_length.min().item() / 2 - 1)
                     en = []
                     gt = []

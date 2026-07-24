@@ -10,11 +10,6 @@ from tqdm import tqdm
 from .utils import *
 from .sampler import *
 
-"""
-Diffusion Classes (generic for 1d data)
-"""
-
-
 class Model1d(nn.Module):
     def __init__(self, unet_type: str = "base", **kwargs):
         super().__init__()
@@ -27,11 +22,6 @@ class Model1d(nn.Module):
 
     def sample(self, *args, **kwargs) -> Tensor:
         return self.diffusion.sample(*args, **kwargs)
-
-
-"""
-Audio Diffusion Classes (specific for 1d audio data)
-"""
 
 
 def get_default_model_kwargs():
@@ -90,5 +80,4 @@ class AudioDiffusionConditional(Model1d):
             embedding_scale=5.0,
         )
         return super().sample(*args, **{**default_kwargs, **kwargs})
-
 

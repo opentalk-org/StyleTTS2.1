@@ -44,7 +44,6 @@ def length_to_mask(lengths):
     mask = torch.gt(mask+1, lengths.unsqueeze(1))
     return mask
 
-# for norm consistency loss
 def log_norm(x, mean=-4, std=4, dim=2):
     """
     normalized log mel -> mel -> norm -> log(norm)

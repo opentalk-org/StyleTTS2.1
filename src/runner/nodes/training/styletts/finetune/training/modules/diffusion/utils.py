@@ -57,11 +57,6 @@ def rand_bool(shape, proba, device = None):
         return torch.bernoulli(torch.full(shape, proba, device=device)).to(torch.bool)
 
 
-"""
-Kwargs Utils
-"""
-
-
 def group_dict_by_prefix(prefix: str, d: Dict) -> Tuple[Dict, Dict]:
     return_dicts: Tuple[Dict, Dict] = ({}, {})
     for key in d.keys():

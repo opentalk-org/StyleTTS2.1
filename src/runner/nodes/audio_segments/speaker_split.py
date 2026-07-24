@@ -238,7 +238,7 @@ def _group_by_speaker_punctuation(segments, settings: DiarizeSplitSpeakersSettin
         while cursor < total:
             segment = segments[cursor]
             if current and segment.speaker_id != group_speaker_id:
-                break  # speaker change always closes the current run
+                break
             current.append(segment)
             cursor += 1
             duration = segment.end - group_start

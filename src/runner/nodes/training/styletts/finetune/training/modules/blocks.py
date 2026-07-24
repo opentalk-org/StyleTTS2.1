@@ -102,7 +102,7 @@ class ResBlk(nn.Module):
 
     def forward(self, x):
         x = self._shortcut(x) + self._residual(x)
-        return x / math.sqrt(2)  # unit variance
+        return x / math.sqrt(2)
 
 class AdainResBlk1d(nn.Module):
     def __init__(self, dim_in, dim_out, style_dim=64, actv=nn.LeakyReLU(0.2),

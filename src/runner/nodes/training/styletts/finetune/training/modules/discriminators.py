@@ -9,16 +9,6 @@ from .utils import checkpoint_with_mixed_precision, get_padding
 LRELU_SLOPE = 0.1
 
 def stft(x, fft_size, hop_size, win_length, window):
-    """Perform STFT and convert to magnitude spectrogram.
-    Args:
-        x (Tensor): Input signal tensor (B, T).
-        fft_size (int): FFT size.
-        hop_size (int): Hop size.
-        win_length (int): Window length.
-        window (str): Window function type.
-    Returns:
-        Tensor: Magnitude spectrogram (B, #frames, fft_size // 2 + 1).
-    """
     x_stft = torch.stft(x, fft_size, hop_size, win_length, window,
             return_complex=True)
     real = x_stft[..., 0]
@@ -27,8 +17,6 @@ def stft(x, fft_size, hop_size, win_length, window):
     return torch.abs(x_stft).transpose(2, 1)
 
 class SpecDiscriminator(nn.Module):
-    """docstring for Discriminator."""
-
     def __init__(
         self,
         fft_size=1024,
@@ -143,9 +131,8 @@ class DiscriminatorP(torch.nn.Module):
     def forward(self, x):
         fmap = []
 
-        # 1d to 2d
         b, c, t = x.shape
-        if t % self.period != 0: # pad first
+        if t % self.period != 0:
             n_pad = self.period - (t % self.period)
             x = F.pad(x, (0, n_pad), "reflect")
             t = t + n_pad
@@ -195,8 +182,6 @@ class MultiPeriodDiscriminator(torch.nn.Module):
         return y_d_rs, y_d_gs, fmap_rs, fmap_gs
     
 class WavLMDiscriminator(nn.Module):
-    """docstring for Discriminator."""
-
     def __init__(self, slm_hidden=768, 
                  slm_layers=13, 
                  initial_channel=64, 

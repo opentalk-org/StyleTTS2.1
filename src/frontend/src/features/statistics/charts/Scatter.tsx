@@ -4,8 +4,6 @@ import type { ScatterPoint } from "../api";
 import type { Tone } from "../logic";
 import { baseLayout, PLOT_COLOR, PLOT_CONFIG } from "./plotBase";
 
-// Interactive scatter for per-sample rates (words/s, chars/s vs clip duration). Points are
-// pre-sampled server-side (500-1000) so the plot stays responsive; zoom/pan/reset are native.
 export function Scatter({
   points,
   xLabel,

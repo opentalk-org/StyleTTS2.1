@@ -12,7 +12,6 @@ export async function copyText(text: string): Promise<boolean> {
       return true;
     }
   } catch {
-    // Permission denied or insecure context — fall through to the legacy path.
   }
   return legacyCopy(text);
 }

@@ -3,9 +3,6 @@ import Plot from "react-plotly.js";
 import type { BigramMatrix } from "../api";
 import { baseLayout, PLOT_CONFIG } from "./plotBase";
 
-// Single-hue sequential ramp (light -> dark blue) for magnitude. Matrix counts are a
-// magnitude encoding, so one hue from the surface tint to a deep blue reads high vs low
-// without the rainbow that a multi-hue scale would introduce.
 const BLUE_SCALE: [number, string][] = [
   [0, "#f8fafc"],
   [0.15, "#dbeafe"],
@@ -14,9 +11,6 @@ const BLUE_SCALE: [number, string][] = [
   [1, "#1d4ed8"],
 ];
 
-// Bigram counts as a heatmap: rows are the first token, columns the second, so cell (i, j)
-// is how often labels[i] is immediately followed by labels[j]. Labels come pre-ranked by
-// frequency from the server (top ~28), keeping the grid square and legible.
 export function Heatmap({ data, unit, height = 600 }: { data: BigramMatrix; unit: string; height?: number }) {
   const { labels, matrix } = data;
   return (

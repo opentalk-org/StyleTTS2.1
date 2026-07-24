@@ -3,8 +3,6 @@ import Plot from "react-plotly.js";
 import type { HBarItem, Tone } from "../logic";
 import { baseLayout, PLOT_COLOR, PLOT_CONFIG } from "./plotBase";
 
-// Interactive horizontal bars (per-speaker / per-voice / n-grams). Highest value on top;
-// hover shows the formatted value, and the axes zoom/pan like every other plot.
 export function HBars({ items, tone = "emerald" }: { items: HBarItem[]; tone?: Tone }) {
   const height = Math.max(120, items.length * 24 + 34);
   return (

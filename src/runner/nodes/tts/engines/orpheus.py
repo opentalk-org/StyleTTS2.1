@@ -16,7 +16,6 @@ from runner.nodes.tts.voices import Voice
 ORPHEUS_REPO_ID = "unsloth/orpheus-3b-0.1-ft"
 ORPHEUS_SAMPLE_RATE = 24000
 
-# Prompt framing tokens from Orpheus (`voice: text` wrapped in start/end control ids).
 _START_TOKEN = 128259
 _END_TOKENS = (128009, 128260, 128261, 128257)
 _STOP_TOKEN_ID = 49158
@@ -78,7 +77,6 @@ class OrpheusRuntime(EngineRuntime):
         return self._tokenizer.decode(all_ids[0])
 
     def _token_text_stream(self, token_ids: list[int]):
-        # Orpheus's decoder parses the "<custom_token_N>" text of each generated token.
         for token_id in token_ids:
             yield self._tokenizer.decode([token_id])
 

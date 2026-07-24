@@ -40,7 +40,7 @@ class Generator(torch.nn.Module):
                          upsample_initial_channel//(2**(i+1)),
                          k, u, padding=(u//2 + u%2), output_padding=u%2)))
             
-            if i + 1 < len(upsample_rates):  #
+            if i + 1 < len(upsample_rates):
                 stride_f0 = np.prod(upsample_rates[i + 1:])
                 self.noise_convs.append(Conv1d(
                     1, c_cur, kernel_size=stride_f0 * 2, stride=stride_f0, padding=(stride_f0+1) // 2))
@@ -67,7 +67,7 @@ class Generator(torch.nn.Module):
         self.dummy_tensor = nn.Parameter(torch.zeros(1), requires_grad=True)
 
     def forward(self, x, s, f0):
-        f0 = self.f0_upsamp(f0[:, None]).transpose(1, 2)  # bs,n,t
+        f0 = self.f0_upsamp(f0[:, None]).transpose(1, 2)
 
         har_source, noi_source, uv = self.m_source(f0)
         har_source = har_source.transpose(1, 2)

@@ -1,59 +1,7 @@
-"""Wave-U-Net Discriminator (Kaneko et al., 2023 — arXiv:2303.13909).
+"""Wave-U-Net discriminator from Kaneko et al. (2023), arXiv:2303.13909.
 
-Faithful single-file reimplementation of the discriminator described in
-"Wave-U-Net Discriminator: Fast and Lightweight Discriminator for
-Generative Adversarial Network-Based Speech Synthesis".
-
-The network is a single, sample-wise discriminator with a Wave-U-Net
-(encoder-decoder + skip connections) shape. It emits one real/fake logit
-per input sample and exposes every block output as a feature map for the
-feature-matching loss.
-
-Every architectural detail is transcribed from Figures 2 and 3:
-
-  Fig. 2 (overall):
-    input waveform (B, 1, T)
-      ResBlockDown c32,  s3
-      ResBlockDown c64,  s3
-      ResBlockDown c128, s3
-      ResBlockDown c256, s3
-      ResBlockDown c512, s3          <- bottleneck
-      ResBlockUp   c256, s3
-      Concat(with ResBlockDown c256 out)
-      ResBlockUp   c128, s3
-      Concat(with ResBlockDown c128 out)
-      ResBlockUp   c64,  s3
-      Concat(with ResBlockDown c64  out)
-      ResBlockUp   c32,  s3
-      Concat(with ResBlockDown c32  out)
-      ResBlockUp   c32,  s3
-      Conv c1, k5, s1                -> sample-wise logits (B, 1, T)
-
-  Fig. 3 (residual blocks), quirks:
-    - LReLU with negative slope 0.1 (pre-activation: LReLU -> Conv).
-    - Global Norm at the end of every block:
-        b = a / sqrt( (1/N) * sum_i (a_i)^2 + eps ),  eps = 1e-8,
-      where N is the total number of features (channels x time) per sample;
-      no trainable parameters.
-    - Residual-path output scaled by a constant 0.4 before the block-level add.
-    - ResBlockDown:
-        skip     = Concat( Conv1x1(AvgPool_s3(x)), AvgPool_s3(x) )
-        residual = LReLU(x) -> [ Conv k6 s3  +  Dup-channels(AvgPool_s3(.)) ]
-                            -> LReLU -> Conv k5 s1
-        out      = GlobalNorm( skip + 0.4 * residual )
-      "Dup. channels" tiles the pooled features up to the output channel count.
-    - ResBlockUp:
-        skip     = Upsample_s3( Conv1x1(x) )
-        residual = LReLU(x) -> [ ConvT k6 s3  +  Drop-channels(Upsample_s3(.)) ]
-                            -> LReLU -> Conv k5 s1
-        out      = GlobalNorm( skip + 0.4 * residual )
-      "Drop. channels" keeps the leading output-channel slice of the upsampled
-      features (the inverse of Dup-channels).
-
-The strided (s3) resampling makes intermediate lengths drift by a few samples;
-branches are cropped to their common length before every add/concat, and the
-final logits are matched to the input length. This preserves the sample-wise
-property without inventing padding the paper does not specify.
+Stride-three branches are cropped before merging because the paper does not
+specify padding that keeps their intermediate lengths equal.
 """
 
 from __future__ import annotations
@@ -99,12 +47,9 @@ class ResBlockDown(nn.Module):
         assert c_out % c_in == 0, "Dup-channels needs c_out divisible by c_in"
         self.c_in, self.c_out = c_in, c_out
 
-        # Skip: pool, then concat the pooled input with a 1x1 projection of it.
         self.skip_pool = nn.AvgPool1d(kernel_size=STRIDE, stride=STRIDE)
         self.skip_conv = nn.Conv1d(c_in, c_out - c_in, kernel_size=1)
 
-        # Residual: strided conv (downsample + channel change) added to a pooled,
-        # channel-duplicated copy, then LReLU and a same-length conv.
         self.res_conv_down = nn.Conv1d(c_in, c_out, kernel_size=6, stride=STRIDE, padding=2)
         self.res_pool = nn.AvgPool1d(kernel_size=STRIDE, stride=STRIDE)
         self.res_conv_out = nn.Conv1d(c_out, c_out, kernel_size=5, stride=1, padding=2)
@@ -135,12 +80,9 @@ class ResBlockUp(nn.Module):
         assert c_in % c_out == 0, "Drop-channels needs c_in divisible by c_out"
         self.c_in, self.c_out = c_in, c_out
 
-        # Skip: 1x1 projection then nearest upsample.
         self.skip_conv = nn.Conv1d(c_in, c_out, kernel_size=1)
         self.skip_up = nn.Upsample(scale_factor=STRIDE, mode="nearest")
 
-        # Residual: transposed conv (upsample + channel change) added to an
-        # upsampled, channel-dropped copy, then LReLU and a same-length conv.
         self.res_convt_up = nn.ConvTranspose1d(c_in, c_out, kernel_size=6, stride=STRIDE)
         self.res_up = nn.Upsample(scale_factor=STRIDE, mode="nearest")
         self.res_conv_out = nn.Conv1d(c_out, c_out, kernel_size=5, stride=1, padding=2)
@@ -177,8 +119,6 @@ class WaveUNetDiscriminator(nn.Module):
             ResBlockDown(c_in, c_out) for c_in, c_out in zip(down_in, ENCODER_CHANNELS)
         )
 
-        # Decoder mirrors the encoder; every stage after the first receives the
-        # concatenated encoder skip, doubling its input channels.
         up_out = (256, 128, 64, 32, 32)
         up_in = (512, 512, 256, 128, 64)
         self.ups = nn.ModuleList(
@@ -258,7 +198,6 @@ if __name__ == "__main__":
     print(f"G adv  : {generator_adv_loss(fake_logits).item():.4f}")
     print(f"FM loss: {feature_matching_loss(real_feats, fake_feats).item():.4f}")
 
-    # Non-8192 length still yields sample-wise logits.
     odd = torch.randn(1, 1, 16000)
     odd_logits, _ = disc(odd)
     assert odd_logits.shape[-1] == 16000

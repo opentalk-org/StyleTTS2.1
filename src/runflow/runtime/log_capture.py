@@ -31,7 +31,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 
 
-_PROGRESS_MIN_INTERVAL = 0.5  # seconds between throttled (\r) progress updates
+_PROGRESS_MIN_INTERVAL = 0.5
 
 _target: ContextVar[tuple[logging.Logger, int] | None] = ContextVar("runflow_output_target", default=None)
 

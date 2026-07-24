@@ -20,13 +20,11 @@ class TextEncoder(nn.Module):
                 actv,
                 nn.Dropout(0.2),
             ))
-        # self.cnn = nn.Sequential(*self.cnn)
-
         self.lstm = nn.LSTM(channels, channels//2, 1, batch_first=True, bidirectional=True)
 
     def forward(self, x, input_lengths, m):
-        x = self.embedding(x)  # [B, T, emb]
-        x = x.transpose(1, 2)  # [B, emb, T]
+        x = self.embedding(x)
+        x = x.transpose(1, 2)
         m = m.to(input_lengths.device).unsqueeze(1)
         x.masked_fill_(m, 0.0)
         
@@ -34,7 +32,7 @@ class TextEncoder(nn.Module):
             x = c(x)
             x.masked_fill_(m, 0.0)
             
-        x = x.transpose(1, 2)  # [B, T, chn]
+        x = x.transpose(1, 2)
 
         input_lengths = input_lengths.cpu().numpy()
         x = nn.utils.rnn.pack_padded_sequence(

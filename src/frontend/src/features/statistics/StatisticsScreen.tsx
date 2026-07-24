@@ -110,8 +110,6 @@ const CORPUS_MODES: { value: CorpusTab; label: string; caption: string }[] = [
   { value: "ipa", label: "IPA", caption: "Phonemes, after phonemization" },
 ];
 
-// Full-width mode switch for the text corpus. Deliberately large and above the charts (not a
-// corner tab) so it clearly reads as re-computing everything in the section below it.
 function CorpusModeSwitch({ value, onChange }: { value: CorpusTab; onChange: (t: CorpusTab) => void }) {
   return (
     <div className="grid grid-cols-2 gap-2 rounded-xl border border-line bg-panel-2 p-1.5">

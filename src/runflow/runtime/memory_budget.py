@@ -24,13 +24,13 @@ def _value_bytes(value: Any, depth: int = 0) -> int:
         return 0
     if isinstance(value, (bytes, bytearray, memoryview)):
         return len(value)
-    nbytes = getattr(value, "nbytes", None)  # numpy arrays, torch tensors
+    nbytes = getattr(value, "nbytes", None)
     if isinstance(nbytes, int) and nbytes >= 0:
         return nbytes
     if isinstance(value, str):
-        return len(value)  # ~1 byte/char is close enough for the small strings we see
+        return len(value)
     if isinstance(value, Path):
-        return 0  # a path is a reference, not resident bytes
+        return 0
     if depth < _MAX_DEPTH:
         if isinstance(value, dict):
             return sum(_value_bytes(item, depth + 1) for item in value.values())

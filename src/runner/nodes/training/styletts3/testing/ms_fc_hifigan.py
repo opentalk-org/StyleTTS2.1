@@ -1,15 +1,4 @@
-"""MS-FC-HiFi-GAN generator (Yamashita et al., "Fast Neural Speech Waveform
-Generative Models With Fully-Connected Layer-Based Upsampling", IEEE Access 2024).
-
-Multi-stream (4 sub-band, PQMF) HiFi-GAN V1 backbone with the final iSTFT
-upsampling replaced by a trainable fully-connected (FC) layer without overlap-add.
-Paper config (Sec. V.A): 24 kHz, 80-dim mel, FFT 1024 / hop 256, init channel 512,
-transposed-conv upsample rates [4, 4] / kernels [8, 8], 4 sub-bands, FC M=16 -> N=4.
-Per sub-band upsample = 16 (conv) * 4 (FC) = 64; * 4 sub-bands (PQMF) = 256 = hop.
-
-Standalone scaffold script: no dependency on the runner/runflow runtime. Runs a
-forward pass and reports FLOPs for 3.2 s of audio (T=300 frames -> 76800 samples).
-"""
+"""MS-FC-HiFi-GAN from Yamashita et al., IEEE Access 2024."""
 from __future__ import annotations
 
 import torch
@@ -69,11 +58,8 @@ class MSFCHiFiGAN(nn.Module):
             channels //= 2
             for rkernel in resblock_kernels:
                 self.resblocks.append(ResBlock(channels, rkernel))
-        # per-sub-band FC hidden features -> subbands * (M + 2) channels
         self.conv_post = nn.Conv1d(channels, subbands * (fc_m + 2), 7, 1, 3)
-        # FC upsampling: trainable, no bias, per sub-band (M + 2) -> N as grouped 1x1 conv
         self.fc = nn.Conv1d(subbands * (fc_m + 2), subbands * fc_n, 1, groups=subbands, bias=False)
-        # PQMF synthesis filter (fixed) combines sub-band signals into the full-rate waveform
         self.register_buffer("pqmf", torch.randn(subbands, 1, pqmf_taps))
         self.pqmf_pad = (pqmf_taps - subbands) // 2
 
@@ -89,7 +75,6 @@ class MSFCHiFiGAN(nn.Module):
         x = self.conv_post(F.leaky_relu(x, LRELU_SLOPE))
         x = self.fc(x)
         batch, _, frames = x.shape
-        # reshape (B, subbands * N, T) -> per-sub-band signal (B, subbands, N * T)
         x = x.view(batch, self.subbands, self.fc_n, frames).reshape(batch, self.subbands, self.fc_n * frames)
         return F.conv_transpose1d(x, self.pqmf, stride=self.subbands, padding=self.pqmf_pad)
 

@@ -80,7 +80,6 @@ def cmd_failed(client: BackendClient, args: argparse.Namespace) -> int:
         print("No failed nodes.")
         return 0
 
-    # Tracebacks arrive on the error events, keyed by node id.
     tracebacks: dict[str, str] = {}
     for event in client.run_errors(args.run_id):
         node_id = event.get("node_id")

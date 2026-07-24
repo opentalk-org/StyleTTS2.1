@@ -4,8 +4,6 @@ import type { Tone } from "../logic";
 import { histogramBars } from "./histogramGeometry";
 import { baseLayout, PLOT_COLOR, PLOT_CONFIG } from "./plotBase";
 
-// Interactive histogram: a real numeric x-axis built from the bin edges, so drag-to-zoom,
-// pan, wheel-zoom, and double-click-reset all work and hover reports the exact bin range.
 export function Histogram({
   edges,
   counts,

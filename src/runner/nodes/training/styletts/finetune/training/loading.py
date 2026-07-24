@@ -1,5 +1,3 @@
-#coding:utf-8
-
 import os
 import os.path as osp
 
@@ -216,10 +214,9 @@ def build_model(args, text_aligner, pitch_extractor, bert):
     
     predictor = ProsodyPredictor(style_dim=args.style_dim, d_hid=args.hidden_dim, nlayers=args.n_layer, max_dur=args.max_dur, dropout=args.dropout)
     
-    style_encoder = StyleEncoder(dim_in=args.dim_in, style_dim=args.style_dim, max_conv_dim=args.hidden_dim) # acoustic style encoder
-    predictor_encoder = StyleEncoder(dim_in=args.dim_in, style_dim=args.style_dim, max_conv_dim=args.hidden_dim) # prosodic style encoder
+    style_encoder = StyleEncoder(dim_in=args.dim_in, style_dim=args.style_dim, max_conv_dim=args.hidden_dim)
+    predictor_encoder = StyleEncoder(dim_in=args.dim_in, style_dim=args.style_dim, max_conv_dim=args.hidden_dim)
         
-    # define diffusion model
     if args.multispeaker:
         transformer = StyleTransformer1d(channels=args.style_dim*2, 
                                     context_embedding_features=bert.config.hidden_size,
@@ -234,7 +231,7 @@ def build_model(args, text_aligner, pitch_extractor, bert):
         in_channels=1,
         embedding_max_length=bert.config.max_position_embeddings,
         embedding_features=bert.config.hidden_size,
-        embedding_mask_proba=args.diffusion.embedding_mask_proba, # Conditional dropout of batch elements,
+        embedding_mask_proba=args.diffusion.embedding_mask_proba,
         channels=args.style_dim*2,
         context_features=args.style_dim*2,
     )
@@ -242,7 +239,7 @@ def build_model(args, text_aligner, pitch_extractor, bert):
     diffusion.diffusion = KDiffusion(
         net=diffusion.unet,
         sigma_distribution=LogNormalDistribution(mean = args.diffusion.dist.mean, std = args.diffusion.dist.std),
-        sigma_data=args.diffusion.dist.sigma_data, # a placeholder, will be changed dynamically when start training diffusion model
+        sigma_data=args.diffusion.dist.sigma_data,
         dynamic_threshold=0.0 
     )
     diffusion.diffusion.net = transformer
@@ -267,7 +264,6 @@ def build_model(args, text_aligner, pitch_extractor, bert):
             mpd = MultiPeriodDiscriminator(gradient_checkpointing=discriminators_checkpointing),
             msd = MultiResSpecDiscriminator(gradient_checkpointing=discriminators_checkpointing),
         
-            # slm discriminator head
             wd = WavLMDiscriminator(args.slm.hidden, args.slm.nlayers, args.slm.initial_channel),
        )
     

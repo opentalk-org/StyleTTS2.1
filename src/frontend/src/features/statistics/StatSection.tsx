@@ -1,8 +1,5 @@
 import type { ReactNode } from "react";
 
-// One labeled band of the statistics page. Every group of charts gets the same header
-// treatment (eyebrow title + optional caption) and the same spacing, so the page reads as
-// a sequence of deliberate sections instead of a wall of cards.
 export function StatSection({
   title,
   caption,

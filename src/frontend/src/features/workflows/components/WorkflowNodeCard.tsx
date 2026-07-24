@@ -32,7 +32,6 @@ export function WorkflowNodeCard({ node }: { node: WorkflowNode }) {
   const discovered = snapshot?.counters.input_items_discovered;
   const emitted = info.is_input && outputs.length === 1 ? snapshot?.counters.packets_created : undefined;
   const queued = snapshot?.queue_size ?? 0;
-  // Elements currently inside running batches (same unit as queued/done), not batch count.
   const processing = snapshot?.processing_items ?? 0;
   const left = discovered !== undefined && emitted !== undefined
     ? Math.max(0, discovered - emitted)

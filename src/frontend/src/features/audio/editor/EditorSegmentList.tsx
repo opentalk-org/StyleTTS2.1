@@ -4,7 +4,6 @@ import { SearchInput } from "@/shared/ui/SearchInput";
 import { SegmentRow } from "../SegmentRow";
 import { useEditor } from "../editorStore";
 
-/** Cap the segments list height (px) before it scrolls internally. */
 const SEGMENTS_MAX_HEIGHT = 560;
 
 export function EditorSegmentList() {

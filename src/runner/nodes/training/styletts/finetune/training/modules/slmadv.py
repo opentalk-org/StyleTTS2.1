@@ -30,7 +30,7 @@ class SLMAdversarialLoss(torch.nn.Module):
                 s_preds = self.sampler(noise = torch.randn_like(s_trg).unsqueeze(1).to(ref_text.device), 
                       embedding=bert_dur,
                       embedding_scale=1,
-                               features=ref_s, # reference from the same speaker as the embedding
+                               features=ref_s,
                          embedding_mask_proba=0.1,
                          num_steps=num_steps).squeeze(1)
             else:
@@ -53,7 +53,6 @@ class SLMAdversarialLoss(torch.nn.Module):
         output_lengths = []
         attn_preds = []
         
-        # differentiable duration modeling
         for _s2s_pred, _text_length in zip(d, ref_lengths):
 
             _s2s_pred_org = _s2s_pred[:_text_length, :]
@@ -95,8 +94,6 @@ class SLMAdversarialLoss(torch.nn.Module):
         mel_len = max(int(min(output_lengths) / 2 - 1), self.min_len // 2)
         mel_len = min(mel_len, self.max_len // 2)
         
-        # get clips
-        
         en = []
         p_en = []
         sp = []
@@ -118,7 +115,6 @@ class SLMAdversarialLoss(torch.nn.Module):
             en.append(asr_pred[bib, :, random_start:random_start+mel_len])
             p_en.append(p_pred[bib, :, random_start:random_start+mel_len])
 
-            # get ground truth clips
             random_start = np.random.randint(0, mel_length_gt - mel_len)
             y = waves[bib][(random_start * 2) * 300:((random_start+mel_len) * 2) * 300]
             wav.append(torch.from_numpy(y).to(ref_text.device))
@@ -137,7 +133,6 @@ class SLMAdversarialLoss(torch.nn.Module):
         F0_fake, N_fake = self.model.predictor.F0Ntrain(p_en, sp[:, 128:])
         y_pred = self.model.decoder(en, F0_fake, N_fake, sp[:, :128])
         
-        # discriminator loss
         if (iters + 1) % self.skip_update == 0:
             if np.random.randint(0, 2) == 0:
                 wav = y_rec_gt_pred
@@ -146,7 +141,7 @@ class SLMAdversarialLoss(torch.nn.Module):
                 use_rec = False
 
             crop_size = min(wav.size(-1), y_pred.size(-1))
-            if use_rec: # use reconstructed (shorter lengths), do length invariant regularization
+            if use_rec:
                 if wav.size(-1) > y_pred.size(-1):
                     real_GP = wav[:, : , :crop_size]
                     out_crop = self.wl.discriminator_forward(real_GP.detach().squeeze())
@@ -168,13 +163,11 @@ class SLMAdversarialLoss(torch.nn.Module):
                     else:
                         d_loss = self.wl.discriminator(wav.detach().squeeze(), y_pred.detach().squeeze()).mean()
                 
-                # regularization (ignore length variation)
                 d_loss += loss_reg
 
                 out_gt = self.wl.discriminator_forward(y_rec_gt.detach().squeeze())
                 out_rec = self.wl.discriminator_forward(y_rec_gt_pred.detach().squeeze())
 
-                # regularization (ignore reconstruction artifacts)
                 d_loss += F.l1_loss(out_gt, out_rec)
 
             else:
@@ -182,7 +175,6 @@ class SLMAdversarialLoss(torch.nn.Module):
         else:
             d_loss = 0
             
-        # generator loss
         gen_loss = self.wl.generator(y_pred.squeeze())
         
         gen_loss = gen_loss.mean()

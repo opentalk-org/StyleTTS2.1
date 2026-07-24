@@ -41,7 +41,6 @@ class ProsodyPredictor(nn.Module):
         batch_size = d.shape[0]
         text_size = d.shape[1]
         
-        # predict duration
         input_lengths = text_lengths.cpu().numpy()
         x = nn.utils.rnn.pack_padded_sequence(
             d, input_lengths, batch_first=True, enforce_sorted=False)

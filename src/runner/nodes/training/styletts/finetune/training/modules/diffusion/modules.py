@@ -11,10 +11,6 @@ from einops_exts import rearrange_many
 from torch import Tensor, einsum
 
 
-"""
-Utils
-"""
-
 class AdaLayerNorm(nn.Module):
     def __init__(self, style_dim, channels, eps=1e-5):
         super().__init__()
@@ -121,20 +117,16 @@ class StyleTransformer1d(nn.Module):
     def get_mapping(
         self, time: Optional[Tensor] = None, features: Optional[Tensor] = None
     ) -> Optional[Tensor]:
-        """Combines context time features and features into mapping"""
         items, mapping = [], None
-        # Compute time features
         if self.use_context_time:
             assert_message = "use_context_time=True but no time features provided"
             assert exists(time), assert_message
             items += [self.to_time(time)]
-        # Compute features
         if self.use_context_features:
             assert_message = "context_features exists but no features provided"
             assert exists(features), assert_message
             items += [self.to_features(features)]
 
-        # Compute joint mapping
         if self.use_context_time or self.use_context_features:
             mapping = reduce(torch.stack(items), "n b m -> b m", "sum")
             mapping = self.to_mapping(mapping)
@@ -167,17 +159,14 @@ class StyleTransformer1d(nn.Module):
         b, device = embedding.shape[0], embedding.device
         fixed_embedding = self.fixed_embedding(embedding)
         if embedding_mask_proba > 0.0:
-            # Randomly mask embedding
             batch_mask = rand_bool(
                 shape=(b, 1, 1), proba=embedding_mask_proba, device=device
             )
             embedding = torch.where(batch_mask, fixed_embedding, embedding)
 
         if embedding_scale != 1.0:
-            # Compute both normal and fixed embedding outputs
             out = self.run(x, time, embedding=embedding, features=features)
             out_masked = self.run(x, time, embedding=fixed_embedding, features=features)
-            # Scale conditional output using classifier-free guidance
             return out_masked + (out - out_masked) * embedding_scale
         else:
             return self.run(x, time, embedding=embedding, features=features)
@@ -271,13 +260,10 @@ class StyleAttention(nn.Module):
     def forward(self, x: Tensor, s: Tensor, *, context: Optional[Tensor] = None) -> Tensor:
         assert_message = "You must provide a context when using context_features"
         assert not self.context_features or exists(context), assert_message
-        # Use context if provided
         context = default(context, x)
-        # Normalize then compute q from input and k,v from context
         x, context = self.norm(x, s), self.norm_context(context, s)
         
         q, k, v = (self.to_q(x), *torch.chunk(self.to_kv(context), chunks=2, dim=-1))
-        # Compute and return attention
         return self.attention(q, k, v)
         
 class Transformer1d(nn.Module):
@@ -363,20 +349,16 @@ class Transformer1d(nn.Module):
     def get_mapping(
         self, time: Optional[Tensor] = None, features: Optional[Tensor] = None
     ) -> Optional[Tensor]:
-        """Combines context time features and features into mapping"""
         items, mapping = [], None
-        # Compute time features
         if self.use_context_time:
             assert_message = "use_context_time=True but no time features provided"
             assert exists(time), assert_message
             items += [self.to_time(time)]
-        # Compute features
         if self.use_context_features:
             assert_message = "context_features exists but no features provided"
             assert exists(features), assert_message
             items += [self.to_features(features)]
 
-        # Compute joint mapping
         if self.use_context_time or self.use_context_features:
             mapping = reduce(torch.stack(items), "n b m -> b m", "sum")
             mapping = self.to_mapping(mapping)
@@ -409,27 +391,19 @@ class Transformer1d(nn.Module):
         b, device = embedding.shape[0], embedding.device
         fixed_embedding = self.fixed_embedding(embedding)
         if embedding_mask_proba > 0.0:
-            # Randomly mask embedding
             batch_mask = rand_bool(
                 shape=(b, 1, 1), proba=embedding_mask_proba, device=device
             )
             embedding = torch.where(batch_mask, fixed_embedding, embedding)
 
         if embedding_scale != 1.0:
-            # Compute both normal and fixed embedding outputs
             out = self.run(x, time, embedding=embedding, features=features)
             out_masked = self.run(x, time, embedding=fixed_embedding, features=features)
-            # Scale conditional output using classifier-free guidance
             return out_masked + (out - out_masked) * embedding_scale
         else:
             return self.run(x, time, embedding=embedding, features=features)
         
         return x
-
-
-"""
-Attention Components
-"""
 
 
 class RelativePositionBias(nn.Module):
@@ -521,15 +495,11 @@ class AttentionBase(nn.Module):
         self.to_out = nn.Linear(in_features=mid_features, out_features=out_features)
 
     def forward(self, q: Tensor, k: Tensor, v: Tensor) -> Tensor:
-        # Split heads
         q, k, v = rearrange_many((q, k, v), "b n (h d) -> b h n d", h=self.num_heads)
-        # Compute similarity matrix
         sim = einsum("... n d, ... m d -> ... n m", q, k)
         sim = (sim + self.rel_pos(*sim.shape[-2:])) if self.use_rel_pos else sim
         sim = sim * self.scale
-        # Get attention matrix with softmax
         attn = sim.softmax(dim=-1)
-        # Compute values
         out = einsum("... n m, ... m d -> ... n d", attn, v)
         out = rearrange(out, "b h n d -> b n (h d)")
         return self.to_out(out)
@@ -575,18 +545,10 @@ class Attention(nn.Module):
     def forward(self, x: Tensor, *, context: Optional[Tensor] = None) -> Tensor:
         assert_message = "You must provide a context when using context_features"
         assert not self.context_features or exists(context), assert_message
-        # Use context if provided
         context = default(context, x)
-        # Normalize then compute q from input and k,v from context
         x, context = self.norm(x), self.norm_context(context)
         q, k, v = (self.to_q(x), *torch.chunk(self.to_kv(context), chunks=2, dim=-1))
-        # Compute and return attention
         return self.attention(q, k, v)
-
-
-"""
-Transformer Blocks
-"""
 
 
 class TransformerBlock(nn.Module):
@@ -634,11 +596,6 @@ class TransformerBlock(nn.Module):
         x = self.feed_forward(x) + x
         return x
 
-
-
-"""
-Time Embeddings
-"""
 
 
 class SinusoidalEmbedding(nn.Module):

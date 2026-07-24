@@ -2,10 +2,6 @@ import { useState } from "react";
 
 import { Select, type Option } from "@/shared/ui/Select";
 
-/**
- * Local-state select for form fields whose value is a UI draft detail we do not
- * persist. Seeds from `defaultValue` and tracks its own selection.
- */
 export function FormSelect({
   defaultValue,
   value,

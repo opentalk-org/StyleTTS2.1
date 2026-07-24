@@ -48,5 +48,4 @@ def _segments_from_output(output: Any, duration_sec: float) -> list[tuple[float,
     text = str(getattr(output, "text", output)).strip()
     if not text:
         return []
-    # Canary emits one whole-clip segment; attach the utterance-level confidence to it.
     return [(0.0, max(0.0, duration_sec), text, nemo_hypothesis_confidence(output))]

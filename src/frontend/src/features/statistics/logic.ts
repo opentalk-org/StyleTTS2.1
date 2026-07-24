@@ -17,8 +17,6 @@ export type HistogramConfig = {
   countLabel?: string;
 };
 
-// A labeled cluster of histograms that belong together (loudness, silence, …). The screen
-// renders one StatSection per group so related distributions sit under a shared heading.
 export type HistogramGroup = {
   key: string;
   title: string;
@@ -73,8 +71,6 @@ function hbars(pairs: Pair[], fmt: (v: number) => string, limit: number): HBarIt
   return pairs.slice(0, limit).map(([label, value]) => ({ label, value, display: fmt(value) }));
 }
 
-// Speaker names can be arbitrarily long (paths, IDs); clip so the bar chart's left gutter
-// stays readable instead of the labels overrunning the plot.
 function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
@@ -83,8 +79,6 @@ function ranks(pairs: Pair[]): RankItem[] {
   return pairs.map(([label, value]) => ({ label, value }));
 }
 
-// Audio distributions, grouped by what they describe so the page can render one clearly
-// labeled section per concern (coverage, loudness, silence, waveform) instead of a flat wall.
 export function audioHistogramGroups(p: StatisticsPayload): HistogramGroup[] {
   const groups: HistogramGroup[] = [
     {
@@ -150,8 +144,6 @@ export function audioHistogramGroups(p: StatisticsPayload): HistogramGroup[] {
   return groups;
 }
 
-// Per-sample speaking-rate scatters. Points are pre-sampled server-side; x is the clip
-// duration so short clips with inflated rates are easy to spot.
 export function rateScatters(p: StatisticsPayload, tab: CorpusTab): ScatterConfig[] {
   const withTotal = (rows: ScatterPoint[]) => rows.filter((row) => row.length >= 3);
   if (tab === "ipa") {

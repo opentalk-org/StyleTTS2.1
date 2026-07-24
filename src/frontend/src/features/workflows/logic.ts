@@ -11,8 +11,6 @@ const LAYOUT_PANEL_WIDTH = 280;
 const LAYOUT_PANEL_GAP_X = 32;
 
 export function typeAccepts(schema: WorkflowSchema, targetType: string, sourceType: string): boolean {
-  // A port's type is its backend class; only identical types connect (no
-  // subtyping / unions), mirroring `type(src) is type(dst)` in graph.connect.
   if (!schema.types[targetType] || !schema.types[sourceType]) {
     throw new Error(`Unknown port type: ${targetType} or ${sourceType}`);
   }
@@ -120,11 +118,6 @@ const LAYOUT_COORD_SWEEPS = 10;
 
 const LAYOUT_DUMMY_HEIGHT = 24;
 
-/** Layered (Sugiyama-style) auto layout: columns by longest-path depth, node order
- * within each column chosen to minimise edge crossings (median heuristic sweeps over a
- * graph where multi-column edges are split by routing dummies so their crossings are
- * counted too), then vertical positions pulled toward connected neighbours to
- * straighten chains. */
 export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph, nodeWidths: ReadonlyMap<string, number>): WorkflowGraph {
   if (graph.nodes.length === 0) return graph;
 
@@ -132,8 +125,6 @@ export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph, no
   const order = topologicalNodeOrder(graph);
   const orderIndex = new Map(order.map((nodeId, index) => [nodeId, index]));
 
-  // Keep only forward edges (drop self-loops, dangling and back edges from cycles) so
-  // the layout is a clean DAG; back edges are still drawn, just not used for placement.
   const edges = graph.edges.filter(
     (edge) =>
       nodeById.has(edge.source_node) &&
@@ -152,9 +143,6 @@ export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph, no
   }
   const layerCount = Math.max(0, ...[...layerOf.values()]) + 1;
 
-  // Build "items" per layer = real nodes plus routing dummies. An edge spanning several
-  // columns becomes a chain source -> dummy -> ... -> target with one dummy per skipped
-  // column, so every segment is between adjacent layers and its crossings are counted.
   const layers: string[][] = Array.from({ length: layerCount }, () => []);
   const itemLayer = new Map<string, number>();
   const isDummy = new Set<string>();
@@ -210,8 +198,6 @@ export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph, no
     return total;
   };
 
-  // 2. Crossing reduction — alternate down/up sweeps ordering each layer by the median
-  // position of its neighbours in the adjacent, already-fixed layer. Keep the best.
   let bestLayers = layers.map((layer) => [...layer]);
   let bestCrossings = crossings();
   for (let sweep = 0; sweep < LAYOUT_ORDERING_SWEEPS; sweep += 1) {
@@ -238,11 +224,6 @@ export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph, no
   }
   for (let rank = 0; rank < layerCount; rank += 1) layers[rank] = bestLayers[rank]!;
 
-  // 3. Vertical coordinates — stack in order, then pull each item toward the median of
-  // its neighbours' centres (straightening chains, including long-edge dummy lanes).
-  // Packing alternates top-down and bottom-up each sweep so an item can move up as well
-  // as down to reach its neighbour; a purely top-down pack would only push nodes down
-  // (e.g. a single-input sink stranded below the source it should line up with).
   const heightOf = (id: string): number => (isDummy.has(id) ? LAYOUT_DUMMY_HEIGHT : estimatedNodeHeight(schema, nodeById.get(id)!));
   const top = new Map<string, number>();
   for (const layer of layers) {
@@ -280,7 +261,6 @@ export function autoLayoutGraph(schema: WorkflowSchema, graph: WorkflowGraph, no
     }
   }
 
-  // Bottom-up packing can push nodes above the top margin; shift everything back down.
   const minTop = Math.min(LAYOUT_Y, ...[...top.values()]);
   if (minTop < LAYOUT_Y) {
     for (const [id, y] of top) top.set(id, y + (LAYOUT_Y - minTop));

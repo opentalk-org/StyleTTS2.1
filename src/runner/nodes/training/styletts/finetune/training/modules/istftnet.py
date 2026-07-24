@@ -36,7 +36,7 @@ class TorchSTFT(torch.nn.Module):
             magnitude * torch.exp(phase * 1j),
             self.filter_length, self.hop_length, self.win_length, window=self.window.to(magnitude.device))
 
-        return inverse_transform.unsqueeze(-2)  # unsqueeze to stay consistent with conv_transpose1d implementation
+        return inverse_transform.unsqueeze(-2)
 
     def forward(self, input_data):
         self.magnitude, self.phase = self.transform(input_data)
@@ -79,7 +79,7 @@ class Generator(torch.nn.Module):
                 
             c_cur = upsample_initial_channel // (2 ** (i + 1))
             
-            if i + 1 < len(upsample_rates):  #
+            if i + 1 < len(upsample_rates):
                 stride_f0 = np.prod(upsample_rates[i + 1:])
                 self.noise_convs.append(Conv1d(
                     gen_istft_n_fft + 2, c_cur, kernel_size=stride_f0 * 2, stride=stride_f0, padding=(stride_f0+1) // 2))
@@ -100,7 +100,7 @@ class Generator(torch.nn.Module):
         
     def forward(self, x, s, f0):
         with torch.no_grad():
-            f0 = self.f0_upsamp(f0[:, None]).transpose(1, 2)  # bs,n,t
+            f0 = self.f0_upsamp(f0[:, None]).transpose(1, 2)
 
             har_source, noi_source, uv = self.m_source(f0)
             har_source = har_source.transpose(1, 2).squeeze(1)

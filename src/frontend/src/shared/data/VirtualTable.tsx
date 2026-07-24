@@ -28,9 +28,7 @@ export function VirtualTable({
   className?: string;
   scrollClassName?: string;
   pageScroll?: boolean;
-  /** Cap the scroll container's height (px); rows beyond it scroll internally. Ignored with `pageScroll`. */
   maxHeight?: number;
-  /** When this index changes, scroll it into view (centered). Use for e.g. following the active row. */
   scrollToIndex?: number | null;
 }) {
   const [parentElement, setParentElement] = useState<HTMLDivElement | null>(null);

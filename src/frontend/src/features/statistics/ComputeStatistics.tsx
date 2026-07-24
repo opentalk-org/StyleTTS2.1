@@ -8,8 +8,6 @@ import { useDatasetsQuery } from "../datasets/query";
 import { useWorkflowSchemaQuery } from "../workflows/query";
 import { useComputeStatisticsMutation } from "./query";
 
-// Trigger the dataset-statistics workflow for a chosen dataset. The workflow builds and runs
-// the AudioSource(dataset) → … → SaveStatisticsEntry pipeline and refreshes the entry list.
 export function ComputeStatistics() {
   const datasets = useDatasetsQuery();
   const schemaQuery = useWorkflowSchemaQuery();

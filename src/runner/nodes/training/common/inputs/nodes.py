@@ -24,11 +24,7 @@ class AlphabetPreset(str, Enum):
     CUSTOM = "custom"
 
 
-# Canonical StyleTTS2 symbol table: pad + punctuation + latin letters + IPA, all
-# single characters. This matches the pretrained LJSpeech / LibriTTS / Vokan text
-# embeddings (n_token = 178) and the espeak/phonemizer output. The legacy
-# multi-character token alphabet is intentionally gone; a space-separated string
-# cannot represent the literal space symbol, so `symbol_list` is authoritative.
+# A space-separated string cannot represent the alphabet's literal space symbol.
 DEFAULT_STYLETTS_ALPHABET = [str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS]
 DEFAULT_ALPHABET = "".join(DEFAULT_STYLETTS_ALPHABET)
 
@@ -205,5 +201,4 @@ class ListDatasetAudioIdsNode(Node):
                     }
                 })
         return outputs
-
 

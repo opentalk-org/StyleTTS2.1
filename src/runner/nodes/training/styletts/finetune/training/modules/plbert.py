@@ -11,10 +11,7 @@ _PLBERT_VOCAB_DIM0_KEYS = frozenset({
 })
 class CustomAlbert(AlbertModel):
     def forward(self, *args, **kwargs):
-        # Call the original forward method
         outputs = super().forward(*args, **kwargs)
-
-        # Only return the last_hidden_state
         return outputs.last_hidden_state
 
 

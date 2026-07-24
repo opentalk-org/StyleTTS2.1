@@ -1,5 +1,3 @@
-#coding: utf-8
-
 import io
 import random
 from pathlib import Path

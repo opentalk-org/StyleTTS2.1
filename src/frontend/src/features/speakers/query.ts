@@ -13,11 +13,6 @@ import {
 
 const KEY = "speakers";
 
-/**
- * Query a filtered page of speakers. Filters are part of the query key so the
- * server (mock) does the work; `keepPreviousData` avoids a loading flash while
- * typing in the search box.
- */
 export function useSpeakersQuery(params: SpeakerQuery) {
   return useQuery({
     queryKey: [KEY, params],

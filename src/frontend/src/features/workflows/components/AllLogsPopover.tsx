@@ -10,7 +10,6 @@ import type { RunErrorEvent, RunStatus } from "../types";
 type LogEntry = { nodeId: string; content: string; truncated: boolean; error: string | null };
 type LogRecord = { ts: number | null; seq: number; nodeId: string; text: string };
 
-// Node log lines are prefixed by "YYYY-MM-DD HH:MM:SS,mmm" (comma or dot millis).
 const TIMESTAMP = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})[.,](\d{3})/;
 
 function parseTimestamp(line: string): number | null {
@@ -20,8 +19,6 @@ function parseTimestamp(line: string): number | null {
   return Number.isNaN(value) ? null : value;
 }
 
-// Split one node's log into records: a record starts at a timestamped line and absorbs
-// the following continuation lines (e.g. tracebacks) so multi-line entries stay together.
 function toRecords(entry: LogEntry, seqStart: number): LogRecord[] {
   const records: LogRecord[] = [];
   let seq = seqStart;
@@ -72,8 +69,6 @@ function nodeFailureEntries(errors: RunErrorEvent[], loggedNodeIds: Set<string>)
     });
 }
 
-/** Fan out to every node's log endpoint for the active run and merge the lines into one
- * timestamp-ordered stream, each line tagged with the node it came from. */
 export function AllLogsPopover({ onClose }: { onClose: () => void }) {
   const { graph, activeRunId } = useWorkflowStore();
   const [entries, setEntries] = useState<LogEntry[] | null>(null);
@@ -138,7 +133,6 @@ export function AllLogsPopover({ onClose }: { onClose: () => void }) {
       seq += recs.length;
       all.push(...recs);
     }
-    // Stable chronological merge; lines without a timestamp keep their relative order.
     all.sort((left, right) => (left.ts ?? -Infinity) - (right.ts ?? -Infinity) || left.seq - right.seq);
     return all;
   }, [entries]);

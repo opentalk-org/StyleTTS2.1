@@ -19,15 +19,6 @@ type SpeakerFiltersStore = SpeakerFilters & {
   selectAllFiltered: () => void;
 };
 
-/**
- * View state for the Speakers screen (filter inputs + inline-rename target +
- * multi-selection). The filter values are sent to the server query — they are
- * NOT used to filter a client-side array. See api.ts.
- *
- * Selection mirrors the audio tab: an explicit id map, plus a `selectAllMatching`
- * flag for "select every speaker matching the current filter, across pages".
- * Changing the search query clears `selectAllMatching` since the matching set moved.
- */
 export const useSpeakerFilters = create<SpeakerFiltersStore>((set) => ({
   query: "",
   limit: 100,

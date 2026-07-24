@@ -14,8 +14,6 @@ export const PLOT_COLOR: Record<Tone, string> = {
   red: "#ef4444",
 };
 
-// Shared Plotly layout: transparent so it inherits the card background, app font,
-// tight margins, and grid/axis colors matched to the design tokens in index.css.
 export function baseLayout(overrides: Partial<Layout> = {}): Partial<Layout> {
   const { xaxis, yaxis, margin, ...rest } = overrides;
   return {
@@ -33,8 +31,6 @@ export function baseLayout(overrides: Partial<Layout> = {}): Partial<Layout> {
   };
 }
 
-// Wheel-zoom + pan + a clean modebar. Range change comes from drag-select (zoom),
-// pan mode, and double-click to reset — all native Plotly interactions.
 export const PLOT_CONFIG: Partial<Config> = {
   displaylogo: false,
   responsive: true,

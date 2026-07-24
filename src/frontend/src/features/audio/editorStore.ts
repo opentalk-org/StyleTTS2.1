@@ -3,10 +3,8 @@ import { create } from "zustand";
 import type { Segment } from "./api";
 
 const MIN_SPAN = 2;
-/** Default window span on load — start zoomed in so long files stay light. */
 const DEFAULT_SPAN = 45;
 
-/** Keep segments ordered by start time — the list and timeline lanes rely on it. */
 function sortSegs(segs: Segment[]): Segment[] {
   return [...segs].sort((a, b) => a.start - b.start || a.end - b.end);
 }
@@ -18,7 +16,6 @@ function clampView(start: number, end: number, dur: number): { viewStart: number
 }
 
 type EditorStore = {
-  /** File whose segments are currently loaded (guards re-loading). */
   fileId: string | null;
   dur: number;
   segs: Segment[];
@@ -27,7 +24,6 @@ type EditorStore = {
   speed: number;
   volume: number;
   loop: boolean;
-  /** Visible slice of the audio [viewStart, viewEnd] — the timeline renders only this. */
   viewStart: number;
   viewEnd: number;
   dirty: boolean;

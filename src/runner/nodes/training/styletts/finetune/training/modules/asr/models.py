@@ -60,13 +60,6 @@ class ASRCNN(nn.Module):
         return mask
 
     def get_future_mask(self, out_length, unmask_future_steps=0):
-        """
-        Args:
-            out_length (int): returned mask shape is (out_length, out_length).
-            unmask_futre_steps (int): unmasking future step size.
-        Return:
-            mask (torch.BoolTensor): mask future timesteps mask[i, j] = True if i > j + unmask_future_steps else False
-        """
         index_tensor = torch.arange(out_length).unsqueeze(0).expand(out_length, -1)
         mask = torch.gt(index_tensor, index_tensor.T + unmask_future_steps)
         return mask
@@ -100,9 +93,6 @@ class ASRS2S(nn.Module):
         self.eos = 2
 
     def initialize_decoder_states(self, memory, mask):
-        """
-        moemory.shape = (B, L, H) = (Batchsize, Maxtimestep, Hiddendim)
-        """
         B, L, H = memory.shape
         self.decoder_hidden = torch.zeros((B, self.decoder_rnn_dim)).type_as(memory)
         self.decoder_cell = torch.zeros((B, self.decoder_rnn_dim)).type_as(memory)
@@ -116,17 +106,11 @@ class ASRS2S(nn.Module):
         self.random_mask = 0.1
 
     def forward(self, memory, memory_mask, text_input):
-        """
-        moemory.shape = (B, L, H) = (Batchsize, Maxtimestep, Hiddendim)
-        moemory_mask.shape = (B, L, )
-        texts_input.shape = (B, T)
-        """
         self.initialize_decoder_states(memory, memory_mask)
-        # text random mask
         random_mask = (torch.rand(text_input.shape) < self.random_mask).to(text_input.device)
         _text_input = text_input.clone()
         _text_input.masked_fill_(random_mask, self.unk_index)
-        decoder_inputs = self.embedding(_text_input).transpose(0, 1) # -> [T, B, channel]
+        decoder_inputs = self.embedding(_text_input).transpose(0, 1)
         start_embedding = self.embedding(
             torch.LongTensor([self.sos]*decoder_inputs.size(1)).to(decoder_inputs.device))
         decoder_inputs = torch.cat((start_embedding.unsqueeze(0), decoder_inputs), dim=0)
@@ -170,16 +154,13 @@ class ASRS2S(nn.Module):
         hidden_and_context = torch.cat((self.decoder_hidden, self.attention_context), -1)
         hidden = self.project_to_hidden(hidden_and_context)
 
-        # dropout to increasing g
         logit = self.project_to_n_symbols(F.dropout(hidden, 0.5, self.training))
 
         return hidden, logit, self.attention_weights
 
     def parse_decoder_outputs(self, hidden, logit, alignments):
 
-        # -> [B, T_out + 1, max_time]
         alignments = torch.stack(alignments).transpose(0,1)
-        # [T_out + 1, B, n_symbols] -> [B, T_out + 1,  n_symbols]
         logit = torch.stack(logit).transpose(0, 1).contiguous()
         hidden = torch.stack(hidden).transpose(0, 1).contiguous()
 

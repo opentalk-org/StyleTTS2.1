@@ -165,17 +165,6 @@ class Attention(nn.Module):
 
     def get_alignment_energies(self, query, processed_memory,
                                attention_weights_cat):
-        """
-        PARAMS
-        ------
-        query: decoder output (batch, n_mel_channels * n_frames_per_step)
-        processed_memory: processed encoder outputs (B, T_in, attention_dim)
-        attention_weights_cat: cumulative and prev. att weights (B, 2, max_time)
-        RETURNS
-        -------
-        alignment (batch, max_time)
-        """
-
         processed_query = self.query_layer(query.unsqueeze(1))
         processed_attention_weights = self.location_layer(attention_weights_cat)
         energies = self.v(torch.tanh(
@@ -186,15 +175,6 @@ class Attention(nn.Module):
 
     def forward(self, attention_hidden_state, memory, processed_memory,
                 attention_weights_cat, mask):
-        """
-        PARAMS
-        ------
-        attention_hidden_state: attention rnn last output
-        memory: encoder outputs
-        processed_memory: processed encoder outputs
-        attention_weights_cat: previous and cummulative attention weights
-        mask: binary mask for padded data
-        """
         alignment = self.get_alignment_energies(
             attention_hidden_state, processed_memory, attention_weights_cat)
 
@@ -224,17 +204,6 @@ class ForwardAttentionV2(nn.Module):
 
     def get_alignment_energies(self, query, processed_memory,
                                attention_weights_cat):
-        """
-        PARAMS
-        ------
-        query: decoder output (batch, n_mel_channels * n_frames_per_step)
-        processed_memory: processed encoder outputs (B, T_in, attention_dim)
-        attention_weights_cat:  prev. and cumulative att weights (B, 2, max_time)
-        RETURNS
-        -------
-        alignment (batch, max_time)
-        """
-
         processed_query = self.query_layer(query.unsqueeze(1))
         processed_attention_weights = self.location_layer(attention_weights_cat)
         energies = self.v(torch.tanh(
@@ -245,31 +214,11 @@ class ForwardAttentionV2(nn.Module):
 
     def forward(self, attention_hidden_state, memory, processed_memory,
                 attention_weights_cat, mask, log_alpha):
-        """
-        PARAMS
-        ------
-        attention_hidden_state: attention rnn last output
-        memory: encoder outputs
-        processed_memory: processed encoder outputs
-        attention_weights_cat: previous and cummulative attention weights
-        mask: binary mask for padded data
-        """
         log_energy = self.get_alignment_energies(
             attention_hidden_state, processed_memory, attention_weights_cat)
 
-        #log_energy =
-
         if mask is not None:
             log_energy.data.masked_fill_(mask, self.score_mask_value)
-
-        #attention_weights = F.softmax(alignment, dim=1)
-
-        #content_score = log_energy.unsqueeze(1) #[B, MAX_TIME] -> [B, 1, MAX_TIME]
-        #log_alpha = log_alpha.unsqueeze(2) #[B, MAX_TIME] -> [B, MAX_TIME, 1]
-
-        #log_total_score = log_alpha + content_score
-
-        #previous_attention_weights = attention_weights_cat[:,0,:]
 
         log_alpha_shift_padded = []
         max_time = log_energy.size(1)
@@ -297,7 +246,6 @@ class PhaseShuffle2d(nn.Module):
         self.random = random.Random(1)
 
     def forward(self, x, move=None):
-        # x.size = (B, C, M, L)
         if move is None:
             move = self.random.randint(-self.n, self.n)
 
@@ -316,7 +264,6 @@ class PhaseShuffle1d(nn.Module):
         self.random = random.Random(1)
 
     def forward(self, x, move=None):
-        # x.size = (B, C, M, L)
         if move is None:
             move = self.random.randint(-self.n, self.n)
 
@@ -344,11 +291,8 @@ class MFCC(nn.Module):
             unsqueezed = True
         else:
             unsqueezed = False
-        # (channel, n_mels, time).tranpose(...) dot (n_mels, n_mfcc)
-        # -> (channel, time, n_mfcc).tranpose(...)
         mfcc = torch.matmul(mel_specgram.transpose(1, 2), self.dct_mat).transpose(1, 2)
 
-        # unpack batch
         if unsqueezed:
             mfcc = mfcc.squeeze(0)
         return mfcc
