@@ -99,6 +99,10 @@
           mkdir -p "$runflow_driver_dir"
           ln -sfn /usr/lib/x86_64-linux-gnu/libcuda.so.1 "$runflow_driver_dir/libcuda.so.1"
           ln -sfn /usr/lib/x86_64-linux-gnu/libcuda.so "$runflow_driver_dir/libcuda.so"
+          ln -sfn /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 \
+            "$runflow_driver_dir/libnvidia-ml.so.1"
+          ln -sfn /usr/lib/x86_64-linux-gnu/libnvidia-ml.so \
+            "$runflow_driver_dir/libnvidia-ml.so"
           ln -sfn /usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.1 \
             "$runflow_driver_dir/libnvidia-ptxjitcompiler.so.1"
           ln -sfn /usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.4 \
