@@ -15,7 +15,6 @@ from runner.nodes.audio_segments.extract_writeback import (
     saved_segment_group as _saved_segment_group,
 )
 from runner.nodes.audio_segments.persist_split import (
-    completed_replace_source_ids,
     persist_split_records,
 )
 from runner.nodes.datatypes import AudioPort, SaveResultPort

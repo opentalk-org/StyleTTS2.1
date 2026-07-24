@@ -16,7 +16,7 @@ from runflow.runtime.output_router import INPUT_INDEX_OUTPUT
 from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AudioPort, CheckpointRefPort, JsonPort, SynthesisResultPort, TextPort
 from runner.nodes.languages import Language
-from runner.nodes.models import Audio, SynthesisResult, stable_id, typed_checkpoint
+from runner.nodes.models import SynthesisResult, stable_id, typed_checkpoint
 from runner.nodes.tts.audio_out import audio_from_samples
 from runner.nodes.tts.engines import load_engine
 from runner.nodes.tts.engines.base import EngineRuntime, EngineSynthesisRequest, EngineSynthesisResult

@@ -68,7 +68,9 @@ class WeightBudget:
     larger than the whole budget still passes (serialized) instead of blocking forever."""
 
     def __init__(self, budget_bytes: int) -> None:
-        self._budget = max(1, int(budget_bytes))
+        if budget_bytes <= 0:
+            raise ValueError("memory budget must be positive")
+        self._budget = int(budget_bytes)
         self._used = 0
         self._condition = asyncio.Condition()
 
@@ -81,15 +83,21 @@ class WeightBudget:
         return self._budget
 
     async def acquire(self, weight: int) -> None:
-        need = max(0, int(weight))
+        if weight < 0:
+            raise ValueError("task memory weight must be non-negative")
+        need = int(weight)
         async with self._condition:
             await self._condition.wait_for(lambda: self._used == 0 or self._used + need <= self._budget)
             self._used += need
 
     async def release(self, weight: int) -> None:
-        give_back = max(0, int(weight))
+        if weight < 0:
+            raise ValueError("released memory weight must be non-negative")
+        give_back = int(weight)
         if give_back == 0:
             return
         async with self._condition:
-            self._used = max(0, self._used - give_back)
+            if give_back > self._used:
+                raise RuntimeError("released memory exceeds admitted memory")
+            self._used -= give_back
             self._condition.notify_all()

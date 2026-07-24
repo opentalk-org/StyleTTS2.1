@@ -29,7 +29,6 @@ from runner.nodes.statistics.aggregate_helpers import (
     segment_audio_id,
     segment_duration,
     segment_phon,
-    segment_speaker_id,
     source_batch_count,
     source_batch_id,
     string_value,

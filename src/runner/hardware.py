@@ -2,10 +2,6 @@ from __future__ import annotations
 
 import os
 
-from shared.logging_setup import get_logger
-
-logger = get_logger(__name__)
-
 # Reserve a little head-room so the scheduler's vram budget never promises the
 # full physical device to concurrent nodes.
 _VRAM_HEADROOM_GB = 2.0
@@ -51,11 +47,7 @@ def detect_vram_gb() -> float | None:
         return None
     if not torch.cuda.is_available():
         return None
-    try:
-        total_bytes = torch.cuda.get_device_properties(0).total_memory
-    except Exception:  # pragma: no cover - driver/device edge cases
-        logger.exception("failed to read cuda device memory")
-        return None
+    total_bytes = torch.cuda.get_device_properties(0).total_memory
     total_gb = total_bytes / (1024 ** 3)
     return max(_MIN_VRAM_GB, round(total_gb - _VRAM_HEADROOM_GB, 1))
 

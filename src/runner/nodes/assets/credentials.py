@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 from urllib.parse import urlsplit
 
@@ -8,9 +7,6 @@ from shared.db import database_session
 from shared.db.settings import crud as settings_crud
 
 
-_LOGGER = logging.getLogger(__name__)
-
-# Env overrides win over the stored setting so CI / one-off runs can inject a token.
 _HF_TOKEN_ENV_VARS = ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_TOKEN")
 _HF_HOSTS = ("huggingface.co", "hf.co")
 _OPENROUTER_TOKEN_ENV_VARS = ("OPENROUTER_API_KEY", "OPENROUTER_TOKEN")
@@ -34,12 +30,8 @@ def huggingface_token() -> str | None:
         value = os.environ.get(name)
         if value and value.strip():
             return value.strip()
-    try:
-        with database_session() as session:
-            token = settings_crud.get_integration_settings(session).hf_token
-    except Exception:
-        _LOGGER.warning("could not read Hugging Face token from settings", exc_info=True)
-        return None
+    with database_session() as session:
+        token = settings_crud.get_integration_settings(session).hf_token
     token = token.strip()
     return token or None
 

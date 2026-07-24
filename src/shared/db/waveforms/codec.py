@@ -3,6 +3,7 @@ import struct
 import wave
 
 import numpy as np
+import soundfile
 
 from shared.db.waveforms.schemas import WaveformInput
 
@@ -59,19 +60,12 @@ def waveform_from_audio_bytes(data: bytes, points_per_second: int = DEFAULT_POIN
 
 
 def _decode_audio(data: bytes) -> tuple[np.ndarray, int]:
-    try:
-        import soundfile
-
-        samples, sample_rate = soundfile.read(io.BytesIO(data), dtype="float32", always_2d=True)
-        return np.asarray(samples, dtype=np.float32), int(sample_rate)
-    except Exception:
-        import librosa
-
-        samples, sample_rate = librosa.load(io.BytesIO(data), sr=None, mono=False)
-        array = np.asarray(samples, dtype=np.float32)
-        if array.ndim == 1:
-            return array.reshape(-1, 1), int(sample_rate)
-        return array.T, int(sample_rate)
+    samples, sample_rate = soundfile.read(
+        io.BytesIO(data),
+        dtype="float32",
+        always_2d=True,
+    )
+    return np.asarray(samples, dtype=np.float32), int(sample_rate)
 
 
 def downsample(peaks: list[tuple[float, float]], max_points: int) -> list[tuple[float, float]]:

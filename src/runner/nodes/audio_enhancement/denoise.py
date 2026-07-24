@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib
+import sys
 import tempfile
+import types
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -151,16 +153,17 @@ def _ensure_torchaudio_backend_shim() -> None:
     AudioMetaData`` at import time, but ``torchaudio.backend`` was removed in
     torchaudio>=2.1. We never call the torchaudio-backed IO (it is patched out by
     ``_patch_df_io``), so a lightweight shim is enough to keep the import alive."""
-    import sys
-    import types
-
     try:
-        __import__("torchaudio.backend.common")
-        if hasattr(sys.modules.get("torchaudio.backend.common"), "AudioMetaData"):
-            return
-    except Exception:
-        pass
-    backend = sys.modules.get("torchaudio.backend") or types.ModuleType("torchaudio.backend")
+        common = importlib.import_module("torchaudio.backend.common")
+    except ImportError:
+        common = None
+    if common is not None and hasattr(common, "AudioMetaData"):
+        return
+    backend = (
+        sys.modules["torchaudio.backend"]
+        if "torchaudio.backend" in sys.modules
+        else types.ModuleType("torchaudio.backend")
+    )
     common = types.ModuleType("torchaudio.backend.common")
     common.AudioMetaData = _AudioMetaData
     backend.common = common

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any
 
 from runner.nodes.assets.catalog_runtime.entries import CATALOG_ENTRIES, CatalogKey
 from runner.nodes.assets.catalog_runtime.persistence import checkpoint_payload, ensure_checkpoint_bundle, ensure_extra_file, extra_file_payload
 from runner.nodes.assets.catalog_runtime.specs import official_styletts_specs, papercup_plbert_spec, styletts2_utils_specs, vokan_styletts_spec
 from runner.nodes.assets.catalog_runtime.types import CatalogTask
-from runner.nodes.assets.catalog_runtime.validation import styletts_checkpoint_metadata
 from runner.nodes.assets.model_downloads import download_hf_snapshot, download_nemo_snapshot, download_whisper_model_files, ensure_model_checkpoint
 
 

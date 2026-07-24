@@ -5,7 +5,7 @@ from typing import Any
 from runflow.core.node_runtime import NodeRuntimeConfig, node_runtime_defaults
 from runflow.core.ports import Port
 from runflow.core.settings import StrictSettings, settings_defaults
-from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
+from runflow.policies import BatchPolicy, ResourcePolicy
 
 
 def _runtime_defaults_for(cls: type["Node"]) -> dict[str, Any]:

@@ -105,7 +105,7 @@ class WindowedScheduler:
         # replacing per-node queue_max_size as the memory guard. queue_max_size stays as a
         # secondary count cap. Per-queue budget can be smaller than one big item; that's
         # fine — WeightBudget still admits one item at a time, so it never deadlocks.
-        per_queue_budget = max(1, self._total_memory_budget_bytes() // max(1, len(self.queues)))
+        per_queue_budget = self._total_memory_budget_bytes() // len(self.queues)
         self.budgets = {node_id: WeightBudget(per_queue_budget) for node_id in self.queues}
         self.join_buffers.clear()
         self._active_condition = asyncio.Condition()
@@ -185,7 +185,7 @@ class WindowedScheduler:
 
     def _total_memory_budget_bytes(self) -> int:
         budget_mb = self.context.config.memory_budget_mb
-        if budget_mb is None or budget_mb <= 0:
+        if budget_mb is None:
             return DEFAULT_TOTAL_BUDGET_BYTES
         return int(budget_mb * 1024 * 1024)
 

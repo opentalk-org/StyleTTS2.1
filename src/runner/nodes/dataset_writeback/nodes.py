@@ -156,8 +156,6 @@ class DeleteAudioRecordsNode(Node):
         try:
             with database_session() as session:
                 audio_crud.prune_audio_packs(session)
-        except Exception:
-            self.logger.exception("audio pack pruning failed after committed deletes")
         finally:
             self._deleted_any = False
 

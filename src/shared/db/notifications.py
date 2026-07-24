@@ -14,14 +14,7 @@ class PostgresNotifier:
         self.changed = asyncio.Event()
 
     async def run(self) -> None:
-        while True:
-            try:
-                await self._listen()
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                self.changed.set()
-                await asyncio.sleep(1)
+        await self._listen()
 
     async def wait(self, timeout: float) -> None:
         try:

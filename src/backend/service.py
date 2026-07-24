@@ -1,7 +1,6 @@
 import asyncio
 import json
 from datetime import UTC, datetime
-from pathlib import Path
 from uuid import uuid4
 
 from fastapi import WebSocket

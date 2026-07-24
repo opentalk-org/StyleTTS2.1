@@ -33,15 +33,7 @@ def _load_weights_into_jdc(model: JDCNet, pth_path: str, device: torch.device) -
             continue
         tgt = model_state[key]
         src = val.data if isinstance(val, nn.Parameter) else val
-        if src.shape != tgt.shape:
-            try:
-                ms = [min(int(a), int(b)) for a, b in zip(src.shape, tgt.shape, strict=True)]
-                sl = tuple(slice(0, m) for m in ms)
-                tgt[sl].copy_(src[sl])
-            except Exception:
-                logger.warning("skip weight %s (shape %s vs %s)", key, tuple(src.shape), tuple(tgt.shape))
-        else:
-            tgt.copy_(src)
+        tgt.copy_(src)
 
 
 def save_f0_checkpoint(

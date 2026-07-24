@@ -9,7 +9,6 @@ from runner.nodes.hetzner.ds_v2_audio import (
     _float_or_none,
     _text,
     _transcript_segments,
-    row_speaker_id,
 )
 from runner.nodes.models import Audio, stable_id
 from shared.audio_annotations import AudioAnnotations

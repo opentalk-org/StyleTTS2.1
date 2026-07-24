@@ -48,24 +48,6 @@ class PendingOperation(Protocol):
     def wait(self) -> None: ...
 
 
-class NoopTrackerRun:
-    """Keeps training independent from temporary tracking-server outages."""
-
-    def track(self, value: object, name: str, step: int, epoch: int | None = None) -> None:
-        return None
-
-    def track_metrics(
-        self, metrics: Mapping[str, float], step: int, epoch: int | None = None
-    ) -> None:
-        return None
-
-    def log_artifact(self, path: Path, artifact_path: str) -> None:
-        return None
-
-    def close(self) -> None:
-        return None
-
-
 class MlflowRun:
     """Concurrency-safe adapter that always addresses one explicit MLflow run."""
 
@@ -134,18 +116,14 @@ class MlflowRun:
 
 def start_mlflow_run(*, experiment: str, name: str, config: dict[str, object]) -> TrackerRun:
     """Create an MLflow run without relying on process-global active-run state."""
-    try:
-        client = MlflowClient(tracking_uri=os.environ["MLFLOW_TRACKING_URI"])
-        experiment_record = client.get_experiment_by_name(experiment)
-        experiment_id = (
-            client.create_experiment(experiment)
-            if experiment_record is None
-            else experiment_record.experiment_id
-        )
-        run = client.create_run(experiment_id, tags={"mlflow.runName": name})
-        client.log_dict(run.info.run_id, config, "config.json")
-        logger.info("MLflow run started experiment=%s name=%s", experiment, name)
-        return MlflowRun(client, run.info.run_id)
-    except Exception:
-        logger.warning("failed to start MLflow run; training metrics will not be logged", exc_info=True)
-        return NoopTrackerRun()
+    client = MlflowClient(tracking_uri=os.environ["MLFLOW_TRACKING_URI"])
+    experiment_record = client.get_experiment_by_name(experiment)
+    experiment_id = (
+        client.create_experiment(experiment)
+        if experiment_record is None
+        else experiment_record.experiment_id
+    )
+    run = client.create_run(experiment_id, tags={"mlflow.runName": name})
+    client.log_dict(run.info.run_id, config, "config.json")
+    logger.info("MLflow run started experiment=%s name=%s", experiment, name)
+    return MlflowRun(client, run.info.run_id)

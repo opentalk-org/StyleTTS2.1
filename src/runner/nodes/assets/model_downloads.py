@@ -6,6 +6,8 @@ from tempfile import TemporaryDirectory
 from typing import Callable
 from uuid import UUID
 
+import whisper
+
 from runner.nodes.assets.checkpoints import resolve_checkpoint_ref
 from runner.nodes.assets.credentials import huggingface_token
 from runner.nodes.models import CheckpointRef
@@ -37,12 +39,9 @@ def ensure_model_checkpoint(kind: str, model_id: str, download: Callable[[Path],
     """
     existing_id = _find_model_checkpoint_id(kind, model_id)
     if existing_id is not None:
-        try:
-            ref = resolve_checkpoint_ref(str(existing_id), kind)
-            logger.info("using cached %s checkpoint for %s", kind, model_id)
-            return ref
-        except Exception:
-            logger.info("cached %s checkpoint for %s unavailable; re-downloading", kind, model_id)
+        ref = resolve_checkpoint_ref(str(existing_id), kind)
+        logger.info("using cached %s checkpoint for %s", kind, model_id)
+        return ref
     with TemporaryDirectory(prefix=f"runflow-model-{kind}-") as tmp:
         folder = Path(tmp)
         logger.info("downloading %s model %s", kind, model_id)
@@ -76,20 +75,7 @@ def _find_model_checkpoint_id(kind: str, model_id: str) -> UUID | None:
 
 def download_whisper_model_files(version: str, folder: Path) -> None:
     """Download a Whisper checkpoint (single ``.pt``) into ``folder`` without loading it into memory."""
-    try:
-        import whisper
-    except ImportError as exc:
-        raise RuntimeError("openai_whisper_not_installed") from exc
-    models = getattr(whisper, "_MODELS", {})
-    url = models.get(version)
-    if url is None:
-        raise RuntimeError(f"whisper_unknown_version:{version}")
-    downloader = getattr(whisper, "_download", None)
-    if downloader is not None:
-        downloader(url, str(folder), False)
-        return
-    # Fallback for whisper builds without the private _download helper: load then discard.
-    whisper.load_model(version, download_root=str(folder))
+    whisper._download(whisper._MODELS[version], str(folder), False)
 
 
 def _disable_hf_progress_bars() -> None:

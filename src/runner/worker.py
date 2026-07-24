@@ -31,16 +31,10 @@ class RunnerWorker:
         try:
             await self.state.flush_due()
             while True:
-                try:
-                    await self._claim_jobs()
-                    await self._reconcile()
-                    await self.state.flush_due()
-                    self._discard_flushed_terminals()
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    self.logger.exception("PostgreSQL coordination iteration failed")
-                    await asyncio.sleep(1)
+                await self._claim_jobs()
+                await self._reconcile()
+                await self.state.flush_due()
+                self._discard_flushed_terminals()
                 await self.notifier.wait(POLL_SECONDS)
         finally:
             notify_task.cancel()
@@ -67,24 +61,19 @@ class RunnerWorker:
 
         for node_state in await self.poller.pending_node_states(run_ids):
             execution = self.executions[node_state.run_id]
-            try:
-                if execution.scheduler is None:
-                    continue
-                if node_state.desired_loaded:
-                    await execution.scheduler.load_node(node_state.node_id)
-                else:
-                    await execution.scheduler.unload_node(node_state.node_id)
-                error = None
-            except Exception as exc:
-                self.logger.exception("node state reconciliation failed")
-                error = f"{type(exc).__name__}: {exc}"
+            if execution.scheduler is None:
+                continue
+            if node_state.desired_loaded:
+                await execution.scheduler.load_node(node_state.node_id)
+            else:
+                await execution.scheduler.unload_node(node_state.node_id)
             self.state.record_node_state(
                 NodeStateReplacement(
                     run_id=node_state.run_id,
                     node_id=node_state.node_id,
                     desired_loaded=node_state.desired_loaded,
-                    observed_loaded=node_state.desired_loaded if error is None else node_state.observed_loaded,
-                    error=error,
+                    observed_loaded=node_state.desired_loaded,
+                    error=None,
                 )
             )
 

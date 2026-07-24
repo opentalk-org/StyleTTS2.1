@@ -108,15 +108,12 @@ class _RoutedStream:
         state["pending"] = None
 
     def flush(self) -> None:
-        try:
-            self._original.flush()
-        except Exception:
-            pass
+        self._original.flush()
 
     def isatty(self) -> bool:
         if _target.get() is not None:
             return False
-        return bool(getattr(self._original, "isatty", lambda: False)())
+        return self._original.isatty()
 
     def __getattr__(self, name):
         return getattr(self._original, name)
