@@ -57,7 +57,11 @@ def _phonemize_non_empty_texts(
         # preprocessing uses the pure-Python ``phonemizer`` package on top of the
         # espeak-ng binary, which produces the same single-character IPA (with
         # stress marks) that the StyleTTS2 symbol table expects. Fall back to it.
-        return _phonemize_with_phonemizer(texts, language=language)
+        return _phonemize_with_phonemizer(
+            texts,
+            language=language,
+            punctuation_marks=punctuation_marks,
+        )
 
     engine = engine_class(language, tie, espeak_workers)
     batch = engine.align_batch(texts, punctuation_marks, align_threads)
@@ -77,24 +81,31 @@ _ESPEAK_LANGUAGE_ALIASES = {
     "": "en-us",
 }
 
-_PHONEMIZER_BACKENDS: dict[str, object] = {}
+_PHONEMIZER_BACKENDS: dict[tuple[str, str], object] = {}
 
 
-def _phonemize_with_phonemizer(texts: list[str], *, language: str) -> list[str]:
+def _phonemize_with_phonemizer(
+    texts: list[str],
+    *,
+    language: str,
+    punctuation_marks: str,
+) -> list[str]:
     try:
         from phonemizer.backend import EspeakBackend
     except ImportError as exc:  # pragma: no cover - both engines missing
         raise RuntimeError("phonemizer_not_installed") from exc
 
     espeak_language = _ESPEAK_LANGUAGE_ALIASES.get(language.lower(), language)
-    backend = _PHONEMIZER_BACKENDS.get(espeak_language)
+    backend_key = (espeak_language, punctuation_marks)
+    backend = _PHONEMIZER_BACKENDS.get(backend_key)
     if backend is None:
         backend = EspeakBackend(
             espeak_language,
             preserve_punctuation=True,
+            punctuation_marks=punctuation_marks,
             with_stress=True,
             language_switch="remove-flags",
         )
-        _PHONEMIZER_BACKENDS[espeak_language] = backend
+        _PHONEMIZER_BACKENDS[backend_key] = backend
     phonemized = backend.phonemize(texts, strip=True)
     return [str(line).strip() for line in phonemized]

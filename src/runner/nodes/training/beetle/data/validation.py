@@ -2,6 +2,7 @@ import random
 from typing import Any, Protocol
 from uuid import UUID
 
+from shared.audio_annotations import AudioAnnotations
 from shared.db.audio import crud as audio_crud
 from shared.db.audio.ranges.wav import WavTimeRange, slice_wav_ranges
 from shared.db.connection import database_session
@@ -168,7 +169,7 @@ def _stored_audio(row: Any, segments: list[dict[str, Any]], payload: bytes) -> S
 
 
 def _segment(value: dict[str, Any]) -> ValidationSegment:
-    voice = value["speaker_id"] if "speaker_id" in value else None
+    voice = AudioAnnotations.model_validate(value["annotations"]).speaker_id
     return ValidationSegment(
         str(value["id"]),
         float(value["start"]),

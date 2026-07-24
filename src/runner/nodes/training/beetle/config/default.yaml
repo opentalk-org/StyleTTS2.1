@@ -120,7 +120,7 @@ architecture:
     projection_channels: 256
 data:
   selection:
-    dataset_id: 022c31b6-83be-4cd6-9835-25aa3830357b
+    dataset_id: b6d6f5a2-1f67-4e02-a3d6-f183c91837d2
     audio_file_ids: []
   maximum_seconds: 8.0
   prefetch:
@@ -164,12 +164,12 @@ training:
   batch_size: 64
   accumulation_steps: 1
   total_steps: 50000
-  validation_every_steps: 2000
+  validation_every_steps: 1250
   full_audio_ratio: 0.1
-  precision: bfloat16
+  precision: float16
   acoustic_prediction: {value: 1.0, start_step: 2000, warmup_steps: 3000}
   generator_optimizer:
-    learning_rate: 0.0002
+    learning_rate: 0.0006
     beta1: 0.8
     beta2: 0.99
     epsilon: 0.000000001

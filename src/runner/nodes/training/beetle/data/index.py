@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
+from shared.audio_annotations import AudioAnnotations
 from shared.db.audio.segment_references_crud import (
     SegmentCursor,
     SegmentReference,
@@ -198,7 +199,7 @@ def _indexed_segment(
     end = float(raw["end"])
     text = str(raw["text"])
     phonemes = str(raw["phon"])
-    speaker_id = str(raw["speaker_id"]) if "speaker_id" in raw and raw["speaker_id"] else None
+    speaker_id = AudioAnnotations.model_validate(raw["annotations"]).speaker_id
     alignment = raw["alignment"] if "alignment" in raw and raw["alignment"] else []
     words = tuple(
         WordBoundary(str(item["word"]), float(item["start"]), float(item["end"]))

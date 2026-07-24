@@ -163,8 +163,7 @@ class MultiBandISTFT(nn.Module):
         band_length = frames * self.hop_length
         waveforms = []
         for band in range(self.subbands):
-            log_magnitude = bands[:, band, 0].float().clamp(-12, 10)
-            magnitude = torch.exp(log_magnitude)
+            magnitude = torch.exp(bands[:, band, 0].float())
             phase = torch.sin(bands[:, band, 1].float())
             spectrum = torch.polar(magnitude, phase)
             waveforms.append(
