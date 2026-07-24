@@ -70,6 +70,31 @@ def list_dataset_metadata_values(
     return {str(item) for item in session.scalars(statement)}
 
 
+def list_tts_reference_candidates(
+    session: Session,
+    dataset_ids: Sequence[uuid.UUID],
+    streams: Sequence[str],
+) -> Sequence[AudioFile]:
+    for dataset_id in dataset_ids:
+        one(session, Dataset, dataset_id)
+    statement = (
+        select(AudioFile)
+        .join(
+            dataset_audio_files,
+            dataset_audio_files.c.audio_file_id == AudioFile.id,
+        )
+        .where(
+            dataset_audio_files.c.dataset_id.in_(dataset_ids),
+            AudioFile.metadata_["stream"].astext.in_(streams),
+        )
+        .order_by(
+            AudioFile.metadata_["stream"].astext,
+            AudioFile.id,
+        )
+    )
+    return session.execute(statement).unique().scalars().all()
+
+
 def create_dataset(session: Session, payload: DatasetCreate) -> Dataset:
     item = Dataset(**payload.model_dump())
     session.add(item)
