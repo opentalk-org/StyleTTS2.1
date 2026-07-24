@@ -1,12 +1,12 @@
 import uuid
 from dataclasses import dataclass
-from typing import Protocol
 
 from sqlalchemy.orm import Session
 
 from shared.db.pack_folders import PackFolderAllocator
 from shared.db.staged_objects import register_staged_object
 from shared.db.waveforms.models import WaveformPack
+from shared.storage import ObjectStore
 
 
 @dataclass(frozen=True)
@@ -21,20 +21,6 @@ class WaveformWrite:
     pack: WaveformPack
     byte_offset: int
     byte_length: int
-
-
-class ObjectStore(Protocol):
-    def upload(self, path: str, data: bytes) -> None:
-        raise NotImplementedError
-
-    def download(self, path: str) -> bytes:
-        raise NotImplementedError
-
-    def read_range(self, path: str, byte_offset: int, byte_length: int) -> bytes:
-        raise NotImplementedError
-
-    def delete(self, path: str) -> None:
-        raise NotImplementedError
 
 
 class WaveformPackWriter:

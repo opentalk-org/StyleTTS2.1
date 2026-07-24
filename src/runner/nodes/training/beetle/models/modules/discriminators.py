@@ -33,7 +33,7 @@ def _magnitude_stft(
         window.to(waveform.device),
         return_complex=True,
     )
-    return spectrum.abs().transpose(2, 1)
+    return torch.log1p(spectrum.abs()).transpose(2, 1)
 
 
 class SpectrogramDiscriminator(nn.Module):

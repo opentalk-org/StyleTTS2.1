@@ -7,7 +7,10 @@ from sqlalchemy.orm import Session, defer
 
 from shared.audio_annotations import AudioAnnotations
 from shared.db.audio.models import AudioFile
-from shared.db.audio.schemas import AudioBucketLocation, AudioFileReference
+from shared.db.audio.schemas import (
+    AudioBucketLocation,
+    AudioFileReference,
+)
 from shared.db.common import many, one
 from shared.db.datasets.models import Dataset, dataset_audio_files
 

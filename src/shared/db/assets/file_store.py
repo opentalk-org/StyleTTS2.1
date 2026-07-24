@@ -9,7 +9,7 @@ import tarfile
 import tempfile
 
 from shared.db.assets.models import Checkpoint, ExtraFile
-from shared.storage import ObjectStoreConfig, S3ObjectStore
+from shared.storage import ObjectStore, ObjectStoreConfig, S3ObjectStore
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class StoredPath:
     content_hash: str
 
 
-def object_store(config: ObjectStoreConfig | None = None) -> S3ObjectStore:
+def object_store(config: ObjectStoreConfig | None = None) -> ObjectStore:
     return S3ObjectStore(config or ObjectStoreConfig.from_env())
 
 
@@ -63,7 +63,7 @@ def stored_path(path: Path) -> StoredPath:
     return StoredPath(path=path, size=size, content_hash=digest.hexdigest())
 
 
-def checkpoint_cache_path(item: Checkpoint, store: S3ObjectStore | None = None) -> Path:
+def checkpoint_cache_path(item: Checkpoint, store: ObjectStore | None = None) -> Path:
     target = _cache_root() / "checkpoints" / item.content_hash
     if target.exists():
         return target
@@ -82,7 +82,7 @@ def checkpoint_cache_path(item: Checkpoint, store: S3ObjectStore | None = None) 
     return target
 
 
-def extra_file_cache_path(item: ExtraFile, store: S3ObjectStore | None = None) -> Path:
+def extra_file_cache_path(item: ExtraFile, store: ObjectStore | None = None) -> Path:
     target = _cache_root() / "extra-files" / item.content_hash / item.name
     if target.exists():
         return target

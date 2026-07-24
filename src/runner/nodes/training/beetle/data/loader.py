@@ -1,19 +1,13 @@
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from appdirs import user_cache_dir
-
 from shared.db.audio import crud as audio_crud
 from shared.db.audio.ranges import (
-    AudioFileCache,
-    BulkWavReader,
     SegmentReadRequest,
     WavClip,
+    bulk_read_wav_segments,
 )
 from shared.db.connection import database_session
-from shared.db.settings import crud as settings_crud
-from shared.storage import S3ObjectStore
 
 from .collate import BatchCollator
 from .index import DatabaseSegmentIndex
@@ -34,33 +28,10 @@ class DatabaseBatchLoader:
     def __init__(
         self,
         index: DatabaseSegmentIndex,
-        clips: BulkWavReader,
         collator: BatchCollator,
     ) -> None:
         self.index = index
-        self.clips = clips
         self.collator = collator
-
-    @classmethod
-    def from_database(
-        cls,
-        index: DatabaseSegmentIndex,
-        collator: BatchCollator,
-        cache_bytes: int,
-        fetch_workers: int,
-    ) -> "DatabaseBatchLoader":
-        with database_session() as session:
-            store = S3ObjectStore(settings_crud.object_store_config(session))
-        cache_root = Path(user_cache_dir("runflow")) / "audio"
-        clips = BulkWavReader(
-            store,
-            AudioFileCache(cache_root, cache_bytes),
-            fetch_workers,
-        )
-        return cls(index, clips, collator)
-
-    def close(self) -> None:
-        self.clips.close()
 
     def load(self, planned: PlannedBatch) -> BeetleBatch:
         keys = _batch_keys(planned)
@@ -68,10 +39,8 @@ class DatabaseBatchLoader:
         requests = _batch_requests(planned)
         with database_session() as session:
             payloads = audio_crud.list_audio_segments_bulk(session, audio_ids)
-            clips = self.clips.read(session, requests)
+            clips = bulk_read_wav_segments(session, requests)
         current = {key: self._resolve_segment(key, payloads) for key in keys}
-        if len(clips) != len(requests):
-            raise ValueError("bulk WAV loader returned the wrong clip count")
         clip_map = dict(zip(requests, clips, strict=True))
         examples = tuple(
             self._fetched_example(plan, current, clip_map)

@@ -1,29 +1,16 @@
 import uuid
 from collections.abc import Iterable, Sequence
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 from datetime import UTC, datetime
-from itertools import repeat
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from shared.db.assets.models import BucketFile
 from shared.db.audio.models import AudioFile
-from shared.db.audio.pack_store import AudioPackConfig, AudioPackWriter, ObjectStore
+from shared.db.audio.pack_store import AudioPackConfig, AudioPackWriter
 from shared.db.audio.catalog import get_audio_files_bulk
-from shared.db.audio.schemas import AudioCreate, AudioPartRead, AudioUpdate
-
-
-PACK_READ_WORKERS = 10
-
-
-@dataclass(frozen=True)
-class PackedRangeRead:
-    audio_file_id: uuid.UUID
-    path: str
-    byte_offset: int
-    byte_length: int
+from shared.db.audio.schemas import AudioCreate, AudioUpdate
+from shared.storage import ObjectStore
 
 
 def create_packed_audio_file(
@@ -51,61 +38,6 @@ def bulk_create_packed_audio_files(
     if commit:
         session.commit()
     return items
-
-
-def read_packed_audio_file(session: Session, store: ObjectStore, audio_file_id: uuid.UUID) -> bytes:
-    return bulk_read_packed_audio_files(session, store, [audio_file_id])[audio_file_id]
-
-
-def read_packed_audio_part(
-    session: Session,
-    store: ObjectStore,
-    audio_file_id: uuid.UUID,
-    payload: AudioPartRead,
-) -> bytes:
-    return bulk_read_packed_audio_parts(session, store, {audio_file_id: payload})[audio_file_id]
-
-
-def bulk_read_packed_audio_files(
-    session: Session,
-    store: ObjectStore,
-    audio_file_ids: Iterable[uuid.UUID],
-) -> dict[uuid.UUID, bytes]:
-    ids = list(dict.fromkeys(audio_file_ids))
-    items = list(get_audio_files_bulk(session, ids).values())
-    for item in items:
-        _assert_packed(item)
-    requests = [
-        PackedRangeRead(
-            audio_file_id=item.id,
-            path=item.bucket_file.path,
-            byte_offset=item.byte_offset,
-            byte_length=item.byte_length,
-        )
-        for item in items
-    ]
-    return _read_packed_ranges(store, requests)
-
-
-def bulk_read_packed_audio_parts(
-    session: Session,
-    store: ObjectStore,
-    requests: dict[uuid.UUID, AudioPartRead],
-) -> dict[uuid.UUID, bytes]:
-    items = list(get_audio_files_bulk(session, list(requests)).values())
-    for item in items:
-        _assert_packed(item)
-        _assert_valid_part(item, requests[item.id])
-    range_reads = [
-        PackedRangeRead(
-            audio_file_id=item.id,
-            path=item.bucket_file.path,
-            byte_offset=item.byte_offset + requests[item.id].start,
-            byte_length=requests[item.id].length,
-        )
-        for item in items
-    ]
-    return _read_packed_ranges(store, range_reads)
 
 
 def update_packed_audio_file(
@@ -236,36 +168,6 @@ def _decrease_used_bytes(item: AudioFile) -> None:
 
 def _now() -> datetime:
     return datetime.now(UTC)
-
-
-def _read_packed_ranges(
-    store: ObjectStore,
-    requests: Sequence[PackedRangeRead],
-) -> dict[uuid.UUID, bytes]:
-    if not requests:
-        return {}
-    workers = min(PACK_READ_WORKERS, len(requests))
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        results = executor.map(_read_packed_range, repeat(store), requests)
-        return dict(results)
-
-
-def _read_packed_range(
-    store: ObjectStore,
-    request: PackedRangeRead,
-) -> tuple[uuid.UUID, bytes]:
-    data = store.read_range(
-        request.path,
-        request.byte_offset,
-        request.byte_length,
-    )
-    return request.audio_file_id, data
-
-
-def _assert_valid_part(item: AudioFile, payload: AudioPartRead) -> None:
-    assert payload.start >= 0, f"part start must be non-negative: {payload.start}"
-    assert payload.length > 0, f"part length must be positive: {payload.length}"
-    assert payload.start + payload.length <= item.byte_length, f"part exceeds audio length: {item.id}"
 
 
 def _assert_packed(item: AudioFile) -> None:

@@ -125,7 +125,6 @@ class TrainingDataPipeline:
 
     def close(self) -> None:
         self._stop_producer()
-        self.loader.close()
 
     def _next_window(self) -> _QueuedWindow:
         while True:
@@ -268,12 +267,7 @@ def build_data_pipeline(
         config.architecture.language.values,
         config.adversarial.segment_samples // config.audio.hop_length,
     )
-    loader = DatabaseBatchLoader.from_database(
-        index,
-        collator,
-        config.data.prefetch.audio_cache_bytes,
-        config.data.prefetch.audio_fetch_workers,
-    )
+    loader = DatabaseBatchLoader(index, collator)
     return TrainingDataPipeline(
         planner=planner,
         loader=loader,

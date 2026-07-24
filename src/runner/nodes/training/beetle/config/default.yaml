@@ -128,8 +128,6 @@ data:
     page_size: 2000
     window_size: 8
     decoded_bytes: 2147483648
-    audio_cache_bytes: 8589934592
-    audio_fetch_workers: 16
     preprocessing_threads: 4
   grouping:
     voices_per_batch: 8

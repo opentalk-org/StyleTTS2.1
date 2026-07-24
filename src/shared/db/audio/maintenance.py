@@ -6,9 +6,9 @@ from sqlalchemy.orm import Session
 
 from shared.db.assets.models import BucketFile
 from shared.db.audio.models import AudioFile
-from shared.db.audio.pack_store import AudioPackConfig, AudioPackWriter, ObjectStore
+from shared.db.audio.pack_store import AudioPackConfig, AudioPackWriter
 from shared.db.settings import crud as settings_crud
-from shared.storage import S3ObjectStore
+from shared.storage import ObjectStore, S3ObjectStore
 
 
 @dataclass(frozen=True)

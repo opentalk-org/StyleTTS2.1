@@ -10,20 +10,17 @@ from shared.db.audio.models import AudioFile
 from shared.db.audio.packed import (
     bulk_create_packed_audio_files,
     bulk_delete_packed_audio_files,
-    bulk_read_packed_audio_files,
-    bulk_read_packed_audio_parts,
     bulk_update_packed_audio_files,
     create_packed_audio_file,
-    read_packed_audio_file,
-    read_packed_audio_part,
 )
 from shared.db.audio.maintenance import prune_fragmented_audio_packs
-from shared.db.audio.pack_store import AudioPackConfig, ObjectStore
+from shared.db.audio.pack_store import AudioPackConfig
 from shared.db.audio.schemas import AudioCreate, AudioPartRead, AudioUpdate
+from shared.db.audio.storage_locations import audio_storage_locations
 from shared.db.datasets.models import dataset_audio_files
 from shared.db.settings import crud as settings_crud
 from shared.db.waveforms import crud as waveform_crud
-from shared.storage import S3ObjectStore
+from shared.storage import ObjectRange, ObjectStore, S3ObjectStore
 
 
 def create_audio_file(
@@ -61,10 +58,13 @@ def read_audio_file(
     audio_file_id: uuid.UUID,
     store: ObjectStore | None = None,
 ) -> bytes:
-    return read_packed_audio_file(
-        session,
-        _object_store(session, store),
-        audio_file_id,
+    location = audio_storage_locations(session, [audio_file_id])[audio_file_id]
+    return _object_store(session, store).read_range(
+        ObjectRange(
+            location.object_path,
+            location.byte_offset,
+            location.byte_length,
+        )
     )
 
 
@@ -74,11 +74,19 @@ def read_audio_part(
     payload: AudioPartRead,
     store: ObjectStore | None = None,
 ) -> bytes:
-    return read_packed_audio_part(
-        session,
-        _object_store(session, store),
-        audio_file_id,
-        payload,
+    location = audio_storage_locations(session, [audio_file_id])[audio_file_id]
+    if payload.start < 0:
+        raise ValueError(f"part start must be non-negative: {payload.start}")
+    if payload.length <= 0:
+        raise ValueError(f"part length must be positive: {payload.length}")
+    if payload.start + payload.length > location.byte_length:
+        raise ValueError(f"part exceeds audio length: {audio_file_id}")
+    return _object_store(session, store).read_range(
+        ObjectRange(
+            location.object_path,
+            location.byte_offset + payload.start,
+            payload.length,
+        )
     )
 
 
@@ -87,23 +95,18 @@ def bulk_read_audio_files(
     audio_file_ids: Iterable[uuid.UUID],
     store: ObjectStore | None = None,
 ) -> dict[uuid.UUID, bytes]:
-    return bulk_read_packed_audio_files(
-        session,
-        _object_store(session, store),
-        audio_file_ids,
-    )
-
-
-def bulk_read_audio_parts(
-    session: Session,
-    requests: dict[uuid.UUID, AudioPartRead],
-    store: ObjectStore | None = None,
-) -> dict[uuid.UUID, bytes]:
-    return bulk_read_packed_audio_parts(
-        session,
-        _object_store(session, store),
-        requests,
-    )
+    ids = list(dict.fromkeys(audio_file_ids))
+    locations = audio_storage_locations(session, ids)
+    ranges = [
+        ObjectRange(
+            locations[audio_file_id].object_path,
+            locations[audio_file_id].byte_offset,
+            locations[audio_file_id].byte_length,
+        )
+        for audio_file_id in ids
+    ]
+    payloads = _object_store(session, store).read_ranges(ranges)
+    return dict(zip(ids, payloads, strict=True))
 
 
 def update_audio_file(

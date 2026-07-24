@@ -75,6 +75,7 @@ class BeetleTrainer:
         self.config_fingerprint = config_fingerprint
         self.data_fingerprint = data_fingerprint
         self._loop = initial_loop
+        self.skipped_steps = 0
         self.input_builder = input_builder
         self.schedules = TrainingSchedules.from_config(config)
         self.accumulation_steps = config.accumulation_steps
@@ -196,11 +197,14 @@ class BeetleTrainer:
         update_latent_flow_ema(
             self.ema_latent_flow, online_flow, online_flow.config.ema_decay
         )
+        metrics = (*metrics, TrainingMetric("skipped_steps", float(self.skipped_steps)))
+        self.skipped_steps = 0
         return metrics
 
     def discard_step(self) -> None:
         for group in self.optimizers.groups:
             group.optimizer.zero_grad(set_to_none=True)
+        self.skipped_steps += 1
 
     def reduce_metrics(
         self, metrics: tuple[TrainingMetric, ...]

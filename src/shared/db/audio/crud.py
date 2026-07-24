@@ -14,11 +14,11 @@ from shared.db.audio.catalog import (
     search_audio_file_ids,
     search_audio_files,
 )
+from shared.db.audio.storage_locations import audio_storage_locations
 from shared.db.audio.files import (
     bulk_create_audio_files,
     bulk_delete_audio_files,
     bulk_read_audio_files,
-    bulk_read_audio_parts,
     bulk_update_audio_files,
     create_audio_file,
     delete_audio_file,

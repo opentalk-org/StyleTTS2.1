@@ -1,20 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
 
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
-
-class DeletableObjectStore(Protocol):
-    def delete(self, path: str) -> None:
-        raise NotImplementedError
+from shared.storage import ObjectStore
 
 
 @dataclass(frozen=True)
 class StagedObject:
-    store: DeletableObjectStore
+    store: ObjectStore
     path: str
 
 
@@ -23,7 +19,7 @@ STAGED_OBJECTS_KEY = "runflow_staged_objects"
 
 def register_staged_object(
     session: Session,
-    store: DeletableObjectStore,
+    store: ObjectStore,
     path: str,
 ) -> None:
     staged = session.info.setdefault(STAGED_OBJECTS_KEY, [])

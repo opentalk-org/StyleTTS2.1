@@ -1,10 +1,15 @@
-from dataclasses import dataclass
 import os
+from abc import ABC, abstractmethod
+from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 
 import boto3
 from botocore.client import BaseClient
 from botocore.config import Config
+
+RANGE_READ_WORKERS = 10
 
 
 @dataclass(frozen=True)
@@ -32,7 +37,52 @@ class ObjectStoreConfig:
         )
 
 
-class S3ObjectStore:
+@dataclass(frozen=True)
+class ObjectRange:
+    path: str
+    byte_offset: int
+    byte_length: int
+
+    def __post_init__(self) -> None:
+        if not self.path:
+            raise ValueError("object path is required")
+        if self.byte_offset < 0:
+            raise ValueError("object range offset must be non-negative")
+        if self.byte_length <= 0:
+            raise ValueError("object range length must be positive")
+
+
+class ObjectStore(ABC):
+    @abstractmethod
+    def upload(self, path: str, data: bytes) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def upload_path(self, path: str, source: Path) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def test_connection(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def download(self, path: str) -> bytes:
+        raise NotImplementedError
+
+    @abstractmethod
+    def read_range(self, request: ObjectRange) -> bytes:
+        raise NotImplementedError
+
+    @abstractmethod
+    def read_ranges(self, requests: Sequence[ObjectRange]) -> list[bytes]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def delete(self, path: str) -> None:
+        raise NotImplementedError
+
+
+class S3ObjectStore(ObjectStore):
     def __init__(self, config: ObjectStoreConfig) -> None:
         self._bucket = config.bucket
         self._folder = _normalize_folder(config.folder)
@@ -58,14 +108,29 @@ class S3ObjectStore:
         response = self._client.get_object(Bucket=self._bucket, Key=self._key(path))
         return response["Body"].read()
 
-    def read_range(self, path: str, byte_offset: int, byte_length: int) -> bytes:
-        last_byte = byte_offset + byte_length - 1
+    def read_range(self, request: ObjectRange) -> bytes:
+        last_byte = request.byte_offset + request.byte_length - 1
         response = self._client.get_object(
             Bucket=self._bucket,
-            Key=self._key(path),
-            Range=f"bytes={byte_offset}-{last_byte}",
+            Key=self._key(request.path),
+            Range=f"bytes={request.byte_offset}-{last_byte}",
         )
-        return response["Body"].read()
+        data = response["Body"].read()
+        if len(data) != request.byte_length:
+            raise EOFError(
+                f"{request.path} returned {len(data)} bytes; "
+                f"expected {request.byte_length}"
+            )
+        return data
+
+    def read_ranges(self, requests: Sequence[ObjectRange]) -> list[bytes]:
+        if not requests:
+            return []
+        with ThreadPoolExecutor(
+            max_workers=min(RANGE_READ_WORKERS, len(requests)),
+            thread_name_prefix="object-range",
+        ) as executor:
+            return list(executor.map(self.read_range, requests))
 
     def delete(self, path: str) -> None:
         self._client.delete_object(Bucket=self._bucket, Key=self._key(path))

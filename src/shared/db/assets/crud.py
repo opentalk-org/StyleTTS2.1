@@ -26,7 +26,7 @@ from shared.db.assets.schemas import (
 )
 from shared.db.common import many, one
 from shared.db.settings import crud as settings_crud
-from shared.storage import S3ObjectStore
+from shared.storage import ObjectStore
 
 
 def list_bucket_files(session: Session) -> Sequence[BucketFile]:
@@ -131,7 +131,7 @@ def create_extra_file(session: Session, payload: ExtraFileCreate) -> ExtraFile:
 def bulk_create_extra_files(
     session: Session,
     payloads: Sequence[ExtraFileCreate],
-    store: S3ObjectStore | None = None,
+    store: ObjectStore | None = None,
 ) -> list[ExtraFile]:
     if not payloads:
         return []
@@ -170,7 +170,7 @@ def bulk_create_extra_files(
 def create_extra_file_from_path(
     session: Session,
     payload: ExtraFilePathCreate,
-    store: S3ObjectStore | None = None,
+    store: ObjectStore | None = None,
 ) -> ExtraFile:
     return bulk_create_extra_files_from_paths(session, [payload], store)[0]
 
@@ -178,7 +178,7 @@ def create_extra_file_from_path(
 def bulk_create_extra_files_from_paths(
     session: Session,
     payloads: Sequence[ExtraFilePathCreate],
-    store: S3ObjectStore | None = None,
+    store: ObjectStore | None = None,
 ) -> list[ExtraFile]:
     if not payloads:
         return []
@@ -261,5 +261,5 @@ def create_config(session: Session, payload: ConfigCreate) -> Config:
     return item
 
 
-def _object_store(session: Session) -> S3ObjectStore:
+def _object_store(session: Session) -> ObjectStore:
     return object_store(settings_crud.object_store_config(session))

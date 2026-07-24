@@ -9,9 +9,9 @@ from sqlalchemy.orm import Session
 from shared.db.settings import crud as settings_crud
 from shared.db.waveforms.codec import FORMAT_VERSION, decode_peaks, downsample, encode_peaks, waveform_from_wav
 from shared.db.waveforms.models import AudioWaveform, WaveformPack
-from shared.db.waveforms.pack_store import ObjectStore, WaveformPackConfig, WaveformPackWriter
+from shared.db.waveforms.pack_store import WaveformPackConfig, WaveformPackWriter
 from shared.db.waveforms.schemas import WaveformInput, WaveformRead
-from shared.storage import S3ObjectStore
+from shared.storage import ObjectRange, ObjectStore, S3ObjectStore
 
 
 def bulk_replace_waveforms_from_audio(
@@ -111,7 +111,9 @@ def read_waveform(
     first = max(0, min(item.point_count, int(start * item.points_per_second)))
     last = max(first + 1, min(item.point_count, int(end * item.points_per_second) + 1))
     offset = item.byte_offset + first * 4
-    data = _object_store(session, store).read_range(item.pack.path, offset, (last - first) * 4)
+    data = _object_store(session, store).read_range(
+        ObjectRange(item.pack.path, offset, (last - first) * 4)
+    )
     peaks = downsample(decode_peaks(data), max_points)
     return WaveformRead(
         duration=item.duration,
