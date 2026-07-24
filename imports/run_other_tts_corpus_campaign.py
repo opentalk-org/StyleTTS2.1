@@ -43,6 +43,9 @@ def build_campaign_request(
     dataset_id: UUID,
     checkpoint_id: UUID,
     max_jobs: int | None,
+    shard_index: int,
+    shard_count: int,
+    runner_id: str | None,
 ) -> InlineGraphRunRequest:
     dataset_name = f"tts_{engine.value}"
     nodes = [
@@ -60,6 +63,8 @@ def build_campaign_request(
                 "checkpoint_id": str(checkpoint_id),
                 "batch_size": 8 if engine is TtsEngine.ORPHEUS else 4,
                 "max_jobs": max_jobs,
+                "shard_index": shard_index,
+                "shard_count": shard_count,
             },
         ),
         GraphNodeRequest(
@@ -96,7 +101,12 @@ def build_campaign_request(
             resources={"io": 4, "accelerator": 1, "vram_gb": 30},
         )
     )
-    return InlineGraphRunRequest(nodes=nodes, edges=edges, context=context)
+    return InlineGraphRunRequest(
+        runner_id=runner_id,
+        nodes=nodes,
+        edges=edges,
+        context=context,
+    )
 
 
 def ensure_checkpoint(backend_url: str, engine: TtsEngine) -> UUID:
@@ -113,6 +123,8 @@ def ensure_checkpoint(backend_url: str, engine: TtsEngine) -> UUID:
         raise RuntimeError(
             f"multiple {engine.value} checkpoints found"
         )
+    if matches:
+        return UUID(matches[0]["id"])
     request = InlineGraphRunRequest(
         nodes=[
             GraphNodeRequest(
@@ -171,6 +183,9 @@ def run_engine(
     sources: tuple[UUID, UUID],
     engine: TtsEngine,
     max_jobs: int | None,
+    shard_index: int,
+    shard_count: int,
+    runner_id: str | None,
 ) -> dict[str, Any]:
     checkpoint_id = ensure_checkpoint(backend_url, engine)
     dataset_id = ensure_dataset(
@@ -184,6 +199,9 @@ def run_engine(
         dataset_id,
         checkpoint_id,
         max_jobs,
+        shard_index,
+        shard_count,
+        runner_id,
     )
     submitted = submit_graph(backend_url, request)
     return wait_for_run(backend_url, submitted["run_id"])
@@ -209,6 +227,9 @@ def main() -> None:
     )
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--max-jobs", type=int)
+    parser.add_argument("--shard-index", type=int, default=0)
+    parser.add_argument("--shard-count", type=int, default=1)
+    parser.add_argument("--runner-id")
     arguments = parser.parse_args()
     if arguments.smoke and arguments.max_jobs is not None:
         parser.error("--smoke and --max-jobs are mutually exclusive")
@@ -226,6 +247,9 @@ def main() -> None:
             sources,
             engine,
             max_jobs,
+            arguments.shard_index,
+            arguments.shard_count,
+            arguments.runner_id,
         )
         if terminal["state"] != "succeeded":
             raise RuntimeError(

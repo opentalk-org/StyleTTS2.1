@@ -28,7 +28,7 @@ class RunExecution:
         try:
             graph = await asyncio.to_thread(build_inline_graph, self.request)
             context = self._context()
-            await asyncio.to_thread(self._cleanup_stale_run_dirs, context.work_dir)
+            await asyncio.to_thread(self._cleanup_stale_run_dir, context.work_dir)
             context.event_sink = self._threadsafe_event_sink()
             log_manager = NodeLogManager(
                 context.work_dir,
@@ -111,9 +111,7 @@ class RunExecution:
             input_items=self.request.context.input_items,
         )
 
-    def _cleanup_stale_run_dirs(self, work_dir: Path) -> None:
-        if not work_dir.exists():
-            return
-        for child in work_dir.iterdir():
-            if child.is_dir() and child.name != self.run_id:
-                shutil.rmtree(child)
+    def _cleanup_stale_run_dir(self, work_dir: Path) -> None:
+        run_dir = work_dir / self.run_id
+        if run_dir.exists():
+            shutil.rmtree(run_dir)

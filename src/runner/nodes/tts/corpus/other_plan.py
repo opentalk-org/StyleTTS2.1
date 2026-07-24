@@ -2,6 +2,7 @@ import hashlib
 import unicodedata
 from collections.abc import Mapping
 from pathlib import Path
+from typing import TypeVar
 from uuid import UUID
 
 from runner.nodes.tts.corpus.models import OtherCorpusJob
@@ -29,6 +30,19 @@ EXPECTED_JOBS = {
     TtsEngine.FISH_SPEECH: 43_200,
     TtsEngine.RAON_OPENTTS: 14_850,
 }
+PlanItem = TypeVar("PlanItem")
+
+
+def select_plan_shard(
+    jobs: tuple[PlanItem, ...],
+    shard_index: int,
+    shard_count: int,
+) -> tuple[PlanItem, ...]:
+    if shard_count < 1:
+        raise ValueError("shard_count must be positive")
+    if shard_index < 0 or shard_index >= shard_count:
+        raise ValueError("shard_index must be less than shard_count")
+    return jobs[shard_index::shard_count]
 
 
 def registered_stream_languages(

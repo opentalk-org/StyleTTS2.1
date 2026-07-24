@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -20,12 +21,23 @@ class ChatterboxRuntime(EngineRuntime):
     def __init__(self, model: Any, multilingual: bool):
         self._model = model
         self._multilingual = multilingual
+        self._active_clone_digest: bytes | None = None
         self.SAMPLE_RATE = int(model.sr)
 
     def synthesize(self, text: str, voice: Voice, language: str) -> tuple[np.ndarray, int]:
         kwargs: dict[str, Any] = {}
         if voice.clone is not None:
-            kwargs["audio_prompt_path"] = str(write_temp_wav(voice.clone.wav_bytes))
+            clone_digest = hashlib.blake2b(
+                voice.clone.wav_bytes,
+                digest_size=16,
+            ).digest()
+            if clone_digest != self._active_clone_digest:
+                prompt_path = write_temp_wav(voice.clone.wav_bytes)
+                try:
+                    self._model.prepare_conditionals(str(prompt_path))
+                finally:
+                    prompt_path.unlink()
+                self._active_clone_digest = clone_digest
         if self._multilingual:
             kwargs["language_id"] = language
         wav = self._model.generate(text, **kwargs)

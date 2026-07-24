@@ -22,6 +22,7 @@ from runner.nodes.tts.corpus.other_plan import (
     EXPECTED_JOBS,
     build_other_corpus_plan,
     registered_stream_languages,
+    select_plan_shard,
 )
 from runner.nodes.tts.corpus.references import load_registered_references
 from runner.nodes.tts.corpus.state import completed_source_keys
@@ -48,6 +49,8 @@ class OtherTtsCorpusSynthesisSettings(StrictSettings):
     checkpoint_id: UUID
     batch_size: int = Field(default=4, ge=1, le=16)
     max_jobs: int | None = Field(default=None, ge=1)
+    shard_index: int = Field(default=0, ge=0)
+    shard_count: int = Field(default=1, ge=1)
 
 
 class OtherTtsCorpusSynthesisNode(Node):
@@ -95,6 +98,11 @@ class OtherTtsCorpusSynthesisNode(Node):
             engine,
             references,
         )
+        jobs = select_plan_shard(
+            jobs,
+            self.settings.shard_index,
+            self.settings.shard_count,
+        )
         if self.settings.max_jobs is not None:
             jobs = jobs[:self.settings.max_jobs]
         completed = await asyncio.to_thread(
@@ -133,7 +141,14 @@ class OtherTtsCorpusSynthesisNode(Node):
         if not self._initialized:
             if self.settings.max_jobs is not None:
                 return self.settings.max_jobs
-            return EXPECTED_JOBS[TtsEngine(self.settings.engine.value)]
+            expected = EXPECTED_JOBS[TtsEngine(self.settings.engine.value)]
+            return len(
+                range(
+                    self.settings.shard_index,
+                    expected,
+                    self.settings.shard_count,
+                )
+            )
         return len(self._jobs) - self._cursor
 
     async def execute(self, batch, context):
