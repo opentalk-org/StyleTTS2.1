@@ -20,6 +20,7 @@ dependencies = [
     "einops-exts>=0.0.4",
     "faiss-cpu>=1.9",
     "gdown>=5.2",
+    "jieba>=0.42",
     "jaconv>=0.4",
     "kokoro>=0.9",
     "chatterbox-tts",
