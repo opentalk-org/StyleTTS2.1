@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
-from ...data.validation_types import ValidationRecording
+from ...data.validation_records import ValidationRecording
 from ..reporting import TrainingMetric
 from ..distributed import DistributedRuntime
 from ..state import capture_rng_state, restore_rng_state

@@ -85,7 +85,7 @@ def build_runtime_services(
     runtime: DistributedRuntime,
 ) -> RuntimeServices:
     training_config = preparation.config.training
-    recordings = ValidationLoader.from_database(preparation.config).collate(
+    recordings = ValidationLoader(preparation.config).collate(
         preparation.validation,
         phoneme_tokenizer,
         text_tokenizer,

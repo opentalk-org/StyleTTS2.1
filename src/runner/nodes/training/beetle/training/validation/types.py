@@ -4,7 +4,7 @@ from uuid import UUID
 
 from torch import Tensor, nn
 
-from ...data.validation_types import ValidationRecording
+from ...data.validation_records import ValidationRecording
 from ..reporting import TrainingMetric
 
 

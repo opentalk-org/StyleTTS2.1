@@ -5,7 +5,7 @@ from torch import Tensor
 from torch.nn import functional as F
 
 from ...data.records import BeetleBatch
-from ...data.validation_types import ValidationRecording
+from ...data.validation_records import ValidationRecording
 
 
 _TUPLE_FIELDS = (

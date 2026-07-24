@@ -16,7 +16,10 @@ from shared.db.connection import database_session
 
 from ..config.data import DatabaseSelection
 from .records import IndexedSegment, SegmentKey, WordBoundary
-from .validation_types import ValidationCandidates, build_validation_candidates
+from .validation_records import (
+    ValidationCandidates,
+    build_validation_candidates,
+)
 
 
 class IndexCallbacks(Protocol):

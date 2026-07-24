@@ -167,7 +167,7 @@ def prepare_run(
     validation = load_validation_source(
         config,
         index,
-        ValidationLoader.from_database(config),
+        ValidationLoader(config),
     )
     callbacks.check_cancel()
     manager = CheckpointManager(

@@ -1,5 +1,5 @@
 import random
-from typing import Any, Protocol
+from typing import Any
 from uuid import UUID
 
 from shared.audio_annotations import AudioAnnotations
@@ -11,9 +11,9 @@ from ..config import BeetleConfig
 from .audio import AudioPreprocessor
 from .index import DatabaseSegmentIndex
 from .records import SegmentKey
-from .sampling import derive_seed
-from .validation_batch import ValidationTokenizer, collate_validation_recording
-from .validation_types import (
+from .seeding import derive_seed
+from .validation_collate import ValidationTokenizer, collate_validation_recording
+from .validation_records import (
     PreparedValidationAudio,
     StoredValidationAudio,
     ValidationRecording,
@@ -74,35 +74,9 @@ def select_validation_audio_ids(
     return tuple(selected)
 
 
-class ValidationDatabase(Protocol):
-    def load(
-        self,
-        audio_file_ids: tuple[UUID, ...],
-    ) -> dict[UUID, StoredValidationAudio]: ...
-
-
-class SharedValidationDatabase:
-    def load(
-        self,
-        audio_file_ids: tuple[UUID, ...],
-    ) -> dict[UUID, StoredValidationAudio]:
-        with database_session() as session:
-            rows = audio_crud.get_audio_files_bulk(session, audio_file_ids)
-            segments = audio_crud.list_audio_segments_bulk(session, audio_file_ids)
-            for audio_id, row in rows.items():
-                if row.virtual or row.storage_kind != "packed":
-                    raise ValueError(f"validation audio is not stored: {audio_id}")
-            payloads = audio_crud.bulk_read_audio_files(session, audio_file_ids)
-        return {
-            audio_id: _stored_audio(rows[audio_id], segments[audio_id], payloads[audio_id])
-            for audio_id in audio_file_ids
-        }
-
-
 class ValidationLoader:
-    def __init__(self, config: BeetleConfig, database: ValidationDatabase) -> None:
+    def __init__(self, config: BeetleConfig) -> None:
         self.config = config
-        self.database = database
         audio = config.audio
         self.preprocessor = AudioPreprocessor(
             audio.sample_rate,
@@ -114,17 +88,13 @@ class ValidationLoader:
             audio.f_max,
         )
 
-    @classmethod
-    def from_database(cls, config: BeetleConfig) -> "ValidationLoader":
-        return cls(config, SharedValidationDatabase())
-
     def load_source(
         self,
         audio_file_ids: tuple[UUID, ...],
     ) -> ValidationSource:
         if not audio_file_ids or len(set(audio_file_ids)) != len(audio_file_ids):
             raise ValueError("validation audio_file_ids must be nonempty and unique")
-        loaded = self.database.load(audio_file_ids)
+        loaded = _load_stored_audio(audio_file_ids)
         missing = tuple(audio_id for audio_id in audio_file_ids if audio_id not in loaded)
         if missing:
             raise KeyError(f"validation audio files not found: {missing}")
@@ -166,6 +136,26 @@ class ValidationLoader:
     ) -> tuple[ValidationRecording, ...]:
         source = self.load_source(audio_file_ids)
         return self.collate(source, phoneme_tokenizer, text_tokenizer)
+
+
+def _load_stored_audio(
+    audio_file_ids: tuple[UUID, ...],
+) -> dict[UUID, StoredValidationAudio]:
+    with database_session() as session:
+        rows = audio_crud.get_audio_files_bulk(session, audio_file_ids)
+        segments = audio_crud.list_audio_segments_bulk(session, audio_file_ids)
+        for audio_id, row in rows.items():
+            if row.virtual or row.storage_kind != "packed":
+                raise ValueError(f"validation audio is not stored: {audio_id}")
+        payloads = audio_crud.bulk_read_audio_files(session, audio_file_ids)
+    return {
+        audio_id: _stored_audio(
+            rows[audio_id],
+            segments[audio_id],
+            payloads[audio_id],
+        )
+        for audio_id in audio_file_ids
+    }
 
 
 def _stored_audio(row: Any, segments: list[dict[str, Any]], payload: bytes) -> StoredValidationAudio:

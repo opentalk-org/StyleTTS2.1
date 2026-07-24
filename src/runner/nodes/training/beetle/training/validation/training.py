@@ -5,7 +5,7 @@ from torch import Tensor, nn
 
 from ...config.training import TrainingConfig
 from ...data.sampling import derive_seed
-from ...data.validation_types import ValidationRecording
+from ...data.validation_records import ValidationRecording
 from ...losses.acoustic import (
     masked_f0_smooth_l1,
     masked_kl_standard_normal,

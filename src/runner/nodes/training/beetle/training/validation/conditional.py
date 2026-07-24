@@ -5,7 +5,7 @@ from torch import Tensor, nn
 
 from ...config.training import TrainingConfig
 from ...data.sampling import derive_seed
-from ...data.validation_types import ValidationRecording
+from ...data.validation_records import ValidationRecording
 from ...losses.conditional import compute_conditional_losses
 from ...models.model import AcousticModels
 from ...models.modules.conditioning import ProjectedConditions

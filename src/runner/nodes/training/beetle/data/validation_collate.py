@@ -6,7 +6,7 @@ from torch.nn import functional as F
 
 from ..config import BeetleConfig
 from .records import BeetleBatch, SegmentKey
-from .validation_types import (
+from .validation_records import (
     PreparedValidationAudio,
     ValidationRecording,
 )
