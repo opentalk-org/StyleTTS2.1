@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from shared.db.audio.ranges.wav import WavClip, WavTimeRange, slice_wav_ranges
 from shared.db.audio.storage_locations import audio_storage_locations
 from shared.db.settings import crud as settings_crud
-from shared.storage import ObjectRange, ObjectStore, S3ObjectStore
+from shared.storage import ObjectRange
 
 
 @dataclass(frozen=True)
@@ -24,7 +24,6 @@ class SegmentReadRequest:
 def bulk_read_wav_segments(
     session: Session,
     requests: list[SegmentReadRequest] | tuple[SegmentReadRequest, ...],
-    store: ObjectStore | None = None,
 ) -> list[WavClip]:
     if not requests:
         return []
@@ -40,10 +39,7 @@ def bulk_read_wav_segments(
         )
         for audio_file_id in audio_ids
     ]
-    resolved_store = store or S3ObjectStore(
-        settings_crud.object_store_config(session)
-    )
-    payloads = resolved_store.read_ranges(ranges)
+    payloads = settings_crud.object_store(session).read_ranges(ranges)
     wavs = dict(zip(audio_ids, payloads, strict=True))
 
     grouped: dict[UUID, list[tuple[int, SegmentReadRequest]]] = defaultdict(list)

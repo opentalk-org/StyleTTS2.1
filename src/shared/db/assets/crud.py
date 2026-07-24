@@ -10,7 +10,6 @@ from shared.db.assets.file_store import (
     checkpoint_cache_path,
     checkpoint_tar,
     extra_file_cache_path,
-    object_store,
     stored_bytes,
     stored_path,
 )
@@ -26,7 +25,6 @@ from shared.db.assets.schemas import (
 )
 from shared.db.common import many, one
 from shared.db.settings import crud as settings_crud
-from shared.storage import ObjectStore
 
 
 def list_bucket_files(session: Session) -> Sequence[BucketFile]:
@@ -49,7 +47,7 @@ def create_checkpoint(session: Session, payload: CheckpointCreate) -> Checkpoint
     item_id = uuid.uuid4()
     path = f"checkpoints/{item_id}.tar"
     stored = checkpoint_tar(payload.folder_path)
-    _object_store(session).upload(path, stored.data)
+    settings_crud.object_store(session).upload(path, stored.data)
     item = Checkpoint(
         id=item_id,
         name=payload.name,
@@ -90,12 +88,13 @@ def list_configs(session: Session, type_: str | None = None) -> Sequence[Config]
 
 def read_checkpoint(session: Session, checkpoint_id: UUID) -> bytes:
     item = one(session, Checkpoint, checkpoint_id)
-    return _object_store(session).download(item.path)
+    return settings_crud.object_store(session).download(item.path)
 
 
 def get_checkpoint_path(session: Session, checkpoint_id: UUID) -> Path:
     return checkpoint_cache_path(
-        one(session, Checkpoint, checkpoint_id), _object_store(session)
+        one(session, Checkpoint, checkpoint_id),
+        settings_crud.object_store(session),
     )
 
 
@@ -109,7 +108,7 @@ def update_checkpoint(
     item.job_id = payload.job_id
     if payload.folder_path is not None:
         stored = checkpoint_tar(payload.folder_path)
-        _object_store(session).upload(item.path, stored.data)
+        settings_crud.object_store(session).upload(item.path, stored.data)
         item.size = stored.size
         item.content_hash = stored.content_hash
     session.commit()
@@ -119,7 +118,7 @@ def update_checkpoint(
 
 def delete_checkpoint(session: Session, checkpoint_id: UUID) -> None:
     item = one(session, Checkpoint, checkpoint_id)
-    _object_store(session).delete(item.path)
+    settings_crud.object_store(session).delete(item.path)
     session.delete(item)
     session.commit()
 
@@ -131,11 +130,10 @@ def create_extra_file(session: Session, payload: ExtraFileCreate) -> ExtraFile:
 def bulk_create_extra_files(
     session: Session,
     payloads: Sequence[ExtraFileCreate],
-    store: ObjectStore | None = None,
 ) -> list[ExtraFile]:
     if not payloads:
         return []
-    resolved_store = store or _object_store(session)
+    store = settings_crud.object_store(session)
     writes = []
     for payload in payloads:
         stored = stored_bytes(payload.data)
@@ -154,7 +152,7 @@ def bulk_create_extra_files(
     uploaded_paths = []
     try:
         for item, data in writes:
-            resolved_store.upload(item.path, data)
+            store.upload(item.path, data)
             uploaded_paths.append(item.path)
         items = [item for item, _ in writes]
         session.add_all(items)
@@ -163,26 +161,24 @@ def bulk_create_extra_files(
     except Exception:
         session.rollback()
         for path in uploaded_paths:
-            resolved_store.delete(path)
+            store.delete(path)
         raise
 
 
 def create_extra_file_from_path(
     session: Session,
     payload: ExtraFilePathCreate,
-    store: ObjectStore | None = None,
 ) -> ExtraFile:
-    return bulk_create_extra_files_from_paths(session, [payload], store)[0]
+    return bulk_create_extra_files_from_paths(session, [payload])[0]
 
 
 def bulk_create_extra_files_from_paths(
     session: Session,
     payloads: Sequence[ExtraFilePathCreate],
-    store: ObjectStore | None = None,
 ) -> list[ExtraFile]:
     if not payloads:
         return []
-    resolved_store = store or _object_store(session)
+    store = settings_crud.object_store(session)
     writes = []
     for payload in payloads:
         stored = stored_path(payload.path)
@@ -200,7 +196,7 @@ def bulk_create_extra_files_from_paths(
     uploaded_paths = []
     try:
         for item, source in writes:
-            resolved_store.upload_path(item.path, source)
+            store.upload_path(item.path, source)
             uploaded_paths.append(item.path)
         items = [item for item, _source in writes]
         session.add_all(items)
@@ -209,7 +205,7 @@ def bulk_create_extra_files_from_paths(
     except Exception:
         session.rollback()
         for path in uploaded_paths:
-            resolved_store.delete(path)
+            store.delete(path)
         raise
 
 
@@ -223,7 +219,8 @@ def read_extra_file(session: Session, extra_file_id: UUID) -> bytes:
 
 def get_extra_file_path(session: Session, extra_file_id: UUID) -> Path:
     return extra_file_cache_path(
-        one(session, ExtraFile, extra_file_id), _object_store(session)
+        one(session, ExtraFile, extra_file_id),
+        settings_crud.object_store(session),
     )
 
 
@@ -236,7 +233,7 @@ def update_extra_file(
     item.metadata_ = payload.metadata
     if payload.data is not None:
         stored = stored_bytes(payload.data)
-        _object_store(session).upload(item.path, stored.data)
+        settings_crud.object_store(session).upload(item.path, stored.data)
         item.size = stored.size
         item.content_hash = stored.content_hash
     session.commit()
@@ -246,7 +243,7 @@ def update_extra_file(
 
 def delete_extra_file(session: Session, extra_file_id: UUID) -> None:
     item = one(session, ExtraFile, extra_file_id)
-    _object_store(session).delete(item.path)
+    settings_crud.object_store(session).delete(item.path)
     session.delete(item)
     session.commit()
 
@@ -259,7 +256,3 @@ def create_config(session: Session, payload: ConfigCreate) -> Config:
     session.commit()
     session.refresh(item)
     return item
-
-
-def _object_store(session: Session) -> ObjectStore:
-    return object_store(settings_crud.object_store_config(session))

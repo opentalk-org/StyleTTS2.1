@@ -8,7 +8,7 @@ from shared.db.assets.models import BucketFile
 from shared.db.audio.models import AudioFile
 from shared.db.audio.pack_store import AudioPackConfig, AudioPackWriter
 from shared.db.settings import crud as settings_crud
-from shared.storage import ObjectStore, S3ObjectStore
+from shared.storage import ObjectStore
 
 
 @dataclass(frozen=True)
@@ -19,7 +19,6 @@ class PruneResult:
 
 def purge_orphaned_audio_packs(
     session: Session,
-    store: ObjectStore | None = None,
 ) -> list[str]:
     statement = (
         select(BucketFile)
@@ -31,20 +30,19 @@ def purge_orphaned_audio_packs(
     for pack in packs:
         session.delete(pack)
     session.commit()
-    resolved_store = _object_store(session, store)
+    store = settings_crud.object_store(session)
     for path in paths:
-        resolved_store.delete(path)
+        store.delete(path)
     return paths
 
 
 def prune_audio_packs(
     session: Session,
-    store: ObjectStore | None = None,
     config: AudioPackConfig = AudioPackConfig(),
 ) -> None:
     prune_fragmented_audio_packs(
         session,
-        _object_store(session, store),
+        settings_crud.object_store(session),
         config,
     )
 
@@ -82,13 +80,6 @@ def prune_fragmented_audio_packs(
         pruned_paths=pruned_paths,
         moved_audio_files=len(live_items),
     )
-
-
-def _object_store(session: Session, store: ObjectStore | None) -> ObjectStore:
-    if store is not None:
-        return store
-    return S3ObjectStore(settings_crud.object_store_config(session))
-
 
 def _fragmented_packs(
     session: Session,

@@ -11,19 +11,18 @@ from shared.db.waveforms.codec import FORMAT_VERSION, decode_peaks, downsample, 
 from shared.db.waveforms.models import AudioWaveform, WaveformPack
 from shared.db.waveforms.pack_store import WaveformPackConfig, WaveformPackWriter
 from shared.db.waveforms.schemas import WaveformInput, WaveformRead
-from shared.storage import ObjectRange, ObjectStore, S3ObjectStore
+from shared.storage import ObjectRange
 
 
 def bulk_replace_waveforms_from_audio(
     session: Session,
     items: Sequence[tuple[uuid.UUID, bytes, float, WaveformInput | None]],
-    store: ObjectStore | None = None,
     config: WaveformPackConfig = WaveformPackConfig(),
 ) -> list[AudioWaveform]:
     if not items:
         return []
-    resolved_store = _object_store(session, store)
-    writer = WaveformPackWriter(session, resolved_store, config)
+    store = settings_crud.object_store(session)
+    writer = WaveformPackWriter(session, store, config)
     waveforms = []
     bulk_delete_waveforms(
         session,
@@ -59,12 +58,11 @@ def replace_waveform(
     audio_file_id: uuid.UUID,
     duration: float,
     payload: WaveformInput,
-    store: ObjectStore | None = None,
     config: WaveformPackConfig = WaveformPackConfig(),
 ) -> AudioWaveform:
     delete_waveform(session, audio_file_id, commit=False)
     data = encode_peaks(payload.peaks)
-    writer = WaveformPackWriter(session, _object_store(session, store), config)
+    writer = WaveformPackWriter(session, settings_crud.object_store(session), config)
     write = writer.append(data)
     item = AudioWaveform(
         audio_file_id=audio_file_id,
@@ -91,10 +89,9 @@ def replace_waveform_from_audio(
     audio_bytes: bytes,
     duration: float,
     payload: WaveformInput | None,
-    store: ObjectStore | None = None,
 ) -> AudioWaveform:
     waveform = payload if payload is not None else _waveform_from_audio(audio_bytes)
-    return replace_waveform(session, audio_file_id, duration, waveform, store)
+    return replace_waveform(session, audio_file_id, duration, waveform)
 
 
 def read_waveform(
@@ -103,7 +100,6 @@ def read_waveform(
     start: float,
     end: float,
     max_points: int,
-    store: ObjectStore | None = None,
 ) -> WaveformRead:
     item = session.get(AudioWaveform, audio_file_id)
     if item is None:
@@ -111,7 +107,7 @@ def read_waveform(
     first = max(0, min(item.point_count, int(start * item.points_per_second)))
     last = max(first + 1, min(item.point_count, int(end * item.points_per_second) + 1))
     offset = item.byte_offset + first * 4
-    data = _object_store(session, store).read_range(
+    data = settings_crud.object_store(session).read_range(
         ObjectRange(item.pack.path, offset, (last - first) * 4)
     )
     peaks = downsample(decode_peaks(data), max_points)
@@ -159,7 +155,6 @@ def bulk_delete_waveforms(
 
 def purge_orphaned_waveform_packs(
     session: Session,
-    store: ObjectStore | None = None,
 ) -> list[str]:
     statement = select(WaveformPack).where(~WaveformPack.waveforms.any()).with_for_update()
     packs = list(session.execute(statement).scalars().all())
@@ -167,9 +162,9 @@ def purge_orphaned_waveform_packs(
     for pack in packs:
         session.delete(pack)
     session.commit()
-    resolved_store = store or _object_store(session, None)
+    store = settings_crud.object_store(session)
     for path in paths:
-        resolved_store.delete(path)
+        store.delete(path)
     return paths
 
 
@@ -178,12 +173,6 @@ def _waveform_from_audio(data: bytes) -> WaveformInput:
         return waveform_from_wav(data)
     except (EOFError, ValueError, wave.Error) as error:
         raise ValueError("Waveform is required for non-WAV audio bytes") from error
-
-
-def _object_store(session: Session, store: ObjectStore | None) -> ObjectStore:
-    if store is not None:
-        return store
-    return S3ObjectStore(settings_crud.object_store_config(session))
 
 
 def _now() -> datetime:

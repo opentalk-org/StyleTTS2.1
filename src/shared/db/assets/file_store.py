@@ -9,7 +9,7 @@ import tarfile
 import tempfile
 
 from shared.db.assets.models import Checkpoint, ExtraFile
-from shared.storage import ObjectStore, ObjectStoreConfig, S3ObjectStore
+from shared.storage import ObjectStore
 
 
 @dataclass(frozen=True)
@@ -24,10 +24,6 @@ class StoredPath:
     path: Path
     size: int
     content_hash: str
-
-
-def object_store(config: ObjectStoreConfig | None = None) -> ObjectStore:
-    return S3ObjectStore(config or ObjectStoreConfig.from_env())
 
 
 def checkpoint_tar(folder_path: Path) -> StoredBytes:
@@ -63,11 +59,11 @@ def stored_path(path: Path) -> StoredPath:
     return StoredPath(path=path, size=size, content_hash=digest.hexdigest())
 
 
-def checkpoint_cache_path(item: Checkpoint, store: ObjectStore | None = None) -> Path:
+def checkpoint_cache_path(item: Checkpoint, store: ObjectStore) -> Path:
     target = _cache_root() / "checkpoints" / item.content_hash
     if target.exists():
         return target
-    data = (store or object_store()).download(item.path)
+    data = store.download(item.path)
     _assert_content(item.size, item.content_hash, data)
     temp_dir = Path(tempfile.mkdtemp(prefix="checkpoint-", dir=_cache_parent(target)))
     try:
@@ -82,11 +78,11 @@ def checkpoint_cache_path(item: Checkpoint, store: ObjectStore | None = None) ->
     return target
 
 
-def extra_file_cache_path(item: ExtraFile, store: ObjectStore | None = None) -> Path:
+def extra_file_cache_path(item: ExtraFile, store: ObjectStore) -> Path:
     target = _cache_root() / "extra-files" / item.content_hash / item.name
     if target.exists():
         return target
-    data = (store or object_store()).download(item.path)
+    data = store.download(item.path)
     _assert_content(item.size, item.content_hash, data)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)

@@ -20,18 +20,17 @@ from shared.db.audio.storage_locations import audio_storage_locations
 from shared.db.datasets.models import dataset_audio_files
 from shared.db.settings import crud as settings_crud
 from shared.db.waveforms import crud as waveform_crud
-from shared.storage import ObjectRange, ObjectStore, S3ObjectStore
+from shared.storage import ObjectRange
 
 
 def create_audio_file(
     session: Session,
     payload: AudioCreate,
-    store: ObjectStore | None = None,
     config: AudioPackConfig = AudioPackConfig(),
 ) -> AudioFile:
     return create_packed_audio_file(
         session,
-        _object_store(session, store),
+        settings_crud.object_store(session),
         payload,
         config,
     )
@@ -40,13 +39,12 @@ def create_audio_file(
 def bulk_create_audio_files(
     session: Session,
     payloads: Sequence[AudioCreate],
-    store: ObjectStore | None = None,
     config: AudioPackConfig = AudioPackConfig(),
     commit: bool = True,
 ) -> list[AudioFile]:
     return bulk_create_packed_audio_files(
         session,
-        _object_store(session, store),
+        settings_crud.object_store(session),
         payloads,
         config,
         commit=commit,
@@ -56,10 +54,9 @@ def bulk_create_audio_files(
 def read_audio_file(
     session: Session,
     audio_file_id: uuid.UUID,
-    store: ObjectStore | None = None,
 ) -> bytes:
     location = audio_storage_locations(session, [audio_file_id])[audio_file_id]
-    return _object_store(session, store).read_range(
+    return settings_crud.object_store(session).read_range(
         ObjectRange(
             location.object_path,
             location.byte_offset,
@@ -72,7 +69,6 @@ def read_audio_part(
     session: Session,
     audio_file_id: uuid.UUID,
     payload: AudioPartRead,
-    store: ObjectStore | None = None,
 ) -> bytes:
     location = audio_storage_locations(session, [audio_file_id])[audio_file_id]
     if payload.start < 0:
@@ -81,7 +77,7 @@ def read_audio_part(
         raise ValueError(f"part length must be positive: {payload.length}")
     if payload.start + payload.length > location.byte_length:
         raise ValueError(f"part exceeds audio length: {audio_file_id}")
-    return _object_store(session, store).read_range(
+    return settings_crud.object_store(session).read_range(
         ObjectRange(
             location.object_path,
             location.byte_offset + payload.start,
@@ -93,7 +89,6 @@ def read_audio_part(
 def bulk_read_audio_files(
     session: Session,
     audio_file_ids: Iterable[uuid.UUID],
-    store: ObjectStore | None = None,
 ) -> dict[uuid.UUID, bytes]:
     ids = list(dict.fromkeys(audio_file_ids))
     locations = audio_storage_locations(session, ids)
@@ -105,7 +100,7 @@ def bulk_read_audio_files(
         )
         for audio_file_id in ids
     ]
-    payloads = _object_store(session, store).read_ranges(ranges)
+    payloads = settings_crud.object_store(session).read_ranges(ranges)
     return dict(zip(ids, payloads, strict=True))
 
 
@@ -113,13 +108,11 @@ def update_audio_file(
     session: Session,
     audio_file_id: uuid.UUID,
     payload: AudioUpdate,
-    store: ObjectStore | None = None,
     config: AudioPackConfig = AudioPackConfig(),
 ) -> AudioFile:
     return bulk_update_audio_files(
         session,
         {audio_file_id: payload},
-        store=store,
         config=config,
     )[audio_file_id]
 
@@ -127,7 +120,6 @@ def update_audio_file(
 def bulk_update_audio_files(
     session: Session,
     payloads: dict[uuid.UUID, AudioUpdate],
-    store: ObjectStore | None = None,
     config: AudioPackConfig = AudioPackConfig(),
 ) -> dict[uuid.UUID, AudioFile]:
     binary_payloads = {
@@ -141,13 +133,12 @@ def bulk_update_audio_files(
         if payload.wav_bytes is None
     }
     items: dict[uuid.UUID, AudioFile] = {}
-    resolved_store = None
     if binary_payloads:
-        resolved_store = _object_store(session, store)
+        store = settings_crud.object_store(session)
         items.update(
             bulk_update_packed_audio_files(
                 session,
-                resolved_store,
+                store,
                 binary_payloads,
                 config,
                 commit=False,
@@ -166,24 +157,22 @@ def bulk_update_audio_files(
             items[audio_file_id] = item
     if items:
         session.commit()
-    if resolved_store is not None:
-        prune_fragmented_audio_packs(session, resolved_store, config)
+    if binary_payloads:
+        prune_fragmented_audio_packs(session, store, config)
     return items
 
 
 def delete_audio_file(
     session: Session,
     audio_file_id: uuid.UUID,
-    store: ObjectStore | None = None,
     config: AudioPackConfig = AudioPackConfig(),
 ) -> None:
-    bulk_delete_audio_files(session, [audio_file_id], store=store, config=config)
+    bulk_delete_audio_files(session, [audio_file_id], config=config)
 
 
 def bulk_delete_audio_files(
     session: Session,
     audio_file_ids: Iterable[uuid.UUID],
-    store: ObjectStore | None = None,
     config: AudioPackConfig = AudioPackConfig(),
     commit: bool = True,
     prune: bool = False,
@@ -191,7 +180,7 @@ def bulk_delete_audio_files(
     ids = list(dict.fromkeys(audio_file_ids))
     if not ids:
         return
-    resolved_store = _object_store(session, store)
+    store = settings_crud.object_store(session)
     waveform_crud.bulk_delete_waveforms(session, ids, commit=False)
     session.execute(
         delete(dataset_audio_files).where(
@@ -203,14 +192,7 @@ def bulk_delete_audio_files(
         session.commit()
     if prune:
         assert commit, "audio pack pruning requires committed deletes"
-        prune_fragmented_audio_packs(session, resolved_store, config)
-
-
-def _object_store(session: Session, store: ObjectStore | None) -> ObjectStore:
-    if store is not None:
-        return store
-    return S3ObjectStore(settings_crud.object_store_config(session))
-
+        prune_fragmented_audio_packs(session, store, config)
 
 def _update_audio_metadata(item: AudioFile, payload: AudioUpdate) -> None:
     item.name = payload.name

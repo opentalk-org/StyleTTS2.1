@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 
 from shared.db.settings.models import IntegrationSettings, StorageSettings
 from shared.db.settings.schemas import IntegrationSettingsPayload, StorageSettingsPayload
-from shared.storage import ObjectStoreConfig
+from shared.storage import ObjectStore, ObjectStoreConfig, S3ObjectStore
 
 
 def get_storage_settings(session: Session) -> StorageSettings:
@@ -60,3 +60,7 @@ def object_store_config(session: Session) -> ObjectStoreConfig:
         access_key_id=item.access_key_id,
         secret_access_key=item.secret_access_key,
     )
+
+
+def object_store(session: Session) -> ObjectStore:
+    return S3ObjectStore(object_store_config(session))
