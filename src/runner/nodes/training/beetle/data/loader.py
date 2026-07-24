@@ -1,137 +1,76 @@
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 from uuid import UUID
 
 from appdirs import user_cache_dir
 
+from shared.db.audio import crud as audio_crud
 from shared.db.audio.ranges import (
     AudioFileCache,
     BulkWavReader,
     SegmentReadRequest,
     WavClip,
 )
-from shared.db.audio import crud as audio_crud
 from shared.db.connection import database_session
 from shared.db.settings import crud as settings_crud
 from shared.storage import S3ObjectStore
 
+from .collate import BatchCollator
 from .index import DatabaseSegmentIndex
 from .records import (
+    BeetleBatch,
     EmbeddingGroupPlan,
     EmbeddingViewPlan,
+    FetchedBatch,
+    FetchedEmbeddingGroup,
+    FetchedEmbeddingView,
+    FetchedExample,
     PlannedBatch,
     PlannedExample,
     SegmentKey,
 )
 
 
-class SegmentBulkLoader(Protocol):
-    def load(
-        self,
-        audio_file_ids: tuple[UUID, ...],
-    ) -> dict[UUID, list[dict[str, Any]]]: ...
-
-
-class ClipBulkLoader(Protocol):
-    def load(self, requests: tuple[SegmentReadRequest, ...]) -> list[WavClip]: ...
-
-    def close(self) -> None: ...
-
-
-class SharedSegmentBulkLoader:
-    def load(
-        self,
-        audio_file_ids: tuple[UUID, ...],
-    ) -> dict[UUID, list[dict[str, Any]]]:
-        with database_session() as session:
-            return audio_crud.list_audio_segments_bulk(session, audio_file_ids)
-
-
-class SharedClipBulkLoader:
-    def __init__(self, cache_bytes: int, fetch_workers: int) -> None:
-        with database_session() as session:
-            store = S3ObjectStore(settings_crud.object_store_config(session))
-        cache_root = Path(user_cache_dir("runflow")) / "audio"
-        self.reader = BulkWavReader(
-            store,
-            AudioFileCache(cache_root, cache_bytes),
-            fetch_workers,
-        )
-
-    def load(self, requests: tuple[SegmentReadRequest, ...]) -> list[WavClip]:
-        with database_session() as session:
-            return self.reader.read(session, requests)
-
-    def close(self) -> None:
-        self.reader.close()
-
-
-@dataclass(frozen=True)
-class FetchedExample:
-    plan: PlannedExample
-    text: str
-    phonemes: str
-    target_clip: WavClip
-    style_prompt: str | None
-    voice_prompt: str | None
-    speaker_id: str | None
-    language: str | None
-
-
-@dataclass(frozen=True)
-class FetchedEmbeddingView:
-    plan: EmbeddingViewPlan
-    clip: WavClip
-
-
-@dataclass(frozen=True)
-class FetchedEmbeddingGroup:
-    group_id: str
-    views: tuple[FetchedEmbeddingView, ...]
-
-
-@dataclass(frozen=True)
-class FetchedBatch:
-    examples: tuple[FetchedExample, ...]
-    voice_groups: tuple[FetchedEmbeddingGroup, ...]
-    style_groups: tuple[FetchedEmbeddingGroup, ...]
-
-
-class DatabaseBatchSource:
+class DatabaseBatchLoader:
     def __init__(
         self,
         index: DatabaseSegmentIndex,
-        segments: SegmentBulkLoader,
-        clips: ClipBulkLoader,
+        clips: BulkWavReader,
+        collator: BatchCollator,
     ) -> None:
         self.index = index
-        self.segments = segments
         self.clips = clips
+        self.collator = collator
 
     @classmethod
     def from_database(
         cls,
         index: DatabaseSegmentIndex,
+        collator: BatchCollator,
         cache_bytes: int,
         fetch_workers: int,
-    ) -> "DatabaseBatchSource":
-        return cls(
-            index,
-            SharedSegmentBulkLoader(),
-            SharedClipBulkLoader(cache_bytes, fetch_workers),
+    ) -> "DatabaseBatchLoader":
+        with database_session() as session:
+            store = S3ObjectStore(settings_crud.object_store_config(session))
+        cache_root = Path(user_cache_dir("runflow")) / "audio"
+        clips = BulkWavReader(
+            store,
+            AudioFileCache(cache_root, cache_bytes),
+            fetch_workers,
         )
+        return cls(index, clips, collator)
 
     def close(self) -> None:
         self.clips.close()
 
-    def fetch(self, planned: PlannedBatch) -> FetchedBatch:
+    def load(self, planned: PlannedBatch) -> BeetleBatch:
         keys = _batch_keys(planned)
         audio_ids = tuple(sorted({key.audio_file_id for key in keys}, key=str))
-        payloads = self.segments.load(audio_ids)
-        current = {key: self._resolve_segment(key, payloads) for key in keys}
         requests = _batch_requests(planned)
-        clips = self.clips.load(requests)
+        with database_session() as session:
+            payloads = audio_crud.list_audio_segments_bulk(session, audio_ids)
+            clips = self.clips.read(session, requests)
+        current = {key: self._resolve_segment(key, payloads) for key in keys}
         if len(clips) != len(requests):
             raise ValueError("bulk WAV loader returned the wrong clip count")
         clip_map = dict(zip(requests, clips, strict=True))
@@ -145,7 +84,9 @@ class DatabaseBatchSource:
         style_groups = tuple(
             _fetched_group(group, clip_map) for group in planned.style_groups
         )
-        return FetchedBatch(examples, voice_groups, style_groups)
+        return self.collator.collate(
+            FetchedBatch(examples, voice_groups, style_groups)
+        )
 
     @staticmethod
     def _resolve_segment(

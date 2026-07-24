@@ -4,6 +4,8 @@ from uuid import UUID
 import torch
 from torch import Tensor
 
+from shared.db.audio.ranges import WavClip
+
 
 @dataclass(frozen=True, order=True)
 class SegmentKey:
@@ -129,6 +131,37 @@ class PlannedBatch:
     def __post_init__(self) -> None:
         if not self.examples:
             raise ValueError("planned batch must contain reconstruction examples")
+
+
+@dataclass(frozen=True)
+class FetchedExample:
+    plan: PlannedExample
+    text: str
+    phonemes: str
+    target_clip: WavClip
+    style_prompt: str | None
+    voice_prompt: str | None
+    speaker_id: str | None
+    language: str | None
+
+
+@dataclass(frozen=True)
+class FetchedEmbeddingView:
+    plan: EmbeddingViewPlan
+    clip: WavClip
+
+
+@dataclass(frozen=True)
+class FetchedEmbeddingGroup:
+    group_id: str
+    views: tuple[FetchedEmbeddingView, ...]
+
+
+@dataclass(frozen=True)
+class FetchedBatch:
+    examples: tuple[FetchedExample, ...]
+    voice_groups: tuple[FetchedEmbeddingGroup, ...]
+    style_groups: tuple[FetchedEmbeddingGroup, ...]
 
 
 @dataclass(frozen=True)

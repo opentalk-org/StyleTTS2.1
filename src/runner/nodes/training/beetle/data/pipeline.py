@@ -2,30 +2,14 @@ from ..config.training import BeetleConfig
 from .audio import AudioPreprocessor
 from .collate import BatchCollator, Tokenizer
 from .index import DatabaseSegmentIndex
+from .loader import DatabaseBatchLoader
 from .prefetch import (
     BoundedBatchPrefetcher,
     DataPipelineState,
     PrefetchCallbacks,
 )
-from .records import BeetleBatch, PlannedBatch
 from .sampling import ContinuousBatchPlanner
 from .sampling import DistributedShard
-from .source import DatabaseBatchSource, FetchedBatch
-
-
-class DatabaseBatchLoader:
-    def __init__(self, source: DatabaseBatchSource, collator: BatchCollator) -> None:
-        self.source = source
-        self.collator = collator
-
-    def fetch(self, planned: PlannedBatch) -> FetchedBatch:
-        return self.source.fetch(planned)
-
-    def collate(self, fetched: FetchedBatch) -> BeetleBatch:
-        return self.collator.collate(fetched)
-
-    def close(self) -> None:
-        self.source.close()
 
 
 def build_data_pipeline(
@@ -55,13 +39,8 @@ def build_data_pipeline(
         grouping=config.data.grouping,
         shard=shard,
     )
-    source = DatabaseBatchSource.from_database(
+    loader = DatabaseBatchLoader.from_database(
         index,
-        config.data.prefetch.audio_cache_bytes,
-        config.data.prefetch.audio_fetch_workers,
-    )
-    loader = DatabaseBatchLoader(
-        source,
         BatchCollator(
             preprocessor,
             phoneme_tokenizer,
@@ -70,6 +49,8 @@ def build_data_pipeline(
             config.architecture.language.values,
             config.adversarial.segment_samples // config.audio.hop_length,
         ),
+        config.data.prefetch.audio_cache_bytes,
+        config.data.prefetch.audio_fetch_workers,
     )
     return BoundedBatchPrefetcher(
         planner=planner,

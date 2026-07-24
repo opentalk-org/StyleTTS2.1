@@ -3,23 +3,15 @@ import threading
 from dataclasses import dataclass
 from typing import Protocol
 
+from .loader import DatabaseBatchLoader
 from .records import BeetleBatch, PlannedBatch
 from .sampling import ContinuousBatchPlanner, PlannedWindowBatch, PlannerState
-from .source import FetchedBatch
 
 TrainingBatch = BeetleBatch
 
 
 class PrefetchCallbacks(Protocol):
     def check_cancel(self) -> None: ...
-
-
-class PlannedBatchLoader(Protocol):
-    def fetch(self, planned: PlannedBatch) -> FetchedBatch: ...
-
-    def collate(self, fetched: FetchedBatch) -> TrainingBatch: ...
-
-    def close(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -54,7 +46,7 @@ class BoundedBatchPrefetcher:
     def __init__(
         self,
         planner: ContinuousBatchPlanner,
-        loader: PlannedBatchLoader,
+        loader: DatabaseBatchLoader,
         callbacks: PrefetchCallbacks,
         window_size: int,
         maximum_decoded_bytes: int,
@@ -189,9 +181,8 @@ class BoundedBatchPrefetcher:
         planned: PlannedWindowBatch,
         decoded_bytes: int,
     ) -> _QueuedBatch:
-        fetched = self.loader.fetch(planned.batch)
         return _QueuedBatch(
-            self.loader.collate(fetched),
+            self.loader.load(planned.batch),
             planned.state_after,
             decoded_bytes,
         )

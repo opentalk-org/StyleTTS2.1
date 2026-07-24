@@ -7,8 +7,12 @@ from torch import Tensor
 
 from ..config.data import AugmentationConfig
 from .audio import AudioPreprocessor, ProcessedAudio
-from .records import BeetleBatch
-from .source import FetchedBatch, FetchedEmbeddingGroup, FetchedExample
+from .records import (
+    BeetleBatch,
+    FetchedBatch,
+    FetchedEmbeddingGroup,
+    FetchedExample,
+)
 
 
 class Tokenizer(Protocol):
