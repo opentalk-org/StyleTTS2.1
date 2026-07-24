@@ -1,5 +1,6 @@
 from collections import defaultdict
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -7,8 +8,33 @@ from sqlalchemy.orm import Session
 from shared.db.audio.pack_store import ObjectStore
 from shared.db.audio.catalog import get_audio_files_bulk
 from shared.db.audio.ranges.cache import AudioFileCache, StoredWavLocation
-from shared.db.audio.ranges.types import SegmentReadRequest
 from shared.db.audio.ranges.wav import WavClip, WavTimeRange, slice_wav_ranges
+from shared.db.settings import crud as settings_crud
+from shared.storage import S3ObjectStore
+
+
+@dataclass(frozen=True)
+class SegmentReadRequest:
+    audio_file_id: UUID
+    start: float
+    end: float
+
+    def __post_init__(self) -> None:
+        if self.start < 0 or self.end <= self.start:
+            raise ValueError("segment read range must be positive and ordered")
+
+
+def bulk_read_wav_segments(
+    session: Session,
+    requests: list[SegmentReadRequest],
+    worker_count: int,
+) -> list[WavClip]:
+    store = S3ObjectStore(settings_crud.object_store_config(session))
+    reader = BulkWavReader(store, None, worker_count)
+    try:
+        return reader.read(session, tuple(requests))
+    finally:
+        reader.close()
 
 
 class BulkWavReader:

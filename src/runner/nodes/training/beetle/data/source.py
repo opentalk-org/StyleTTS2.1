@@ -9,8 +9,8 @@ from shared.db.audio.ranges import (
     AudioFileCache,
     BulkWavReader,
     SegmentReadRequest,
+    WavClip,
 )
-from shared.db.audio.ranges.wav import WavClip
 from shared.db.audio import crud as audio_crud
 from shared.db.connection import database_session
 from shared.db.settings import crud as settings_crud
