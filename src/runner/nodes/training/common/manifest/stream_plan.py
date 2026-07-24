@@ -71,19 +71,6 @@ def write_stream_plan(path: Path, plan: StreamPlan) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
-def read_stream_plan(path: Path) -> StreamPlan:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    buckets = [
-        StreamBucket(
-            bucket_id=UUID(str(row["bucket_id"])),
-            audio_ids=[UUID(str(audio_id)) for audio_id in row["audio_ids"]],
-            byte_length=int(row["byte_length"]),
-        )
-        for row in payload["buckets"]
-    ]
-    return StreamPlan(buckets=buckets)
-
-
 def _dominant_speaker(audio_ids: list[UUID], speaker_of: dict[UUID, str]) -> str:
     counts = Counter(speaker_of[audio_id] for audio_id in audio_ids)
     speaker, _ = counts.most_common(1)[0]

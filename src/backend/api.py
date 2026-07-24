@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.artifacts import router as artifacts_router
 from backend.assets import router as assets_router
 from backend.audio import router as audio_router
-from backend.audio.api import waveform_service
+from backend.audio.content_api import waveform_service
 from backend.checkpoints import router as checkpoints_router
 from backend.datasets import router as datasets_router
 from backend.jobs import router as jobs_router

@@ -137,14 +137,6 @@ def segment_phon(segment: dict[str, Any]) -> str:
     return ""
 
 
-def segment_speaker_id(segment: dict[str, Any]) -> str:
-    annotations = segment["annotations"]
-    assert isinstance(annotations, dict), "segment annotations must be an object"
-    if annotations["speaker_id"] and str(annotations["speaker_id"]).strip():
-        return str(annotations["speaker_id"]).strip()
-    return "-"
-
-
 def inter_word_silences(segment: dict[str, Any], max_seconds: float) -> list[float]:
     times = segment.get("word_times") or []
     ordered = sorted(times, key=lambda pair: float(pair[0]))

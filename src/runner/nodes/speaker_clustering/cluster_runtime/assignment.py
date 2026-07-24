@@ -151,16 +151,6 @@ def decide(
     )
 
 
-def prototype_update_mask(decisions: list[AssignmentDecision]) -> np.ndarray:
-    return np.asarray(
-        [
-            decision.outcome is SpeakerAssignmentOutcome.ACCEPTED
-            for decision in decisions
-        ],
-        dtype=np.bool_,
-    )
-
-
 def _decision(
     outcome: SpeakerAssignmentOutcome,
     cluster_id: int | None,

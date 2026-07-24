@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
-from hashlib import blake2b
-from heapq import heapreplace, heappush
 from math import log
-from struct import pack
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
@@ -28,12 +25,6 @@ class AssignmentAuditRow:
     true_label: str | None
     centroid_score: float | None
     second_score: float | None
-
-
-@dataclass(frozen=True)
-class AuditSampleKey:
-    segment_id: str
-    stratum: str
 
 
 class LabeledAuditMetrics(BaseModel):
@@ -105,44 +96,6 @@ def compute_labeled_metrics(
             sorted(cluster for cluster, count in cluster_label_counts.items() if count > 1)
         ),
     )
-
-
-def deterministic_sample_ids(
-    rows: Iterable[AuditSampleKey], size: int, seed: int
-) -> list[str]:
-    if size < 0:
-        raise ValueError("audit sample size must be non-negative")
-    if size == 0:
-        return []
-    by_stratum: dict[str, list[tuple[int, str]]] = defaultdict(list)
-    for row in rows:
-        priority = _sample_priority(row, seed)
-        heap = by_stratum[row.stratum]
-        item = (-priority, row.segment_id)
-        if len(heap) < size:
-            heappush(heap, item)
-        elif priority < -heap[0][0]:
-            heapreplace(heap, item)
-    ordered = {
-        stratum: [segment_id for _priority, segment_id in sorted(heap, reverse=True)]
-        for stratum, heap in by_stratum.items()
-    }
-    result: list[str] = []
-    offset = 0
-    strata = sorted(ordered)
-    while len(result) < size:
-        added = False
-        for stratum in strata:
-            values = ordered[stratum]
-            if offset < len(values):
-                result.append(values[offset])
-                added = True
-                if len(result) == size:
-                    break
-        if not added:
-            break
-        offset += 1
-    return result
 
 
 def _distinct_counts(
@@ -223,10 +176,3 @@ def _pairs(count: int) -> int:
 def _ratio(numerator: int, denominator: int) -> float | None:
     return None if denominator == 0 else numerator / denominator
 
-
-def _sample_priority(row: AuditSampleKey, seed: int) -> int:
-    stratum = row.stratum.encode()
-    segment_id = row.segment_id.encode()
-    payload = pack("!16sI", seed.to_bytes(16, "big", signed=True), len(stratum))
-    payload += stratum + pack("!I", len(segment_id)) + segment_id
-    return int.from_bytes(blake2b(payload, digest_size=16).digest())

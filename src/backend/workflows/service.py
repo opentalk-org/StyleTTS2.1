@@ -3,8 +3,6 @@ import os
 from pathlib import Path
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from pydantic import ValidationError
-
 from runner.graphs import build_inline_graph
 from shared.db.workflows.schemas import WorkflowDefinition, WorkflowLaunchSource, WorkflowRead
 from shared.schemas import GraphNodeRequest, InlineGraphRunRequest
@@ -25,25 +23,16 @@ def _examples_dir() -> Path:
 
 
 def load_example_workflows() -> list[WorkflowRead]:
-    """Read the ``workflows/*.json`` example definitions fresh from disk.
-
-    Called per request so edits to the folder show up without a backend or
-    database restart. Files that are missing, malformed, or not valid workflow
-    definitions are skipped rather than failing the whole listing.
-    """
     examples: list[WorkflowRead] = []
     for path in sorted(_examples_dir().glob("*.json")):
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            definition = WorkflowDefinition.model_validate(payload["data"])
-        except (OSError, KeyError, TypeError, ValueError, ValidationError):
-            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        definition = WorkflowDefinition.model_validate(payload["data"])
         examples.append(
             WorkflowRead(
                 id=uuid5(NAMESPACE_URL, f"workflow-example:{path.name}"),
-                name=str(payload.get("name") or path.stem),
+                name=str(payload["name"]),
                 data=definition,
-                hidden=bool(payload.get("hidden", False)),
+                hidden=bool(payload["hidden"]),
             )
         )
     return examples

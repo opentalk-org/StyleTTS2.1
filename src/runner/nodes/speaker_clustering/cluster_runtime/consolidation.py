@@ -11,8 +11,8 @@ from runner.nodes.speaker_clustering.cluster_runtime.assignment_runtime import (
     prototype_neighbor_ids,
 )
 from runner.nodes.speaker_clustering.edge_shards import EdgeBlock
-from runner.nodes.speaker_clustering.cluster_runtime.prototypes import (
-    build_prototype_store,
+from runner.nodes.speaker_clustering.cluster_runtime.prototypes import build_prototype_store
+from runner.nodes.speaker_clustering.cluster_runtime.support_pairs import (
     consolidate_labels_on_disk,
 )
 from runner.nodes.speaker_clustering.shard_reader import EmbeddingBlock

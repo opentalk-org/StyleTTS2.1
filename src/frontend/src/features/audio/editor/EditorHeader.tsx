@@ -77,7 +77,7 @@ export function EditorHeader({
             <button
               title="Copy audio ID"
               onClick={async () => {
-                if (!(await copyText(file.id))) return;
+                await copyText(file.id);
                 setCopied(true);
                 showToast("Audio ID copied");
                 window.setTimeout(() => setCopied(false), 1200);
@@ -152,7 +152,7 @@ export function EditorHeader({
           <div className="flex items-center justify-between border-b border-line px-4 py-2">
             <div className="text-[13px] font-bold text-txt">Audio metadata</div>
             <Button variant="ghost" size="sm" icon={metadataCopied ? "check" : "copy"} onClick={async () => {
-              if (!(await copyText(metadataJson))) return;
+              await copyText(metadataJson);
               setMetadataCopied(true);
               showToast("Metadata copied");
               window.setTimeout(() => setMetadataCopied(false), 1200);

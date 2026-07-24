@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -12,21 +11,7 @@ from runner.nodes.speaker_clustering.cluster_runtime.prototype_blocks import (
     finalize_prototype_statistics,
     normalize_prototype_vectors,
 )
-from runner.nodes.speaker_clustering.cluster_runtime.support_pairs import (
-    consolidate_labels as consolidate_labels,
-    consolidate_labels_on_disk as consolidate_labels_on_disk,
-)
 from runner.nodes.speaker_clustering.shard_reader import EmbeddingBlock
-
-
-@dataclass(frozen=True)
-class PrototypeStatistics:
-    vectors: np.ndarray
-    member_counts: np.ndarray
-    duration_seconds: np.ndarray
-    dispersion: np.ndarray
-    suspicious: np.ndarray
-    exemplar_ids: np.ndarray
 
 
 class PrototypeStore:
@@ -115,56 +100,6 @@ class PrototypeStore:
             values.flush()
 
 
-def prototype_statistics(
-    vectors: np.ndarray,
-    labels: np.ndarray,
-    durations: np.ndarray,
-    max_members: int,
-    max_dispersion: float,
-) -> PrototypeStatistics:
-    item_count, dimension = vectors.shape
-    sums = np.zeros((item_count, dimension), dtype=np.float32)
-    counts = np.zeros(item_count, dtype=np.int64)
-    total_durations = np.zeros(item_count, dtype=np.float64)
-    valid = labels >= 0
-    np.add.at(sums, labels[valid], vectors[valid])
-    np.add.at(counts, labels[valid], 1)
-    np.add.at(total_durations, labels[valid], durations[valid])
-    prototypes = _normalize_prototypes(sums, counts)
-    normalized_vectors = _normalize_rows(vectors)
-    scores = np.zeros(item_count, dtype=np.float32)
-    scores[valid] = np.einsum(
-        "bd,bd->b", normalized_vectors[valid], prototypes[labels[valid]]
-    )
-    distances = cosine_distances(scores)
-    dispersion_sums = np.zeros(item_count, dtype=np.float32)
-    np.add.at(dispersion_sums, labels[valid], distances[valid])
-    dispersion = np.divide(
-        dispersion_sums,
-        counts,
-        out=np.zeros(item_count, dtype=np.float32),
-        where=counts > 0,
-    )
-    suspicious = (counts > max_members) | ((counts > 0) & (dispersion > max_dispersion))
-    exemplar_ids = np.full(item_count, -1, dtype=np.int64)
-    exemplar_scores = np.full(item_count, -np.inf, dtype=np.float32)
-    _update_exemplars(
-        exemplar_ids,
-        exemplar_scores,
-        labels[valid],
-        np.flatnonzero(valid),
-        scores[valid],
-    )
-    return PrototypeStatistics(
-        vectors=prototypes,
-        member_counts=counts,
-        duration_seconds=total_durations,
-        dispersion=dispersion,
-        suspicious=suspicious,
-        exemplar_ids=exemplar_ids,
-    )
-
-
 def build_prototype_store(
     block_factory: Callable[[], Iterable[EmbeddingBlock]],
     labels: np.ndarray,
@@ -218,18 +153,6 @@ def build_prototype_store(
     )
     store.flush(check_cancel)
     return store
-
-
-def _normalize_prototypes(vectors: np.ndarray, counts: np.ndarray) -> np.ndarray:
-    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-    normalized = np.empty_like(vectors, dtype=np.float32)
-    normalized.fill(0.0)
-    return np.divide(
-        vectors,
-        norms,
-        out=normalized,
-        where=(counts[:, np.newaxis] > 0) & (norms > 0.0),
-    )
 
 
 def _normalize_rows(vectors: np.ndarray) -> np.ndarray:

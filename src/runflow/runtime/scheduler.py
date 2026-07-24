@@ -100,11 +100,6 @@ class WindowedScheduler:
             node_id: asyncio.Queue(maxsize=node.runtime.queue_max_size)
             for node_id, node in self.graph.nodes.items()
         }
-        # Spread the total in-flight memory budget across node queues so resident payload
-        # bytes are bounded regardless of item size (64x1 MB and 1x500 MB both respect it),
-        # replacing per-node queue_max_size as the memory guard. queue_max_size stays as a
-        # secondary count cap. Per-queue budget can be smaller than one big item; that's
-        # fine — WeightBudget still admits one item at a time, so it never deadlocks.
         per_queue_budget = self._total_memory_budget_bytes() // len(self.queues)
         self.budgets = {node_id: WeightBudget(per_queue_budget) for node_id in self.queues}
         self.join_buffers.clear()

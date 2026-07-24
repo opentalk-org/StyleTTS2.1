@@ -23,7 +23,7 @@ class AudioSegmentRead(BaseModel):
     text: str
     phon: str
     annotations: AudioAnnotations
-    type_: str = "manual"
+    type_: str
     alignment: list[WordAlignment] | None = None
 
 
@@ -34,7 +34,7 @@ class AudioSegmentWrite(BaseModel):
     text: str
     phon: str
     annotations: AudioAnnotations
-    type_: str = "manual"
+    type_: str
     alignment: list[WordAlignment] | None = None
 
 

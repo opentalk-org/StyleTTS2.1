@@ -117,7 +117,9 @@ export function WorkflowInspector() {
               title="Copy logs"
               disabled={!log?.content}
               onClick={async () => {
-                if (log?.content && (await copyText(log.content))) showToast("Node logs copied");
+                if (!log?.content) throw new Error("node log content is unavailable");
+                await copyText(log.content);
+                showToast("Node logs copied");
               }}
               className="absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-md border border-line bg-panel text-txt-mute shadow-sm transition hover:text-txt disabled:opacity-40"
             >

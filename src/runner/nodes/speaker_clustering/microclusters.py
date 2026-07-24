@@ -31,20 +31,6 @@ class MicroclusterLabels:
         self.values.flush()
 
 
-def mutual_best_labels(
-    item_count: int,
-    accepted: np.ndarray,
-    edge_blocks: Iterable[EdgeBlock],
-) -> np.ndarray:
-    blocks, block_rows = _bounded_edge_blocks(edge_blocks)
-    best_neighbors = np.full(item_count, -1, dtype=np.int64)
-    best_scores = np.full(item_count, -np.inf, dtype=np.float32)
-    _find_best_neighbors(best_neighbors, best_scores, blocks, None)
-    labels = np.empty(item_count, dtype=np.int64)
-    _write_pair_labels(labels, best_neighbors, accepted, block_rows, None)
-    return labels
-
-
 def build_microcluster_labels(
     item_count: int,
     accepted: np.ndarray,

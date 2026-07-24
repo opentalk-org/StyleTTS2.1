@@ -64,10 +64,6 @@ def write_embedding_shard(rows: list[SpeakerEmbeddingRow]) -> bytes:
     return output.getvalue()
 
 
-def read_embedding_shard(data: bytes) -> pa.Table:
-    return pq.read_table(BytesIO(data), schema=EMBEDDING_SHARD_SCHEMA)
-
-
 def _arrow_row(row: SpeakerEmbeddingRow) -> dict[str, object]:
     if row.embedding is not None:
         if row.embedding.shape != (ECAPA_EMBEDDING_DIMENSION,):

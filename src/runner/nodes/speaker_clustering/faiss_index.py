@@ -2,16 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
 
 import faiss
 import numpy as np
 
 from runner.nodes.speaker_clustering.shard_reader import EmbeddingBlock
-from runner.nodes.speaker_clustering.shard_reader import iter_embedding_blocks
 from runner.nodes.speaker_clustering.reservoir import DeterministicVectorReservoir
-from runner.nodes.models import SpeakerEmbeddingSetRef
 
 
 @dataclass(frozen=True)
@@ -115,26 +112,6 @@ class SpeakerCandidateIndex:
         except RuntimeError:
             if self.settings.index_factory != "Flat":
                 raise
-
-
-def build_candidate_index(
-    embedding_set: SpeakerEmbeddingSetRef,
-    settings: FaissIndexSettings,
-    block_rows: int,
-    check_cancel: Callable[[], None] | None = None,
-) -> SpeakerCandidateIndex:
-    block_factory = partial(
-        iter_embedding_blocks,
-        embedding_set,
-        block_rows,
-        check_cancel,
-    )
-    return build_candidate_index_from_blocks(
-        block_factory,
-        dimension=embedding_set.dimension,
-        settings=settings,
-        check_cancel=check_cancel,
-    )
 
 
 def build_candidate_index_from_blocks(

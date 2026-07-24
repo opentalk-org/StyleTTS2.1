@@ -35,9 +35,8 @@ export function CheckpointRow({ checkpoint: c }: { checkpoint: Checkpoint }) {
   const copySymbols = async () => {
     const payload = symbolList.length ? symbolList.join(" ") : String(symbols ?? "");
     if (!payload) return;
-    const ok = await copyText(payload);
-    if (ok) showToast(`${symbols} symbols copied`);
-    else showToast("Could not copy symbols", undefined, "error");
+    await copyText(payload);
+    showToast(`${symbols} symbols copied`);
   };
 
   return (

@@ -157,7 +157,9 @@ export function AllLogsPopover({ onClose }: { onClose: () => void }) {
               icon="copy"
               disabled={!aggregate}
               onClick={async () => {
-                if (aggregate && (await copyText(aggregate))) showToast("Merged logs copied");
+                if (!aggregate) throw new Error("merged logs are unavailable");
+                await copyText(aggregate);
+                showToast("Merged logs copied");
               }}
             >
               Copy all

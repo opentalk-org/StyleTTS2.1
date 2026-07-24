@@ -7,19 +7,14 @@ from typing import Any
 from runflow.core.task import Task
 
 
-# Fallback size for a task input we can't measure (no nbytes / not bytes / lazy Path).
-# Sized for the common "many ~1 MB files" workload so unknown items are still bounded.
+# Unknown payloads need a nonzero weight or they bypass admission control.
 DEFAULT_ITEM_BYTES = 1 * 1024 * 1024
-# Fallback when no per-run budget is supplied (e.g. a scheduler driven directly from a
-# test). The runner fills RuntimeConfig.memory_budget_mb from detected RAM in practice.
 DEFAULT_TOTAL_BUDGET_BYTES = 4 * 1024 * 1024 * 1024
 
 _MAX_DEPTH = 3
 
 
 def _value_bytes(value: Any, depth: int = 0) -> int:
-    """Best-effort resident-memory estimate for one payload value. Returns 0 when
-    unknown; the caller substitutes a default so unknowns are never counted as free."""
     if value is None:
         return 0
     if isinstance(value, (bytes, bytearray, memoryview)):
@@ -46,9 +41,6 @@ def _value_bytes(value: Any, depth: int = 0) -> int:
 
 
 def estimate_task_bytes(task: Task, default_item_bytes: int = DEFAULT_ITEM_BYTES) -> int:
-    """Estimate a task's resident footprint by summing its inputs. An input we can't
-    measure counts as ``default_item_bytes`` rather than zero, so we never undercount
-    and risk OOM. Seed tasks (no inputs) cost ~nothing and are always admitted."""
     if not task.inputs:
         return 0
     total = 0
@@ -59,13 +51,7 @@ def estimate_task_bytes(task: Task, default_item_bytes: int = DEFAULT_ITEM_BYTES
 
 
 class WeightBudget:
-    """Async admission control by bytes, decoupled from the queue so the queue keeps its
-    native get/get_nowait/qsize/task_done. A producer acquires its task's weight before
-    enqueuing and it is released once the task is consumed, so outstanding weight equals
-    the bytes resident in (queue + in-flight batch) for that node.
-
-    Deadlock-safe: an item is admitted whenever nothing is outstanding, so a single item
-    larger than the whole budget still passes (serialized) instead of blocking forever."""
+    """Bound in-flight payload memory without deadlocking on one oversized item."""
 
     def __init__(self, budget_bytes: int) -> None:
         if budget_bytes <= 0:

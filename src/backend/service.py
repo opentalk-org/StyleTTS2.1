@@ -95,10 +95,7 @@ class BackendManager:
 
     async def remove_many(self, run_ids: list[str]) -> None:
         for run_id in run_ids:
-            try:
-                await self.remove(run_id)
-            except KeyError:
-                continue
+            await self.remove(run_id)
 
     async def remove_all(self) -> None:
         with database_session() as session:
@@ -200,11 +197,8 @@ class BackendManager:
             {"type": "runner_status", "status": (await self.list_statuses()).model_dump(mode="json")}
         )
         for run_id in run_ids:
-            try:
-                status = await self.status(run_id)
-                snapshot = await self.snapshot(run_id)
-            except (IncompatibleSnapshotError, KeyError):
-                continue
+            status = await self.status(run_id)
+            snapshot = await self.snapshot(run_id)
             await self._hub.broadcast_run(
                 run_id,
                 {

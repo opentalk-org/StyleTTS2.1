@@ -41,24 +41,13 @@ export function checkpointSymbols(checkpoint: Checkpoint | undefined): string[] 
 
 export function checkpointDecoderType(checkpoint: Checkpoint | undefined): string {
   if (!checkpoint) return "";
-  return String(checkpoint.metadata.decoder_type ?? checkpoint.metadata.decoder ?? "").trim().toLowerCase();
+  return String(checkpoint.metadata.decoder_type ?? "").trim().toLowerCase();
 }
 
 export function checkpointMultispeaker(checkpoint: Checkpoint | undefined): boolean | null {
   if (!checkpoint) return null;
   const raw = checkpoint.metadata.multispeaker;
   if (typeof raw === "boolean") return raw;
-  if (typeof raw === "string") {
-    const normalized = raw.trim().toLowerCase();
-    if (["true", "multi", "multispeaker"].includes(normalized)) return true;
-    if (["false", "single", "single_speaker"].includes(normalized)) return false;
-  }
-  const legacy = checkpoint.metadata.spkMode ?? checkpoint.metadata.speaker_mode;
-  if (typeof legacy === "string") {
-    const normalized = legacy.trim().toLowerCase();
-    if (normalized === "multi") return true;
-    if (normalized === "single") return false;
-  }
   return null;
 }
 

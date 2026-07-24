@@ -92,8 +92,6 @@ class RunExecution:
 
     def _context(self) -> ExecutionContext:
         request_config = self.request.context.config
-        # Auto-fill the memory budget from detected RAM when the request left it unset,
-        # so runs get a machine-appropriate default without any per-node tuning.
         memory_budget_mb = request_config.memory_budget_mb
         if memory_budget_mb is None:
             memory_budget_mb = default_memory_budget_mb()
