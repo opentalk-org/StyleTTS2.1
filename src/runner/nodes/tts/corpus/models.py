@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
+from uuid import UUID
 
 from runner.nodes.tts.voices import TtsEngine
 
@@ -36,3 +37,19 @@ class CorpusPlan:
     @property
     def jobs(self) -> tuple[CorpusJob, ...]:
         return self.piper_jobs + self.kokoro_jobs
+
+
+@dataclass(frozen=True, slots=True)
+class OtherCorpusJob:
+    engine: TtsEngine
+    stream_id: str
+    language: str
+    sentence_index: int
+    text: str
+    voice_id: str
+    reference_audio_id: UUID | None
+    source_key: str
+
+    @property
+    def dataset_name(self) -> str:
+        return f"tts_{self.engine.value}"
