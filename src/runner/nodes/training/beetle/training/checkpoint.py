@@ -11,7 +11,7 @@ from typing import Any, Protocol
 import torch
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..data.prefetch import DataPipelineState
+from ..data.pipeline import DataPipelineState
 from .reporting import ReportingState
 from .state import (
     LoopState,
@@ -19,7 +19,7 @@ from .state import (
     TrainingPhase,
 )
 
-CHECKPOINT_VERSION = 7
+CHECKPOINT_VERSION = 8
 _PAYLOAD_NAME = "payload.pt"
 _MANIFEST_NAME = "manifest.json"
 _LATEST_NAME = "latest.json"

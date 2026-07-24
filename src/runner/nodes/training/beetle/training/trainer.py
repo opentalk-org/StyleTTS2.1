@@ -2,7 +2,7 @@ import torch
 from torch import Tensor, nn
 
 from ..config.training import AdversarialConfig, TrainingConfig
-from ..data.prefetch import DataPipelineState
+from ..data.pipeline import DataPipelineState
 from ..data.records import BeetleBatch
 from ..data.sampling import derive_seed
 from ..losses.acoustic import (

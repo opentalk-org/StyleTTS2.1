@@ -1,9 +1,9 @@
 from .cuts import CutPlanner
 from .index import DatabaseSegmentIndex, EligibilityReport, TrainingPools
-from .pipeline import build_data_pipeline
-from .prefetch import (
-    BoundedBatchPrefetcher,
+from .pipeline import (
     DataPipelineState,
+    TrainingDataPipeline,
+    build_data_pipeline,
 )
 from .records import (
     BeetleBatch,
@@ -28,7 +28,7 @@ from .validation_types import (
 
 __all__ = [
     "BeetleBatch",
-    "BoundedBatchPrefetcher",
+    "TrainingDataPipeline",
     "ContinuousBatchPlanner",
     "DistributedShard",
     "CutPlanner",

@@ -1,6 +1,6 @@
 from torch import nn
 
-from ..data.prefetch import DataPipelineState
+from ..data.pipeline import DataPipelineState
 from .checkpoint import (
     CHECKPOINT_VERSION,
     CheckpointPayload,

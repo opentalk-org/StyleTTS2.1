@@ -2,7 +2,7 @@ import time
 from dataclasses import dataclass, replace
 from typing import Protocol
 
-from ..data.prefetch import DataPipelineState, TrainingBatch
+from ..data.pipeline import DataPipelineState, TrainingBatch
 from .callbacks import (
     CancellationRequested,
     TrainingCallbacks,
@@ -17,8 +17,6 @@ from .loop_events import (
     cancel_run,
     complete_step_work,
     finish_run,
-    skip_batch,
-    skip_optimizer_step,
 )
 from .reporting import (
     ForegroundCategory,
@@ -158,20 +156,11 @@ def run_continuously(
             lifecycle,
             timer,
         )
-    except Exception as error:
+    except Exception:
         elapsed, foreground = timer.snapshot()
         reporting.capture_partial_timing(elapsed, foreground)
-        if trainer.world_size > 1:
-            try:
-                lifecycle.reporter.fail()
-            except Exception:
-                pass
-            raise error
-        try:
-            lifecycle.reporter.fail()
-        except Exception:
-            pass
-        raise error
+        lifecycle.reporter.fail()
+        raise
 
 
 def _run_batch(
@@ -199,15 +188,11 @@ def _run_batch(
         state = replace(state, phase=TrainingPhase.DISCRIMINATOR_BACKWARD)
         announce(trainer, callbacks, state, (), timer)
         started_at = time.monotonic()
-        try:
-            discriminator_metrics = trainer.reduce_metrics(
-                trainer.discriminator_backward(batch)
-            )
-            timer.record(ForegroundCategory.COMPUTE, started_at)
-            validate_metrics(discriminator_metrics)
-        except FloatingPointError:
-            skip_batch(trainer, pipeline, callbacks, reporting, timer)
-            return
+        discriminator_metrics = trainer.reduce_metrics(
+            trainer.discriminator_backward(batch)
+        )
+        timer.record(ForegroundCategory.COMPUTE, started_at)
+        validate_metrics(discriminator_metrics)
         metrics += discriminator_metrics
         state = replace(
             state,
@@ -219,13 +204,9 @@ def _run_batch(
         state = replace(state, phase=TrainingPhase.GENERATOR_BACKWARD)
         announce(trainer, callbacks, state, (), timer)
     started_at = time.monotonic()
-    try:
-        generator_metrics = trainer.reduce_metrics(trainer.generator_backward(batch))
-        timer.record(ForegroundCategory.COMPUTE, started_at)
-        validate_metrics(generator_metrics)
-    except FloatingPointError:
-        skip_batch(trainer, pipeline, callbacks, reporting, timer)
-        return
+    generator_metrics = trainer.reduce_metrics(trainer.generator_backward(batch))
+    timer.record(ForegroundCategory.COMPUTE, started_at)
+    validate_metrics(generator_metrics)
     metrics += generator_metrics
     pipeline.mark_consumed()
     reporting.add_microstep(
@@ -269,20 +250,9 @@ def _complete_accumulation(
     if state.microstep > trainer.accumulation_steps:
         raise ValueError("microstep exceeds configured accumulation_steps")
     started_at = time.monotonic()
-    try:
-        step_metrics = trainer.reduce_metrics(
-            trainer.optimizer_step(state.optimizer_step)
-        )
-    except FloatingPointError:
-        timer.record(ForegroundCategory.COMPUTE, started_at)
-        skip_optimizer_step(
-            trainer,
-            pipeline,
-            callbacks,
-            reporting,
-            timer,
-        )
-        return
+    step_metrics = trainer.reduce_metrics(
+        trainer.optimizer_step(state.optimizer_step)
+    )
     timer.record(ForegroundCategory.COMPUTE, started_at)
     validate_metrics(step_metrics)
     state = replace(
