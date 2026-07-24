@@ -31,6 +31,23 @@ EXPECTED_JOBS = {
 }
 
 
+def registered_stream_languages(
+    root: Path,
+    engine: TtsEngine,
+) -> dict[str, str]:
+    if engine is TtsEngine.ORPHEUS:
+        return {}
+    manifest = CorpusManifest.model_validate_json(
+        (root / "manifest.json").read_text(encoding="utf-8")
+    )
+    languages = ENGINE_LANGUAGES[engine]
+    return {
+        voice.identity: voice.language
+        for voice in manifest.voices
+        if voice.kind == "registered" and voice.language in languages
+    }
+
+
 def build_other_corpus_plan(
     root: Path,
     engine: TtsEngine,

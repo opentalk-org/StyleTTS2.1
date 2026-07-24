@@ -1,6 +1,9 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+import io
 from uuid import UUID
+
+import soundfile as sf
 
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
@@ -14,6 +17,7 @@ class RegisteredReference:
     language: str
     audio_file_id: UUID
     transcript: str
+    sample_rate: int
     wav_bytes: bytes
 
 
@@ -57,6 +61,7 @@ def load_registered_references(
             language=stream_languages[stream],
             audio_file_id=row.id,
             transcript=str(row.segments[0]["text"]).strip(),
+            sample_rate=int(sf.info(io.BytesIO(wav_by_id[row.id])).samplerate),
             wav_bytes=wav_by_id[row.id],
         )
         for stream, row in selected.items()
