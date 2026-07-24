@@ -15,11 +15,7 @@ class ResourceWaiter:
 
 @dataclass
 class ResourcePool:
-    """Small async resource allocator.
-
-    It allows unrelated nodes to run concurrently, while limiting shared things
-    such as io slots, cpu workers, accelerator slots, vram budget, etc.
-    """
+    """Coordinate concurrent access to declared resource capacities."""
 
     limits: dict[str, float]
     _used: dict[str, float] = field(default_factory=dict)
@@ -36,10 +32,7 @@ class ResourcePool:
             return False
 
         for key, amount in policy.requirements().items():
-            limit = self.limits.get(key)
-            if limit is None:
-                # Unknown resources are treated as unlimited labels.
-                continue
+            limit = self.limits[key]
             if self._used.get(key, 0.0) + amount > limit:
                 return False
 
@@ -69,7 +62,7 @@ class ResourcePool:
             try:
                 await self._condition.wait_for(lambda: self._can_acquire(policy) and not self._has_prior_waiter(waiter))
             finally:
-                self._waiters.pop(ticket, None)
+                del self._waiters[ticket]
 
             exclusive_key = policy.exclusive_key()
             if exclusive_key:
@@ -82,10 +75,13 @@ class ResourcePool:
         async with self._condition:
             exclusive_key = policy.exclusive_key()
             if exclusive_key:
-                self._exclusive_in_use.discard(exclusive_key)
+                self._exclusive_in_use.remove(exclusive_key)
 
             for key, amount in policy.requirements().items():
-                self._used[key] = max(0.0, self._used.get(key, 0.0) - amount)
+                used = self._used[key]
+                if amount > used:
+                    raise RuntimeError(f"released {key} exceeds leased capacity")
+                self._used[key] = used - amount
 
             self._condition.notify_all()
 

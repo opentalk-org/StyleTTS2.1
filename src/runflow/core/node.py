@@ -19,7 +19,7 @@ def _merge_runtime_defaults(defaults: dict[str, Any], overrides: Any) -> dict[st
         return defaults
     merged = dict(defaults)
     for key, value in dict(overrides).items():
-        current = merged.get(key)
+        current = merged[key]
         if isinstance(current, dict) and isinstance(value, dict):
             merged[key] = {**current, **value}
             continue

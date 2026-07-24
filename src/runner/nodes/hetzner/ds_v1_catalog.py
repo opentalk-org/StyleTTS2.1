@@ -32,10 +32,7 @@ class CatalogRefresh:
         if not self._process.is_alive():
             self._process.join()
             return
-        try:
-            os.killpg(self._process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        os.killpg(self._process.pid, signal.SIGTERM)
         self._process.join(timeout=5)
         if self._process.is_alive():
             self._process.kill()

@@ -14,10 +14,7 @@ from runner.nodes.text.runtime.phonemize import DEFAULT_PUNCTUATION_MARKS, phone
 
 class PhonemizeSettings(StrictSettings):
     language: str = "pl"
-    tie: bool = True
     punctuation_marks: str = Field(default=DEFAULT_PUNCTUATION_MARKS, min_length=1, max_length=512)
-    espeak_workers: int = Field(default=4, ge=1, le=64)
-    align_threads: int = Field(default=8, ge=1, le=64)
 
 
 class PhonemizeSegmentsSettings(PhonemizeSettings):
@@ -40,7 +37,6 @@ class PhonemizeSegmentsNode(Node):
             metadata = {
                 **audio.metadata,
                 "phoneme_language": self.settings.language,
-                "tie": self.settings.tie,
                 "punctuation_marks": self.settings.punctuation_marks,
                 "phoneme_mode": self.settings.mode,
             }
@@ -68,8 +64,5 @@ def _phonemize_texts(texts: list[str], settings: PhonemizeSettings) -> list[str]
     return phonemize_texts(
         texts,
         language=settings.language,
-        tie=settings.tie,
         punctuation_marks=settings.punctuation_marks,
-        espeak_workers=settings.espeak_workers,
-        align_threads=settings.align_threads,
     )

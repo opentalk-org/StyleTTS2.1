@@ -1,32 +1,19 @@
-import os
-import os.path as osp
-
-import copy
-import math
-
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import yaml
+from munch import Munch
 
 from runner.nodes.training.styletts.finetune.training.modules.asr.models import ASRCNN
-from runner.nodes.training.styletts.finetune.training.modules.jdc import JDCNet
-
-from runner.nodes.training.styletts.finetune.training.modules.diffusion.sampler import KDiffusion, LogNormalDistribution
-from runner.nodes.training.styletts.finetune.training.modules.diffusion.modules import Transformer1d, StyleTransformer1d
 from runner.nodes.training.styletts.finetune.training.modules.diffusion.diffusion import AudioDiffusionConditional
-
+from runner.nodes.training.styletts.finetune.training.modules.diffusion.modules import StyleTransformer1d, Transformer1d
+from runner.nodes.training.styletts.finetune.training.modules.diffusion.sampler import KDiffusion, LogNormalDistribution
 from runner.nodes.training.styletts.finetune.training.modules.discriminators import MultiPeriodDiscriminator, MultiResSpecDiscriminator, WavLMDiscriminator
-
 from runner.nodes.training.styletts.finetune.training.modules.encoders import TextEncoder, StyleEncoder
-from runner.nodes.training.styletts.finetune.training.modules.predictors import ProsodyPredictor
 from runner.nodes.training.styletts.finetune.training.modules.hifigan import Decoder as HifiganDecoder
 from runner.nodes.training.styletts.finetune.training.modules.istftnet import Decoder as IstftnetDecoder
-from runner.nodes.training.styletts.finetune.training.modules.plbert import load_plbert
+from runner.nodes.training.styletts.finetune.training.modules.jdc import JDCNet
+from runner.nodes.training.styletts.finetune.training.modules.predictors import ProsodyPredictor
 from runner.nodes.training.styletts.finetune.training.state_dict_resize import merge_state_dict_with_dim0_resize
-
-from munch import Munch
-import yaml
 
 _ASR_N_TOKEN_DIM0_KEYS = frozenset({
     "ctc_linear.2.linear_layer.weight",
@@ -58,14 +45,15 @@ _CHECKPOINT_DIM0_RESIZE_KEYS_BY_MODULE = {
         "module.asr_s2s.project_to_n_symbols.bias",
     }),
 }
+
+
 def _merge_checkpoint_state_with_dim0_resize(module_name, model_module, ckpt_sd):
-    resize_keys = _CHECKPOINT_DIM0_RESIZE_KEYS_BY_MODULE.get(module_name)
-    if not resize_keys:
+    if module_name not in _CHECKPOINT_DIM0_RESIZE_KEYS_BY_MODULE:
         return ckpt_sd
     return merge_state_dict_with_dim0_resize(
         model_module,
         ckpt_sd,
-        resize_keys,
+        _CHECKPOINT_DIM0_RESIZE_KEYS_BY_MODULE[module_name],
         error_scope=module_name,
     )
 
@@ -88,109 +76,38 @@ def _maybe_normalize_module_prefix(model_module, state_dict):
     }
 
 
-def _filter_state_dict_by_model_shape(model_module, state_dict):
-    model_state = model_module.state_dict()
-    filtered_state = {}
-    skipped_missing = []
-    skipped_shape = []
-    for key, value in state_dict.items():
-        if key not in model_state:
-            skipped_missing.append(key)
-            continue
-        if model_state[key].shape != value.shape:
-            skipped_shape.append(
-                (key, tuple(value.shape), tuple(model_state[key].shape))
-            )
-            continue
-        filtered_state[key] = value
-    return filtered_state, skipped_missing, skipped_shape
-
-
-def _preview_list(values, limit=5):
-    if not values:
-        return []
-    if len(values) <= limit:
-        return values
-    return values[:limit] + [f"... ({len(values) - limit} more)"]
-
-
-def _preview_shape_mismatches(values, limit=5):
-    if not values:
-        return []
-    if len(values) <= limit:
-        return values
-    return values[:limit] + [("...", "...", f"{len(values) - limit} more")]
-
-
-def _warn_checkpoint_mismatch(module_name, skipped_missing, skipped_shape, missing_keys, unexpected_keys):
-    if skipped_missing:
-        print(
-            f"[checkpoint] {module_name}: dropped missing-in-model keys: "
-            f"{_preview_list(skipped_missing)}"
-        )
-    if skipped_shape:
-        print(
-            f"[checkpoint] {module_name}: dropped shape-mismatch keys: "
-            f"{_preview_shape_mismatches(skipped_shape)}"
-        )
-    if missing_keys:
-        print(
-            f"[checkpoint] {module_name}: model keys left uninitialized from checkpoint: "
-            f"{_preview_list(missing_keys)}"
-        )
-    if unexpected_keys:
-        print(
-            f"[checkpoint] {module_name}: unexpected checkpoint keys after filtering: "
-            f"{_preview_list(unexpected_keys)}"
-        )
-
-
 def load_F0_models(path):
     F0_model = JDCNet(num_class=1, seq_len=192)
-    if path is not None:
-        params = torch.load(path, map_location='cpu', weights_only=False)['net']
-        F0_model.load_state_dict(params)
-    else:
-        print("No F0 model found, using default F0 model from checkpoint")
-    
+    params = torch.load(path, map_location='cpu', weights_only=False)['net']
+    F0_model.load_state_dict(params)
     F0_model.train()
-    
     return F0_model
 
+
+def _load_asr_config(path_or_dict):
+    if isinstance(path_or_dict, dict):
+        return path_or_dict["model_params"]
+    with open(path_or_dict) as config_file:
+        return yaml.safe_load(config_file)["model_params"]
+
+
 def load_ASR_models(ASR_MODEL_PATH, ASR_MODEL_CONFIG):
-    def _load_config(path_or_dict):
-        if isinstance(path_or_dict, dict):
-            config = path_or_dict
-        else:
-            with open(path_or_dict) as f:
-                config = yaml.safe_load(f)
-        return config["model_params"]
-
-    def _load_model(model_config, model_path):
-        model = ASRCNN(**model_config)
-        if model_path is not None:
-            params = torch.load(model_path, map_location='cpu', weights_only=False)['model']
-            adapted = merge_state_dict_with_dim0_resize(
-                model,
-                params,
-                _ASR_N_TOKEN_DIM0_KEYS,
-                error_scope="ASR",
-            )
-            model.load_state_dict(adapted)
-        else:
-            print("No ASR model found, using default ASR model from checkpoint")
-        return model
-
-    asr_model_config = _load_config(ASR_MODEL_CONFIG)
-    asr_model = _load_model(asr_model_config, ASR_MODEL_PATH)
-    _ = asr_model.train()
-
+    asr_model = ASRCNN(**_load_asr_config(ASR_MODEL_CONFIG))
+    params = torch.load(ASR_MODEL_PATH, map_location='cpu', weights_only=False)['model']
+    adapted = merge_state_dict_with_dim0_resize(
+        asr_model,
+        params,
+        _ASR_N_TOKEN_DIM0_KEYS,
+        error_scope="ASR",
+    )
+    asr_model.load_state_dict(adapted)
+    asr_model.train()
     return asr_model
 
 def build_model(args, text_aligner, pitch_extractor, bert):
     assert args.decoder.type in ['istftnet', 'hifigan'], 'Decoder type unknown'
-    generator_checkpointing = bool(getattr(args.decoder, "gradient_checkpointing", False))
-    discriminators_checkpointing = bool(getattr(args, "discriminators_checkpointing", False))
+    generator_checkpointing = bool(args.decoder.gradient_checkpointing)
+    discriminators_checkpointing = bool(args.discriminators_checkpointing)
     
     if args.decoder.type == "istftnet":
         decoder = IstftnetDecoder(dim_in=args.hidden_dim, style_dim=args.style_dim, dim_out=args.n_mels,
@@ -269,35 +186,30 @@ def build_model(args, text_aligner, pitch_extractor, bert):
     
     return nets
 
-def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_modules=[]):
+def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
     state = torch.load(path, map_location="cpu", weights_only=False)
     params = state["net"]
     for key in model:
-        if key in params and key not in ignore_modules:
-            print("%s loaded" % key)
-            normalized_params = _maybe_normalize_module_prefix(model[key], params[key])
-            adapted_params = _merge_checkpoint_state_with_dim0_resize(key, model[key], normalized_params)
-            filtered_params, skipped_missing, skipped_shape = _filter_state_dict_by_model_shape(
-                model[key],
-                adapted_params,
+        if key in ignore_modules:
+            continue
+        normalized_params = _maybe_normalize_module_prefix(model[key], params[key])
+        adapted_params = _merge_checkpoint_state_with_dim0_resize(key, model[key], normalized_params)
+        load_result = model[key].load_state_dict(adapted_params, strict=False)
+        missing_keys = [
+            item for item in load_result.missing_keys
+            if not item.endswith("dummy_tensor")
+        ]
+        unexpected_keys = [
+            item for item in load_result.unexpected_keys
+            if not item.endswith("dummy_tensor")
+        ]
+        if missing_keys or unexpected_keys:
+            raise ValueError(
+                f"checkpoint module {key} does not match: "
+                f"missing={missing_keys}, unexpected={unexpected_keys}"
             )
-            load_result = model[key].load_state_dict(filtered_params, strict=False)
-            missing_keys = [
-                missing_key for missing_key in load_result.missing_keys
-                if not missing_key.endswith("dummy_tensor")
-            ]
-            unexpected_keys = [
-                unexpected_key for unexpected_key in load_result.unexpected_keys
-                if not unexpected_key.endswith("dummy_tensor")
-            ]
-            _warn_checkpoint_mismatch(
-                key,
-                skipped_missing,
-                skipped_shape,
-                missing_keys,
-                unexpected_keys,
-            )
-    _ = [model[key].eval() for key in model]    
+    for module in model.values():
+        module.eval()
 
     if not load_only_params:
         optimizer.load_state_dict(state["optimizer"])

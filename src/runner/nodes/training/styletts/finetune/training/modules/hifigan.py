@@ -1,13 +1,13 @@
 import torch
+import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Conv1d, ConvTranspose1d
 from torch.nn.utils import remove_weight_norm, weight_norm
 
-from .decoder_blocks import AdaINResBlock1, DecoderBackbone, SourceModuleHnNSF
+from .decoder_blocks import AdaINResBlock1, DecoderBackbone
+from .source_generator import SourceModuleHnNSF
 from .utils import checkpoint_with_mixed_precision, init_weights
-
-import numpy as np
 
 LRELU_SLOPE = 0.1
 

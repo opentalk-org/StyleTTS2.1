@@ -165,7 +165,4 @@ def _plbert_config(symbol_count: int) -> dict[str, Any]:
 
 
 def _relative_weight(root: Path, weight: Path) -> str:
-    try:
-        return weight.resolve().relative_to(root.resolve()).as_posix()
-    except ValueError:
-        return weight.name
+    return weight.resolve().relative_to(root.resolve()).as_posix()

@@ -1,42 +1,31 @@
+import logging
+import os
 import random
-from contextlib import nullcontext
-import yaml
+import shutil
 import time
-from munch import Munch
+from contextlib import nullcontext
+
 import numpy as np
 import torch
-from torch import nn
 import torch.nn.functional as F
-import torchaudio
-import librosa
-import click
-import shutil
-import warnings
-warnings.simplefilter('ignore')
-import os
+import yaml
+from munch import Munch
 
-from runner.nodes.training.common.mlflow_run import TrackerRun
 from runflow.runtime.cancellation import check_cancel
-from runner.nodes.training.styletts.finetune.training.meldataset import build_dataloader
-
-from runner.nodes.training.styletts.finetune.training.modules.slmadv import SLMAdversarialLoss
-from runner.nodes.training.styletts.finetune.training.modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
-
-from .optimizers import build_optimizer
-from .utils import length_to_mask, mask_from_lens, maximum_path, get_data_path_list, recursive_munch, log_norm
-from .loading import load_ASR_models, load_F0_models, build_model, load_checkpoint, load_plbert
-from .losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss, MultiResolutionSTFTLoss
+from runner.nodes.training.common.mlflow_run import TrackerRun
 from runner.nodes.training.styletts.finetune.checkpoint_publish import publish_finetune_epoch_bundle_from_training_config
 from runner.nodes.training.styletts.finetune.studio.finetune_mlflow_logger import FinetuneMlflowLogger
 from runner.nodes.training.styletts.finetune.studio.val_sample_export import export_finetune_val_wavs_for_studio
+from runner.nodes.training.styletts.finetune.training.meldataset import build_dataloader
+from runner.nodes.training.styletts.finetune.training.modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
+from .losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss, MultiResolutionSTFTLoss
+from .loading import build_model, load_ASR_models, load_checkpoint, load_F0_models
+from .modules.plbert import load_plbert
+from .modules.slmadv import SLMAdversarialLoss
+from .optimizers import build_optimizer
+from .utils import get_data_path_list, length_to_mask, log_norm, mask_from_lens, maximum_path, recursive_munch
 
-import logging
-from logging import StreamHandler
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-handler = StreamHandler()
-handler.setLevel(logging.DEBUG)
-logger.addHandler(handler)
 
 
 class MyDataParallel(torch.nn.DataParallel):
@@ -48,10 +37,7 @@ class MyDataParallel(torch.nn.DataParallel):
 
 
 def _has_external_checkpoint(path: str | None) -> bool:
-    if path is None:
-        return False
-    normalized = str(path).strip()
-    return normalized != "" and normalized.lower() != "none"
+    return path is not None
 
 
 def _to_scalar_float(value):
@@ -101,7 +87,7 @@ def train(config_path: str, *, run: TrackerRun) -> None:
 
     optimizer_params = Munch(config['optimizer_params'])
     symbols = config['symbols']
-    precision = config.get("precision", "fp32")
+    precision = config["precision"]
 
     train_list, val_list = get_data_path_list(train_path, val_path)
     device = 'cuda'
@@ -374,7 +360,7 @@ def train(config_path: str, *, run: TrackerRun) -> None:
                 gt = torch.stack(gt).detach()
                 st = torch.stack(st).detach()
                 if gt.size(-1) < 80:
-                    continue
+                    raise ValueError(f"training crop is too short: {gt.size(-1)}")
 
                 s = model.style_encoder(gt.unsqueeze(1))
                 s_dur = model.predictor_encoder(gt.unsqueeze(1))
@@ -475,10 +461,9 @@ def train(config_path: str, *, run: TrackerRun) -> None:
                 bad_terms = sorted(
                     term for term, value in loss_terms.items() if not np.isfinite(value)
                 )
-                print(
-                    f"Non-finite generator loss terms detected: bad={bad_terms} values={loss_terms}"
+                raise FloatingPointError(
+                    f"non-finite generator loss: bad={bad_terms} values={loss_terms}"
                 )
-                continue
             if use_grad_scaler:
                 scaler.scale(g_loss).backward()
                 optimizer.step('bert_encoder', scaler=scaler)
@@ -711,7 +696,7 @@ def train(config_path: str, *, run: TrackerRun) -> None:
                     p_en = torch.stack(p_en)
                     gt = torch.stack(gt).detach()
                     if gt.size(-1) < 80:
-                        continue
+                        raise ValueError(f"validation crop is too short: {gt.size(-1)}")
                     with torch.no_grad():
                         autocast_ctx = (
                             torch.autocast(device_type="cuda", dtype=autocast_dtype)
@@ -769,7 +754,9 @@ def train(config_path: str, *, run: TrackerRun) -> None:
 
         print('Epochs:', epoch + 1)
 
-        denom = max(1, iters_test)
+        if iters_test == 0:
+            raise ValueError("validation loader produced no batches")
+        denom = iters_test
         val_mel = loss_test / denom
         val_dur = loss_align / denom
         val_f0 = loss_f / denom
