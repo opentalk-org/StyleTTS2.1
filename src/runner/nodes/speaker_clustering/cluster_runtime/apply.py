@@ -13,7 +13,7 @@ from runner.nodes.models import SaveResult, SpeakerAuditRef, stable_id
 from shared.db import database_session
 from shared.db.assets import crud as asset_crud
 from shared.db.audio import crud as audio_crud
-from shared.db.audio.speaker_assignment_crud import AcceptedSpeakerAssignment
+from shared.db.audio.annotations import AcceptedSpeakerAssignment
 from shared.db.reviews import crud as review_crud
 from shared.db.reviews.schemas import ReviewState
 from shared.db.speakers import crud as speaker_crud

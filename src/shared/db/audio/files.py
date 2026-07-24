@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from shared.db.audio.catalog import get_audio_files_bulk
 from shared.db.audio.models import AudioFile
-from shared.db.audio.pack_crud import (
+from shared.db.audio.packed import (
     bulk_create_packed_audio_files,
     bulk_delete_packed_audio_files,
     bulk_read_packed_audio_files,
@@ -17,7 +17,7 @@ from shared.db.audio.pack_crud import (
     read_packed_audio_file,
     read_packed_audio_part,
 )
-from shared.db.audio.pack_prune import prune_fragmented_audio_packs
+from shared.db.audio.maintenance import prune_fragmented_audio_packs
 from shared.db.audio.pack_store import AudioPackConfig, ObjectStore
 from shared.db.audio.schemas import AudioCreate, AudioPartRead, AudioUpdate
 from shared.db.datasets.models import dataset_audio_files
