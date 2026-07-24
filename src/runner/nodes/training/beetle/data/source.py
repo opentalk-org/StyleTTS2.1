@@ -11,7 +11,7 @@ from shared.db.audio.ranges import (
     SegmentReadRequest,
 )
 from shared.db.audio.ranges.wav import WavClip
-from shared.db.audio.segments_crud import list_audio_segments_bulk
+from shared.db.audio import crud as audio_crud
 from shared.db.connection import database_session
 from shared.db.settings import crud as settings_crud
 from shared.storage import S3ObjectStore
@@ -45,7 +45,7 @@ class SharedSegmentBulkLoader:
         audio_file_ids: tuple[UUID, ...],
     ) -> dict[UUID, list[dict[str, Any]]]:
         with database_session() as session:
-            return list_audio_segments_bulk(session, audio_file_ids)
+            return audio_crud.list_audio_segments_bulk(session, audio_file_ids)
 
 
 class SharedClipBulkLoader:

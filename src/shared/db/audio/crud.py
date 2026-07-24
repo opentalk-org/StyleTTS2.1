@@ -1,11 +1,21 @@
 import uuid
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
-from typing import Any
 
-from sqlalchemy import Text, cast, desc, func, or_, select, text
-from sqlalchemy.orm import Session, defer
+from sqlalchemy.orm import Session
 
+from shared.db.audio.catalog import (
+    audio_bucket_locations,
+    audio_file_annotations,
+    count_audio_file_references,
+    get_audio_file,
+    get_audio_files_bulk,
+    list_audio_file_references_page,
+    list_audio_files,
+    list_audio_files_by_run,
+    search_audio_file_ids,
+    search_audio_files,
+)
 from shared.db.audio.delete_crud import bulk_delete_audio_files, delete_audio_file
 from shared.db.audio.models import AudioFile
 from shared.db.audio.pack_cleanup import purge_orphaned_audio_packs as purge_orphaned_audio_packs
@@ -20,142 +30,28 @@ from shared.db.audio.pack_crud import (
 )
 from shared.db.audio.pack_prune import prune_fragmented_audio_packs
 from shared.db.audio.pack_store import AudioPackConfig, ObjectStore
-from shared.db.audio.schemas import AudioBucketLocation, AudioCreate, AudioPartRead, AudioUpdate
+from shared.db.audio.schemas import AudioCreate, AudioPartRead, AudioUpdate
 from shared.db.audio.scores_crud import bulk_update_audio_scores
 from shared.db.audio.speaker_assignment_crud import (
     bulk_apply_speaker_assignments as bulk_apply_speaker_assignments,
 )
-from shared.db.audio.rows_crud import get_audio_files_bulk
-from shared.db.audio.references_crud import count_audio_file_references, list_audio_file_references_page
-from shared.db.audio.segment_references_crud import count_segment_references, list_segment_references_page
-from shared.db.audio.segments_crud import (
+from shared.db.audio.segment_catalog import (
+    count_segment_references,
+    list_segment_references_page,
+)
+from shared.db.audio.segments import (
+    bulk_replace_audio_segments,
     create_segment,
     delete_segment,
     list_audio_segments,
     list_audio_segments_bulk,
     replace_audio_segments,
-    bulk_replace_audio_segments,
     update_segment,
     update_segment_phonemes,
     update_segment_text,
 )
-from shared.db.common import many
 from shared.db.settings import crud as settings_crud
-from shared.db.datasets.models import Dataset
 from shared.storage import S3ObjectStore
-from shared.audio_annotations import AudioAnnotations
-
-
-def audio_file_annotations(item: AudioFile) -> AudioAnnotations:
-    return AudioAnnotations(
-        speaker_id=item.speaker_id,
-        score=item.score,
-        accuracy=item.accuracy,
-        metadata=dict(item.metadata_),
-    )
-
-
-def list_audio_files(session: Session) -> Sequence[AudioFile]:
-    return many(session, AudioFile)
-
-
-def list_audio_files_by_run(session: Session, run_id: str) -> Sequence[AudioFile]:
-    statement = (
-        select(AudioFile)
-        .where(AudioFile.metadata_["run_id"].astext == run_id)
-        .order_by(AudioFile.updated_at.asc())
-    )
-    return session.execute(statement).unique().scalars().all()
-
-
-def search_audio_files(
-    session: Session,
-    query: str,
-    dataset: str,
-    sort: str,
-    limit: int,
-    offset: int,
-    preview_limit: int = 8,
-) -> tuple[list[tuple[AudioFile, int, list[dict[str, Any]]]], int]:
-    """List audio files without loading their (potentially huge) ``segments`` column.
-
-    The full ``segments`` JSONB is deferred; the total segment count and a small
-    preview slice are computed in SQL so a row with thousands of aligned segments
-    costs the same as one with a handful.
-    """
-    filters = _audio_filters(query, dataset)
-    order = _audio_sort(sort)
-    segment_count = func.coalesce(func.jsonb_array_length(AudioFile.segments), 0).label("segment_count")
-    # preview_limit is caller-controlled (never user input), so inlining it in the jsonpath is safe.
-    preview_path = text(f"'$[0 to {max(preview_limit - 1, 0)}]'::jsonpath")
-    segment_preview = func.jsonb_path_query_array(AudioFile.segments, preview_path).label("segment_preview")
-
-    if sort == "segments":
-        # Ordering by segment count already forces reading every matched row's segments
-        # blob, so project the preview/count in the same pass — each blob is read once.
-        statement = select(AudioFile, segment_count, segment_preview).options(defer(AudioFile.segments))
-        for item in filters:
-            statement = statement.where(item)
-        statement = statement.order_by(order).limit(limit).offset(offset)
-    else:
-        # For cheap sorts, pick the page's ids first, THEN compute the segment preview/count
-        # for only those rows. If the jsonb projection sat directly under the ORDER BY/LIMIT,
-        # Postgres would detoast every *matched* row's (potentially huge) segments blob before
-        # the limit — turning a 100-row page into a full-table scan of TOAST.
-        page = select(AudioFile.id)
-        for item in filters:
-            page = page.where(item)
-        page = page.order_by(order).limit(limit).offset(offset).subquery()
-        statement = (
-            select(AudioFile, segment_count, segment_preview)
-            .join(page, AudioFile.id == page.c.id)
-            .options(defer(AudioFile.segments))
-            .order_by(order)
-        )
-
-    count_statement = select(func.count()).select_from(AudioFile)
-    for item in filters:
-        count_statement = count_statement.where(item)
-
-    rows = [(row[0], row[1], list(row[2] or [])) for row in session.execute(statement).all()]
-    total = session.execute(count_statement).scalar_one()
-    return rows, total
-
-
-def search_audio_file_ids(session: Session, query: str, dataset: str) -> list[uuid.UUID]:
-    statement = select(AudioFile.id)
-    for item in _audio_filters(query, dataset):
-        statement = statement.where(item)
-    return list(session.execute(statement).scalars().all())
-
-
-def get_audio_file(session: Session, audio_file_id: uuid.UUID) -> AudioFile:
-    return get_audio_files_bulk(session, [audio_file_id])[audio_file_id]
-
-
-def _audio_filters(query: str, dataset: str) -> list[Any]:
-    filters = []
-    if query:
-        pattern = f"%{query}%"
-        filters.append(or_(AudioFile.name.ilike(pattern), cast(AudioFile.metadata_, Text).ilike(pattern)))
-    if dataset == "unassigned":
-        filters.append(~AudioFile.datasets.any())
-    elif dataset != "all":
-        dataset_id = uuid.UUID(dataset)
-        filters.append(AudioFile.datasets.any(Dataset.id == dataset_id))
-    return filters
-
-
-def _audio_sort(sort: str):
-    if sort == "name":
-        return AudioFile.name
-    if sort == "duration":
-        return desc(AudioFile.duration)
-    if sort == "segments":
-        return desc(func.jsonb_array_length(AudioFile.segments))
-    if sort == "speaker_id":
-        return AudioFile.speaker_id
-    return desc(AudioFile.updated_at)
 
 
 def create_audio_file(
@@ -216,31 +112,6 @@ def bulk_read_audio_parts(
     store: ObjectStore | None = None,
 ) -> dict[uuid.UUID, bytes]:
     return bulk_read_packed_audio_parts(session, _object_store(session, store), requests)
-
-
-def audio_bucket_locations(
-    session: Session,
-    audio_file_ids: Sequence[uuid.UUID],
-) -> list[AudioBucketLocation]:
-    """Return the bucket file id and byte size for each audio id.
-
-    Lets callers group and size work by bucket (e.g. streaming a training set
-    bucket-by-bucket) without touching pack offsets. Order follows the request."""
-    statement = select(
-        AudioFile.id, AudioFile.bucket_file_id, AudioFile.byte_length
-    ).where(AudioFile.id.in_(audio_file_ids))
-    rows = {
-        audio_id: (bucket_file_id, byte_length)
-        for audio_id, bucket_file_id, byte_length in session.execute(statement)
-    }
-    return [
-        AudioBucketLocation(
-            audio_file_id=audio_file_id,
-            bucket_file_id=rows[audio_file_id][0],
-            byte_length=rows[audio_file_id][1],
-        )
-        for audio_file_id in audio_file_ids
-    ]
 
 
 def update_audio_file(

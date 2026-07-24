@@ -6,7 +6,7 @@ from uuid import UUID
 from torch import Tensor
 
 from shared.audio_annotations import AudioAnnotations
-from shared.db.audio.segment_references_crud import SegmentReference
+from shared.db.audio.segment_catalog import SegmentReference
 from shared.db.audio.ranges.wav import WavClip
 
 from .audio import ProcessedAudio

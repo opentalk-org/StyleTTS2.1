@@ -20,7 +20,7 @@ from shared.db.audio.ranges import (
     WavClip,
     bulk_read_wav_segments,
 )
-from shared.db.audio.segment_references_crud import SegmentCursor, SegmentReference
+from shared.db.audio.segment_catalog import SegmentCursor, SegmentReference
 
 
 PAGE_SIZE = 1_024

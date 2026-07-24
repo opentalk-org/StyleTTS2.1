@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from shared.db.assets.models import BucketFile
 from shared.db.audio.models import AudioFile
 from shared.db.audio.pack_store import AudioPackConfig, AudioPackWriter, ObjectStore
-from shared.db.audio.rows_crud import get_audio_files_bulk
+from shared.db.audio.catalog import get_audio_files_bulk
 from shared.db.audio.schemas import AudioCreate, AudioPartRead, AudioUpdate
 
 

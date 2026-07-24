@@ -5,8 +5,8 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from shared.audio_annotations import AudioAnnotations
-from shared.db.audio.rows_crud import get_audio_files_bulk
-from shared.db.audio.segments_crud import bulk_replace_audio_segments
+from shared.db.audio.catalog import get_audio_files_bulk
+from shared.db.audio.segments import bulk_replace_audio_segments
 
 
 @dataclass(frozen=True)

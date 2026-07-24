@@ -6,7 +6,7 @@ from typing import Protocol
 from uuid import UUID
 
 from shared.audio_annotations import AudioAnnotations
-from shared.db.audio.segment_references_crud import (
+from shared.db.audio.segment_catalog import (
     SegmentCursor,
     SegmentReference,
     count_segment_references,

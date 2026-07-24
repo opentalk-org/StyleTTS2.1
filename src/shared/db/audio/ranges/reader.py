@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from shared.db.audio.pack_store import ObjectStore
-from shared.db.audio.rows_crud import get_audio_files_bulk
+from shared.db.audio.catalog import get_audio_files_bulk
 from shared.db.audio.ranges.cache import AudioFileCache, StoredWavLocation
 from shared.db.audio.ranges.types import SegmentReadRequest
 from shared.db.audio.ranges.wav import WavClip, WavTimeRange, slice_wav_ranges
