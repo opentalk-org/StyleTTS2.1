@@ -20,7 +20,7 @@ from runner.nodes.audio_segments.writeback_helpers import (
 from runner.nodes.audio_segments.external_record import external_output, external_payload
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
-from shared.db.audio.external_crud import bulk_create_external_audio_files
+from shared.db.audio.external import bulk_create_external_audio_files
 from shared.db.audio.models import AudioFile
 from shared.db.audio.schemas import AudioCreate, AudioUpdate
 
