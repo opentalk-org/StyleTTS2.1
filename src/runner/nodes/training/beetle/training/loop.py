@@ -151,8 +151,12 @@ def run_continuously(
         reporting.capture_partial_timing(elapsed, foreground)
         return cancel_run(
             trainer,
+            pipeline,
+            callbacks,
+            checkpoint_manager,
             reporting,
             lifecycle,
+            timer,
         )
     except Exception as error:
         elapsed, foreground = timer.snapshot()

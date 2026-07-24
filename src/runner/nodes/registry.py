@@ -43,6 +43,7 @@ from runner.nodes.assets.training_assets import ResolveTrainingAssetsNode
 from runner.nodes.dataset_writeback import AddAudioToDatasetNode, AssignSpeakerNode, DeleteAudioRecordsNode, RemoveAudioFromDatasetNode
 from runner.nodes.datatypes import register_runner_types
 from runner.nodes.hetzner import HetznerDsV1ParquetAudioSourceNode, HetznerDsV2SourceNode
+from runner.nodes.libritts import LibriTtsSourceNode
 from runner.nodes.mos import BuildMosTrainingManifestNode, MosModelTrainingNode, PredictMosScoreNode
 from runner.nodes.smart_turn import SmartTurnPredictNode
 from runner.nodes.speaker_clustering import (
@@ -85,6 +86,7 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         AudioSourceNode,
         HetznerDsV1ParquetAudioSourceNode,
         HetznerDsV2SourceNode,
+        LibriTtsSourceNode,
         YouTubeAudioSourceNode,
         LoadAudioNode,
         SaveAudioRecordNode,

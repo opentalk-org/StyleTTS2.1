@@ -10,7 +10,6 @@ def compile_acoustic(models: AcousticModels) -> None:
         models.decoder.encode,
         *models.decoder.decode,
         models.generator,
-        models.discriminators,
     )
     for module in modules:
         # Module.compile targets nn.Module._call_impl, so independently compiled

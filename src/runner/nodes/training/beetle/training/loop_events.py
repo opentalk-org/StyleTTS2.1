@@ -41,6 +41,8 @@ class SkippedBatchPipeline(LifecyclePipeline, Protocol):
 class LifecycleTrainer(LoopStateOwner, Protocol):
     def loop_state(self) -> LoopState: ...
 
+    def discard_step(self) -> None: ...
+
     def checkpoint_payload(
         self,
         loop: LoopState,
@@ -219,8 +221,12 @@ def save_checkpoint(
 
 def cancel_run(
     trainer: LifecycleTrainer,
+    pipeline: LifecyclePipeline,
+    callbacks: TrainingCallbacks,
+    checkpoint_manager: CheckpointManager,
     reporting: StepObservationTracker,
     lifecycle: TrainingLifecycle,
+    timer: StepTimer,
 ) -> LoopState:
     flush_error: Exception | None = None
     try:
@@ -228,10 +234,31 @@ def cancel_run(
         reporting.mark_flushed()
     except Exception as error:
         flush_error = error
+    state = trainer.loop_state()
+    if state.phase is not TrainingPhase.READY or state.microstep:
+        trainer.discard_step()
+        reporting.discard_accumulation()
+        state = advance_sampler(state, pipeline.state_dict())
+        state = replace(
+            state,
+            microstep=0,
+            phase=TrainingPhase.READY,
+            discriminator_metrics=(),
+        )
+        trainer.set_loop_state(state)
+    state = save_checkpoint(
+        trainer,
+        pipeline,
+        callbacks,
+        checkpoint_manager,
+        reporting.snapshot(),
+        state,
+        timer,
+    )
     if flush_error is not None:
         lifecycle.reporter.fail()
         raise flush_error
-    return trainer.loop_state()
+    return state
 
 
 def complete_step_work(
