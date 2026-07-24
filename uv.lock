@@ -2572,6 +2572,20 @@ wheels = [
 ]
 
 [[package]]
+name = "g2pw"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "onnxruntime" },
+    { name = "tqdm" },
+    { name = "transformers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/26/34/16dacd28c9797276e2149ce95196844561a8b8e3585c478dcd5d593c40fc/g2pw-0.1.1.tar.gz", hash = "sha256:1bc11692347d6a2daa54b238aa1cf71c4da45c18ee280ba7ac0425f83dc10a6a", size = 267115, upload-time = "2022-09-01T10:08:27.33Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/5d/12ab1e62f4d9bc2dcd4dfaf599047eacd87988f5c2f1b011fbfacb19673d/g2pw-0.1.1-py3-none-any.whl", hash = "sha256:de85b86773ad30f77320da1859e1f6c9a46ccf1c2ede24b35c9b9cfb2c7a197b", size = 283181, upload-time = "2022-09-01T10:08:25.176Z" },
+]
+
+[[package]]
 name = "gdown"
 version = "6.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -5925,6 +5939,16 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/15/98/bc24aa72dca6514af02d8d92a774f690a48912b8a626fa3496ac0a3c7492/piper_tts-1.5.0-cp39-abi3-win_amd64.whl", hash = "sha256:d05f0985143f180046d2765eed505a1f5ea1fc30cee4c9c18edb68ef58cce204", size = 14273715, upload-time = "2026-07-17T20:06:20.755Z" },
 ]
 
+[package.optional-dependencies]
+zh = [
+    { name = "g2pw" },
+    { name = "requests" },
+    { name = "sentence-stream" },
+    { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux'" },
+    { name = "torch", version = "2.12.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
+    { name = "unicode-rbnf" },
+]
+
 [[package]]
 name = "platformdirs"
 version = "4.10.0"
@@ -7887,7 +7911,7 @@ dependencies = [
     { name = "openai-whisper" },
     { name = "orpheus-speech" },
     { name = "pandas" },
-    { name = "piper-tts" },
+    { name = "piper-tts", extra = ["zh"] },
     { name = "psycopg", extra = ["binary"] },
     { name = "pyarrow" },
     { name = "pydantic" },
@@ -7945,7 +7969,7 @@ requires-dist = [
     { name = "openai-whisper", specifier = ">=20240930" },
     { name = "orpheus-speech" },
     { name = "pandas", specifier = ">=2.2" },
-    { name = "piper-tts", specifier = ">=1.5.0" },
+    { name = "piper-tts", extras = ["zh"], specifier = ">=1.5.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pyarrow", specifier = ">=20.0" },
     { name = "pydantic", specifier = ">=2.9" },
@@ -8173,6 +8197,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7d/31/f2289ce78b9b473d582568c234e104d2a342fd658cc288a7553d83bb8595/semantic_version-2.10.0.tar.gz", hash = "sha256:bdabb6d336998cbb378d4b9db3a4b56a1e3235701dc05ea2690d9a997ed5041c", size = 52289, upload-time = "2022-05-26T13:35:23.454Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6a/23/8146aad7d88f4fcb3a6218f41a60f6c2d4e3a72de72da1825dc7c8f7877c/semantic_version-2.10.0-py2.py3-none-any.whl", hash = "sha256:de78a3b8e0feda74cabc54aab2da702113e33ac9d9eb9d2389bcf1f58b7d9177", size = 15552, upload-time = "2022-05-26T13:35:21.206Z" },
+]
+
+[[package]]
+name = "sentence-stream"
+version = "1.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "regex" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a8/69/f3d048692aac843f41102507f6257138392ec841c16718f0618d27051caf/sentence_stream-1.3.0.tar.gz", hash = "sha256:b06261d35729de97df9002a1cc708f9a888f662b80d5d6d008ee69c51f36041b", size = 10049, upload-time = "2026-01-08T16:25:06.873Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/48/b6/48339c109bab6f54ff608800773b9425464c6cbf7fd3f2ba01294d78be3d/sentence_stream-1.3.0-py3-none-any.whl", hash = "sha256:7448d131315b85eefdf238e5edd9caa62899acf609145d5e0e10c09812eb8a1d", size = 8707, upload-time = "2026-01-08T16:25:05.918Z" },
 ]
 
 [[package]]
@@ -9639,6 +9675,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ba/19/1b9b0e29f30c6d35cb345486df41110984ea67ae69dddbc0e8a100999493/tzdata-2026.2.tar.gz", hash = "sha256:9173fde7d80d9018e02a662e168e5a2d04f87c41ea174b139fbef642eda62d10", size = 198254, upload-time = "2026-04-24T15:22:08.651Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ce/e4/dccd7f47c4b64213ac01ef921a1337ee6e30e8c6466046018326977efd95/tzdata-2026.2-py2.py3-none-any.whl", hash = "sha256:bbe9af844f658da81a5f95019480da3a89415801f6cc966806612cc7169bffe7", size = 349321, upload-time = "2026-04-24T15:22:05.876Z" },
+]
+
+[[package]]
+name = "unicode-rbnf"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/57/1f/d952ba97832647e608700c36b22d1c4476016076c9ed1ce74ae814bea55a/unicode_rbnf-2.4.0.tar.gz", hash = "sha256:6d2f12a7581c69ea6218ee61fafcd2da46e1f9986bdcd0964c5151f7c2a938ac", size = 89069, upload-time = "2025-10-07T20:59:41.3Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4b/21/82f5d435808cba330668a8b69efb180e3ef9739d4998e8cd0381e8c9cb23/unicode_rbnf-2.4.0-py3-none-any.whl", hash = "sha256:0176b30ac9b7b84008d7dc0f23078055dc10d2671fdadfab5747943243e20e2d", size = 141691, upload-time = "2025-10-07T20:59:40.139Z" },
 ]
 
 [[package]]
