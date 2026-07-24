@@ -64,7 +64,7 @@ class TrainingConfig(StrictConfigModel):
     precision: Precision
     acoustic_prediction: ScheduledWeight
     generator_optimizer: OptimizerConfig
-    discriminator_optimizer: OptimizerConfig | None
+    discriminator_optimizer: OptimizerConfig
     losses: LossWeights
 
 
@@ -156,6 +156,4 @@ class BeetleConfig(StrictConfigModel):
             raise ValueError(
                 "adversarial segment_samples must align with posterior downsampling"
             )
-        if self.training.discriminator_optimizer is None:
-            raise ValueError("training requires discriminator_optimizer")
         return self

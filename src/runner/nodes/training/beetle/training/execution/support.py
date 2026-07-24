@@ -16,19 +16,13 @@ from ..distributed import DistributedRuntime
 from ..loop import LoopIntervals, run_continuously
 from ..reporting import ReportingCompletion
 from ..runtime import RunPreparation
-from ..conditional_inputs import SpeakerIndex
+from ..conditional.input_types import SpeakerIndex
 from ..state import LoopState, TrainingPhase
 from ..validation import ValidationRunner
 from .services import build_runtime_services
 
 class RuntimeCallbacks(TrainingCallbacks, Protocol):
     def report_index_progress(self, scanned: int, total: int) -> None: ...
-
-
-class IgnoredTokenizer:
-    def encode(self, text: str) -> list[int]:
-        del text
-        return []
 
 
 class DatabaseSpeakerIndex(SpeakerIndex):

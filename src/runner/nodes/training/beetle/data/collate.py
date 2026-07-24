@@ -183,7 +183,7 @@ def _ids(tokenizer: Tokenizer, text: str) -> Tensor:
 
 def _pad_ids(values: tuple[Tensor, ...]) -> tuple[Tensor, Tensor]:
     lengths = torch.tensor([value.numel() for value in values], dtype=torch.long)
-    maximum = int(lengths.max()) if len(values) else 0
+    maximum = int(lengths.max())
     output = torch.zeros(len(values), maximum, dtype=torch.long)
     for index, value in enumerate(values):
         output[index, : value.numel()] = value
@@ -192,7 +192,7 @@ def _pad_ids(values: tuple[Tensor, ...]) -> tuple[Tensor, Tensor]:
 
 def _pad_waveforms(values: tuple[Tensor, ...]) -> tuple[Tensor, Tensor]:
     lengths = torch.tensor([value.shape[-1] for value in values], dtype=torch.long)
-    maximum = int(lengths.max()) if len(values) else 0
+    maximum = int(lengths.max())
     output = torch.zeros(len(values), 1, maximum)
     for index, value in enumerate(values):
         output[index, :, : value.shape[-1]] = value

@@ -20,7 +20,6 @@ from .index import DatabaseSegmentIndex
 from .records import (
     BeetleBatch,
     EmbeddingGroupPlan,
-    EmbeddingViewPlan,
     FetchedBatch,
     FetchedEmbeddingGroup,
     FetchedEmbeddingView,

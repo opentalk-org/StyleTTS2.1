@@ -236,7 +236,7 @@ def _complete_accumulation(
     trainer: TrainingController,
     pipeline: TrainingPipeline,
     callbacks: TrainingCallbacks,
-    checkpoint_manager: CheckpointManager | None,
+    checkpoint_manager: CheckpointManager,
     reporting: StepObservationTracker,
     lifecycle: TrainingLifecycle,
     timer: StepTimer,
@@ -263,8 +263,6 @@ def _complete_accumulation(
     )
     trainer.set_loop_state(state)
     reporting.begin_step(state.optimizer_step, step_metrics)
-    if checkpoint_manager is None:
-        raise RuntimeError("checkpoint manager is required at optimizer boundaries")
     complete_step_work(
         trainer,
         pipeline,

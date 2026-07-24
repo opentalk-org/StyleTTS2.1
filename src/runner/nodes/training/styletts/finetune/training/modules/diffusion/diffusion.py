@@ -10,6 +10,7 @@ from tqdm import tqdm
 from .utils import *
 from .sampler import *
 
+
 class Model1d(nn.Module):
     def __init__(self, unet_type: str = "base", **kwargs):
         super().__init__()
@@ -80,4 +81,3 @@ class AudioDiffusionConditional(Model1d):
             embedding_scale=5.0,
         )
         return super().sample(*args, **{**default_kwargs, **kwargs})
-

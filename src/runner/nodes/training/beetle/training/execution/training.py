@@ -18,7 +18,7 @@ from ..runtime import (
     prepare_run,
 )
 from ..setup import build_latent_flow_ema, build_optimizers
-from ..conditional_inputs import DefaultConditionalInputBuilder
+from ..conditional.inputs import DefaultConditionalInputBuilder
 from ..state import LoopState
 from ..trainer import BeetleTrainer
 from ..validation import TrainingValidationEvaluator, ValidationRuntime

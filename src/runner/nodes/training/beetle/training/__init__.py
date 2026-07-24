@@ -8,8 +8,9 @@ from .callbacks import (
 )
 from .checkpoint import CHECKPOINT_VERSION, CheckpointManager, CheckpointPayload
 from .execution import RuntimeCallbacks, run_training
+from .loss_schedules import StepSchedule
 from .loop import LoopIntervals, TrainingController, TrainingPipeline, run_continuously
-from .optimizer import OptimizerSet, ScheduledOptimizer, StepSchedule
+from .optimizer import OptimizerSet, ScheduledOptimizer
 from .state import LoopState, TrainingPhase
 from .trainer import BeetleTrainer
 

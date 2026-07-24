@@ -19,7 +19,6 @@ from .modules.discriminators import (
     build_styletts_discriminators,
 )
 from .modules.generator import Generator
-from .modules.segments import AlignedSegments
 from .parameters import ParameterReport, count_unique_parameters
 
 
@@ -76,30 +75,6 @@ class AcousticModels(nn.Module):
             source_generator,
         )
 
-    def reconstruct_conditioned(
-        self,
-        mel: Tensor,
-        frame_mask: Tensor,
-        decoder_acoustic: AcousticFeatures,
-        predicted_ratio: float,
-        latent_generator: torch.Generator,
-        source_generator: torch.Generator,
-    ) -> AcousticSynthesis:
-        posterior = self.audio_encoder(mel, frame_mask, latent_generator)
-        acoustic = self.feature_linear(
-            posterior.latent,
-            posterior.mask,
-            frame_mask,
-        )
-        decoder_acoustic = decoder_acoustic.blend(acoustic, predicted_ratio)
-        return self._render(
-            posterior,
-            acoustic,
-            decoder_acoustic,
-            frame_mask,
-            source_generator,
-        )
-
     def _render(
         self,
         posterior: AudioPosterior,
@@ -133,99 +108,6 @@ class AcousticModels(nn.Module):
             sample_mask=sample_mask,
         )
 
-    def reconstruct_segment(
-        self,
-        mel: Tensor,
-        frame_mask: Tensor,
-        segment: AlignedSegments,
-        target_acoustic: AcousticFeatures,
-        predicted_ratio: float,
-        latent_generator: torch.Generator,
-        source_generator: torch.Generator,
-    ) -> AcousticSynthesis:
-        posterior = self.audio_encoder(mel, frame_mask, latent_generator)
-        acoustic = self.feature_linear(
-            posterior.latent,
-            posterior.mask,
-            frame_mask,
-        )
-        decoder_acoustic = target_acoustic.blend(acoustic, predicted_ratio)
-        segment_frame_mask = segment.frames(frame_mask)
-        decoded = self.decoder(
-            segment.latents(posterior.latent),
-            segment.frames(decoder_acoustic.f0),
-            segment.frames(decoder_acoustic.n),
-            segment.latents(posterior.mask),
-            segment_frame_mask,
-        )
-        waveform = self.generator(
-            decoded.features,
-            decoded.f0,
-            decoded.mask,
-            source_generator,
-        )
-        sample_mask = segment_frame_mask.repeat_interleave(
-            self.output_hop,
-            dim=-1,
-        )
-        return AcousticSynthesis(
-            posterior=posterior,
-            acoustic=acoustic,
-            decoded=decoded,
-            waveform=waveform,
-            sample_mask=sample_mask,
-        )
-
-    def reconstruct_window(
-        self,
-        encoder_mel: Tensor,
-        encoder_mask: Tensor,
-        frame_mask: Tensor,
-        target_acoustic: AcousticFeatures,
-        predicted_ratio: float,
-        posterior_start: int,
-        latent_frames: int,
-        latent_generator: torch.Generator,
-        source_generator: torch.Generator,
-    ) -> AcousticSynthesis:
-        full = self.audio_encoder(encoder_mel, encoder_mask, latent_generator)
-        posterior_end = posterior_start + latent_frames
-        if posterior_end > full.latent.shape[-1]:
-            raise ValueError("requested posterior window exceeds encoder output")
-        posterior = AudioPosterior(
-            mean=full.mean[:, :, posterior_start:posterior_end],
-            log_scale=full.log_scale[:, :, posterior_start:posterior_end],
-            latent=full.latent[:, :, posterior_start:posterior_end],
-            mask=full.mask[:, :, posterior_start:posterior_end],
-        )
-        acoustic = self.feature_linear(
-            posterior.latent,
-            posterior.mask,
-            frame_mask,
-        )
-        decoder_acoustic = target_acoustic.blend(acoustic, predicted_ratio)
-        decoded = self.decoder(
-            posterior.latent,
-            decoder_acoustic.f0,
-            decoder_acoustic.n,
-            posterior.mask,
-            frame_mask,
-        )
-        waveform = self.generator(
-            decoded.features,
-            decoded.f0,
-            decoded.mask,
-            source_generator,
-        )
-        sample_mask = frame_mask.repeat_interleave(self.output_hop, dim=-1)
-        return AcousticSynthesis(
-            posterior=posterior,
-            acoustic=acoustic,
-            decoded=decoded,
-            waveform=waveform,
-            sample_mask=sample_mask,
-        )
-
     def acoustic_targets(self, mel: Tensor, frame_mask: Tensor) -> AcousticFeatures:
         return AcousticFeatures(
             f0=self.f0_target(mel, frame_mask),
@@ -237,14 +119,6 @@ class AcousticModels(nn.Module):
 
     def n_target(self, mel: Tensor, frame_mask: Tensor) -> Tensor:
         return log_mel_l2_energy(mel, frame_mask)
-
-    def segment_f0_target(
-        self,
-        mel: Tensor,
-        frame_mask: Tensor,
-        segment: AlignedSegments,
-    ) -> Tensor:
-        return self.f0_target(segment.frames(mel), segment.frames(frame_mask))
 
     def parameter_report(self) -> ParameterReport:
         inference_modules = (

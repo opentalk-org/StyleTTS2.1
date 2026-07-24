@@ -89,7 +89,6 @@ def generator_loss(disc_outputs):
 
     return loss, gen_losses
 
-""" https://dl.acm.org/doi/abs/10.1145/3573834.3574506 """
 def discriminator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
     loss = 0
     for dr, dg in zip(disc_real_outputs, disc_generated_outputs):

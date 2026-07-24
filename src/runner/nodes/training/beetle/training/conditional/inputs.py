@@ -2,37 +2,42 @@ from dataclasses import replace
 
 import torch
 
-from ..config import BeetleConfig
-from ..config.training import ConditioningObjectiveConfig
-from ..data.records import BeetleBatch
-from ..data.sampling import derive_seed
-from ..losses.conditional import ConditionalLossInput
-from ..models.modules.conditioning import ConditionVectors, align_phoneme_tokens
-from ..models.modules.latent_flow import sample_flow_training_case
-from ..models.conditional import ConditionalModels
-from .conditional_context import (
+from ...config import BeetleConfig
+from ...config.training import ConditioningObjectiveConfig
+from ...data.records import BeetleBatch
+from ...data.sampling import derive_seed
+from ...losses.conditional import ConditionalLossInput
+from ...models.conditional import ConditionalModels
+from ...models.modules.conditioning import ConditionVectors, align_phoneme_tokens
+from ...models.modules.latent_flow import sample_flow_training_case
+from ..aligned_window import (
+    apply_window_ranges,
+    sample_window_ranges,
+    seconds_to_latent_frames,
+)
+from ..distributed import DistributedRuntime
+from ..setup import ConditionalInputBuilder
+from ..state import LoopState
+from .context import (
     encode_audio_context,
     encode_text_context,
     encode_view_latents,
 )
-from .conditional_features import (
+from .features import (
     ConditionalAcousticTargets,
     WaveformMelExtractor,
     acoustic_statistics,
     group_ids,
     style_weights,
 )
-from .conditional_input_types import CoreConditionalInput, SpeakerIndex
-from .conditional_input_types import build_rate_conditions, keep_all_conditions, require_batch
-from .conditional_statistics import ContextAvailability, conditional_batch_statistics
-from .aligned_window import (
-    apply_window_ranges,
-    sample_window_ranges,
-    seconds_to_latent_frames,
+from .input_types import (
+    CoreConditionalInput,
+    SpeakerIndex,
+    build_rate_conditions,
+    keep_all_conditions,
+    require_batch,
 )
-from .distributed import DistributedRuntime
-from .setup import ConditionalInputBuilder
-from .state import LoopState
+from .statistics import ContextAvailability, conditional_batch_statistics
 
 
 class DefaultConditionalInputBuilder(ConditionalInputBuilder):
@@ -289,10 +294,6 @@ class DefaultConditionalInputBuilder(ConditionalInputBuilder):
         )
 
     def _generator(self, loop: LoopState, label: str) -> torch.Generator:
-        seed = derive_seed(
-            self.config.runtime.seed,
-            loop.cycle,
-            loop.batch_index,
-            label,
+        return torch.Generator(device=self.device).manual_seed(
+            derive_seed(self.config.runtime.seed, loop.cycle, loop.batch_index, label)
         )
-        return torch.Generator(device=self.device).manual_seed(seed)

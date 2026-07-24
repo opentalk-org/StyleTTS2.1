@@ -4,13 +4,13 @@ import torch
 from torch import Tensor, nn
 from torchaudio.transforms import MelSpectrogram
 
-from ..config import BeetleConfig
-from ..data.records import BeetleBatch
-from ..models.acoustic import log_mel_l2_energy
-from ..models.modules.audio import AcousticFeatures
-from ..models.modules.decoder import DecoderOutput
-from ..models.modules.embeddings import AcousticStatistics
-from ..models.conditional import ConditionalModels
+from ...config import BeetleConfig
+from ...data.records import BeetleBatch
+from ...models.acoustic import log_mel_l2_energy
+from ...models.conditional import ConditionalModels
+from ...models.modules.audio import AcousticFeatures
+from ...models.modules.decoder import DecoderOutput
+from ...models.modules.embeddings import AcousticStatistics
 
 
 @dataclass(frozen=True)
@@ -69,29 +69,6 @@ class WaveformMelExtractor(nn.Module):
         positions = torch.arange(maximum, device=waveform.device).unsqueeze(0)
         mask = (positions < frame_lengths.unsqueeze(1)).unsqueeze(1)
         return MelBatch(mel, mask)
-
-
-def expand_vector(values: Tensor, frames: int) -> Tensor:
-    return values.unsqueeze(2).expand(-1, -1, frames)
-
-
-def boundary_pool(
-    tokens: Tensor,
-    mask: Tensor,
-    available: Tensor,
-    counts: Tensor,
-    pre: bool,
-) -> Tensor:
-    lengths = mask.sum(dim=1)
-    positions = torch.arange(mask.shape[1], device=mask.device).unsqueeze(0)
-    selected = (
-        positions >= (lengths - counts).clamp_min(0).unsqueeze(1)
-        if pre
-        else positions < counts.unsqueeze(1)
-    )
-    selected = selected & mask & available.unsqueeze(1)
-    numeric = selected.unsqueeze(1).to(dtype=tokens.dtype)
-    return (tokens * numeric).sum(dim=2) / numeric.sum(dim=2).clamp_min(1)
 
 
 def group_ids(views: Tensor, device: torch.device) -> Tensor:

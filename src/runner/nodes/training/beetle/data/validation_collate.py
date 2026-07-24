@@ -42,11 +42,7 @@ def collate_validation_recording(
     style_prompt = _ids(text_tokenizer, stored.style_prompt or "", False)
     voice_prompt = _ids(text_tokenizer, stored.voice_prompt or "", False)
     language_id = config.architecture.language.values.index(stored.language)
-    segment_id = (
-        stored.segments[0].segment_id
-        if stored.segments
-        else f"validation-{stored.audio_file_id}"
-    )
+    segment_id = stored.segments[0].segment_id
     key = SegmentKey(stored.audio_file_id, 0, segment_id)
     frame_lengths = torch.tensor([original_frames], dtype=torch.long)
     waveform_lengths = torch.tensor(
@@ -62,7 +58,7 @@ def collate_validation_recording(
     prompt_voice = voice_prompt.unsqueeze(0)
     views = waveform.unsqueeze(1).repeat(1, 2, 1, 1)
     view_lengths = waveform_lengths.unsqueeze(1).repeat(1, 2)
-    speaker_id = stored.segments[0].speaker_id if stored.segments else None
+    speaker_id = stored.segments[0].speaker_id
     batch = BeetleBatch(
         waveform=waveform,
         mel=mel,
@@ -94,7 +90,7 @@ def collate_validation_recording(
         speaker_ids=(speaker_id,),
         recording_ids=(stored.audio_file_id,),
         style_group_ids=(str(stored.audio_file_id),),
-        voice_group_ids=(speaker_id or "",),
+        voice_group_ids=(speaker_id,),
     )
     return ValidationRecording(
         stored.audio_file_id,

@@ -4,13 +4,7 @@ from torch import Tensor, nn
 from ..config.training import AdversarialConfig, TrainingConfig
 from ..data.pipeline import DataPipelineState
 from ..data.records import BeetleBatch
-from ..data.sampling import derive_seed
-from ..losses.acoustic import (
-    masked_f0_smooth_l1,
-    masked_kl_standard_normal,
-    masked_n_smooth_l1,
-)
-from ..losses.adversarial import discriminator_step_loss, generator_step_loss
+from ..losses.adversarial import discriminator_step_loss
 from ..losses.conditional import compute_conditional_losses
 from ..models.model import AcousticModels, AcousticSynthesis
 from ..models.modules.audio import AcousticFeatures
@@ -18,7 +12,14 @@ from ..models.modules.segments import AlignedSegments
 from ..models.conditional import ConditionalModels
 from .callbacks import TrainingMetric
 from .checkpoint import CheckpointPayload
-from .acoustic_synthesis import AcousticBackwardMetrics, synthesize_training_posterior
+from .acoustic_synthesis import (
+    AcousticBackwardMetrics,
+    acoustic_backward,
+    batch_inputs,
+    synthesize_training_posterior,
+    training_generator,
+    training_segment,
+)
 from .diagnostics import diagnostics_due
 from .distributed import DistributedRuntime
 from .loop import LoopIntervals
@@ -74,7 +75,6 @@ class BeetleTrainer:
         self.config_fingerprint = config_fingerprint
         self.data_fingerprint = data_fingerprint
         self._loop = initial_loop
-        self.skipped_steps = 0
         self.input_builder = input_builder
         self.schedules = TrainingSchedules.from_config(config)
         self.accumulation_steps = config.accumulation_steps
@@ -169,69 +169,23 @@ class BeetleTrainer:
         target: AcousticFeatures,
     ) -> AcousticBackwardMetrics:
         segment = self._segment(frame_mask, "generator")
-        real = segment.samples(waveform)
-        f0_target = segment.frames(target.f0)
-        n_target = segment.frames(target.n)
-        segment_frame_mask = segment.frames(frame_mask)
         predicted_ratio = self.schedules.predicted_acoustic_ratio(
             self._loop.optimizer_step
         )
-        with self.runtime.autocast():
-            posterior = self._synthesize_posterior(
-                mel,
-                frame_mask,
-                segment,
-                target,
-                predicted_ratio,
-                "generator",
-            )
-            encoder_kl = masked_kl_standard_normal(
-                posterior.posterior.mean,
-                posterior.posterior.log_scale,
-                posterior.posterior.mask,
-            )
-            f0 = masked_f0_smooth_l1(
-                posterior.acoustic.f0,
-                f0_target,
-                segment_frame_mask,
-                self.acoustic.feature_linear.config.f0_scale_hz,
-            )
-            n = masked_n_smooth_l1(
-                posterior.acoustic.n,
-                n_target,
-                segment_frame_mask,
-            )
-            posterior_reconstruction = self.acoustic.reconstruction_loss(
-                posterior.waveform, real, posterior.sample_mask
-            ).total
-            weights = self.schedules.acoustic_weights(self._loop.optimizer_step)
-            adversarial_view = generator_step_loss(
-                self.acoustic.discriminators,
-                real,
-                posterior.waveform,
-            )
-            adversarial = adversarial_view.adversarial
-            feature_matching = adversarial_view.feature_matching
-            acoustic_total = (
-                encoder_kl * weights.encoder_kl
-                + f0 * weights.f0
-                + n * weights.n
-                + posterior_reconstruction * weights.reconstruction
-                + adversarial * weights.generator_adversarial
-                + feature_matching * weights.feature_matching
-            )
-        self.optimizers.group("generator").backward(
-            acoustic_total / self.accumulation_steps
-        )
-        return AcousticBackwardMetrics(
+        return acoustic_backward(
+            self.acoustic,
+            self.runtime,
+            self.optimizers.group("generator"),
+            self.accumulation_steps,
+            waveform,
+            mel,
+            frame_mask,
+            target,
+            segment,
             predicted_ratio,
-            encoder_kl.detach(),
-            f0.detach(),
-            n.detach(),
-            posterior_reconstruction.detach(),
-            adversarial.detach(),
-            feature_matching.detach(),
-            acoustic_total.detach(),
+            self.schedules.acoustic_weights(self._loop.optimizer_step),
+            self._generator("generator", "latent"),
+            self._generator("generator", "source"),
         )
 
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:
@@ -242,14 +196,11 @@ class BeetleTrainer:
         update_latent_flow_ema(
             self.ema_latent_flow, online_flow, online_flow.config.ema_decay
         )
-        metrics = (*metrics, TrainingMetric("skipped_steps", float(self.skipped_steps)))
-        self.skipped_steps = 0
         return metrics
 
     def discard_step(self) -> None:
         for group in self.optimizers.groups:
             group.optimizer.zero_grad(set_to_none=True)
-        self.skipped_steps += 1
 
     def reduce_metrics(
         self, metrics: tuple[TrainingMetric, ...]
@@ -272,17 +223,11 @@ class BeetleTrainer:
         return restore_trainer(self, payload, reset_optimizers)
 
     def _segment(self, frame_mask: Tensor, view: str) -> AlignedSegments:
-        generator = self._generator(view, "segment")
-        frame_count = self.adversarial.segment_samples // self.acoustic.output_hop
-        lengths = frame_mask[:, 0].sum(dim=1).clamp_min(frame_count)
-        positions = torch.arange(frame_mask.shape[-1], device=frame_mask.device)
-        available = positions.view(1, 1, -1) < lengths.view(-1, 1, 1)
-        return AlignedSegments.random(
-            available,
-            frame_count,
-            self.acoustic.latent_downsample_rate,
-            self.acoustic.output_hop,
-            generator,
+        return training_segment(
+            frame_mask,
+            self.adversarial.segment_samples,
+            self.acoustic,
+            self._generator(view, "segment"),
         )
 
     def _synthesize_posterior(
@@ -306,16 +251,13 @@ class BeetleTrainer:
         )
 
     def _generator(self, view: str, purpose: str) -> torch.Generator:
-        seed = derive_seed(
+        return training_generator(
             self.runtime_seed,
-            self._loop.cycle,
-            self._loop.batch_index,
+            self._loop,
+            self.device,
             view,
             purpose,
         )
-        return torch.Generator(device=self.device).manual_seed(seed)
 
     def _inputs(self, batch: BeetleBatch) -> tuple[Tensor, Tensor, Tensor]:
-        waveform = batch.waveform.to(self.device, non_blocking=True)
-        mel = batch.mel.to(self.device, non_blocking=True)
-        return waveform, mel, batch.frame_mask.to(self.device, non_blocking=True)
+        return batch_inputs(batch, self.device)

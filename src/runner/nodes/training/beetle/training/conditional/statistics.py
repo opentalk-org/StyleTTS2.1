@@ -2,9 +2,9 @@ from dataclasses import dataclass
 
 from torch import Tensor
 
-from ..losses.conditional import ConditionalBatchStatistics
-from ..models.modules.conditioning import ConditionKeep
-from .aligned_window import AlignedWindow
+from ...losses.conditional import ConditionalBatchStatistics
+from ...models.modules.conditioning import ConditionKeep
+from ..aligned_window import AlignedWindow
 
 
 @dataclass(frozen=True)

@@ -1,15 +1,12 @@
 import math
 from dataclasses import dataclass, replace
-from typing import Any
 
 import torch
 from torch import Tensor, nn
 
-from ..config.training import OptimizerConfig, ScheduledWeight
 from .callbacks import TrainingMetric
 from .checkpoint import NamedState, StateKind, StateTarget, capture_named_state
 from .diagnostics.clipping import (
-    GradientClipping,
     GradientClipObservation,
     NamedGradientGroup,
     clip_gradient_group,
@@ -18,62 +15,7 @@ from .diagnostics.clipping import (
     validate_gradient_group_ownership,
 )
 from .distributed import DistributedRuntime
-
-
-@dataclass(frozen=True)
-class StepSchedule:
-    start_step: int
-    warmup_steps: int
-    decay_steps: int
-    initial_value: float
-    peak_value: float
-    final_value: float
-
-    def __post_init__(self) -> None:
-        if min(self.start_step, self.warmup_steps, self.decay_steps) < 0:
-            raise ValueError("schedule step counts must be non-negative")
-        values = (self.initial_value, self.peak_value, self.final_value)
-        if not all(math.isfinite(value) for value in values):
-            raise ValueError("schedule values must be finite")
-
-    def value(self, optimizer_step: int) -> float:
-        if optimizer_step < 0:
-            raise ValueError("optimizer_step must be non-negative")
-        relative = optimizer_step - self.start_step
-        if relative < 0:
-            return self.initial_value
-        if self.warmup_steps > 0 and relative < self.warmup_steps:
-            ratio = relative / self.warmup_steps
-            return self.initial_value + ratio * (self.peak_value - self.initial_value)
-        decay_position = relative - self.warmup_steps
-        if self.decay_steps == 0 or decay_position >= self.decay_steps:
-            return self.final_value
-        ratio = decay_position / self.decay_steps
-        cosine = 0.5 * (1.0 + math.cos(math.pi * ratio))
-        return self.final_value + cosine * (self.peak_value - self.final_value)
-
-    @classmethod
-    def loss_weight(
-        cls,
-        value: float,
-        start_step: int,
-        warmup_steps: int,
-    ) -> "StepSchedule":
-        return cls(start_step, warmup_steps, 0, 0.0, value, value)
-
-    def state_dict(self) -> dict[str, Any]:
-        return {
-            "start_step": self.start_step,
-            "warmup_steps": self.warmup_steps,
-            "decay_steps": self.decay_steps,
-            "initial_value": self.initial_value,
-            "peak_value": self.peak_value,
-            "final_value": self.final_value,
-        }
-
-    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
-        if state_dict != self.state_dict():
-            raise ValueError("restored schedule does not match configured schedule")
+from .loss_schedules import StepSchedule
 
 
 @dataclass(frozen=True)
@@ -125,7 +67,6 @@ class ScheduledOptimizer:
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
-        finite_gradient = math.isfinite(gradient_norm_value)
         metrics = (
             TrainingMetric(
                 f"optimizer/{self.name}_learning_rate",
@@ -133,11 +74,7 @@ class ScheduledOptimizer:
             ),
             TrainingMetric(
                 f"optimizer/{self.name}_gradient_norm",
-                gradient_norm_value if finite_gradient else 0.0,
-            ),
-            TrainingMetric(
-                f"optimizer/{self.name}_gradient_nonfinite",
-                float(not finite_gradient),
+                gradient_norm_value,
             ),
             TrainingMetric(
                 f"optimizer/{self.name}_amp_scale",
@@ -207,7 +144,7 @@ class OptimizerSet:
     def step(
         self,
         optimizer_step: int,
-        diagnostics: bool = False,
+        diagnostics: bool,
     ) -> tuple[TrainingMetric, ...]:
         learning_rates = tuple(
             group.prepare(optimizer_step) for group in self.groups
@@ -290,22 +227,3 @@ class OptimizerSet:
                 StateTarget(group.name, StateKind.SCALER, group.scaler),
             )
         )
-
-
-def learning_rate_schedule(config: OptimizerConfig) -> StepSchedule:
-    return StepSchedule(
-        start_step=0,
-        warmup_steps=config.warmup_steps,
-        decay_steps=config.decay_steps,
-        initial_value=0.0,
-        peak_value=config.learning_rate,
-        final_value=config.learning_rate * config.minimum_learning_rate_ratio,
-    )
-
-
-def loss_weight_schedule(config: ScheduledWeight) -> StepSchedule:
-    return StepSchedule.loss_weight(
-        value=config.value,
-        start_step=config.start_step,
-        warmup_steps=config.warmup_steps,
-    )

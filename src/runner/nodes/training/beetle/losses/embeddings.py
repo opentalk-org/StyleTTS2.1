@@ -1,23 +1,10 @@
 import math
-from dataclasses import dataclass
 
 import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
 from ..models.modules.embeddings import AcousticStatistics
-
-
-@dataclass(frozen=True)
-class EmbeddingLosses:
-    voice_contrastive: Tensor
-    voice_ge2e: Tensor
-    style_contrastive: Tensor
-    style_ge2e: Tensor
-    style_speaker: Tensor
-    style_statistics: Tensor
-    reencoding: Tensor
-
 
 def supervised_contrastive_loss(
     embeddings: Tensor,

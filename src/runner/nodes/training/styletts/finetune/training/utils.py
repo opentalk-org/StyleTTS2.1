@@ -66,7 +66,7 @@ def recursive_munch(d):
         return [recursive_munch(v) for v in d]
     else:
         return d
-    
+
 def log_print(message, logger):
     logger.info(message)
     print(message)

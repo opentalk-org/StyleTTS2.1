@@ -50,10 +50,7 @@ FREQUENCY_BANDS = (
 def _expanded_mask(values: Tensor, mask: Tensor) -> Tensor:
     if mask.ndim != values.ndim:
         raise ValueError("loss mask rank must match values")
-    try:
-        return torch.broadcast_to(mask.to(dtype=torch.bool), values.shape)
-    except RuntimeError as error:
-        raise ValueError("loss mask must broadcast to values") from error
+    return torch.broadcast_to(mask.to(dtype=torch.bool), values.shape)
 
 
 def _masked_mean(values: Tensor, mask: Tensor) -> Tensor:
@@ -102,12 +99,6 @@ def multiresolution_l1(
     targets: tuple[Tensor, ...],
     masks: tuple[Tensor, ...],
 ) -> Tensor:
-    if (
-        not predictions
-        or len(predictions) != len(targets)
-        or len(targets) != len(masks)
-    ):
-        raise ValueError("reconstruction views, targets, and masks must align")
     losses = [
         _masked_mean((prediction - target).abs(), mask)
         for prediction, target, mask in zip(predictions, targets, masks, strict=True)

@@ -10,7 +10,7 @@ from .utils import checkpoint_with_mixed_precision, init_weights
 import numpy as np
 
 LRELU_SLOPE = 0.1
-    
+
 
 def padDiff(x):
     return F.pad(F.pad(x, (0,0,-1,1), 'constant', 0) - x, (0,0,0,-1), 'constant', 0)

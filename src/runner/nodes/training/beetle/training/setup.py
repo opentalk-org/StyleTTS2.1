@@ -9,14 +9,13 @@ from ..losses.conditional import ConditionalLossInput
 from ..models.model import AcousticModels
 from ..models.conditional import ConditionalModels
 from .callbacks import TrainingMetric
-from .conditional_features import ConditionalAcousticTargets
+from .conditional.features import ConditionalAcousticTargets
+from .diagnostics.clipping import GradientClipping, NamedGradientGroup
 from .distributed import DistributedRuntime
+from .loss_schedules import learning_rate_schedule
 from .optimizer import (
-    GradientClipping,
-    NamedGradientGroup,
     OptimizerSet,
     ScheduledOptimizer,
-    learning_rate_schedule,
 )
 from .state import LoopState
 
@@ -51,8 +50,6 @@ def build_optimizers(
     runtime: DistributedRuntime,
 ) -> OptimizerSet:
     discriminator_config = config.discriminator_optimizer
-    if discriminator_config is None:
-        raise ValueError("training requires a discriminator optimizer")
     modules = (
         acoustic.audio_encoder,
         acoustic.feature_linear,

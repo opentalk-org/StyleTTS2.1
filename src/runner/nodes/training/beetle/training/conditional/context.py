@@ -1,9 +1,9 @@
 import torch
 from torch import Tensor
 
-from ..models.conditional import ConditionalModels
-from .aligned_window import safe_context_mask
-from .conditional_features import WaveformMelExtractor
+from ...models.conditional import ConditionalModels
+from ..aligned_window import safe_context_mask
+from .features import WaveformMelExtractor
 
 
 def encode_text_context(

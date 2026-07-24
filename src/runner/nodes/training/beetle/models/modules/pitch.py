@@ -83,16 +83,6 @@ class JDCNet(nn.Module):
         self.detector = nn.Linear(512, 2)
         self.apply(self._initialize_weights)
 
-    def get_feature_gan(self, features: Tensor) -> Tensor:
-        features = features.float().transpose(-1, -2)
-        features = self.conv_block(features)
-        features = self.res_block1(features)
-        features = self.res_block2(features)
-        features = self.res_block3(features)
-        features = self.pool_block[0](features)
-        features = self.pool_block[1](features)
-        return features.transpose(-1, -2)
-
     def get_feature(self, features: Tensor) -> Tensor:
         features = features.float().transpose(-1, -2)
         features = self.conv_block(features)

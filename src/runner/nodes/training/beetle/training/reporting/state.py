@@ -53,7 +53,7 @@ class ReportingState:
             raise ValueError("pending optimizer step must follow the reported step")
 
     @classmethod
-    def initial(cls, mlflow_run_id: str | None = None) -> "ReportingState":
+    def initial(cls, mlflow_run_id: str) -> "ReportingState":
         return cls(
             mlflow_run_id,
             TimingState.initial(),

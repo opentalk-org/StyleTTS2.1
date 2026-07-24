@@ -1,4 +1,4 @@
-import math
+from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
 
@@ -43,10 +43,8 @@ class GradientClipObservation:
     coefficient: float
 
     def metrics(self, diagnostics: bool) -> tuple[TrainingMetric, ...]:
-        finite = math.isfinite(self.norm)
         metrics = (
-            TrainingMetric(f"gradient/{self.name}", self.norm if finite else 0.0),
-            TrainingMetric(f"gradient/{self.name}_nonfinite", float(not finite)),
+            TrainingMetric(f"gradient/{self.name}", self.norm),
         )
         if not diagnostics:
             return metrics
@@ -116,22 +114,22 @@ def validate_gradient_group_ownership(
     owners: dict[int, str],
 ) -> None:
     optimizer_parameters = {id(parameter) for parameter in parameters}
-    occurrences: dict[int, int] = {}
+    occurrences: Counter[int] = Counter()
     for group in groups:
         for parameter in group.parameters():
             identifier = id(parameter)
-            owner = owners.get(identifier)
-            if owner is None:
+            if identifier not in owners:
                 if parameter.requires_grad:
                     raise ValueError(
                         f"gradient group {group.name} contains an unowned trainable parameter"
                     )
                 continue
+            owner = owners[identifier]
             if owner != optimizer_name:
                 raise ValueError(
                     f"gradient group {group.name} contains a foreign parameter"
                 )
-            occurrences[identifier] = occurrences.get(identifier, 0) + 1
+            occurrences[identifier] += 1
     if any(count > 1 for count in occurrences.values()):
         raise ValueError("optimizer parameter belongs to more than one gradient group")
     if optimizer_parameters - occurrences.keys():

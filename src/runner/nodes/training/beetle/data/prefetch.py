@@ -3,24 +3,23 @@ import threading
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..config.training import BeetleConfig
-from .audio import AudioPreprocessor
-from .collate import BatchCollator, Tokenizer
-from .index import DatabaseSegmentIndex
-from .loader import DatabaseBatchLoader
 from .records import BeetleBatch, PlannedBatch
-from .sampling import (
-    ContinuousBatchPlanner,
-    DistributedShard,
-    PlannedWindowBatch,
-    PlannerState,
-)
+from .sampling import ContinuousBatchPlanner, PlannedWindowBatch, PlannerState
+from .source import FetchedBatch
 
 TrainingBatch = BeetleBatch
 
 
 class PrefetchCallbacks(Protocol):
     def check_cancel(self) -> None: ...
+
+
+class PlannedBatchLoader(Protocol):
+    def fetch(self, planned: PlannedBatch) -> FetchedBatch: ...
+
+    def collate(self, fetched: FetchedBatch) -> TrainingBatch: ...
+
+    def close(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -51,11 +50,11 @@ class _ProducerFailure:
     error: BaseException
 
 
-class TrainingDataPipeline:
+class BoundedBatchPrefetcher:
     def __init__(
         self,
         planner: ContinuousBatchPlanner,
-        loader: DatabaseBatchLoader,
+        loader: PlannedBatchLoader,
         callbacks: PrefetchCallbacks,
         window_size: int,
         maximum_decoded_bytes: int,
@@ -85,9 +84,16 @@ class TrainingDataPipeline:
         self._thread: threading.Thread | None = None
         self._start()
 
+    @property
+    def queued_bytes(self) -> int:
+        with self._condition:
+            return self._reserved_bytes
+
     def next_batch(self) -> TrainingBatch:
         if self._in_flight is not None:
-            raise RuntimeError("mark the current batch consumed before requesting another")
+            raise RuntimeError(
+                "mark the current batch consumed before requesting another"
+            )
         if not self._active:
             self._active.extend(self._next_window().batches)
         self._in_flight = self._active.pop(0)
@@ -185,8 +191,9 @@ class TrainingDataPipeline:
         planned: PlannedWindowBatch,
         decoded_bytes: int,
     ) -> _QueuedBatch:
+        fetched = self.loader.fetch(planned.batch)
         return _QueuedBatch(
-            self.loader.load(planned.batch),
+            self.loader.collate(fetched),
             planned.state_after,
             decoded_bytes,
         )
@@ -194,7 +201,9 @@ class TrainingDataPipeline:
     def _estimate(self, planned: PlannedBatch) -> int:
         ranges = set()
         for example in planned.examples:
-            ranges.add((example.key.audio_file_id, example.target.start, example.target.end))
+            ranges.add(
+                (example.key.audio_file_id, example.target.start, example.target.end)
+            )
         for group in (*planned.voice_groups, *planned.style_groups):
             for view in group.views:
                 ranges.add((view.key.audio_file_id, view.audio.start, view.audio.end))
@@ -209,9 +218,11 @@ class TrainingDataPipeline:
             )
         with self._condition:
             self._condition.wait_for(
-                lambda: self._stop.is_set()
-                or self._reserved_bytes + decoded_bytes
-                <= self.maximum_decoded_bytes
+                lambda: (
+                    self._stop.is_set()
+                    or self._reserved_bytes + decoded_bytes
+                    <= self.maximum_decoded_bytes
+                )
             )
             if self._stop.is_set():
                 return False
@@ -231,55 +242,3 @@ class TrainingDataPipeline:
             except queue.Full:
                 continue
         return False
-
-
-def build_data_pipeline(
-    config: BeetleConfig,
-    callbacks: PrefetchCallbacks,
-    index: DatabaseSegmentIndex,
-    phoneme_tokenizer: Tokenizer,
-    text_tokenizer: Tokenizer,
-    initial_state: DataPipelineState,
-    shard: DistributedShard,
-) -> TrainingDataPipeline:
-    audio = config.audio
-    preprocessor = AudioPreprocessor(
-        audio.sample_rate,
-        audio.n_fft,
-        audio.win_length,
-        audio.hop_length,
-        audio.mel_channels,
-        audio.f_min,
-        audio.f_max,
-    )
-    planner = ContinuousBatchPlanner(
-        index=index,
-        batch_size=config.training.batch_size,
-        seed=config.runtime.seed,
-        maximum_seconds=config.data.maximum_seconds,
-        grouping=config.data.grouping,
-        shard=shard,
-    )
-    collator = BatchCollator(
-        preprocessor,
-        phoneme_tokenizer,
-        text_tokenizer,
-        config.data.augmentation,
-        config.architecture.language.values,
-        config.adversarial.segment_samples // config.audio.hop_length,
-    )
-    loader = DatabaseBatchLoader.from_database(
-        index,
-        collator,
-        config.data.prefetch.audio_cache_bytes,
-        config.data.prefetch.audio_fetch_workers,
-    )
-    return TrainingDataPipeline(
-        planner=planner,
-        loader=loader,
-        callbacks=callbacks,
-        window_size=config.data.prefetch.window_size,
-        maximum_decoded_bytes=config.data.prefetch.decoded_bytes,
-        sample_rate=audio.sample_rate,
-        initial_state=initial_state,
-    )

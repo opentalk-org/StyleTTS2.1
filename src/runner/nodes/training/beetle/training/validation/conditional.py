@@ -13,7 +13,7 @@ from ...models.modules.latent_flow import integrate_latent_flow
 from ...models.conditional import ConditionalModels
 from ..reporting import TrainingMetric
 from ..loss_schedules import TrainingSchedules
-from ..conditional_features import ConditionalSynthesis
+from ..conditional.features import ConditionalSynthesis
 from ..setup import ConditionalInputBuilder
 from ..state import LoopState, TrainingPhase
 from .batch import merge_validation_recordings

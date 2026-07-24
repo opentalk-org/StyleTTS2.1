@@ -4,19 +4,19 @@ from typing import Protocol
 import torch
 from torch import Tensor
 
-from ..data.records import BeetleBatch
-from ..models.modules.aligner import AlignerOutput
-from ..models.modules.audio import AudioPosterior
-from ..models.modules.conditioning import (
+from ...data.records import BeetleBatch
+from ...losses.conditional import ConditionalBatchStatistics
+from ...models.modules.aligner import AlignerOutput
+from ...models.modules.audio import AudioPosterior
+from ...models.modules.conditioning import (
     ConditionBank,
     ConditionKeep,
     ConditionVectors,
     ProjectedConditions,
 )
-from ..models.modules.text import PhonemeEncoding
-from ..losses.conditional import ConditionalBatchStatistics
-from .conditional_features import ConditionalAcousticTargets
-from .aligned_window import AlignedWindow
+from ...models.modules.text import PhonemeEncoding
+from ..aligned_window import AlignedWindow
+from .features import ConditionalAcousticTargets
 
 
 class SpeakerIndex(Protocol):
