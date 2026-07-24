@@ -142,6 +142,7 @@ def load_validation_source(
         index,
         config.validation.sample_count,
         config.runtime.seed,
+        config.validation.audio_file_ids,
     )
     return loader.load_source(audio_file_ids)
 

@@ -95,6 +95,7 @@ class TrainingValidationEvaluator(ConditionalValidationEvaluator):
             posterior_f0,
             target_f0,
             frame_mask,
+            self.acoustic.feature_linear.config.f0_scale_hz,
         )
         n = masked_n_smooth_l1(
             posterior_n,
@@ -153,14 +154,17 @@ class TrainingValidationEvaluator(ConditionalValidationEvaluator):
             posterior_waveform,
             sample_count,
         )
-        posterior_mel = self._artifact_mels(real_waveform, posterior_waveform)[1]
+        target_mel, posterior_mel = self._artifact_mels(
+            real_waveform,
+            posterior_waveform,
+        )
         audio = ValidationArtifactSet(
             full.ground_truth,
             posterior_prediction,
             _cpu(posterior.posterior.latent[0]),
             trim_signal_pair(target_f0[0], posterior_f0[0], frame_count),
             trim_signal_pair(target_n[0], posterior_n[0], frame_count),
-            (full.mel[0], _cpu(posterior_mel[0])),
+            (_cpu(target_mel[0]), _cpu(posterior_mel[0])),
             full.alignment,
         )
         return ValidationSampleResult(

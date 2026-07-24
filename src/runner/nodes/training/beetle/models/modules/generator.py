@@ -11,6 +11,70 @@ from .convolution import (
 from .vocoder import HarmonicSourceFeatures, MultiBandISTFT
 
 
+class SpectralSourceAdapter(nn.Module):
+    def __init__(
+        self,
+        source_channels: int,
+        channels: int,
+        frequency_bins: int,
+    ) -> None:
+        super().__init__()
+        self.channels = channels
+        self.frequency_bins = frequency_bins
+        self.entry = nn.Conv1d(source_channels, channels * frequency_bins, 1)
+        self.residual = nn.Sequential(
+            nn.LeakyReLU(0.1),
+            nn.Conv2d(channels, channels, 3, padding=1),
+            nn.LeakyReLU(0.1),
+            nn.Conv2d(channels, channels, 1),
+        )
+        nn.init.zeros_(self.residual[-1].weight)
+        nn.init.zeros_(self.residual[-1].bias)
+
+    def forward(self, source: Tensor) -> Tensor:
+        batch, _, frames = source.shape
+        with torch.autocast(device_type=source.device.type, enabled=False):
+            projected = self.entry(source.float())
+            projected = projected.view(
+                batch,
+                self.channels,
+                self.frequency_bins,
+                frames,
+            )
+            return self.residual(projected)
+
+
+class NativeFrequencyResidual(nn.Module):
+    def __init__(self, channels: int) -> None:
+        super().__init__()
+        self.depthwise = nn.Conv2d(
+            channels,
+            channels,
+            3,
+            padding=1,
+            groups=channels,
+        )
+        self.pointwise = nn.Conv2d(channels, channels, 1)
+
+    def forward(self, features: Tensor) -> Tensor:
+        residual = self.depthwise(F.leaky_relu(features, 0.1))
+        residual = self.pointwise(F.leaky_relu(residual, 0.1))
+        return features + residual
+
+
+class BandSpectrumHead(nn.Module):
+    def __init__(self, input_channels: int, hidden_channels: int) -> None:
+        super().__init__()
+        self.input_projection = nn.Conv2d(input_channels, hidden_channels, 1)
+        self.refinement = NativeFrequencyResidual(hidden_channels)
+        self.output_projection = nn.Conv2d(hidden_channels, 2, 1)
+
+    def forward(self, features: Tensor) -> Tensor:
+        features = self.input_projection(features)
+        features = self.refinement(features)
+        return self.output_projection(F.leaky_relu(features, 0.1))
+
+
 class Generator(nn.Module):
     def __init__(self, config: GeneratorConfig, sample_rate: int) -> None:
         super().__init__()
@@ -75,8 +139,18 @@ class Generator(nn.Module):
         )
         self.frequency_up_3 = FrequencyUpsample(
             config.temporal_channels // 4,
-            config.subbands * 2,
+            config.temporal_channels // 2,
             third_kernel,
+        )
+        native_channels = config.temporal_channels // 2
+        band_channels = config.temporal_channels // 8
+        self.native_refinement = nn.Sequential(
+            NativeFrequencyResidual(native_channels),
+            NativeFrequencyResidual(native_channels),
+        )
+        self.band_heads = nn.ModuleList(
+            BandSpectrumHead(native_channels, band_channels)
+            for _ in range(config.subbands)
         )
         self.harmonic_features = HarmonicSourceFeatures(config, sample_rate)
         self.source_projection = nn.Conv1d(
@@ -88,6 +162,11 @@ class Generator(nn.Module):
             config.temporal_channels,
             11,
             (1, 3, 5),
+        )
+        self.spectral_source = SpectralSourceAdapter(
+            self.harmonic_features.output_channels,
+            config.temporal_channels,
+            config.initial_frequency_bins,
         )
         self.istft = MultiBandISTFT(
             config.subbands,
@@ -119,12 +198,19 @@ class Generator(nn.Module):
         source = self.source_residual(self.source_projection(harmonic))
         temporal_mask = F.interpolate(frame_mask, size=expected_frames, mode="nearest")
         temporal = (temporal + source) * temporal_mask
-        spectrum = self._subband_spectrogram(temporal)
+        spectral_source = self.spectral_source(harmonic)
+        spectral_source = spectral_source.to(dtype=temporal.dtype)
+        spectral_source = spectral_source * temporal_mask.unsqueeze(2)
+        spectrum = self._subband_spectrogram(temporal, spectral_source)
         waveform = self.istft(spectrum)
         sample_mask = frame_mask.repeat_interleave(self.config.output_hop(), dim=-1)
         return waveform * sample_mask
 
-    def _subband_spectrogram(self, temporal: Tensor) -> Tensor:
+    def _subband_spectrogram(
+        self,
+        temporal: Tensor,
+        spectral_source: Tensor,
+    ) -> Tensor:
         features = torch.cat(
             tuple(block(temporal) for block in self.resblocks),
             dim=1,
@@ -137,11 +223,19 @@ class Generator(nn.Module):
             frames,
         )
         features = self.frequency_entry(features)
+        if spectral_source.shape != features.shape:
+            raise ValueError("spectral source must match frequency-entry features")
+        features = features + spectral_source
         for shuffle in self.frequency_shuffles:
             features = shuffle(features)
         features = self.frequency_up_1(features)
         features = self.frequency_up_2(features)
         features = self.frequency_up_3(features)
+        features = self.native_refinement(features)
+        features = torch.cat(
+            tuple(head(features) for head in self.band_heads),
+            dim=1,
+        )
         frequency_bins = self.config.istft_n_fft // 2 + 1
         if features.shape[2] != frequency_bins:
             raise ValueError("frequency path did not reach configured iSTFT bins")

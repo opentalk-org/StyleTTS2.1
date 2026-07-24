@@ -56,7 +56,7 @@ def synthesize_training_posterior(
         posterior_start + posterior_count,
     )
     acoustic = acoustic_models.feature_linear(
-        posterior.latent,
+        posterior.latent.detach(),
         posterior.mask,
         segment_frame_mask,
     )

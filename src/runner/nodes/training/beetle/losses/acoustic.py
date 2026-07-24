@@ -74,12 +74,16 @@ def masked_f0_smooth_l1(
     predicted: Tensor,
     target: Tensor,
     mask: Tensor,
+    scale_hz: float,
 ) -> Tensor:
     if predicted.shape != target.shape:
         raise ValueError("predicted and target F0 must have equal shapes")
-    voiced_mask = mask[:, 0].to(dtype=torch.bool) & (target > 0)
-    values = F.smooth_l1_loss(predicted, target, reduction="none")
-    return _masked_mean(values, voiced_mask) / 10
+    values = F.smooth_l1_loss(
+        predicted / scale_hz,
+        target / scale_hz,
+        reduction="none",
+    )
+    return _masked_mean(values, mask[:, 0])
 
 
 def masked_n_smooth_l1(

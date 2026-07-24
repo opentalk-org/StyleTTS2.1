@@ -26,6 +26,7 @@ def select_validation_audio_ids(
     index: DatabaseSegmentIndex,
     sample_count: int,
     runtime_seed: int,
+    configured_audio_file_ids: tuple[UUID, ...],
 ) -> tuple[UUID, ...]:
     candidates = list(index.validation.audio_file_ids)
     if len(candidates) < sample_count:
@@ -33,9 +34,21 @@ def select_validation_audio_ids(
             f"Validation requires {sample_count} recordings "
             f"but only {len(candidates)} are eligible"
         )
-    rng = random.Random(derive_seed(runtime_seed, "validation-recordings"))
-    rng.shuffle(candidates)
-    selected = candidates[:sample_count]
+    if configured_audio_file_ids:
+        if len(configured_audio_file_ids) != sample_count:
+            raise ValueError(
+                "configured validation audio count must equal validation sample_count"
+            )
+        if len(set(configured_audio_file_ids)) != sample_count:
+            raise ValueError("configured validation audio IDs must be unique")
+        missing = set(configured_audio_file_ids).difference(candidates)
+        if missing:
+            raise KeyError(f"configured validation audio IDs are not indexed: {missing}")
+        selected = list(configured_audio_file_ids)
+    else:
+        rng = random.Random(derive_seed(runtime_seed, "validation-recordings"))
+        rng.shuffle(candidates)
+        selected = candidates[:sample_count]
     candidate_voices = {
         index.validation.voice_for(audio_id) for audio_id in candidates
     }
@@ -47,6 +60,10 @@ def select_validation_audio_ids(
         index.validation.voice_for(audio_id) for audio_id in selected
     }
     if len(selected_voices) == 1:
+        if configured_audio_file_ids:
+            raise ValueError(
+                "configured validation audio requires at least two distinct voices"
+            )
         selected_voice = next(iter(selected_voices))
         replacement = next(
             audio_id

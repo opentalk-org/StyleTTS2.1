@@ -1,9 +1,11 @@
 # Beetle Decoder/Generator Convergence Ideas
 
-## 1. Separate latent-flow optimization from the acoustic generator
+## 1. Optimizer isolation is not required by current clipping
 
-This is the highest-priority change because latent flow and the acoustic
-generator currently share optimizer-wide gradient clipping.
+This hypothesis does not match the current optimizer implementation. Gradient
+clipping is applied independently to each named module group. The
+optimizer-level coefficient is only the minimum group coefficient reported as
+a diagnostic; it is not applied to every optimizer parameter.
 
 Observed examples:
 
@@ -18,8 +20,9 @@ Observed examples:
   was `185`, and the global clip coefficient was `0.00227`, leaving the
   waveform generator with an effective norm of approximately `0.42`.
 
-Latent flow therefore consumes almost the entire shared gradient budget. The
-decoder and waveform generator learn despite being heavily suppressed.
+These observations came from interpreting the optimizer-level diagnostic as a
+global clip. They do not show latent flow suppressing acoustic updates in the
+current code.
 
 Recommended change:
 
@@ -32,8 +35,8 @@ Recommended change:
 - Retain the acoustic learning rate of `6e-4` initially and tune the flow
   optimizer independently.
 
-This is the cleanest first ablation because it improves optimization without
-changing model expressiveness.
+Optimizer separation may still be useful for independent schedules, but it is
+not a fix for shared clipping because clipping is already independent.
 
 ## 2. Supervise the representation predicted by the generator
 

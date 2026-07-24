@@ -7,8 +7,7 @@ from .model import AcousticModels
 def compile_acoustic(models: AcousticModels) -> None:
     modules: tuple[nn.Module, ...] = (
         models.feature_linear,
-        models.decoder.encode,
-        *models.decoder.decode,
+        models.decoder,
         models.generator,
     )
     for module in modules:

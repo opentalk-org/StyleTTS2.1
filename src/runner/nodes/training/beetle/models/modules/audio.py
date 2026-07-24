@@ -159,7 +159,9 @@ class FeatureLinear(nn.Module):
     def __init__(self, config: FeatureConfig) -> None:
         super().__init__()
         self.config = config
-        self.projection = nn.Conv1d(config.latent_channels, 2, 1)
+        self.projection = nn.Conv1d(config.latent_channels, 3, 1)
+        nn.init.zeros_(self.projection.weight[:2])
+        nn.init.zeros_(self.projection.bias[:2])
 
     def forward(
         self,
@@ -176,8 +178,10 @@ class FeatureLinear(nn.Module):
             align_corners=False,
         )
         numeric_frame_mask = frame_mask[:, 0].to(dtype=latent.dtype)
-        f0 = F.softplus(interpolated[:, 0]) * numeric_frame_mask
-        n = interpolated[:, 1] * numeric_frame_mask
+        f0_magnitude = F.softplus(interpolated[:, 0]) * self.config.f0_scale_hz
+        voicing = torch.sigmoid(interpolated[:, 1])
+        f0 = f0_magnitude * voicing * numeric_frame_mask
+        n = interpolated[:, 2] * numeric_frame_mask
         return AcousticFeatures(f0, n)
 
 

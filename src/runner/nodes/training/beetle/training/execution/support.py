@@ -34,7 +34,12 @@ class IgnoredTokenizer:
 class DatabaseSpeakerIndex(SpeakerIndex):
     def __init__(self, index: DatabaseSegmentIndex, maximum_classes: int) -> None:
         voices = sorted(
-            {item.speaker_id for item in index.records.values() if item.speaker_id is not None}
+            {
+                item.speaker_id
+                for item in index.records.values()
+                if item.speaker_id is not None
+            }
+            | set(index.validation.conditional_by_voice)
         )
         if len(voices) > maximum_classes:
             raise ValueError(

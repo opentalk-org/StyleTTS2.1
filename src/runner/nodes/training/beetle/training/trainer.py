@@ -60,7 +60,9 @@ class BeetleTrainer:
             raise ValueError("training requires one shared F0 extractor")
         self.acoustic = acoustic
         self.conditional = conditional
-        self.ema_latent_flow = ema_latent_flow.to(runtime.device).requires_grad_(False).eval()
+        self.ema_latent_flow = (
+            ema_latent_flow.to(runtime.device).requires_grad_(False).eval()
+        )
         self.config = config
         self.adversarial = adversarial
         self.runtime_seed = runtime_seed
@@ -88,7 +90,9 @@ class BeetleTrainer:
         waveform, mel, frame_mask = self._inputs(batch)
         segment = self._segment(frame_mask, "discriminator")
         real = segment.samples(waveform)
-        predicted_ratio = self.schedules.predicted_acoustic_ratio(self._loop.optimizer_step)
+        predicted_ratio = self.schedules.predicted_acoustic_ratio(
+            self._loop.optimizer_step
+        )
         with torch.no_grad(), self.runtime.autocast():
             target = self.acoustic.acoustic_targets(mel, frame_mask)
             posterior = self._synthesize_posterior(
@@ -107,7 +111,9 @@ class BeetleTrainer:
             )
             weights = self.schedules.acoustic_weights(self._loop.optimizer_step)
             weighted = loss * weights.discriminator
-        self.optimizers.group("discriminator").backward(weighted / self.accumulation_steps)
+        self.optimizers.group("discriminator").backward(
+            weighted / self.accumulation_steps
+        )
         return (
             tensor_metric("discriminator", loss),
             tensor_metric("discriminator_total", weighted),
@@ -120,7 +126,8 @@ class BeetleTrainer:
         inputs = self.input_builder.build(self.conditional, batch, self._loop, target)
         with self.runtime.autocast():
             conditional_losses = compute_conditional_losses(
-                self.conditional, self.ema_latent_flow, inputs)
+                self.conditional, self.ema_latent_flow, inputs
+            )
             conditional_total = conditional_losses.total(
                 self.schedules.conditional_weights(self._loop.optimizer_step)
             )
@@ -166,7 +173,9 @@ class BeetleTrainer:
         f0_target = segment.frames(target.f0)
         n_target = segment.frames(target.n)
         segment_frame_mask = segment.frames(frame_mask)
-        predicted_ratio = self.schedules.predicted_acoustic_ratio(self._loop.optimizer_step)
+        predicted_ratio = self.schedules.predicted_acoustic_ratio(
+            self._loop.optimizer_step
+        )
         with self.runtime.autocast():
             posterior = self._synthesize_posterior(
                 mel,
@@ -185,6 +194,7 @@ class BeetleTrainer:
                 posterior.acoustic.f0,
                 f0_target,
                 segment_frame_mask,
+                self.acoustic.feature_linear.config.f0_scale_hz,
             )
             n = masked_n_smooth_l1(
                 posterior.acoustic.n,
@@ -203,7 +213,9 @@ class BeetleTrainer:
             adversarial = adversarial_view.adversarial
             feature_matching = adversarial_view.feature_matching
             acoustic_total = (
-                encoder_kl * weights.encoder_kl + f0 * weights.f0 + n * weights.n
+                encoder_kl * weights.encoder_kl
+                + f0 * weights.f0
+                + n * weights.n
                 + posterior_reconstruction * weights.reconstruction
                 + adversarial * weights.generator_adversarial
                 + feature_matching * weights.feature_matching
@@ -223,9 +235,13 @@ class BeetleTrainer:
         )
 
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:
-        metrics = self.optimizers.step(optimizer_step, diagnostics_due(optimizer_step + 1))
+        metrics = self.optimizers.step(
+            optimizer_step, diagnostics_due(optimizer_step + 1)
+        )
         online_flow = self.runtime.unwrap(self.conditional.latent_flow)
-        update_latent_flow_ema(self.ema_latent_flow, online_flow, online_flow.config.ema_decay)
+        update_latent_flow_ema(
+            self.ema_latent_flow, online_flow, online_flow.config.ema_decay
+        )
         metrics = (*metrics, TrainingMetric("skipped_steps", float(self.skipped_steps)))
         self.skipped_steps = 0
         return metrics
@@ -235,7 +251,9 @@ class BeetleTrainer:
             group.optimizer.zero_grad(set_to_none=True)
         self.skipped_steps += 1
 
-    def reduce_metrics(self, metrics: tuple[TrainingMetric, ...]) -> tuple[TrainingMetric, ...]:
+    def reduce_metrics(
+        self, metrics: tuple[TrainingMetric, ...]
+    ) -> tuple[TrainingMetric, ...]:
         return self.runtime.reduce_metrics(metrics)
 
     def checkpoint_payload(
@@ -289,8 +307,11 @@ class BeetleTrainer:
 
     def _generator(self, view: str, purpose: str) -> torch.Generator:
         seed = derive_seed(
-            self.runtime_seed, self._loop.cycle,
-            self._loop.batch_index, view, purpose,
+            self.runtime_seed,
+            self._loop.cycle,
+            self._loop.batch_index,
+            view,
+            purpose,
         )
         return torch.Generator(device=self.device).manual_seed(seed)
 

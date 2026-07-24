@@ -106,10 +106,6 @@ class ConditionalValidationEvaluator:
         )
         synthesis = self._synthesize(latent, inputs.latent_mask, batch, step)
         targets = self.acoustic.acoustic_targets(batch.mel, batch.frame_mask)
-        target_mel, predicted_mel = self._artifact_mels(
-            batch.waveform,
-            synthesis.waveform,
-        )
         weights = self.schedules.conditional_weights(step)
         metrics = tuple(
             _metric(name, value)
@@ -123,10 +119,15 @@ class ConditionalValidationEvaluator:
         samples = []
         for index, recording in enumerate(recordings):
             frame_count = int(batch.frame_lengths[index])
+            sample_count = int(batch.waveform_lengths[index])
             ground_truth, prediction = trim_waveform_pair(
                 batch.waveform[index : index + 1],
                 synthesis.waveform[index : index + 1],
-                int(batch.waveform_lengths[index]),
+                sample_count,
+            )
+            target_mel, predicted_mel = self._artifact_mels(
+                batch.waveform[index : index + 1, :, :sample_count],
+                synthesis.waveform[index : index + 1, :, :sample_count],
             )
             f0 = trim_signal_pair(
                 targets.f0[index],
@@ -148,7 +149,7 @@ class ConditionalValidationEvaluator:
                         _cpu(latent[index]),
                         f0,
                         n,
-                        (_cpu(target_mel[index]), _cpu(predicted_mel[index])),
+                        (_cpu(target_mel[0]), _cpu(predicted_mel[0])),
                         _cpu(inputs.alignment.soft_alignment[index]),
                     ),
                     derive_seed(

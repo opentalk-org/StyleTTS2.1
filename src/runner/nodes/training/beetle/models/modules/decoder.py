@@ -7,7 +7,7 @@ from torch.nn import functional as F
 from torch.nn.utils.parametrizations import weight_norm
 
 from ...config.architecture import DecoderConfig
-from .convolution import DecoderResidualBlock
+from .convolution import MaskedResidualBlock
 
 
 @dataclass(frozen=True)
@@ -24,40 +24,26 @@ class Decoder(nn.Module):
         if config.decode_block_count != 4:
             raise ValueError("decoder decode_block_count must equal four")
         self.config = config
-        self.f0_projection = weight_norm(
-            nn.Conv1d(1, 1, kernel_size=3, stride=2, padding=1)
+        self.latent_upsample = weight_norm(
+            nn.ConvTranspose1d(
+                config.latent_channels,
+                config.generator_channels,
+                kernel_size=4,
+                stride=2,
+                padding=1,
+            )
         )
-        self.n_projection = weight_norm(
-            nn.Conv1d(1, 1, kernel_size=3, stride=2, padding=1)
+        self.conditioning_projection = weight_norm(
+            nn.Conv1d(2, config.generator_channels, kernel_size=3, padding=1)
         )
-        self.latent_residual = weight_norm(
-            nn.Conv1d(config.latent_channels, config.residual_channels, 1)
-        )
-        self.encode = DecoderResidualBlock(
-            config.latent_channels + 2,
-            config.hidden_channels,
-            config.dropout,
-        )
-        decode_input_channels = (
-            config.hidden_channels + config.residual_channels + 2
-        )
-        self.decode = nn.ModuleList(
-            [
-                DecoderResidualBlock(
-                    decode_input_channels,
-                    config.hidden_channels,
-                    config.dropout,
-                )
-                for _ in range(config.decode_block_count - 1)
-            ]
-            + [
-                DecoderResidualBlock(
-                    decode_input_channels,
-                    config.generator_channels,
-                    config.dropout,
-                    upsample=True,
-                )
-            ]
+        self.refinement = nn.ModuleList(
+            MaskedResidualBlock(
+                config.generator_channels,
+                kernel_size=3,
+                dilation=3**index,
+                dropout=config.dropout,
+            )
+            for index in range(config.decode_block_count)
         )
 
     def _smooth_signal(self, signal: Tensor, mask: Tensor, kernel_size: int) -> Tensor:
@@ -125,29 +111,18 @@ class Decoder(nn.Module):
             n,
             boolean_frame_mask,
         )
-        projected_f0 = self.f0_projection(prepared_f0.unsqueeze(1))
-        projected_n = self.n_projection(prepared_n.unsqueeze(1))
-        projected_f0 = projected_f0 * numeric_latent_mask
-        projected_n = projected_n * numeric_latent_mask
         masked_latent = latent * numeric_latent_mask
-        features = self.encode(
-            torch.cat((masked_latent, projected_f0, projected_n), dim=1),
-            boolean_latent_mask,
-            boolean_latent_mask,
+        conditioning = torch.stack(
+            (torch.log1p(prepared_f0), prepared_n),
+            dim=1,
         )
-        latent_residual = self.latent_residual(masked_latent) * numeric_latent_mask
-        conditioning = (latent_residual, projected_f0, projected_n)
-        for block in self.decode[:-1]:
-            features = block(
-                torch.cat((features, *conditioning), dim=1),
-                boolean_latent_mask,
-                boolean_latent_mask,
-            )
-        features = self.decode[-1](
-            torch.cat((features, *conditioning), dim=1),
-            boolean_latent_mask,
-            boolean_frame_mask,
+        features = self.latent_upsample(masked_latent)
+        features = features + self.conditioning_projection(
+            conditioning * numeric_frame_mask
         )
+        features = features * numeric_frame_mask
+        for block in self.refinement:
+            features = block(features, numeric_frame_mask)
         return DecoderOutput(
             features * numeric_frame_mask,
             prepared_f0 * numeric_frame_mask[:, 0],

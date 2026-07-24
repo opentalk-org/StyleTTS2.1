@@ -21,6 +21,7 @@ architecture:
   feature:
     latent_channels: 192
     upsample_rate: 2
+    f0_scale_hz: 256.0
   decoder:
     latent_channels: 192
     hidden_channels: 1024
@@ -120,7 +121,7 @@ architecture:
     projection_channels: 256
 data:
   selection:
-    dataset_id: b6d6f5a2-1f67-4e02-a3d6-f183c91837d2
+    dataset_id: 1010220c-5eaa-44f1-983f-4d7123ad1564
     audio_file_ids: []
   maximum_seconds: 8.0
   prefetch:
@@ -144,8 +145,25 @@ data:
     gain_max_db: 6.0
 validation:
   sample_count: 16
+  audio_file_ids:
+    - 02baa26a-912c-48cb-a5ba-a67a9ca47422
+    - 62acf71c-b937-487f-bddc-86f1381f9d9c
+    - 510c76bb-2cae-4527-8bef-ae0acce2ab2c
+    - b69d90e0-bbee-48f7-a31c-c69205b55eb5
+    - e6edbea7-8c87-49ca-9334-639d15df3858
+    - 749e1af9-90e1-4ad6-9f68-d184d43b0f2d
+    - d734e79d-5d74-4f65-b39c-bd5db4ba93d8
+    - 794d25e5-2dfd-4f41-885e-39fffd723ab5
+    - fdb9604a-f04f-4682-b4c9-3a901a1a968c
+    - afc608ff-ce7e-4f66-b323-6954af9cdc58
+    - 9577f625-fdbd-4993-a7b7-6e571cb13682
+    - 627b5814-45c9-4667-89bc-6cf589582026
+    - 7f9cb4ff-e8fd-444d-a418-eaf337e558eb
+    - c928eb4d-4620-4903-9ebd-282318c1b05a
+    - 4ddc8180-3583-4d78-ad8b-0b9c7798fbd1
+    - 91ab60b6-9e92-48c3-b2f7-5765f29669d1
 runtime:
-  seed: 1234
+  seed: 4
   device: cuda
   compile: true
   compile_frame_count: 196
@@ -164,17 +182,17 @@ training:
   batch_size: 64
   accumulation_steps: 1
   total_steps: 50000
-  validation_every_steps: 1250
+  validation_every_steps: 1000
   full_audio_ratio: 0.1
   precision: float16
-  acoustic_prediction: {value: 1.0, start_step: 2000, warmup_steps: 3000}
+  acoustic_prediction: {value: 1.0, start_step: 0, warmup_steps: 0}
   generator_optimizer:
     learning_rate: 0.0006
     beta1: 0.8
     beta2: 0.99
     epsilon: 0.000000001
     weight_decay: 0.0001
-    warmup_steps: 1000
+    warmup_steps: 100
     decay_steps: 1000000
     minimum_learning_rate_ratio: 0.1
     maximum_gradient_norm: 10.0
@@ -184,7 +202,7 @@ training:
     beta2: 0.99
     epsilon: 0.000000001
     weight_decay: 0.0001
-    warmup_steps: 1000
+    warmup_steps: 100
     decay_steps: 1000000
     minimum_learning_rate_ratio: 0.1
     maximum_gradient_norm: 10.0
@@ -193,9 +211,9 @@ training:
     f0: {value: 1.0, start_step: 0, warmup_steps: 0}
     n: {value: 1.0, start_step: 0, warmup_steps: 0}
     reconstruction: {value: 45.0, start_step: 0, warmup_steps: 0}
-    discriminator: {value: 1.0, start_step: 0, warmup_steps: 1000}
-    generator_adversarial: {value: 1.0, start_step: 0, warmup_steps: 1000}
-    feature_matching: {value: 1.0, start_step: 0, warmup_steps: 1000}
+    discriminator: {value: 1.0, start_step: 0, warmup_steps: 100}
+    generator_adversarial: {value: 1.0, start_step: 0, warmup_steps: 100}
+    feature_matching: {value: 1.0, start_step: 0, warmup_steps: 100}
     duration_flow: {value: 10.0, start_step: 0, warmup_steps: 0}
     latent_flow: {value: 100.0, start_step: 0, warmup_steps: 0}
     shortcut: {value: 1.0, start_step: 0, warmup_steps: 0}
@@ -206,6 +224,6 @@ training:
     voice_ge2e: {value: 1.0, start_step: 0, warmup_steps: 0}
     style_contrastive: {value: 1.0, start_step: 0, warmup_steps: 0}
     style_ge2e: {value: 1.0, start_step: 0, warmup_steps: 0}
-    style_speaker_adversarial: {value: 0.1, start_step: 0, warmup_steps: 1000}
+    style_speaker_adversarial: {value: 0.1, start_step: 0, warmup_steps: 100}
     style_statistics: {value: 1.0, start_step: 0, warmup_steps: 0}
     style_reencoding: {value: 1.0, start_step: 0, warmup_steps: 0}

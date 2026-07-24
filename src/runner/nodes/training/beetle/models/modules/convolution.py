@@ -98,7 +98,7 @@ class DecoderResidualBlock(nn.Module):
         if self.upsample:
             shortcut = F.interpolate(shortcut, scale_factor=2, mode="nearest")
         shortcut = self.shortcut_projection(shortcut) * numeric_output_mask
-        return (residual + shortcut) * (1 / sqrt(2)) * numeric_output_mask
+        return (shortcut + residual * (1 / sqrt(2))) * numeric_output_mask
 
 
 class MaskedResidualBlock(nn.Module):

@@ -51,6 +51,7 @@ class PosteriorEncoderConfig(StrictConfigModel):
 class FeatureConfig(StrictConfigModel):
     latent_channels: int = Field(gt=0)
     upsample_rate: int = Field(default=2, gt=0)
+    f0_scale_hz: float = Field(gt=0)
 
 
 class DecoderConfig(StrictConfigModel):
