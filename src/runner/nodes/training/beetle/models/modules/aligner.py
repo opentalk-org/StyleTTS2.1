@@ -28,10 +28,6 @@ class PhonemeAligner(nn.Module):
         frame_reduction: int,
     ) -> None:
         super().__init__()
-        if config.blank_id >= token_count:
-            raise ValueError("aligner blank id is outside the vocabulary")
-        if frame_reduction <= 0:
-            raise ValueError("aligner frame reduction must be positive")
         self.backbone = backbone
         self.config = config
         self.token_count = token_count
@@ -49,12 +45,6 @@ class PhonemeAligner(nn.Module):
         phonemes: Tensor,
         phoneme_mask: Tensor,
     ) -> AlignerOutput:
-        if mel.ndim != 3 or frame_mask.shape != (mel.shape[0], 1, mel.shape[2]):
-            raise ValueError("aligner requires [B,M,T] mel and [B,1,T] frame mask")
-        if phonemes.ndim != 2 or phoneme_mask.shape != phonemes.shape:
-            raise ValueError("aligner requires [B,P] phonemes and phoneme mask")
-        if phonemes.shape[0] != mel.shape[0]:
-            raise ValueError("aligner mel and phoneme batch sizes must match")
         frame_lengths = frame_mask.sum(dim=(1, 2))
         phoneme_lengths = phoneme_mask.sum(dim=1)
         torch._assert_async(
@@ -77,31 +67,9 @@ class PhonemeAligner(nn.Module):
             ~ctc_mask,
             phonemes,
         )
-        if ctc_logits.shape != (
-            mel.shape[0],
-            reduced_frames,
-            self.token_count,
-        ):
-            raise ValueError(
-                "aligner CTC output does not match frame or vocabulary shape"
             )
         max_phonemes = phonemes.shape[1]
-        if (
-            s2s_logits.shape[0] != mel.shape[0]
-            or s2s_logits.shape[2] != self.token_count
-        ):
-            raise ValueError(
-                "aligner sequence output does not match batch or vocabulary"
             )
-        if s2s_logits.shape[1] < max_phonemes:
-            raise ValueError("aligner sequence output is shorter than phoneme input")
-        if (
-            raw_attention.shape[0] != mel.shape[0]
-            or raw_attention.shape[1] < max_phonemes + 1
-            or raw_attention.shape[2] != reduced_frames
-        ):
-            raise ValueError(
-                "aligner attention must contain start, phoneme, and reduced frame axes"
             )
         soft_alignment = raw_attention[:, 1 : max_phonemes + 1]
         valid_matrix = phoneme_mask.unsqueeze(2) & alignment_frame_mask

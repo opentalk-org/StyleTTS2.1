@@ -130,12 +130,6 @@ class AcousticModels(nn.Module):
         inference, inference_ids = count_unique_parameters(inference_modules)
         frozen, frozen_ids = count_unique_parameters((self.f0_extractor,))
         training, training_ids = count_unique_parameters((self.discriminators,))
-        if (
-            inference_ids & frozen_ids
-            or inference_ids & training_ids
-            or frozen_ids & training_ids
-        ):
-            raise ValueError("acoustic parameter categories must be disjoint")
         return ParameterReport(inference, frozen, training)
 
 
@@ -153,5 +147,9 @@ def build_acoustic_models(
         discriminators=build_styletts_discriminators(),
         reconstruction_loss=MultiResolutionReconstructionLoss(
             sample_rate=config.audio.sample_rate,
+            mel_channels=config.audio.mel_channels,
+            complex_reconstruction_steps=(
+                config.training.complex_reconstruction_steps
+            ),
         ),
     )

@@ -1,5 +1,7 @@
+import random
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from ...models import (
@@ -57,6 +59,9 @@ def _run(
     reset_optimizers: bool,
 ) -> LoopState:
     config = preparation.config
+    random.seed(config.runtime.seed)
+    np.random.seed(config.runtime.seed)
+    torch.manual_seed(config.runtime.seed)
     acoustic = build_acoustic_models(config, load_f0_extractor())
     phoneme = load_phoneme_resources(Path(config.architecture.phoneme.model_path))
     text = load_text_resources(config.architecture.text_encoder.pretrained_model)
@@ -98,6 +103,7 @@ def _run(
         config.training,
         config.runtime.seed,
         runtime.device,
+        not config.training.overfit_validation_recording,
     )
     return train(
         preparation,

@@ -60,6 +60,8 @@ class TrainingConfig(StrictConfigModel):
     accumulation_steps: int = Field(gt=0)
     total_steps: int = Field(gt=0)
     validation_every_steps: int = Field(gt=0)
+    overfit_validation_recording: bool
+    complex_reconstruction_steps: int = Field(ge=0)
     full_audio_ratio: float = Field(ge=0, le=1)
     precision: Precision
     acoustic_prediction: ScheduledWeight
@@ -155,5 +157,21 @@ class BeetleConfig(StrictConfigModel):
         if segment_frames % self.architecture.posterior.downsample_rate:
             raise ValueError(
                 "adversarial segment_samples must align with posterior downsampling"
+            )
+        if self.training.overfit_validation_recording:
+            training_ids = self.data.selection.audio_file_ids
+            validation_ids = self.validation.audio_file_ids
+            if self.training.batch_size != 1:
+                raise ValueError("validation-recording overfit requires batch_size 1")
+            if self.validation.sample_count != 1:
+                raise ValueError("validation-recording overfit requires one sample")
+            if len(training_ids) != 1 or training_ids != validation_ids:
+                raise ValueError(
+                    "validation-recording overfit requires one matching training "
+                    "and validation audio ID"
+                )
+        if self.training.complex_reconstruction_steps > self.training.total_steps:
+            raise ValueError(
+                "complex reconstruction steps cannot exceed total training steps"
             )
         return self

@@ -54,8 +54,6 @@ class DilatedResidualStack(nn.Module):
         )
 
     def forward(self, features: Tensor, mask: Tensor) -> Tensor:
-        if mask.ndim != 3 or mask.shape[1] != 1:
-            raise ValueError("temporal mask must have shape [B,1,T]")
         for block in self.blocks:
             features = block(features, mask)
         return features * mask
@@ -122,8 +120,6 @@ class ResBlock1D(nn.Module):
 class FrequencyShuffleBlock(nn.Module):
     def __init__(self, channels: int) -> None:
         super().__init__()
-        if channels % 2:
-            raise ValueError("frequency shuffle channels must be even")
         self.channels = channels
         half_channels = channels // 2
         self.convs = nn.Sequential(
@@ -135,8 +131,6 @@ class FrequencyShuffleBlock(nn.Module):
 
     def forward(self, features: Tensor) -> Tensor:
         batch, channels, frequency, frames = features.shape
-        if channels != self.channels:
-            raise ValueError("frequency shuffle input channels do not match block")
         shuffled = features.view(batch, 2, channels // 2, frequency, frames)
         shuffled = shuffled.transpose(1, 2).reshape(
             batch,

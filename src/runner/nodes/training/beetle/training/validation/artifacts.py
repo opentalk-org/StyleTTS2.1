@@ -16,8 +16,6 @@ class ArtifactUploader(Protocol):
 
 class ArtifactQueue:
     def __init__(self, workers: int, capacity: int) -> None:
-        if workers <= 0 or capacity <= 0:
-            raise ValueError("artifact workers and capacity must be positive")
         self.capacity = capacity
         self.executor = ThreadPoolExecutor(
             max_workers=workers,
@@ -125,8 +123,6 @@ class ValidationArtifacts:
         uploader: ArtifactUploader,
         queue: ArtifactQueue,
     ) -> None:
-        if sample_rate <= 0:
-            raise ValueError("validation sample rate must be positive")
         self.output_root = output_root
         self.sample_rate = sample_rate
         self.uploader = uploader

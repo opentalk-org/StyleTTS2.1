@@ -91,6 +91,7 @@ def acoustic_backward(
     weights: AcousticLossWeights,
     latent_generator: torch.Generator,
     source_generator: torch.Generator,
+    completed_step: int,
 ) -> AcousticBackwardMetrics:
     real = segment.samples(waveform)
     segment_frame_mask = segment.frames(frame_mask)
@@ -125,6 +126,7 @@ def acoustic_backward(
             posterior.waveform,
             real,
             posterior.sample_mask,
+            completed_step,
         ).total
         adversarial_view = generator_step_loss(
             acoustic.discriminators,

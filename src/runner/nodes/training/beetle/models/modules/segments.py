@@ -20,8 +20,6 @@ class AlignedSegments:
         sample_hop: int,
         generator: torch.Generator,
     ) -> "AlignedSegments":
-        if frame_mask.ndim != 3 or frame_mask.shape[1] != 1:
-            raise ValueError("segment frame_mask must have shape [B,1,T]")
         lengths = frame_mask[:, 0].sum(dim=1)
         available = lengths - frame_count
         torch._assert_async(
@@ -59,8 +57,6 @@ class AlignedSegments:
         return self._take(values, starts, count)
 
     def context_frames(self, values: Tensor, context_frame_count: int) -> Tensor:
-        if context_frame_count < 0 or context_frame_count % 2:
-            raise ValueError("segment context frame count must be non-negative and even")
         context_side = context_frame_count // 2
         starts = self.frame_starts - context_side
         count = self.frame_count + context_frame_count
@@ -75,8 +71,6 @@ class AlignedSegments:
         return torch.where(valid.expand_as(selected), selected, torch.zeros_like(selected))
 
     def _take(self, values: Tensor, starts: Tensor, count: int) -> Tensor:
-        if values.ndim < 2 or values.shape[0] != starts.shape[0]:
-            raise ValueError("segment values must preserve the planned batch")
         positions = starts.unsqueeze(1) + torch.arange(count, device=values.device)
         for _ in range(values.ndim - 2):
             positions = positions.unsqueeze(1)

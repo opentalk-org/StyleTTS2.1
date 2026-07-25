@@ -21,10 +21,6 @@ def standard_normal_negative_log_likelihood(
     logdet: Tensor,
     mask: Tensor,
 ) -> Tensor:
-    if values.ndim != 3 or mask.shape != (values.shape[0], 1, values.shape[2]):
-        raise ValueError("normal flow density requires [B,C,T] values and [B,1,T] mask")
-    if logdet.shape != (values.shape[0],):
-        raise ValueError("normal flow log determinant must have shape [B]")
     numeric_mask = mask.to(dtype=values.dtype)
     base_nll = 0.5 * (math.log(2 * math.pi) + values.square())
     return (base_nll * numeric_mask).sum(dim=(1, 2)) - logdet
@@ -116,10 +112,6 @@ class DurationPredictor(nn.Module):
         mask: Tensor,
         generator: torch.Generator,
     ) -> Tensor:
-        if duration.shape != (condition.shape[0], 1, condition.shape[2]):
-            raise ValueError("duration must have shape [B,1,T] matching condition")
-        if mask.shape != duration.shape:
-            raise ValueError("duration mask must match duration shape")
         numeric_mask = mask.to(dtype=condition.dtype)
         encoded_condition = self.condition_encoder(condition, mask)
         encoded_duration = self.duration_encoder(duration, mask)
@@ -183,9 +175,6 @@ class DurationPredictor(nn.Module):
         mask: Tensor,
         generator: torch.Generator,
     ) -> Tensor:
-        if mask.shape != (condition.shape[0], 1, condition.shape[2]):
-            raise ValueError(
-                "duration sampling requires [B,C,T] condition and [B,1,T] mask"
             )
         encoded_condition = self.condition_encoder(condition, mask)
         values = torch.randn(

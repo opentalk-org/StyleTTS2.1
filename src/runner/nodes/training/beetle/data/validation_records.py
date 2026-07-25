@@ -22,13 +22,6 @@ class ValidationSegment:
     phonemes: str
     speaker_id: str | None
 
-    def __post_init__(self) -> None:
-        if not self.segment_id:
-            raise ValueError("validation segment ID must not be empty")
-        if self.start < 0 or self.end <= self.start:
-            raise ValueError("validation segment range is invalid")
-
-
 @dataclass(frozen=True)
 class StoredValidationAudio:
     audio_file_id: UUID

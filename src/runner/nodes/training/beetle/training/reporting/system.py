@@ -8,8 +8,6 @@ _BYTES_PER_GIBIBYTE = 1024**3
 
 class SystemMetricsSampler:
     def __init__(self, device_index: int) -> None:
-        if device_index < 0:
-            raise ValueError("GPU device index must be non-negative")
         pynvml.nvmlInit()
         self.gpu = pynvml.nvmlDeviceGetHandleByIndex(device_index)
         self.process = psutil.Process()

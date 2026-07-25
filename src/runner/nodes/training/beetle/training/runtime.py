@@ -143,6 +143,7 @@ def load_validation_source(
         config.validation.sample_count,
         config.runtime.seed,
         config.validation.audio_file_ids,
+        not config.training.overfit_validation_recording,
     )
     return loader.load_source(audio_file_ids)
 

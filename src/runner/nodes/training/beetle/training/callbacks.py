@@ -73,8 +73,6 @@ class StandaloneCallbacks:
 
 def validate_metrics(metrics: tuple[TrainingMetric, ...]) -> None:
     names = tuple(metric.name for metric in metrics)
-    if len(set(names)) != len(names):
-        raise ValueError(f"training metric names must be unique: {names}")
     invalid = tuple(
         metric.name for metric in metrics if not math.isfinite(metric.value)
     )

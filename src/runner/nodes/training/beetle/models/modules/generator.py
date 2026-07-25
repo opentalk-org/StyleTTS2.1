@@ -90,8 +90,6 @@ class Generator(nn.Module):
             + 2 * padding
             - config.temporal_upsample_kernel_size
         )
-        if output_padding < 0 or output_padding >= config.temporal_upsample_rate:
-            raise ValueError("temporal upsampling cannot produce an exact integer rate")
         self.input_projection = nn.Conv1d(
             config.input_channels,
             config.frame_channels,
@@ -115,8 +113,6 @@ class Generator(nn.Module):
             )
         )
         concatenated = config.temporal_channels * len(self.resblocks)
-        if concatenated % config.initial_frequency_bins:
-            raise ValueError("MRF channels must divide into initial frequency bins")
         self.frequency_entry = nn.Conv2d(
             concatenated // config.initial_frequency_bins,
             config.temporal_channels,
@@ -181,19 +177,11 @@ class Generator(nn.Module):
         mask: Tensor,
         generator: torch.Generator,
     ) -> Tensor:
-        if features.ndim != 3 or features.shape[1] != self.config.input_channels:
-            raise ValueError("generator features must have configured [B,C,T] geometry")
         batch_size, _, frames = features.shape
-        if f0.shape != (batch_size, frames):
-            raise ValueError("generator F0 must match frame features")
-        if mask.shape != (batch_size, 1, frames):
-            raise ValueError("generator mask must have shape [B,1,T]")
         frame_mask = mask.to(dtype=features.dtype)
         projected = self.input_projection(features * frame_mask) * frame_mask
         temporal = self.temporal_upsample(F.leaky_relu(projected, 0.1))
         expected_frames = frames * self.config.temporal_upsample_rate
-        if temporal.shape[-1] != expected_frames:
-            raise ValueError("temporal upsampling did not produce configured rate")
         harmonic = self.harmonic_features(f0 * frame_mask[:, 0], generator)
         source = self.source_residual(self.source_projection(harmonic))
         temporal_mask = F.interpolate(frame_mask, size=expected_frames, mode="nearest")
@@ -223,8 +211,6 @@ class Generator(nn.Module):
             frames,
         )
         features = self.frequency_entry(features)
-        if spectral_source.shape != features.shape:
-            raise ValueError("spectral source must match frequency-entry features")
         features = features + spectral_source
         for shuffle in self.frequency_shuffles:
             features = shuffle(features)
@@ -237,6 +223,4 @@ class Generator(nn.Module):
             dim=1,
         )
         frequency_bins = self.config.istft_n_fft // 2 + 1
-        if features.shape[2] != frequency_bins:
-            raise ValueError("frequency path did not reach configured iSTFT bins")
         return features

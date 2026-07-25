@@ -11,10 +11,6 @@ def integrate_latent_flow(
     mask: Tensor,
     steps: int,
 ) -> Tensor:
-    if noise.ndim != 3 or mask.shape != (noise.shape[0], 1, noise.shape[2]):
-        raise ValueError("flow integration requires [B,C,T] noise and [B,1,T] mask")
-    if steps <= 0 or steps & (steps - 1):
-        raise ValueError("flow integration steps must be a positive power of two")
     numeric_mask = mask.to(dtype=noise.dtype)
     state = noise * numeric_mask
     step_size = 1.0 / steps

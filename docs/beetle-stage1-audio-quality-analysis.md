@@ -1,7 +1,5 @@
 # Beetle Stage 1 audio-quality analysis
-
 ## Compared runs
-
 - Direct iSTFTNet2-MB baseline: MLflow experiment 1, run
   `02f540e7062747a7bdeb54a748affb4b`, step 6928.
 - Beetle Stage 1: MLflow experiment 4, run
@@ -13,7 +11,6 @@ ground-truth mel, while Beetle reconstructs through its complete Stage 1
 acoustic path.
 
 ## Observed evidence
-
 The audio was measured consistently with the same STFT and mel analysis,
 independently of each trainer's reported loss.
 
@@ -38,11 +35,8 @@ and low-target-energy measurements also did not support a simple broadband
 high-frequency-noise explanation.
 
 ## Likely problems
-
 These are ranked investigation targets, not confirmed root causes.
-
 ### 1. Reconstruction is underpowered relative to adversarial losses
-
 The successful direct vocoder uses:
 
 ```text
@@ -83,7 +77,6 @@ loss values are therefore not directly comparable, and Beetle's formulation
 may provide a weaker perceptual reconstruction signal at its current weight.
 
 ### 2. The sampled posterior is unconstrained
-
 Beetle always reconstructs from:
 
 ```text
@@ -235,31 +228,73 @@ training begins. Therefore Beetle's loss formula is faithful to StyleTTS2 in
 isolation. The relevant difference is its schedule and the acoustic information
 presented to the decoder, not merely the number 5.
 
-## Recommended diagnostic experiment
+## Sample-8 overfit localization
 
-Do not restart training to localize this. Export the same validation recordings
-from the same checkpoint under four conditions:
+The batch-size-one path was exercised with the same recording in training and
+validation. The clipped run reached validation reconstruction `0.1966` at step
+3000. It should not be treated as a synthesis-capacity result because the
+generator's routine gradient norm of roughly 30-55 was clipped to 10 through
+step 3194.
 
-1. Sampled posterior with predicted F0/N, matching current validation.
-2. Posterior mean with predicted F0/N.
-3. Sampled posterior with target F0/N.
-4. Posterior mean with target F0/N.
+Controlled tests from its step-5000 checkpoint localized the remaining paths:
 
-Use an identical harmonic-source seed in all four conditions. Record the same
-consistent 0-8 kHz mel error and band correlations for each output. Also record
-harmonic-track continuity or instantaneous-frequency error; the completed
-aperiodicity and `9 * F0` checks were not discriminating.
+| Test | Result |
+| --- | ---: |
+| Free current PQMF/iSTFT spectrum, 250 updates | 0.139 |
+| Free current PQMF/iSTFT spectrum, 600 updates | 0.081 |
+| Frozen decoder features, generator only, 25 updates | 0.103 |
+| Frozen decoder features, generator only, 100 updates | 0.089 |
+| Ten independently sampled posterior latents | 0.16106-0.16150 |
+| Posterior mean with predicted F0/N | 0.16090 |
+| Posterior mean with target F0/N | 0.16139 |
+| Random harmonic-source seed, generator only, 100 updates | 0.089 |
+| Joint acoustic update with dropout, 50 updates | 0.100 |
+| Joint acoustic update without dropout, 50 updates | 0.099 |
+| From-zero full-recording acoustic training, step 1300 | 0.14975 |
+| From-zero random-segment acoustic training, step 1500 | 0.22202 |
 
-Interpretation:
+The generator-loss gradients at the checkpoint did not show GAN cancellation.
+In generator parameter space, reconstruction versus adversarial and
+feature-matching cosines were `+0.386` and `+0.443`. The conditional input
+builder also obtains target audio latents under `torch.no_grad()`, so latent-flow
+loss does not update the audio encoder.
 
-- If condition 2 improves, posterior sampling or posterior variance is harmful.
-- If condition 3 improves, FeatureLinear/F0/N conditioning is the main defect.
-- If condition 4 alone improves, both paths contribute.
-- If none improves, focus next on loss balance, decoder features, and the
-  harmonic-source implementation.
+These tests reject a hard high-frequency representation ceiling, posterior
+sampling, F0/N prediction, source randomness, acoustic dropout, and opposing
+GAN gradients as sole explanations. Full-recording exposure accelerates the
+scalar metric, but its output remains blurred and segments are mandatory.
+Nonfinite-step rejection remains enabled.
+## Full-recording diagnostic
+The full-recording run reached `0.24896`, `0.17848`, and `0.13224` at steps
+500, 1000, and 1500; its final 50 updates averaged `0.12468`. STFT artifacts
+remain unacceptable: upper harmonics are diffuse, events are widened, and weak
+detail is missing. Full-recording exposure cannot replace segments.
 
-After localization, the most justified training ablation is a checkpoint copy
-with stronger direct reconstruction and delayed or reduced adversarial and
-feature-matching weights. A second focused ablation can raise only the
-FeatureLinear gradient cap. Neither change should be applied blindly to the
-current run before the four-way export.
+## Segment controls
+These controls retained PQMF, iSTFT, segments, and all other training settings:
+
+| Run/checkpoint | Reconstruction | STFT result |
+| --- | ---: | --- |
+| Existing segmented baseline | 0.23135 | diffuse upper harmonics |
+| Direct native-bin projection | 0.20721 | diffuse, extra bin texture |
+| Full-range phase angle, two runs | .23952/.30940@500 | diffuse, no improvement |
+| Direct PQMF waveform | invalid | all updates nonfinite at step zero |
+| Extended context; decoder dilation 1/2/4/8 | .22076/.32479@500 | no fix |
+| No F0/N training smoothing | 0.24064 | diffuse, no improvement |
+| 80-mel; no gain; mean; no dropout | .19270/.31373/.29667/.33989 | texture remains |
+| Refinement after 1000/500; fixed features | .20014/.20025; .22931@1k | no fix |
+| GAN delayed to step 1000, at step 1000 | 0.26796 | stopped |
+| F0/N teacher forcing, at step 1000 | 0.24289 | no advantage |
+| Complex 1500 + mel 500; compressed | .14112 final/.330@500 | corr +.055/.018/.030 |
+| Split optimizers; generator-input LayerNorm | .32204/.23477; .35074 | stopped |
+| Direct complex spectrum head, step 500/1000 | 0.30811/0.23287 | severe bead texture |
+| Resize frequency/temporal; all-polyphase | .326/.378/.299@500 | grid remains |
+| Higher-resolution iSTFT + direct complex, step 500 | 0.32360 | unchanged texture |
+| Bounded direct PQMF waveform head, step 500 | 0.40733 | unchanged texture |
+| No harmonic source; direct source-filter | .32939/.31453@500 | grid remains |
+| LeakyReLU temporal residuals, step 500 | 0.31309 | unchanged texture; stopped |
+The artifact survives replacing iSTFT with a direct PQMF waveform head and
+removing harmonic-source injection. PQMF round-trip correlation is 0.99999976,
+so its filters/order are sound. The defect is not the iSTFT head alone. The
+phase formerly excluded 68% of angles via `polar(magnitude, sin(phase))`; fixing
+it is correct but insufficient. Fresh runs seed Python, NumPy, and Torch.

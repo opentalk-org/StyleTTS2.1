@@ -113,8 +113,6 @@ def apply_window_ranges(
 
 
 def range_mask(width: int, starts: Tensor, lengths: Tensor) -> Tensor:
-    if width <= 0 or starts.shape != lengths.shape or starts.ndim != 1:
-        raise ValueError("range masks require positive width and vector ranges")
     positions = torch.arange(width, device=starts.device).unsqueeze(0)
     mask = (positions >= starts.unsqueeze(1)) & (
         positions < (starts + lengths).unsqueeze(1)
@@ -146,17 +144,8 @@ def slice_windows(
     source_lengths: Tensor,
     left_pad: bool,
 ) -> tuple[Tensor, Tensor]:
-    if values.ndim != 3:
-        raise ValueError("window slicing requires [B,C,T] values")
     batch_size = values.shape[0]
     vector_shape = (batch_size,)
-    if any(
-        item.shape != vector_shape
-        for item in (starts, requested_lengths, source_lengths)
-    ):
-        raise ValueError("window ranges must contain one value per batch item")
-    if torch.any(source_lengths > requested_lengths):
-        raise ValueError("window source lengths exceed requested lengths")
     width = int(requested_lengths.max().item())
     positions = torch.arange(width, device=values.device).unsqueeze(0)
     padding = requested_lengths - source_lengths if left_pad else torch.zeros_like(starts)
@@ -178,11 +167,7 @@ def slice_windows(
 
 
 def phoneme_mask_for_frames(hard_alignment: Tensor, frame_mask: Tensor) -> Tensor:
-    if hard_alignment.ndim != 3:
-        raise ValueError("hard alignment must have shape [B,P,T]")
     expected = (hard_alignment.shape[0], 1, hard_alignment.shape[2])
-    if frame_mask.shape != expected:
-        raise ValueError("frame selection mask must have shape [B,1,T]")
     selected = hard_alignment.to(dtype=torch.bool) & frame_mask
     return selected.any(dim=2, keepdim=False).unsqueeze(1)
 
@@ -197,19 +182,6 @@ def sample_window_ranges(
     generator: torch.Generator,
     force_full: bool,
 ) -> WindowRanges:
-    if valid_lengths.ndim != 1 or torch.any(valid_lengths <= 0):
-        raise ValueError("window sampling requires positive one-dimensional lengths")
-    if not 0 <= full_audio_ratio <= 1:
-        raise ValueError("full_audio_ratio must be between zero and one")
-    if minimum_frames <= 0 or (
-        maximum_frames is not None and maximum_frames < minimum_frames
-    ):
-        raise ValueError("target frame bounds are invalid")
-    if (
-        context_minimum_frames <= 0
-        or context_maximum_frames < context_minimum_frames
-    ):
-        raise ValueError("context frame bounds are invalid")
     target_upper = (
         valid_lengths
         if maximum_frames is None
@@ -282,8 +254,6 @@ def _uniform_lengths(
     maximum: Tensor,
     generator: torch.Generator,
 ) -> Tensor:
-    if torch.any(maximum < minimum):
-        raise ValueError("uniform upper bounds must not be below the minimum")
     values = torch.rand(
         maximum.shape,
         device=maximum.device,

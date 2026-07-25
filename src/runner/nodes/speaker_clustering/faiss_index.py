@@ -18,10 +18,6 @@ class FaissIndexSettings:
     search_probes: int = 64
     random_seed: int = 0
 
-    def __post_init__(self) -> None:
-        if self.training_rows <= 0 or self.search_probes <= 0:
-            raise ValueError("FAISS training_rows and search_probes must be positive")
-
     @classmethod
     def for_test(cls) -> FaissIndexSettings:
         return cls(

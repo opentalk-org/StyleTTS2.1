@@ -27,8 +27,6 @@ class ValidationRuntime:
         self.evaluator = evaluator
 
     def evaluate(self, recordings: tuple[object, ...], step: int) -> ValidationResult:
-        if step < 0 or not recordings:
-            raise ValueError("validation requires a nonnegative step and recordings")
         rng = capture_rng_state()
         roots = self.evaluator.modules()
         modes = _capture_modes(roots)
@@ -37,8 +35,6 @@ class ValidationRuntime:
                 module.eval()
             with torch.no_grad():
                 samples = self.evaluator.evaluate_samples(recordings, step)
-            if not samples:
-                raise ValueError("validation evaluator returned no samples")
             aggregates = aggregate_losses(samples)
         finally:
             _restore_modes(modes)
@@ -54,8 +50,6 @@ class ValidationCoordinator:
         artifacts: ValidationArtifacts | None,
         distributed: DistributedRuntime,
     ) -> None:
-        if not recordings:
-            raise ValueError("validation coordinator requires recordings")
         self.validator = validator
         self.recordings = recordings
         self.artifacts = artifacts
@@ -64,8 +58,6 @@ class ValidationCoordinator:
     def run(self, step: int) -> tuple[TrainingMetric, ...]:
         result = self.validator.evaluate(self.recordings, step)
         if self.distributed.is_main_process:
-            if self.artifacts is None:
-                raise ValueError("main process requires validation artifacts")
             self.artifacts.publish(result)
         metrics = validation_metrics(result)
         shared = self.distributed.broadcast_object(
@@ -77,8 +69,6 @@ class ValidationCoordinator:
 
     def close(self) -> None:
         if self.distributed.is_main_process:
-            if self.artifacts is None:
-                raise ValueError("main process requires validation artifacts")
             self.artifacts.close()
         self.distributed.wait_for_everyone()
 
@@ -87,8 +77,6 @@ def aggregate_losses(
     samples: tuple[ValidationSampleResult, ...],
 ) -> tuple[TrainingMetric, ...]:
     names = tuple(metric.name for metric in samples[0].losses)
-    if any(tuple(metric.name for metric in sample.losses) != names for sample in samples):
-        raise ValueError("validation loss names must match across samples")
     count = len(samples)
     return tuple(
         TrainingMetric(

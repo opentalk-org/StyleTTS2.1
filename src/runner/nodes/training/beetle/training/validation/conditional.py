@@ -44,6 +44,7 @@ class ConditionalValidationEvaluator:
         training_config: TrainingConfig,
         runtime_seed: int,
         device: torch.device,
+        require_distinct_voices: bool,
     ) -> None:
         self.acoustic = acoustic
         self.models = models
@@ -52,6 +53,7 @@ class ConditionalValidationEvaluator:
         self.schedules = TrainingSchedules.from_config(training_config)
         self.runtime_seed = runtime_seed
         self.device = device
+        self.require_distinct_voices = require_distinct_voices
 
     @staticmethod
     def required_model_names() -> tuple[str, ...]:
@@ -85,7 +87,8 @@ class ConditionalValidationEvaluator:
         recordings: tuple[ValidationRecording, ...],
         step: int,
     ) -> tuple[ConditionalValidationSample, ...]:
-        _require_contrastive_groups(recordings)
+        if self.require_distinct_voices:
+            _require_contrastive_groups(recordings)
         batch = merge_validation_recordings(recordings).to(self.device)
         loop = LoopState(
             step,
@@ -222,9 +225,6 @@ def _require_contrastive_groups(
     recordings: tuple[ValidationRecording, ...],
 ) -> None:
     speaker_ids = tuple(recording.batch.speaker_ids[0] for recording in recordings)
-    if len(recordings) < 2 or len(set(speaker_ids)) < 2:
-        raise ValueError(
-            "conditional validation requires at least two recordings with distinct voices"
         )
 
 

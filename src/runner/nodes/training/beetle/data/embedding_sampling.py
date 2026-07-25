@@ -76,20 +76,10 @@ class EmbeddingGroupPlanner:
             if len(keys) >= self.grouping.utterances_per_voice
         ]
         required_voices = self.grouping.voices_per_batch * self.shard.world_size
-        if len(voices) < required_voices:
-            raise ValueError(
-                "voice GE2E sampling requires "
-                f"{required_voices} voices with "
-                f"{self.grouping.utterances_per_voice} utterances; found {len(voices)}"
             )
         required_recordings = (
             self.grouping.recordings_per_batch * self.shard.world_size
         )
-        if len(self.index.pools.recording_groups) < required_recordings:
-            raise ValueError(
-                "style GE2E sampling requires "
-                f"{required_recordings} recordings; found "
-                f"{len(self.index.pools.recording_groups)}"
             )
 
     def _voice_group(

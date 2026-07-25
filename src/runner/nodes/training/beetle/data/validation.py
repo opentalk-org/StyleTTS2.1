@@ -27,6 +27,7 @@ def select_validation_audio_ids(
     sample_count: int,
     runtime_seed: int,
     configured_audio_file_ids: tuple[UUID, ...],
+    require_distinct_voices: bool,
 ) -> tuple[UUID, ...]:
     candidates = list(index.validation.audio_file_ids)
     if len(candidates) < sample_count:
@@ -52,14 +53,14 @@ def select_validation_audio_ids(
     candidate_voices = {
         index.validation.voice_for(audio_id) for audio_id in candidates
     }
-    if len(candidate_voices) < 2 or sample_count < 2:
+    if require_distinct_voices and (len(candidate_voices) < 2 or sample_count < 2):
         raise ValueError(
             "conditional validation requires at least two distinct voices"
         )
     selected_voices = {
         index.validation.voice_for(audio_id) for audio_id in selected
     }
-    if len(selected_voices) == 1:
+    if require_distinct_voices and len(selected_voices) == 1:
         if configured_audio_file_ids:
             raise ValueError(
                 "configured validation audio requires at least two distinct voices"

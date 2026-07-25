@@ -58,8 +58,6 @@ def build_optimizers(
         *trainable_conditional_modules(conditional),
     )
     parameters = tuple(parameter for module in modules for parameter in module.parameters())
-    if len({id(parameter) for parameter in parameters}) != len(parameters):
-        raise ValueError("generator parameters must have one optimizer owner")
     generator = _adamw(parameters, config.generator_optimizer)
     discriminator = _adamw(
         tuple(acoustic.discriminators.parameters()),
@@ -189,14 +187,10 @@ def named_trainable_conditional_modules(
 def update_latent_flow_ema(ema: nn.Module, online: nn.Module, decay: float) -> None:
     ema_parameters = dict(ema.named_parameters())
     online_parameters = dict(online.named_parameters())
-    if ema_parameters.keys() != online_parameters.keys():
-        raise ValueError("EMA and online latent-flow parameters do not match")
     for name, ema_parameter in ema_parameters.items():
         ema_parameter.mul_(decay).add_(online_parameters[name], alpha=1 - decay)
     ema_buffers = dict(ema.named_buffers())
     online_buffers = dict(online.named_buffers())
-    if ema_buffers.keys() != online_buffers.keys():
-        raise ValueError("EMA and online latent-flow buffers do not match")
     for name, ema_buffer in ema_buffers.items():
         ema_buffer.copy_(online_buffers[name])
 
@@ -210,7 +204,7 @@ def _acoustic_gradient_groups(models: AcousticModels) -> tuple[NamedGradientGrou
         NamedGradientGroup("audio_encoder", (models.audio_encoder,), GradientClipping.CLIP),
         NamedGradientGroup("feature_linear", (models.feature_linear,), GradientClipping.OBSERVE),
         NamedGradientGroup("decoder", (models.decoder,), GradientClipping.CLIP),
-        NamedGradientGroup("generator", (models.generator,), GradientClipping.CLIP),
+        NamedGradientGroup("generator", (models.generator,), GradientClipping.OBSERVE),
     )
 
 

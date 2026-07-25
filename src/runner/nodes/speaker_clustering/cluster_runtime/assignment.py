@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-import numpy as np
 from pydantic import BaseModel, Field
 
 from runner.nodes.speaker_clustering.shards import EmbeddingQuality
@@ -27,28 +26,12 @@ class AssignmentPolicy(BaseModel):
     dispersion_penalty: float = Field(ge=0.0)
     threshold_version: str = Field(min_length=1)
 
-    def model_post_init(self, __context: object) -> None:
-        if self.new_threshold >= self.accept_threshold:
-            raise ValueError("new_threshold must be lower than accept_threshold")
-
-
 @dataclass(frozen=True)
 class CandidateScores:
     cluster_ids: list[int]
     scores: list[float]
     best_dispersion: float
     best_suspicious: bool
-
-    def __post_init__(self) -> None:
-        if not self.cluster_ids or len(self.cluster_ids) != len(self.scores):
-            raise ValueError(
-                "candidate cluster IDs and scores must be non-empty and aligned"
-            )
-        if not np.isfinite(self.scores).all() or not np.isfinite(self.best_dispersion):
-            raise ValueError("candidate scores and dispersion must be finite")
-        if any(left < right for left, right in zip(self.scores, self.scores[1:])):
-            raise ValueError("candidate scores must be sorted from highest to lowest")
-
 
 @dataclass(frozen=True)
 class AssignmentDecision:

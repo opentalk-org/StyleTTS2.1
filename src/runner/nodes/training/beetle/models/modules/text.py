@@ -23,8 +23,6 @@ class PhonemeEncoder(nn.Module):
         self.projection = nn.Conv1d(bert.config.hidden_size, output_channels, 1)
 
     def forward(self, input_ids: Tensor, mask: Tensor) -> PhonemeEncoding:
-        if input_ids.shape != mask.shape:
-            raise ValueError("phoneme ids and mask must have equal shapes")
         # PL-BERT has learned positions for 512 tokens, while a recording may be
         # much longer. Independent windows preserve every phoneme without
         # inventing positional embeddings outside the pretrained range.
@@ -141,8 +139,6 @@ class TextEncoder(nn.Module):
         self.voice_projection = nn.Linear(bert.config.hidden_size, output_channels)
 
     def forward(self, input_ids: Tensor, mask: Tensor) -> PromptEncoding:
-        if input_ids.shape != mask.shape:
-            raise ValueError("text ids and mask must have equal shapes")
         tokens = self.bert(
             input_ids=input_ids,
             attention_mask=mask,

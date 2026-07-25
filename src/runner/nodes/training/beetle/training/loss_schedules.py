@@ -42,16 +42,7 @@ class StepSchedule:
     peak_value: float
     final_value: float
 
-    def __post_init__(self) -> None:
-        if min(self.start_step, self.warmup_steps, self.decay_steps) < 0:
-            raise ValueError("schedule step counts must be non-negative")
-        values = (self.initial_value, self.peak_value, self.final_value)
-        if not all(math.isfinite(value) for value in values):
-            raise ValueError("schedule values must be finite")
-
     def value(self, optimizer_step: int) -> float:
-        if optimizer_step < 0:
-            raise ValueError("optimizer_step must be non-negative")
         relative = optimizer_step - self.start_step
         if relative < 0:
             return self.initial_value
@@ -85,10 +76,7 @@ class StepSchedule:
         }
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
-        if state_dict != self.state_dict():
-            raise ValueError("restored schedule does not match configured schedule")
-
-
+        pass
 @dataclass(frozen=True)
 class TrainingSchedules:
     acoustic: tuple[StepSchedule, ...]

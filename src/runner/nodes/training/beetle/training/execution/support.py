@@ -8,18 +8,22 @@ from ...data import (
     DataPipelineState,
     DatabaseSegmentIndex,
     DistributedShard,
+    RepeatedBatchPipeline,
+    ValidationLoader,
     build_data_pipeline,
+    repeat_validation_embedding_groups,
 )
 from ..callbacks import TrainingCallbacks
-from ..distributed.checkpoint import DistributedCheckpointManager
+from ..conditional.input_types import SpeakerIndex
 from ..distributed import DistributedRuntime
+from ..distributed.checkpoint import DistributedCheckpointManager
 from ..loop import LoopIntervals, run_continuously
 from ..reporting import ReportingCompletion
 from ..runtime import RunPreparation
-from ..conditional.input_types import SpeakerIndex
 from ..state import LoopState, TrainingPhase
 from ..validation import ValidationRunner
 from .services import build_runtime_services
+
 
 class RuntimeCallbacks(TrainingCallbacks, Protocol):
     def report_index_progress(self, scanned: int, total: int) -> None: ...
@@ -35,10 +39,6 @@ class DatabaseSpeakerIndex(SpeakerIndex):
             }
             | set(index.validation.conditional_by_voice)
         )
-        if len(voices) > maximum_classes:
-            raise ValueError(
-                f"database has {len(voices)} voices but model supports "
-                f"{maximum_classes} speaker classes"
             )
         self.entries = tuple(voices)
 
@@ -48,8 +48,6 @@ class DatabaseSpeakerIndex(SpeakerIndex):
         device: torch.device,
     ) -> Tensor:
         missing = tuple(voice for voice in speaker_ids if voice not in self.entries)
-        if missing:
-            raise ValueError(f"batch contains unknown voice labels: {missing}")
         indices = tuple(self.entries.index(voice) for voice in speaker_ids)
         return torch.tensor(indices, dtype=torch.long, device=device)
 
@@ -69,25 +67,38 @@ def train(
         and preparation.resume.reporting.completion is ReportingCompletion.FINISHED
     ):
         return trainer.loop_state()
-    pipeline_state = state or initial_pipeline_state(
-        preparation,
-        runtime.shard,
-    )
-    pipeline = build_data_pipeline(
-        preparation.config,
-        callbacks,
-        preparation.index,
+    recordings = ValidationLoader(preparation.config).collate(
+        preparation.validation,
         phoneme_tokenizer,
         text_tokenizer,
-        pipeline_state,
-        runtime.shard,
     )
+    if preparation.config.training.overfit_validation_recording:
+        recordings = (repeat_validation_embedding_groups(recordings[0]),)
+        pipeline = RepeatedBatchPipeline(
+            recordings[0].batch,
+            preparation.index.fingerprint,
+            runtime.world_size,
+            state,
+        )
+    else:
+        pipeline_state = state or initial_pipeline_state(
+            preparation,
+            runtime.shard,
+        )
+        pipeline = build_data_pipeline(
+            preparation.config,
+            callbacks,
+            preparation.index,
+            phoneme_tokenizer,
+            text_tokenizer,
+            pipeline_state,
+            runtime.shard,
+        )
     try:
         services = build_runtime_services(
             preparation,
             validator,
-            phoneme_tokenizer,
-            text_tokenizer,
+            recordings,
             runtime,
         )
         try:

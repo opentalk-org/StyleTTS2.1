@@ -98,8 +98,6 @@ class ConditionVectors:
     language: Tensor
 
     def at_rate(self, phoneme: Tensor) -> ConditionInputs:
-        if phoneme.ndim != 3:
-            raise ValueError("phoneme condition must have shape [B,C,T]")
         tokens = phoneme.shape[2]
         vectors = (
             self.style,
@@ -111,7 +109,5 @@ class ConditionVectors:
             self.post_audio,
             self.language,
         )
-        if any(value.ndim != 2 or value.shape[0] != phoneme.shape[0] for value in vectors):
-            raise ValueError("condition vectors must have shape [B,C]")
         expanded = tuple(value.unsqueeze(2).expand(-1, -1, tokens) for value in vectors)
         return ConditionInputs(phoneme, *expanded)

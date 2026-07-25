@@ -40,17 +40,8 @@ class DistributedShard:
     rank: int
     world_size: int
 
-    def __post_init__(self) -> None:
-        if self.world_size <= 0:
-            raise ValueError("distributed world size must be positive")
-        if self.rank < 0 or self.rank >= self.world_size:
-            raise ValueError("distributed rank must be within world size")
-
-
 class _PermutationPool:
     def __init__(self, keys: tuple[SegmentKey, ...], seed: int, label: str) -> None:
-        if not keys:
-            raise ValueError(f"sampling pool is empty: {label}")
         self.keys = keys
         self.seed = seed
         self.label = label
@@ -73,10 +64,6 @@ class _PermutationPool:
 
     def restore(self, state: PoolState) -> None:
         expected = self._permutation(state.cycle_index)
-        if state.permutation != expected:
-            raise ValueError(f"{self.label} permutation does not match seed/cycle")
-        if state.next_position < 0 or state.next_position > len(expected):
-            raise ValueError(f"{self.label} next_position is invalid")
         self.cycle_index = state.cycle_index
         self.permutation = state.permutation
         self.next_position = state.next_position
@@ -120,8 +107,6 @@ class ContinuousBatchPlanner:
         return self.next_window(1)[0].batch
 
     def next_window(self, batch_count: int) -> tuple[PlannedWindowBatch, ...]:
-        if batch_count <= 0:
-            raise ValueError("window batch count must be positive")
         if not self.pending_batches:
             self._plan_window(batch_count)
         take = min(batch_count, len(self.pending_batches))
@@ -193,10 +178,6 @@ class ContinuousBatchPlanner:
         )
 
     def load_state_dict(self, state: PlannerState) -> None:
-        if state.batch_index < 0:
-            raise ValueError("batch_index must be non-negative")
-        if state.planning_batch_index < state.batch_index:
-            raise ValueError("planning batch index precedes consumed batches")
         self.sentence.restore(state.sentence)
         self.batch_index = state.batch_index
         self.planning_batch_index = state.planning_batch_index

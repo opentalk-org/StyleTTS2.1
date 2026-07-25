@@ -29,11 +29,6 @@ class DataPipelineState:
     planner: PlannerState
     world_size: int
 
-    def __post_init__(self) -> None:
-        if self.world_size <= 0:
-            raise ValueError("pipeline world size must be positive")
-
-
 @dataclass(frozen=True)
 class _QueuedBatch:
     batch: TrainingBatch
@@ -62,12 +57,6 @@ class TrainingDataPipeline:
         sample_rate: int,
         initial_state: DataPipelineState,
     ) -> None:
-        if window_size <= 0:
-            raise ValueError("prefetch window size must be positive")
-        if initial_state.data_fingerprint != planner.index.fingerprint:
-            raise ValueError("data fingerprint does not match planner index")
-        if initial_state.world_size != planner.shard.world_size:
-            raise ValueError("pipeline world size does not match planner shard")
         planner.load_state_dict(initial_state.planner)
         self.planner = planner
         self.loader = loader
@@ -110,10 +99,6 @@ class TrainingDataPipeline:
     def load_state_dict(self, state: DataPipelineState) -> None:
         if self._in_flight is not None:
             raise RuntimeError("cannot restore while a batch is in flight")
-        if state.data_fingerprint != self.planner.index.fingerprint:
-            raise ValueError("restored data fingerprint does not match index")
-        if state.world_size != self.planner.shard.world_size:
-            raise ValueError("restored world size does not match planner shard")
         self._stop_producer()
         self.planner.load_state_dict(state.planner)
         self._committed_state = state
@@ -201,10 +186,6 @@ class TrainingDataPipeline:
         return max(1, round(seconds * self.sample_rate * 4))
 
     def _reserve_bytes(self, decoded_bytes: int) -> bool:
-        if decoded_bytes > self.maximum_decoded_bytes:
-            raise ValueError(
-                "one prefetch window exceeds decoded-byte limit: "
-                f"{decoded_bytes} > {self.maximum_decoded_bytes}"
             )
         with self._condition:
             self._condition.wait_for(

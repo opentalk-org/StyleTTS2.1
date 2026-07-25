@@ -43,15 +43,6 @@ class ObjectRange:
     byte_offset: int
     byte_length: int
 
-    def __post_init__(self) -> None:
-        if not self.path:
-            raise ValueError("object path is required")
-        if self.byte_offset < 0:
-            raise ValueError("object range offset must be non-negative")
-        if self.byte_length <= 0:
-            raise ValueError("object range length must be positive")
-
-
 class ObjectStore(ABC):
     @abstractmethod
     def upload(self, path: str, data: bytes) -> None:

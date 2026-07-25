@@ -48,8 +48,6 @@ FREQUENCY_BANDS = (
 
 
 def _expanded_mask(values: Tensor, mask: Tensor) -> Tensor:
-    if mask.ndim != values.ndim:
-        raise ValueError("loss mask rank must match values")
     return torch.broadcast_to(mask.to(dtype=torch.bool), values.shape)
 
 
@@ -61,8 +59,6 @@ def _masked_mean(values: Tensor, mask: Tensor) -> Tensor:
 
 
 def masked_kl_standard_normal(mean: Tensor, log_scale: Tensor, mask: Tensor) -> Tensor:
-    if mean.shape != log_scale.shape:
-        raise ValueError("posterior mean and log scale must have equal shapes")
     divergence = 0.5 * (mean.square() + torch.exp(2 * log_scale) - 1 - 2 * log_scale)
     return _masked_mean(divergence.sum(dim=1, keepdim=True), mask)
 
@@ -73,8 +69,6 @@ def masked_f0_smooth_l1(
     mask: Tensor,
     scale_hz: float,
 ) -> Tensor:
-    if predicted.shape != target.shape:
-        raise ValueError("predicted and target F0 must have equal shapes")
     values = F.smooth_l1_loss(
         predicted / scale_hz,
         target / scale_hz,
@@ -88,8 +82,6 @@ def masked_n_smooth_l1(
     target: Tensor,
     mask: Tensor,
 ) -> Tensor:
-    if predicted.shape != target.shape:
-        raise ValueError("predicted and target N must have equal shapes")
     values = F.smooth_l1_loss(predicted, target, reduction="none")
     return _masked_mean(values, mask[:, 0])
 
@@ -111,6 +103,7 @@ class StyleTTSMelTransform(nn.Module):
         self,
         resolution: SpectralResolution,
         sample_rate: int,
+        mel_channels: int,
     ) -> None:
         super().__init__()
         self.resolution = resolution
@@ -120,6 +113,12 @@ class StyleTTSMelTransform(nn.Module):
             win_length=resolution.win_length,
             hop_length=resolution.hop_length,
             window_fn=torch.hann_window,
+            n_mels=mel_channels,
+        )
+        self.register_buffer(
+            "stft_window",
+            torch.hann_window(resolution.win_length),
+            persistent=False,
         )
         mel_max = 2595 * torch.log10(torch.tensor(1 + sample_rate / 1400))
         mel_points = torch.linspace(0, mel_max, self.transform.n_mels + 2)[1:-1]
@@ -130,19 +129,29 @@ class StyleTTSMelTransform(nn.Module):
                 for band in FREQUENCY_BANDS
             )
         )
-        if not torch.all(band_masks.any(dim=1)):
-            raise ValueError("each diagnostic frequency band requires a mel bin")
         self.register_buffer("frequency_band_masks", band_masks, persistent=False)
 
     def forward(self, waveform: Tensor) -> Tensor:
         mel = self.transform(waveform)
         return (torch.log(1e-5 + mel) + 4) / 4
 
+    def complex_spectrum(self, waveform: Tensor) -> Tensor:
+        return torch.stft(
+            waveform,
+            n_fft=self.resolution.n_fft,
+            hop_length=self.resolution.hop_length,
+            win_length=self.resolution.win_length,
+            window=self.stft_window,
+            return_complex=True,
+        )
+
 
 class MultiResolutionReconstructionLoss(nn.Module):
     def __init__(
         self,
         sample_rate: int,
+        mel_channels: int,
+        complex_reconstruction_steps: int,
         resolutions: tuple[SpectralResolution, ...] = (
             SpectralResolution(1024, 120, 600),
             SpectralResolution(2048, 240, 1200),
@@ -150,8 +159,10 @@ class MultiResolutionReconstructionLoss(nn.Module):
         ),
     ) -> None:
         super().__init__()
+        self.complex_reconstruction_steps = complex_reconstruction_steps
         self.transforms = nn.ModuleList(
-            StyleTTSMelTransform(resolution, sample_rate) for resolution in resolutions
+            StyleTTSMelTransform(resolution, sample_rate, mel_channels)
+            for resolution in resolutions
         )
 
     def _resolution_loss(
@@ -161,6 +172,7 @@ class MultiResolutionReconstructionLoss(nn.Module):
         target: Tensor,
         lengths: Tensor,
         include_diagnostics: bool,
+        include_complex: bool,
     ) -> tuple[Tensor, tuple[Tensor, ...]]:
         total = predicted.new_zeros(())
         band_totals = (
@@ -177,6 +189,20 @@ class MultiResolutionReconstructionLoss(nn.Module):
             difference = (target_mel - predicted_mel).abs()
             convergence = difference.sum()
             convergence = convergence / torch.norm(target_mel, p=1)
+            if include_complex:
+                predicted_spectrum = transform.complex_spectrum(
+                    predicted[selected, 0, :valid_samples]
+                )
+                target_spectrum = transform.complex_spectrum(
+                    target[selected, 0, :valid_samples]
+                )
+                complex_convergence = (
+                    target_spectrum - predicted_spectrum
+                ).abs().sum()
+                complex_convergence = (
+                    complex_convergence / target_spectrum.abs().sum()
+                )
+                convergence = (convergence + complex_convergence) * 0.5
             total = total + convergence * sample_count / predicted.shape[0]
             if include_diagnostics:
                 band_totals = tuple(
@@ -206,10 +232,9 @@ class MultiResolutionReconstructionLoss(nn.Module):
         predicted: Tensor,
         target: Tensor,
         sample_mask: Tensor,
+        completed_step: int,
         include_diagnostics: bool = False,
     ) -> ReconstructionLoss:
-        if predicted.shape != target.shape or predicted.shape != sample_mask.shape:
-            raise ValueError("waveforms and sample mask must have equal shapes")
         lengths = sample_mask.sum(dim=(1, 2))
         torch._assert_async(
             torch.all(lengths > 0),
@@ -222,6 +247,7 @@ class MultiResolutionReconstructionLoss(nn.Module):
                 target,
                 lengths,
                 include_diagnostics,
+                completed_step <= self.complex_reconstruction_steps,
             )
             for transform in self.transforms
         )

@@ -24,8 +24,6 @@ def discriminator_lsgan_loss(
     real_logits: list[Tensor],
     fake_logits: list[Tensor],
 ) -> Tensor:
-    if not real_logits or len(real_logits) != len(fake_logits):
-        raise ValueError("real and fake discriminator logits must align")
     losses = [
         (1 - real).square().mean() + fake.square().mean()
         for real, fake in zip(real_logits, fake_logits, strict=True)
@@ -34,8 +32,6 @@ def discriminator_lsgan_loss(
 
 
 def generator_lsgan_loss(fake_logits: list[Tensor]) -> Tensor:
-    if not fake_logits:
-        raise ValueError("generator loss requires discriminator logits")
     return torch.stack([(1 - fake).square().mean() for fake in fake_logits]).sum()
 
 
@@ -43,8 +39,6 @@ def feature_matching_loss(
     real_features: list[list[Tensor]],
     fake_features: list[list[Tensor]],
 ) -> Tensor:
-    if not real_features or len(real_features) != len(fake_features):
-        raise ValueError("real and fake discriminator feature groups must align")
     losses = [
         (real.detach() - fake).abs().mean()
         for real_group, fake_group in zip(real_features, fake_features, strict=True)

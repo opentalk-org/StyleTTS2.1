@@ -16,10 +16,6 @@ class PackFolderAllocator:
     _database_counts: dict[str, int] | None = field(init=False, default=None)
     _pending: Counter[str] = field(init=False, default_factory=Counter)
 
-    def __post_init__(self) -> None:
-        if self.target_files < 1:
-            raise ValueError("pack folder target must be positive")
-
     def path_for(self, pack_id: uuid.UUID) -> str:
         folder = self._folder_with_capacity()
         self._pending[folder] += 1

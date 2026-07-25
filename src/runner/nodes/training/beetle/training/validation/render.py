@@ -40,8 +40,6 @@ def render_validation_sample(
     magnitude, phase = _spectrogram_pairs(sample.ground_truth, sample.prediction)
     _matrix_pair(directory / "stft_magnitude.png", magnitude, "STFT magnitude")
     _matrix_pair(directory / "phase.png", phase, "STFT phase")
-    if sample.alignment is None:
-        raise ValueError("training validation requires an alignment artifact")
     _matrix_plot(directory / "alignment.png", sample.alignment, "Alignment")
     return tuple(directory / name for name in artifact_names())
 
@@ -56,10 +54,6 @@ def _validate_cpu_sample(sample: ValidationArtifactSet) -> None:
         *sample.mel,
         *((sample.alignment,) if sample.alignment is not None else ()),
     )
-    if any(value.device.type != "cpu" or value.requires_grad for value in tensors):
-        raise ValueError("artifact rendering requires detached CPU tensors")
-
-
 def _write_wave(path: Path, waveform: Tensor, sample_rate: int) -> None:
     values = waveform.float().squeeze(0).clamp(-1, 1).numpy()
     sf.write(path, values, sample_rate, subtype="PCM_16")

@@ -79,8 +79,6 @@ def rational_quadratic_spline(
         b = input_heights * input_derivative - offset * derivative_sum
         c = -input_delta * offset
         discriminant = b.square() - 4 * a * c
-        if torch.any(discriminant < 0):
-            raise ValueError("rational-quadratic spline has a negative discriminant")
         theta = (2 * c) / (-b - torch.sqrt(discriminant))
         outputs = theta * input_widths + input_cumwidths
     else:

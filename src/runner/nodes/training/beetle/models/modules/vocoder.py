@@ -16,8 +16,6 @@ class HarmonicSource(nn.Module):
         self.merge = nn.Linear(harmonic_count + 1, 1)
 
     def forward(self, f0: Tensor, generator: torch.Generator) -> Tensor:
-        if f0.ndim != 2:
-            raise ValueError("harmonic-source F0 must have shape [B,T]")
         with torch.no_grad():
             sampled = F.interpolate(
                 f0.float().unsqueeze(1),
@@ -93,9 +91,6 @@ class HarmonicSourceFeatures(nn.Module):
         )
         features = torch.cat((spectrum.abs(), torch.angle(spectrum)), dim=1)
         expected = f0.shape[-1] * self.config.temporal_upsample_rate
-        if features.shape[-1] != expected:
-            raise ValueError(
-                f"harmonic features produced {features.shape[-1]} frames; expected {expected}"
             )
         return features
 
@@ -109,8 +104,6 @@ class PQMF(nn.Module):
         beta: float = 9.0,
     ) -> None:
         super().__init__()
-        if taps % 2:
-            raise ValueError("PQMF taps must be even")
         positions = torch.arange(taps + 1, dtype=torch.float64) - taps / 2
         prototype = cutoff_ratio * torch.sinc(cutoff_ratio * positions)
         prototype *= torch.kaiser_window(
@@ -155,16 +148,12 @@ class MultiBandISTFT(nn.Module):
 
     def forward(self, spectrogram: Tensor) -> Tensor:
         batch, channels, frequency_bins, frames = spectrogram.shape
-        if channels != self.subbands * 2:
-            raise ValueError("iSTFT spectrogram must contain magnitude/phase per subband")
-        if frequency_bins != self.n_fft // 2 + 1:
-            raise ValueError("iSTFT spectrogram frequency-bin count is invalid")
         bands = spectrogram.view(batch, self.subbands, 2, frequency_bins, frames)
         band_length = frames * self.hop_length
         waveforms = []
         for band in range(self.subbands):
             magnitude = torch.exp(bands[:, band, 0].float())
-            phase = torch.sin(bands[:, band, 1].float())
+            phase = bands[:, band, 1].float()
             spectrum = torch.polar(magnitude, phase)
             waveforms.append(
                 torch.istft(
@@ -179,8 +168,5 @@ class MultiBandISTFT(nn.Module):
             )
         waveform = self.pqmf.synthesize(torch.stack(waveforms, dim=1))
         expected = frames * self.hop_length * self.subbands
-        if waveform.shape != (batch, 1, expected):
-            raise ValueError(
-                f"multiband synthesis produced {waveform.shape}; expected {(batch, 1, expected)}"
             )
         return waveform

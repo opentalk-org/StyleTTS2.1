@@ -21,16 +21,6 @@ def compute_alignment_losses(
     alignment_mask: Tensor,
     blank_id: int,
 ) -> AlignmentLosses:
-    if output.s2s_logits.shape[:2] != phonemes.shape:
-        raise ValueError("sequence logits and phonemes must have equal token shapes")
-    if phoneme_mask.shape != phonemes.shape:
-        raise ValueError("phoneme mask must match phonemes")
-    if alignment_mask.shape != (
-        output.soft_alignment.shape[0],
-        1,
-        output.soft_alignment.shape[2],
-    ):
-        raise ValueError("alignment mask must match alignment frames")
     token_count = phoneme_mask.sum()
     torch._assert_async(token_count > 0, "alignment loss requires a valid phoneme")
     sequence_loss = F.cross_entropy(

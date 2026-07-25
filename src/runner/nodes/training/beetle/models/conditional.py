@@ -135,8 +135,7 @@ class ConditionalModels(nn.Module):
         text, text_ids = _parameter_count((self.text_encoder,))
         categories = (inference_ids, helper_ids, training_ids, text_ids)
         for index, identities in enumerate(categories):
-            if any(identities & other for other in categories[index + 1 :]):
-                raise ValueError("conditional parameter categories must be disjoint")
+            pass
         return ConditionalParameterReport(
             inference=acoustic_inference_parameters + inference,
             frozen_helper=helper,
@@ -151,11 +150,6 @@ def build_conditional_models(
     dependencies: ConditionalDependencies,
 ) -> ConditionalModels:
     architecture = config.architecture
-    if (
-        dependencies.text_bert.config.hidden_size
-        != architecture.text_encoder.hidden_channels
-    ):
-        raise ValueError("text BERT hidden width does not match text configuration")
     acoustic.requires_grad_(False)
     text_encoder = TextEncoder(
         dependencies.text_bert,

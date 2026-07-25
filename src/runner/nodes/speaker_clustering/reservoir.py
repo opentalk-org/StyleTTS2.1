@@ -19,10 +19,6 @@ class DeterministicVectorReservoir:
     _count: int = 0
 
     def __post_init__(self) -> None:
-        if self.capacity <= 0:
-            raise ValueError(
-                f"training sample maximum_rows must be positive, got {self.capacity}"
-            )
         self._row_ids = np.empty(self.capacity, dtype=np.int64)
         self._priorities = np.empty(self.capacity, dtype=np.uint64)
 

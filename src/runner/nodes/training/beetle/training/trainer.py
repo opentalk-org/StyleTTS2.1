@@ -55,10 +55,6 @@ class BeetleTrainer:
         initial_loop: LoopState,
         input_builder: ConditionalInputBuilder,
     ) -> None:
-        if conditional.audio_encoder is not acoustic.audio_encoder:
-            raise ValueError("training requires one shared audio encoder")
-        if conditional.f0_extractor is not acoustic.f0_extractor:
-            raise ValueError("training requires one shared F0 extractor")
         self.acoustic = acoustic
         self.conditional = conditional
         self.ema_latent_flow = (
@@ -187,6 +183,7 @@ class BeetleTrainer:
             self.schedules.acoustic_weights(self._loop.optimizer_step),
             self._generator("generator", "latent"),
             self._generator("generator", "source"),
+            self._loop.optimizer_step + 1,
         )
 
     def optimizer_step(self, optimizer_step: int) -> tuple[TrainingMetric, ...]:

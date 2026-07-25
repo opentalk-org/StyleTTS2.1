@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from ...data import ValidationLoader
+from ...data.validation_records import ValidationRecording
 from ..distributed import DistributedRuntime
 from ..loop_events import TrainingLifecycle
 from ..reporting import (
@@ -80,16 +80,10 @@ class _DistributedReporter:
 def build_runtime_services(
     preparation: RunPreparation,
     validator: ValidationRunner,
-    phoneme_tokenizer: object,
-    text_tokenizer: object,
+    recordings: tuple[ValidationRecording, ...],
     runtime: DistributedRuntime,
 ) -> RuntimeServices:
     training_config = preparation.config.training
-    recordings = ValidationLoader(preparation.config).collate(
-        preparation.validation,
-        phoneme_tokenizer,
-        text_tokenizer,
-    )
     session, state = _reporting_session(preparation, runtime)
     try:
         reporter = None

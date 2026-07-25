@@ -1,4 +1,3 @@
-import math
 from dataclasses import dataclass
 
 
@@ -7,10 +6,6 @@ class TrainingMetric:
     name: str
     value: float
 
-    def __post_init__(self) -> None:
-        if not self.name:
-            raise ValueError("training metric name must not be empty")
-
 
 @dataclass(frozen=True)
 class MetricAccumulatorState:
@@ -18,16 +13,6 @@ class MetricAccumulatorState:
     totals: tuple[float, ...]
     items: int
     microsteps: int
-
-    def __post_init__(self) -> None:
-        if len(self.names) != len(self.totals):
-            raise ValueError("metric accumulator names and totals must align")
-        if len(set(self.names)) != len(self.names):
-            raise ValueError("metric accumulator names must be unique")
-        if self.items < 0 or self.microsteps < 0:
-            raise ValueError("metric accumulator counters must be non-negative")
-        if not all(math.isfinite(value) for value in self.totals):
-            raise ValueError("metric accumulator totals must be finite")
 
     @classmethod
     def empty(cls) -> "MetricAccumulatorState":
@@ -46,14 +31,7 @@ class MetricAccumulator:
         self.state = state if state is not None else MetricAccumulatorState.empty()
 
     def add(self, items: int, metrics: tuple[TrainingMetric, ...]) -> None:
-        if items <= 0:
-            raise ValueError("completed microstep item count must be positive")
         names = tuple(metric.name for metric in metrics)
-        if len(set(names)) != len(names):
-            raise ValueError(f"duplicate training metric names: {names}")
-        if self.state.microsteps > 0 and names != self.state.names:
-            raise ValueError(
-                f"microstep metric names changed: {names} != {self.state.names}"
             )
         totals = (
             tuple(metric.value for metric in metrics)
@@ -71,8 +49,6 @@ class MetricAccumulator:
         )
 
     def complete(self) -> CompletedMetrics:
-        if self.state.microsteps == 0:
-            raise ValueError("cannot complete an empty metric accumulation")
         state = self.state
         metrics = tuple(
             TrainingMetric(name, total / state.microsteps)

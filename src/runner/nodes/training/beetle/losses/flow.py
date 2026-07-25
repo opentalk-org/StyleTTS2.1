@@ -6,10 +6,6 @@ from ..models.modules.latent_flow.model import FlowTrainingSample
 
 
 def base_flow_loss(prediction: Tensor, target: Tensor, mask: Tensor) -> Tensor:
-    if prediction.shape != target.shape or prediction.ndim != 3:
-        raise ValueError("flow prediction and target must have equal [B,C,T] shapes")
-    if mask.shape != (prediction.shape[0], 1, prediction.shape[2]):
-        raise ValueError("flow loss mask must have shape [B,1,T]")
     valid_elements = mask.sum() * prediction.shape[1]
     torch._assert_async(valid_elements > 0, "flow loss requires a valid token")
     squared_error = (prediction - target).square() * mask
@@ -25,8 +21,6 @@ def shortcut_loss(
     loss_mask: Tensor,
     minimum_steps: int,
 ) -> Tensor:
-    if minimum_steps <= 1 or minimum_steps & (minimum_steps - 1):
-        raise ValueError("minimum_steps must be a power of two above one")
     half_step = sample.step / 2
     with torch.no_grad():
         first_velocity = ema_model(

@@ -28,12 +28,6 @@ def sample_flow_training_case(
     base_case_probability: float,
     generator: torch.Generator,
 ) -> FlowTrainingSample:
-    if latent.ndim != 3 or mask.shape != (latent.shape[0], 1, latent.shape[2]):
-        raise ValueError("flow sampling requires [B,C,T] latent and [B,1,T] mask")
-    if minimum_steps <= 1 or minimum_steps & (minimum_steps - 1):
-        raise ValueError("minimum_steps must be a power of two above one")
-    if not 0 <= base_case_probability <= 1:
-        raise ValueError("base case probability must be between zero and one")
     numeric_mask = mask.to(dtype=latent.dtype)
     scalar_shape = mask.shape
     noise = (
@@ -148,8 +142,6 @@ class LatentFlowModel(nn.Module):
         concat_layers: tuple[int, ...],
     ) -> None:
         super().__init__()
-        if max(concat_layers) >= config.layer_count:
-            raise ValueError("condition concatenation layer is outside latent flow")
         self.config = config
         self.input_projection = nn.Conv1d(
             config.latent_channels,
@@ -200,10 +192,6 @@ class LatentFlowModel(nn.Module):
         mask: Tensor,
     ) -> Tensor:
         scalar_shape = (state.shape[0], 1, state.shape[2])
-        if state.ndim != 3 or time.shape != scalar_shape or step.shape != scalar_shape:
-            raise ValueError("latent flow requires [B,C,T] state and [B,1,T] scalars")
-        if mask.shape != scalar_shape:
-            raise ValueError("latent flow mask must match scalar shape")
         numeric_mask = mask.to(dtype=state.dtype)
         combined = conditions.combined() * numeric_mask
         concatenated = conditions.concatenated() * numeric_mask

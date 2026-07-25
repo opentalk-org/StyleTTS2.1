@@ -53,10 +53,6 @@ class WaveformMelExtractor(nn.Module):
         )
 
     def forward(self, waveform: Tensor, lengths: Tensor) -> MelBatch:
-        if waveform.ndim != 3 or waveform.shape[1] != 1:
-            raise ValueError("context waveform must have shape [B,1,S]")
-        if lengths.shape != (waveform.shape[0],):
-            raise ValueError("context waveform lengths must have shape [B]")
         required = max(waveform.shape[2], self.n_fft)
         padded = torch.nn.functional.pad(waveform, (0, required - waveform.shape[2]))
         mel = torch.log(self.transform(padded[:, 0]).clamp_min(1e-5))

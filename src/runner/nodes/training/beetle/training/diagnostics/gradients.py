@@ -25,8 +25,6 @@ class AcousticGradientLosses:
 
 
 def diagnostics_due(completed_step: int) -> bool:
-    if completed_step < 0:
-        raise ValueError("completed step must be nonnegative")
     return completed_step > 0 and completed_step % DIAGNOSTICS_EVERY_STEPS == 0
 
 
@@ -35,8 +33,6 @@ def weighted_gradients(
     weight: float,
     targets: tuple[Tensor, ...],
 ) -> GradientTuple:
-    if not targets:
-        raise ValueError("gradient diagnostics require targets")
     return torch.autograd.grad(
         loss * weight,
         targets,
@@ -47,8 +43,6 @@ def weighted_gradients(
 
 def gradient_norm(gradients: GradientTuple) -> float:
     values = tuple(gradient.float() for gradient in gradients if gradient is not None)
-    if not values:
-        raise ValueError("diagnostic objective produced no gradients")
     squared = torch.stack(tuple(value.square().sum() for value in values)).sum()
     return float(torch.sqrt(squared))
 
@@ -61,15 +55,11 @@ def gradient_cosine_observation(
     left: GradientTuple,
     right: GradientTuple,
 ) -> tuple[float, float]:
-    if len(left) != len(right):
-        raise ValueError("gradient cosine inputs must align")
     pairs = tuple(
         (left_value.float(), right_value.float())
         for left_value, right_value in zip(left, right, strict=True)
         if left_value is not None and right_value is not None
     )
-    if not pairs:
-        raise ValueError("gradient cosine requires shared targets")
     dot = torch.stack(tuple((a * b).sum() for a, b in pairs)).sum()
     left_norm = torch.sqrt(torch.stack(tuple(a.square().sum() for a, _ in pairs)).sum())
     right_norm = torch.sqrt(torch.stack(tuple(b.square().sum() for _, b in pairs)).sum())

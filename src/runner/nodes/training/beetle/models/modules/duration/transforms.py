@@ -8,8 +8,6 @@ from .spline import unconstrained_rational_quadratic_spline
 
 
 def _validate_transform_input(values: Tensor, mask: Tensor) -> Tensor:
-    if values.ndim != 3 or mask.shape != (values.shape[0], 1, values.shape[2]):
-        raise ValueError("flow transforms require [B,C,T] values and [B,1,T] mask")
     return mask.to(dtype=values.dtype)
 
 
@@ -124,8 +122,6 @@ class DurationConvolutionStack(nn.Module):
     ) -> Tensor:
         numeric_mask = mask.to(dtype=values.dtype)
         if condition is not None:
-            if condition.shape != values.shape:
-                raise ValueError("flow condition must match hidden values")
             values = values + condition
         for convolution, pointwise, convolution_norm, point_norm in zip(
             self.convolutions,
@@ -151,8 +147,6 @@ class ConvFlow(nn.Module):
         spline_tail_bound: float,
     ) -> None:
         super().__init__()
-        if channels % 2:
-            raise ValueError("convolutional flow channels must be even")
         self.half_channels = channels // 2
         self.hidden_channels = hidden_channels
         self.spline_bins = spline_bins

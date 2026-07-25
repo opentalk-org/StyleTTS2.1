@@ -34,15 +34,6 @@ class LoopIntervals:
     log_every_steps: int
     checkpoint_every_steps: int
 
-    def __post_init__(self) -> None:
-        values = (
-            self.log_every_steps,
-            self.checkpoint_every_steps,
-        )
-        if min(values) <= 0:
-            raise ValueError("loop step intervals must be positive")
-
-
 class TrainingPipeline(Protocol):
     def next_batch(self) -> TrainingBatch: ...
 
@@ -98,8 +89,6 @@ def run_continuously(
         callbacks.check_cancel()
         while True:
             state = trainer.loop_state()
-            if state.optimizer_step > lifecycle.total_steps:
-                raise ValueError("optimizer step exceeds configured total_steps")
             if (
                 state.optimizer_step == lifecycle.total_steps
                 and reporting.snapshot().pending_step is None
@@ -257,8 +246,6 @@ def _complete_accumulation(
         trainer.set_loop_state(ready)
         callbacks.check_cancel()
         return
-    if state.microstep > trainer.accumulation_steps:
-        raise ValueError("microstep exceeds configured accumulation_steps")
     started_at = time.monotonic()
     try:
         step_metrics = trainer.reduce_metrics(

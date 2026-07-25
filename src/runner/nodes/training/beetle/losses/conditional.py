@@ -36,10 +36,6 @@ class ConditionalLossWeights:
     style_statistics: float
     style_reencoding: float
 
-    def __post_init__(self) -> None:
-        if any(value < 0 for value in self.values()):
-            raise ValueError("conditional loss weights must be nonnegative")
-
     @classmethod
     def from_shared(cls, value: float) -> "ConditionalLossWeights":
         return cls(*(value for _ in range(13)))

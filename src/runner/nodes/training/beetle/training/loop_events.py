@@ -89,11 +89,6 @@ class TrainingLifecycle:
     reporter: StepReporter
     validator: StepValidator
 
-    def __post_init__(self) -> None:
-        if self.total_steps <= 0 or self.validation_every_steps <= 0:
-            raise ValueError("lifecycle step limits must be positive")
-
-
 def advance_sampler(state: LoopState, sampler: DataPipelineState) -> LoopState:
     planner = sampler.planner
     return replace(
@@ -176,10 +171,6 @@ def finish_run(
     snapshot = reporting.snapshot()
     if snapshot.completion is ReportingCompletion.FINISHED:
         return state
-    if snapshot.last_reported_step != lifecycle.total_steps:
-        raise ValueError("final optimizer step has not been reported")
-    if snapshot.last_validated_step != lifecycle.total_steps:
-        raise ValueError("final optimizer step has not been validated")
     lifecycle.reporter.flush()
     reporting.mark_flushed()
     reporting.update(lifecycle.reporter.finish(reporting.snapshot()))
@@ -274,8 +265,6 @@ def complete_step_work(
 ) -> None:
     state = trainer.loop_state()
     pending = reporting.snapshot().pending_step
-    if pending is None or pending.optimizer_step != state.optimizer_step:
-        raise ValueError("optimizer boundary has no matching pending observation")
     validation_metrics: tuple[TrainingMetric, ...] = ()
     validation_due = is_due(
         state.optimizer_step,

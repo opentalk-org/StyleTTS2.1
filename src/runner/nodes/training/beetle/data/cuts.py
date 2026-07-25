@@ -26,8 +26,6 @@ class CutPlanner:
 
     def plan_mid_sentence(self, key: SegmentKey, seed: int) -> PlannedExample:
         item = self.index.records[key]
-        if not item.mid_sentence_eligible:
-            raise ValueError(f"segment is not mid-sentence eligible: {key}")
         candidates = []
         for start_index in range(len(item.words)):
             for end_index in range(start_index + 1, len(item.words) + 1):
@@ -36,8 +34,6 @@ class CutPlanner:
                 duration = item.words[end_index - 1].end - item.words[start_index].start
                 if duration <= self.maximum_seconds:
                     candidates.append((start_index, end_index))
-        if not candidates:
-            raise ValueError(f"no valid aligned mid-sentence cut: {key}")
         start_index, end_index = random.Random(seed).choice(candidates)
         return PlannedExample(
             key=key,

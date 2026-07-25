@@ -37,6 +37,7 @@ class TrainingValidationEvaluator(ConditionalValidationEvaluator):
         training_config: TrainingConfig,
         runtime_seed: int,
         device: torch.device,
+        require_distinct_voices: bool,
     ) -> None:
         super().__init__(
             acoustic,
@@ -46,6 +47,7 @@ class TrainingValidationEvaluator(ConditionalValidationEvaluator):
             training_config,
             runtime_seed,
             device,
+            require_distinct_voices,
         )
         self.training_schedules = TrainingSchedules.from_config(training_config)
 
@@ -106,6 +108,7 @@ class TrainingValidationEvaluator(ConditionalValidationEvaluator):
             posterior_waveform,
             real_waveform,
             sample_mask,
+            step,
         ).total
         discriminator = discriminator_step_loss(
             self.acoustic.discriminators,

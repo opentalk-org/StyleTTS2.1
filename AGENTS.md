@@ -116,7 +116,7 @@ This project is a ComfyUI-style workflow system for typed, batched, concurrent p
 * Do not use default values or fallback behavior unless explicitly requested or clearly justified.
 * Avoid raw dictionaries and strings for structured data. Prefer dataclasses, Pydantic models, and enums.
 * Avoid excessive checking. Prefer clear failures over silent defaults, silent skips, or hidden fallback behavior.
-* Do not overuse `if` statements.
+* Do not overuse `if` statements. Espescially avoid many if condition -> raise error
 * Do not repeatedly check values that already have defaults or guaranteed invariants.
 
 ## If Statements

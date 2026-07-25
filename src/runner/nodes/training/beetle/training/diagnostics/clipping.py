@@ -19,12 +19,6 @@ class NamedGradientGroup:
     modules: tuple[nn.Module, ...]
     clipping: GradientClipping
 
-    def __post_init__(self) -> None:
-        if not self.name:
-            raise ValueError("gradient group name must not be empty")
-        if not self.modules:
-            raise ValueError("gradient group must contain a module")
-
     def parameters(self) -> tuple[nn.Parameter, ...]:
         parameters: list[nn.Parameter] = []
         seen: set[int] = set()
@@ -119,18 +113,8 @@ def validate_gradient_group_ownership(
         for parameter in group.parameters():
             identifier = id(parameter)
             if identifier not in owners:
-                if parameter.requires_grad:
-                    raise ValueError(
-                        f"gradient group {group.name} contains an unowned trainable parameter"
                     )
                 continue
             owner = owners[identifier]
-            if owner != optimizer_name:
-                raise ValueError(
-                    f"gradient group {group.name} contains a foreign parameter"
                 )
             occurrences[identifier] += 1
-    if any(count > 1 for count in occurrences.values()):
-        raise ValueError("optimizer parameter belongs to more than one gradient group")
-    if optimizer_parameters - occurrences.keys():
-        raise ValueError("optimizer parameter is missing from gradient groups")

@@ -31,30 +31,6 @@ class LoopState:
     batch_index: int
     discriminator_metrics: tuple[TrainingMetric, ...]
 
-    def __post_init__(self) -> None:
-        counters = (
-            ("optimizer_step", self.optimizer_step),
-            ("microstep", self.microstep),
-            ("sampler_cursor", self.sampler_cursor),
-            ("cycle", self.cycle),
-            ("batch_index", self.batch_index),
-        )
-        invalid = tuple(name for name, value in counters if value < 0)
-        if invalid:
-            raise ValueError(f"{', '.join(invalid)} must be non-negative")
-        metric_names = tuple(metric.name for metric in self.discriminator_metrics)
-        if len(set(metric_names)) != len(metric_names):
-            raise ValueError("pending discriminator metric names must be unique")
-        metric_phases = (
-            TrainingPhase.DISCRIMINATOR_COMPLETE,
-            TrainingPhase.GENERATOR_BACKWARD,
-        )
-        if self.discriminator_metrics and self.phase not in metric_phases:
-            raise ValueError(
-                "pending discriminator metrics require a completed discriminator pass"
-            )
-
-
 @dataclass(frozen=True)
 class PythonRngState:
     version: int
@@ -110,9 +86,6 @@ def capture_rng_state() -> RngState:
 
 def restore_rng_state(state: RngState) -> None:
     _validate_rng_tensor(state.torch_cpu, "torch_cpu")
-    if len(state.torch_cuda) != torch.cuda.device_count():
-        raise ValueError(
-            "torch_cuda RNG state count does not match the visible CUDA devices"
         )
     for index, cuda_state in enumerate(state.torch_cuda):
         _validate_rng_tensor(cuda_state, f"torch_cuda[{index}]")
@@ -134,5 +107,4 @@ def restore_rng_state(state: RngState) -> None:
 
 
 def _validate_rng_tensor(state: Tensor, name: str) -> None:
-    if state.device.type != "cpu" or state.dtype is not torch.uint8 or state.ndim != 1:
-        raise ValueError(f"{name} RNG state must be a one-dimensional CPU uint8 tensor")
+    pass

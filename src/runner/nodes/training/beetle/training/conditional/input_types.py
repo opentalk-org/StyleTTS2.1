@@ -53,8 +53,6 @@ def build_rate_conditions(
 
 
 def keep_all_conditions(batch_size: int, device: torch.device) -> ConditionKeep:
-    if batch_size <= 0:
-        raise ValueError("condition batch size must be positive")
     keep = torch.ones(batch_size, 1, 1, dtype=torch.bool, device=device)
     return ConditionKeep(keep, keep, keep, keep, keep, keep, keep, keep, keep)
 

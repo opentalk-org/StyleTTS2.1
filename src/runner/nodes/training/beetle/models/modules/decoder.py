@@ -21,8 +21,6 @@ class DecoderOutput:
 class Decoder(nn.Module):
     def __init__(self, config: DecoderConfig) -> None:
         super().__init__()
-        if config.decode_block_count != 4:
-            raise ValueError("decoder decode_block_count must equal four")
         self.config = config
         self.latent_upsample = weight_norm(
             nn.ConvTranspose1d(
@@ -89,19 +87,8 @@ class Decoder(nn.Module):
         latent_mask: Tensor,
         frame_mask: Tensor,
     ) -> DecoderOutput:
-        if latent.ndim != 3 or latent.shape[1] != self.config.latent_channels:
-            raise ValueError("decoder latent must have configured [B,C,L] geometry")
         batch_size, _, latent_frames = latent.shape
         frame_frames = latent_frames * 2
-        if f0.shape != (batch_size, frame_frames):
-            raise ValueError("decoder F0 must have shape [B,2L]")
-        if n.shape != (batch_size, frame_frames):
-            raise ValueError("decoder N must have shape [B,2L]")
-        if latent_mask.shape != (batch_size, 1, latent_frames):
-            raise ValueError("decoder latent mask must have shape [B,1,L]")
-        if frame_mask.shape != (batch_size, 1, frame_frames):
-            raise ValueError("decoder frame mask must have shape [B,1,2L]")
-
         boolean_latent_mask = latent_mask.to(dtype=torch.bool)
         boolean_frame_mask = frame_mask.to(dtype=torch.bool)
         numeric_latent_mask = boolean_latent_mask.to(dtype=latent.dtype)

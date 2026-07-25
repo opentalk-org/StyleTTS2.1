@@ -141,8 +141,6 @@ class BatchCollator:
             return _PreparedGroups(empty, torch.zeros(0, 0, dtype=torch.long), torch.zeros(0, 0), ())
         prepared = []
         distances = []
-        if self.minimum_frame_count is None:
-            raise ValueError("embedding views require a fixed acoustic frame count")
         maximum_samples = self.minimum_frame_count * self.preprocessor.hop_length
         for group in groups:
             group_audio = []
@@ -216,8 +214,6 @@ def _pad_mels(
 
 def _pad_group_waveforms(values: tuple[tuple[Tensor, ...], ...]) -> tuple[Tensor, Tensor]:
     view_count = len(values[0])
-    if any(len(group) != view_count for group in values):
-        raise ValueError("embedding groups must have equal view counts")
     lengths = torch.tensor(
         [[view.shape[-1] for view in group] for group in values],
         dtype=torch.long,

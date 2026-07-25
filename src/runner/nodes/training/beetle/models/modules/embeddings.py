@@ -15,8 +15,6 @@ class LanguageEmbedding(nn.Module):
         self.embedding = nn.Embedding(language_count, embedding_channels)
 
     def forward(self, language_ids: Tensor) -> Tensor:
-        if language_ids.ndim != 1:
-            raise ValueError("language IDs must have shape [B]")
         return self.embedding(language_ids)
 
 

@@ -53,8 +53,6 @@ class GatedResidualStack(nn.Module):
         )
 
     def forward(self, features: Tensor, mask: Tensor) -> Tensor:
-        if mask.shape != (features.shape[0], 1, features.shape[2]):
-            raise ValueError("posterior stack mask must match feature frames")
         features = features * mask
         skip = torch.zeros_like(features)
         last_index = len(self.input_layers) - 1
@@ -104,12 +102,6 @@ class AudioEncoder(nn.Module):
         mask: Tensor,
         generator: torch.Generator,
     ) -> AudioPosterior:
-        if mel.ndim != 3 or mel.shape[1] != self.config.mel_channels:
-            raise ValueError("mel must have configured [B,M,T] geometry")
-        if mask.shape != (mel.shape[0], 1, mel.shape[2]):
-            raise ValueError("mel mask must have shape [B,1,T]")
-        if mel.shape[-1] % self.config.downsample_rate:
-            raise ValueError("mel frames must be divisible by downsample_rate")
         full_mask = mask.to(dtype=torch.bool)
         latent_mask = full_mask.reshape(
             mel.shape[0],
@@ -146,8 +138,6 @@ class AcousticFeatures:
         predicted: "AcousticFeatures",
         predicted_ratio: float,
     ) -> "AcousticFeatures":
-        if predicted_ratio < 0 or predicted_ratio > 1:
-            raise ValueError("predicted acoustic ratio must be between zero and one")
         target_ratio = 1.0 - predicted_ratio
         return AcousticFeatures(
             self.f0 * target_ratio + predicted.f0 * predicted_ratio,
@@ -210,8 +200,5 @@ class F0Extractor(nn.Module):
             pitch, _, _ = self.model(mel.unsqueeze(1))
         if pitch.ndim == 3 and pitch.shape[-1] == 1:
             pitch = pitch.squeeze(-1)
-        if pitch.shape != (mel.shape[0], mel.shape[-1]):
-            raise ValueError(
-                f"F0 extractor returned {tuple(pitch.shape)} for mel {tuple(mel.shape)}"
             )
         return pitch * mask[:, 0].to(dtype=pitch.dtype)

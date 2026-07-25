@@ -28,14 +28,6 @@ class ScheduledOptimizer:
     runtime: DistributedRuntime
     gradient_groups: tuple[NamedGradientGroup, ...]
 
-    def __post_init__(self) -> None:
-        if not self.name:
-            raise ValueError("optimizer name must not be empty")
-        if self.maximum_gradient_norm <= 0:
-            raise ValueError("maximum_gradient_norm must be positive")
-        if not self.gradient_groups:
-            raise ValueError("optimizer must contain a gradient group")
-
     def parameters(self) -> tuple[nn.Parameter, ...]:
         return tuple(
             parameter
@@ -94,27 +86,17 @@ class ScheduledOptimizer:
 
 class OptimizerSet:
     def __init__(self, groups: tuple[ScheduledOptimizer, ...]) -> None:
-        if not groups:
-            raise ValueError("at least one optimizer group is required")
         names = tuple(group.name for group in groups)
-        if len(set(names)) != len(names):
-            raise ValueError("optimizer group names must be unique")
         parameter_owners: dict[int, str] = {}
         for group in groups:
             for parameter in group.parameters():
                 owner = parameter_owners.setdefault(id(parameter), group.name)
-                if owner != group.name:
-                    raise ValueError(
-                        "optimizer parameter ownership overlaps between "
-                        f"{owner} and {group.name}"
                     )
         gradient_names = tuple(
             gradient_group.name
             for group in groups
             for gradient_group in group.gradient_groups
         )
-        if len(set(gradient_names)) != len(gradient_names):
-            raise ValueError("gradient group names must be unique")
         for group in groups:
             validate_gradient_group_ownership(
                 group.name,

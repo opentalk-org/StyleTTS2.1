@@ -186,8 +186,6 @@ class DefaultConditionalInputBuilder(ConditionalInputBuilder):
             latent_tokens,
             alignment.hard_alignment.detach(),
         )
-        if aligned_mask.shape != posterior.mask.shape:
-            raise ValueError("aligned phonemes and posterior latents must match")
         torch._assert_async(
             torch.all(aligned_mask == posterior.mask),
             "aligned phonemes and posterior latents must match",

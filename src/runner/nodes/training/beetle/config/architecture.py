@@ -81,7 +81,6 @@ class DecoderConfig(StrictConfigModel):
                 )
         return self
 
-
 class GeneratorConfig(StrictConfigModel):
     input_channels: int = Field(gt=0)
     frame_channels: int = Field(gt=0)
@@ -122,7 +121,6 @@ class GeneratorConfig(StrictConfigModel):
 
     def output_hop(self) -> int:
         return self.temporal_upsample_rate * self.istft_hop_length * self.subbands
-
 
 class PhonemeConfig(StrictConfigModel):
     model_path: str = Field(min_length=1)

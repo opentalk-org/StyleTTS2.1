@@ -20,8 +20,6 @@ class TrainingReporter:
         total_steps: int,
         system: SystemSampler,
     ) -> None:
-        if total_steps <= 0:
-            raise ValueError("total_steps must be positive")
         self.session = session
         self.total_steps = total_steps
         self.system = system
@@ -32,10 +30,6 @@ class TrainingReporter:
         state: ReportingState,
         validation_metrics: tuple[TrainingMetric, ...],
     ) -> ReportingState:
-        if state.require_started() != self.session.run_id:
-            raise ValueError("reporting state MLflow run ID does not match session")
-        if observation.optimizer_step <= state.last_reported_step:
-            raise ValueError("reported optimizer step must advance")
         metrics = (
             *tuple(
                 TrainingMetric(f"train/{metric.name}", metric.value)

@@ -13,25 +13,11 @@ class SegmentKey:
     segment_index: int
     segment_id: str
 
-    def __post_init__(self) -> None:
-        if self.segment_index < 0:
-            raise ValueError("segment_index must be non-negative")
-        if not self.segment_id:
-            raise ValueError("segment_id must not be empty")
-
-
 @dataclass(frozen=True)
 class WordBoundary:
     word: str
     start: float
     end: float
-
-    def __post_init__(self) -> None:
-        if not self.word:
-            raise ValueError("aligned word must not be empty")
-        if self.start < 0 or self.end <= self.start:
-            raise ValueError("aligned word range is invalid")
-
 
 @dataclass(frozen=True)
 class IndexedSegment:
@@ -51,16 +37,6 @@ class IndexedSegment:
     style_prompt: str | None
     voice_prompt: str | None
 
-    def __post_init__(self) -> None:
-        if self.start < 0 or self.end <= self.start:
-            raise ValueError(f"invalid segment range: {self.key}")
-        if self.end > self.audio_duration:
-            raise ValueError(f"segment exceeds audio duration: {self.key}")
-        if self.sample_rate <= 0:
-            raise ValueError(f"segment sample rate is invalid: {self.key}")
-        if self.estimated_bytes <= 0:
-            raise ValueError(f"estimated bytes must be positive: {self.key}")
-
     @property
     def duration(self) -> float:
         return self.end - self.start
@@ -74,10 +50,6 @@ class IndexedSegment:
 class CutRange:
     start: float
     end: float
-
-    def __post_init__(self) -> None:
-        if self.start < 0 or self.end <= self.start:
-            raise ValueError("cut range must be positive and ordered")
 
     @property
     def duration(self) -> float:
@@ -93,11 +65,6 @@ class PlannedExample:
     sentence: bool
     seed: int
 
-    def __post_init__(self) -> None:
-        if self.target_word_start < 0 or self.target_word_end < self.target_word_start:
-            raise ValueError("target word range is invalid")
-
-
 @dataclass(frozen=True)
 class EmbeddingViewPlan:
     key: SegmentKey
@@ -105,33 +72,16 @@ class EmbeddingViewPlan:
     seed: int
     distance_seconds: float
 
-    def __post_init__(self) -> None:
-        if self.distance_seconds < 0:
-            raise ValueError("embedding-view distance must be non-negative")
-
-
 @dataclass(frozen=True)
 class EmbeddingGroupPlan:
     group_id: str
     views: tuple[EmbeddingViewPlan, ...]
-
-    def __post_init__(self) -> None:
-        if not self.group_id:
-            raise ValueError("embedding group ID must not be empty")
-        if len(self.views) < 2:
-            raise ValueError("embedding groups require at least two views")
-
 
 @dataclass(frozen=True)
 class PlannedBatch:
     examples: tuple[PlannedExample, ...]
     voice_groups: tuple[EmbeddingGroupPlan, ...]
     style_groups: tuple[EmbeddingGroupPlan, ...]
-
-    def __post_init__(self) -> None:
-        if not self.examples:
-            raise ValueError("planned batch must contain reconstruction examples")
-
 
 @dataclass(frozen=True)
 class FetchedExample:
@@ -197,23 +147,6 @@ class BeetleBatch:
     recording_ids: tuple[UUID, ...]
     style_group_ids: tuple[str, ...]
     voice_group_ids: tuple[str, ...]
-
-    def __post_init__(self) -> None:
-        batch_size, channels, samples = self.waveform.shape
-        if channels != 1:
-            raise ValueError("waveform must be mono")
-        if samples != self.mel.shape[-1] * 300:
-            raise ValueError("waveform samples must equal mel frames times 300")
-        if len(self.sample_keys) != batch_size:
-            raise ValueError("sample key count must match batch size")
-        if self.frame_mask.dtype != torch.bool:
-            raise TypeError("frame_mask must be bool")
-        if self.phoneme_ids.dtype != torch.long:
-            raise TypeError("phoneme_ids must be int64")
-        if self.language_ids.shape != (batch_size,):
-            raise ValueError("language_ids must have shape [B]")
-        if self.language_ids.dtype != torch.long:
-            raise TypeError("language_ids must be int64")
 
     def to(self, device: torch.device) -> "BeetleBatch":
         values = {}

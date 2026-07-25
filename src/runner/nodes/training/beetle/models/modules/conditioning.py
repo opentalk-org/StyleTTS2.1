@@ -74,8 +74,6 @@ class ConditionProjector(nn.Module):
         self.projection = nn.Conv1d(input_channels, output_channels, 1)
 
     def forward(self, tokens: Tensor, keep: Tensor) -> Tensor:
-        if tokens.ndim != 3 or keep.shape != (tokens.shape[0], 1, 1):
-            raise ValueError("condition tokens require [B,C,T] and [B,1,1] keep mask")
         token_mask = tokens.abs().sum(dim=1, keepdim=True) > 0
         return self.projection(tokens) * token_mask * keep
 
@@ -180,17 +178,6 @@ class AdaLNZero1d(nn.Module):
         nn.init.zeros_(self.modulation.bias)
 
     def forward(self, features: Tensor, condition: Tensor, mask: Tensor) -> Tensor:
-        if features.ndim != 3 or mask.shape != (
-            features.shape[0],
-            1,
-            features.shape[2],
-        ):
-            raise ValueError("AdaLN requires [B,C,T] features and [B,1,T] mask")
-        if (
-            condition.shape[0] != features.shape[0]
-            or condition.shape[2] != features.shape[2]
-        ):
-            raise ValueError("AdaLN condition must match batch and token dimensions")
         numeric_mask = mask.to(dtype=features.dtype)
         normalized = F.layer_norm(
             features.transpose(1, 2),
@@ -217,12 +204,6 @@ class MaskedAttentivePool1d(nn.Module):
         self.output = nn.Linear(input_channels * 2, output_channels)
 
     def forward(self, features: Tensor, mask: Tensor) -> Tensor:
-        if features.ndim != 3 or mask.shape != (
-            features.shape[0],
-            1,
-            features.shape[2],
-        ):
-            raise ValueError("attentive pooling requires [B,C,T] and [B,1,T]")
         torch._assert_async(
             torch.all(mask.sum(dim=2) > 0),
             "attentive pooling requires a valid token per item",
@@ -239,13 +220,6 @@ def align_phoneme_tokens(
     tokens: Tensor,
     hard_alignment: Tensor,
 ) -> tuple[Tensor, Tensor]:
-    if tokens.ndim != 3 or hard_alignment.ndim != 3:
-        raise ValueError("phoneme alignment requires [B,C,P] and [B,P,F]")
-    if (
-        tokens.shape[0] != hard_alignment.shape[0]
-        or tokens.shape[2] != hard_alignment.shape[1]
-    ):
-        raise ValueError("phoneme alignment batch and phoneme axes must match")
     numeric_alignment = hard_alignment.to(dtype=tokens.dtype)
     aligned_mask = hard_alignment.to(dtype=torch.bool).any(dim=1, keepdim=True)
     aligned = torch.bmm(tokens, numeric_alignment)
