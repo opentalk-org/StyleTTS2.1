@@ -12,7 +12,6 @@ from .diagnostics.clipping import (
     clip_gradient_group,
     gradient_norm,
     optimizer_clipping_metrics,
-    validate_gradient_group_ownership,
 )
 from .distributed import DistributedRuntime
 from .loss_schedules import StepSchedule
@@ -86,24 +85,6 @@ class ScheduledOptimizer:
 
 class OptimizerSet:
     def __init__(self, groups: tuple[ScheduledOptimizer, ...]) -> None:
-        names = tuple(group.name for group in groups)
-        parameter_owners: dict[int, str] = {}
-        for group in groups:
-            for parameter in group.parameters():
-                owner = parameter_owners.setdefault(id(parameter), group.name)
-                    )
-        gradient_names = tuple(
-            gradient_group.name
-            for group in groups
-            for gradient_group in group.gradient_groups
-        )
-        for group in groups:
-            validate_gradient_group_ownership(
-                group.name,
-                group.parameters(),
-                group.gradient_groups,
-                parameter_owners,
-            )
         self.groups = groups
 
     def prepare_distributed(self) -> "OptimizerSet":

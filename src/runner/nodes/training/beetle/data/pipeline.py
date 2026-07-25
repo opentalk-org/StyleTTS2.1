@@ -186,7 +186,6 @@ class TrainingDataPipeline:
         return max(1, round(seconds * self.sample_rate * 4))
 
     def _reserve_bytes(self, decoded_bytes: int) -> bool:
-            )
         with self._condition:
             self._condition.wait_for(
                 lambda: self._stop.is_set()

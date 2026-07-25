@@ -85,10 +85,6 @@ def capture_rng_state() -> RngState:
 
 
 def restore_rng_state(state: RngState) -> None:
-    _validate_rng_tensor(state.torch_cpu, "torch_cpu")
-        )
-    for index, cuda_state in enumerate(state.torch_cuda):
-        _validate_rng_tensor(cuda_state, f"torch_cuda[{index}]")
     random.setstate(
         (state.python.version, state.python.internal_state, state.python.gaussian)
     )
@@ -104,7 +100,3 @@ def restore_rng_state(state: RngState) -> None:
     )
     torch.set_rng_state(state.torch_cpu)
     torch.cuda.set_rng_state_all(list(state.torch_cuda))
-
-
-def _validate_rng_tensor(state: Tensor, name: str) -> None:
-    pass

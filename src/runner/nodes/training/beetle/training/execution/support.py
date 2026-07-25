@@ -39,7 +39,6 @@ class DatabaseSpeakerIndex(SpeakerIndex):
             }
             | set(index.validation.conditional_by_voice)
         )
-            )
         self.entries = tuple(voices)
 
     def resolve(
@@ -47,7 +46,6 @@ class DatabaseSpeakerIndex(SpeakerIndex):
         speaker_ids: tuple[str | None, ...],
         device: torch.device,
     ) -> Tensor:
-        missing = tuple(voice for voice in speaker_ids if voice not in self.entries)
         indices = tuple(self.entries.index(voice) for voice in speaker_ids)
         return torch.tensor(indices, dtype=torch.long, device=device)
 

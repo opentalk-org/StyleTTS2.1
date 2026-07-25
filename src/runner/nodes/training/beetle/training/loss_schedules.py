@@ -77,6 +77,8 @@ class StepSchedule:
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         pass
+
+
 @dataclass(frozen=True)
 class TrainingSchedules:
     acoustic: tuple[StepSchedule, ...]

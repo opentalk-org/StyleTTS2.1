@@ -87,8 +87,6 @@ class ConditionalValidationEvaluator:
         recordings: tuple[ValidationRecording, ...],
         step: int,
     ) -> tuple[ConditionalValidationSample, ...]:
-        if self.require_distinct_voices:
-            _require_contrastive_groups(recordings)
         batch = merge_validation_recordings(recordings).to(self.device)
         loop = LoopState(
             step,
@@ -219,13 +217,6 @@ class ConditionalValidationEvaluator:
             view,
         )
         return torch.Generator(device=self.device).manual_seed(seed)
-
-
-def _require_contrastive_groups(
-    recordings: tuple[ValidationRecording, ...],
-) -> None:
-    speaker_ids = tuple(recording.batch.speaker_ids[0] for recording in recordings)
-        )
 
 
 def _metric(name: str, value: Tensor) -> TrainingMetric:

@@ -200,5 +200,4 @@ class F0Extractor(nn.Module):
             pitch, _, _ = self.model(mel.unsqueeze(1))
         if pitch.ndim == 3 and pitch.shape[-1] == 1:
             pitch = pitch.squeeze(-1)
-            )
         return pitch * mask[:, 0].to(dtype=pitch.dtype)

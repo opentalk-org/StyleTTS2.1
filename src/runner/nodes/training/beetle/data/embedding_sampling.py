@@ -27,7 +27,6 @@ class EmbeddingGroupPlanner:
         self.shard = shard
         self.cut_planner = cut_planner
         self.seed = seed
-        self._validate_pools()
 
     def plan(
         self,
@@ -68,19 +67,6 @@ class EmbeddingGroupPlanner:
             style_start : style_start + self.grouping.recordings_per_batch
         ]
         return voice_groups, style_groups
-
-    def _validate_pools(self) -> None:
-        voices = [
-            speaker_id
-            for speaker_id, keys in self.index.pools.voice_groups.items()
-            if len(keys) >= self.grouping.utterances_per_voice
-        ]
-        required_voices = self.grouping.voices_per_batch * self.shard.world_size
-            )
-        required_recordings = (
-            self.grouping.recordings_per_batch * self.shard.world_size
-        )
-            )
 
     def _voice_group(
         self,

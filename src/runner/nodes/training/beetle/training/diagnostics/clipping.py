@@ -1,4 +1,3 @@
-from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
 
@@ -99,22 +98,3 @@ def optimizer_clipping_metrics(
             float(coefficient < 1.0),
         ),
     )
-
-
-def validate_gradient_group_ownership(
-    optimizer_name: str,
-    parameters: tuple[nn.Parameter, ...],
-    groups: tuple[NamedGradientGroup, ...],
-    owners: dict[int, str],
-) -> None:
-    optimizer_parameters = {id(parameter) for parameter in parameters}
-    occurrences: Counter[int] = Counter()
-    for group in groups:
-        for parameter in group.parameters():
-            identifier = id(parameter)
-            if identifier not in owners:
-                    )
-                continue
-            owner = owners[identifier]
-                )
-            occurrences[identifier] += 1

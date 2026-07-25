@@ -10,7 +10,6 @@ from .conditioning_inputs import (
     ConditionChannels,
     ConditionInputs,
     ConditionKeep,
-    ConditionVectors,
 )
 
 __all__ = [

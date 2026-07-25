@@ -175,7 +175,6 @@ class DurationPredictor(nn.Module):
         mask: Tensor,
         generator: torch.Generator,
     ) -> Tensor:
-            )
         encoded_condition = self.condition_encoder(condition, mask)
         values = torch.randn(
             condition.shape[0],

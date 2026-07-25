@@ -129,13 +129,10 @@ class ConditionalModels(nn.Module):
             self.voice_ge2e,
             self.style_ge2e,
         )
-        inference, inference_ids = _parameter_count(inference_modules)
-        helper, helper_ids = _parameter_count((self.f0_extractor,))
-        training, training_ids = _parameter_count(training_modules)
-        text, text_ids = _parameter_count((self.text_encoder,))
-        categories = (inference_ids, helper_ids, training_ids, text_ids)
-        for index, identities in enumerate(categories):
-            pass
+        inference, _ = _parameter_count(inference_modules)
+        helper, _ = _parameter_count((self.f0_extractor,))
+        training, _ = _parameter_count(training_modules)
+        text, _ = _parameter_count((self.text_encoder,))
         return ConditionalParameterReport(
             inference=acoustic_inference_parameters + inference,
             frozen_helper=helper,

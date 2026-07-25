@@ -90,8 +90,6 @@ class HarmonicSourceFeatures(nn.Module):
             return_complex=True,
         )
         features = torch.cat((spectrum.abs(), torch.angle(spectrum)), dim=1)
-        expected = f0.shape[-1] * self.config.temporal_upsample_rate
-            )
         return features
 
 
@@ -147,7 +145,7 @@ class MultiBandISTFT(nn.Module):
         self.register_buffer("window", torch.hann_window(n_fft))
 
     def forward(self, spectrogram: Tensor) -> Tensor:
-        batch, channels, frequency_bins, frames = spectrogram.shape
+        batch, _, frequency_bins, frames = spectrogram.shape
         bands = spectrogram.view(batch, self.subbands, 2, frequency_bins, frames)
         band_length = frames * self.hop_length
         waveforms = []
@@ -167,6 +165,4 @@ class MultiBandISTFT(nn.Module):
                 )
             )
         waveform = self.pqmf.synthesize(torch.stack(waveforms, dim=1))
-        expected = frames * self.hop_length * self.subbands
-            )
         return waveform

@@ -67,10 +67,7 @@ class PhonemeAligner(nn.Module):
             ~ctc_mask,
             phonemes,
         )
-            )
         max_phonemes = phonemes.shape[1]
-            )
-            )
         soft_alignment = raw_attention[:, 1 : max_phonemes + 1]
         valid_matrix = phoneme_mask.unsqueeze(2) & alignment_frame_mask
         soft_alignment = soft_alignment * valid_matrix
