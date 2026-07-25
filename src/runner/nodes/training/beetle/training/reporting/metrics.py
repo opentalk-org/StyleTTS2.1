@@ -32,7 +32,6 @@ class MetricAccumulator:
 
     def add(self, items: int, metrics: tuple[TrainingMetric, ...]) -> None:
         names = tuple(metric.name for metric in metrics)
-            )
         totals = (
             tuple(metric.value for metric in metrics)
             if self.state.microsteps == 0
