@@ -53,12 +53,6 @@ class NodeLogUpsert(BaseModel):
     truncated: bool
     error: str | None = None
 
-
-class NodeLogRead(NodeLogUpsert):
-    updated_at: datetime
-    model_config = ConfigDict(from_attributes=True)
-
-
 class ClaimedJob(BaseModel):
     run_id: str
     graph_request: dict[str, Any]

@@ -14,45 +14,6 @@ from shared.db.waveforms.schemas import WaveformInput, WaveformRead
 from shared.storage import ObjectRange
 
 
-def bulk_replace_waveforms_from_audio(
-    session: Session,
-    items: Sequence[tuple[uuid.UUID, bytes, float, WaveformInput | None]],
-    config: WaveformPackConfig = WaveformPackConfig(),
-) -> list[AudioWaveform]:
-    if not items:
-        return []
-    store = settings_crud.object_store(session)
-    writer = WaveformPackWriter(session, store, config)
-    waveforms = []
-    bulk_delete_waveforms(
-        session,
-        [audio_file_id for audio_file_id, _, _, _ in items],
-        commit=False,
-    )
-    for audio_file_id, audio_bytes, duration, payload in items:
-        waveform = payload if payload is not None else _waveform_from_audio(audio_bytes)
-        data = encode_peaks(waveform.peaks)
-        write = writer.append(data)
-        waveforms.append(
-            AudioWaveform(
-                audio_file_id=audio_file_id,
-                pack_id=write.pack.id,
-                byte_offset=write.byte_offset,
-                byte_length=write.byte_length,
-                duration=duration,
-                sample_rate=waveform.sample_rate,
-                points_per_second=waveform.points_per_second,
-                point_count=len(waveform.peaks),
-                format_version=FORMAT_VERSION,
-                updated_at=_now(),
-            )
-        )
-    writer.flush()
-    session.add_all(waveforms)
-    session.commit()
-    return waveforms
-
-
 def replace_waveform(
     session: Session,
     audio_file_id: uuid.UUID,
@@ -151,22 +112,6 @@ def bulk_delete_waveforms(
     session.execute(delete(AudioWaveform).where(AudioWaveform.audio_file_id.in_(ids)))
     if commit:
         session.commit()
-
-
-def purge_orphaned_waveform_packs(
-    session: Session,
-) -> list[str]:
-    statement = select(WaveformPack).where(~WaveformPack.waveforms.any()).with_for_update()
-    packs = list(session.execute(statement).scalars().all())
-    paths = [pack.path for pack in packs]
-    for pack in packs:
-        session.delete(pack)
-    session.commit()
-    store = settings_crud.object_store(session)
-    for path in paths:
-        store.delete(path)
-    return paths
-
 
 def _waveform_from_audio(data: bytes) -> WaveformInput:
     try:

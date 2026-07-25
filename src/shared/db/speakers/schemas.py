@@ -150,13 +150,6 @@ class ClusterSummaryCreate(BaseModel):
     dispersion: float = Field(ge=0.0)
     status: SpeakerClusterStatus
 
-
-class ClusteringRunComplete(BaseModel):
-    assignment_count: int = Field(ge=0)
-    prototype_artifact_id: UUID
-    index_artifact_id: UUID
-
-
 class ClusteringOutcomeCounts(BaseModel):
     accepted: int = Field(ge=0)
     provisional_new: int = Field(ge=0)

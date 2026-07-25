@@ -22,11 +22,6 @@ def build_symbol_index(symbols: list[str]) -> dict[str, int]:
 def build_word_index_dictionary(symbols_list: list[str]) -> dict[str, int]:
     return build_symbol_index(symbols_list)
 
-
-def default_styletts_testing_phoneme_symbols() -> list[str]:
-    return [str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS]
-
-
 class TextCleaner:
     def __init__(self, symbols: list[str] | None = None):
         self.symbol_index = build_symbol_index(symbols) if symbols is not None else DEFAULT_STYLETTS_SYMBOL_INDEX

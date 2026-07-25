@@ -51,10 +51,6 @@ export function fetchRunErrors(runId: string): Promise<RunErrorEvent[]> {
   return backendRequest<RunErrorEvent[]>(`/runs/${encodeURIComponent(runId)}/errors`);
 }
 
-export function fetchRunGraph(runId: string): Promise<WorkflowPayload> {
-  return backendRequest<WorkflowPayload>(`/runs/${encodeURIComponent(runId)}/graph`);
-}
-
 export function stopRun(runId: string): Promise<RunStatus> {
   return backendRequest<RunStatus>(`/runs/${encodeURIComponent(runId)}/stop`, { method: "POST" });
 }

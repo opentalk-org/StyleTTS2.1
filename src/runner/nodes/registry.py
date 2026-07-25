@@ -159,11 +159,6 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         registry.register(node_cls)
     return registry
 
-
-def create_node_registry() -> NodeRegistry:
-    return register_runner_nodes(NodeRegistry())
-
-
 def register_runner_types_for_ui(registry: TypeRegistry) -> TypeRegistry:
     register_runner_types(registry)
     return registry

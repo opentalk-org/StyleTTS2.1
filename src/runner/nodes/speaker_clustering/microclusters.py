@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from itertools import chain
 from pathlib import Path
 
 import numpy as np
@@ -151,16 +150,6 @@ def _fill_blocks(
     for start in range(0, len(values), block_rows):
         _check_cancel(check_cancel)
         values[start : start + block_rows] = value
-
-
-def _bounded_edge_blocks(
-    edge_blocks: Iterable[EdgeBlock],
-) -> tuple[Iterable[EdgeBlock], int]:
-    iterator = iter(edge_blocks)
-    first = next(iterator, None)
-    if first is None:
-        return (), 1
-    return chain((first,), iterator), max(len(first.left_ids), 1)
 
 
 def _check_cancel(check_cancel: Callable[[], None] | None) -> None:

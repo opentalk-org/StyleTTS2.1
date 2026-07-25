@@ -1,11 +1,9 @@
-from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from shared.audio_annotations import AudioAnnotations
-from shared.db.assets.schemas import BucketFileRead
 from shared.db.waveforms.schemas import WaveformInput
 
 
@@ -23,33 +21,6 @@ class SegmentUpdate(BaseModel):
     text: str
     phon: str
     annotations: AudioAnnotations
-
-
-class AudioFileCreate(BaseModel):
-    name: str
-    bucket_file_id: UUID
-    byte_offset: int
-    byte_length: int
-    duration: float
-    annotations: AudioAnnotations
-    language: str | None = None
-    style_prompt: str | None = None
-    voice_prompt: str | None = None
-    segments: list[dict[str, Any]]
-    virtual: bool
-
-
-class AudioFileUpdate(BaseModel):
-    name: str
-    byte_offset: int
-    byte_length: int
-    duration: float
-    annotations: AudioAnnotations
-    language: str | None = None
-    style_prompt: str | None = None
-    voice_prompt: str | None = None
-    segments: list[dict[str, Any]]
-    virtual: bool
 
 
 class AudioCreate(BaseModel):
@@ -133,10 +104,3 @@ class AudioFileReference(BaseModel):
     virtual: bool
     style_prompt: str | None
     voice_prompt: str | None
-
-
-class AudioFileRead(AudioFileCreate):
-    id: UUID
-    bucket_file: BucketFileRead
-    updated_at: datetime
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)

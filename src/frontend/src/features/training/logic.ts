@@ -125,10 +125,6 @@ export function checkpointOptions(checkpoints: Checkpoint[], type: string, place
   ];
 }
 
-export function fileAssetOptions(assets: FileAsset[], placeholder: string): Option[] {
-  return [{ value: "", label: assets.length ? placeholder : "No files available" }, ...assets.map((asset) => ({ value: asset.id, label: asset.name }))];
-}
-
 export function pretrainedAssetOptions(files: FileAsset[], checkpoints: Checkpoint[], type: string, placeholder: string): Option[] {
   const checkpointRows = checkpoints.filter((checkpoint) => checkpointTypeKey(checkpoint.type_) === checkpointTypeKey(type));
   const rows = [

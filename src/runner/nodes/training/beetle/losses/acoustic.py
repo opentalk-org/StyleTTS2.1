@@ -196,13 +196,16 @@ class MultiResolutionReconstructionLoss(nn.Module):
                 target_spectrum = transform.complex_spectrum(
                     target[selected, 0, :valid_samples]
                 )
-                complex_convergence = (
-                    target_spectrum - predicted_spectrum
-                ).abs().sum()
-                complex_convergence = (
-                    complex_convergence / target_spectrum.abs().sum()
-                )
-                convergence = (convergence + complex_convergence) * 0.5
+                predicted_magnitude = predicted_spectrum.abs()
+                target_magnitude = target_spectrum.abs()
+                magnitude_difference = (
+                    target_magnitude - predicted_magnitude
+                ).abs().sum(dim=(0, 2))
+                target_energy = target_magnitude.sum(dim=(0, 2))
+                magnitude_convergence = (
+                    magnitude_difference / target_energy.clamp_min(1e-5)
+                ).mean()
+                convergence = convergence * 0.75 + magnitude_convergence * 0.25
             total = total + convergence * sample_count / predicted.shape[0]
             if include_diagnostics:
                 band_totals = tuple(

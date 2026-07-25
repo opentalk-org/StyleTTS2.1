@@ -94,12 +94,3 @@ class NodeLogManager:
             logger.removeHandler(handler)
             handler.close()
         self._handlers = []
-
-
-def read_node_log(work_dir: Path, run_id: str, node_id: str) -> tuple[str, bool]:
-    path = node_log_path(work_dir, run_id, node_id)
-    if not path.exists():
-        return "", False
-    data = path.read_bytes()
-    truncated = len(data) >= MAX_NODE_LOG_BYTES
-    return data.decode("utf-8", errors="replace"), truncated

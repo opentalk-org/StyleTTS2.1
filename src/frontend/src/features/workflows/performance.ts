@@ -1,23 +1,8 @@
-import type { EdgePerformanceSnapshot, NodePerformanceSnapshot, NodeRunSnapshot, RunSnapshot, WorkflowEdge } from "./types";
+import type { NodePerformanceSnapshot, NodeRunSnapshot } from "./types";
 
 export type PerformanceSortKey = "arrival" | "departure" | "batchSize" | "execute" | "route" | "resourceWait" | "blocked" | "p95";
 
 export type BatchAverages = { inputItems: number; outputItems: number; executeMs: number; routeMs: number };
-
-export function edgeKey(edge: WorkflowEdge): string {
-  return `${edge.source_node}:${edge.source_port}:${edge.target_node}:${edge.target_port}`;
-}
-
-export function nodePerformance(snapshot: RunSnapshot | undefined, nodeId: string): NodeRunSnapshot | undefined {
-  return snapshot?.nodes.find((node) => node.node_id === nodeId);
-}
-
-export function edgePerformance(snapshot: RunSnapshot | undefined, edge: WorkflowEdge): EdgePerformanceSnapshot | undefined {
-  return snapshot?.edges.find((item) =>
-    item.source_node === edge.source_node && item.source_port === edge.source_port
-    && item.target_node === edge.target_node && item.target_port === edge.target_port,
-  );
-}
 
 export function formatRate(rate: number): string {
   if (rate === 0) return "0/s";
@@ -38,11 +23,6 @@ export function formatResourceWait(performance: NodePerformanceSnapshot): string
 export function neutralQueueTone(fillRatio: number): string {
   const alpha = Math.min(0.18, Math.max(0, fillRatio) * 0.18);
   return `rgba(100, 116, 139, ${alpha.toFixed(3)})`;
-}
-
-export function flowStrokeWidth(rate: number, maximumRate: number): number {
-  if (maximumRate <= 0 || rate <= 0) return 1.5;
-  return 1.5 + Math.sqrt(rate / maximumRate) * 4.5;
 }
 
 export function servicePerformance(node: NodeRunSnapshot): NodePerformanceSnapshot {

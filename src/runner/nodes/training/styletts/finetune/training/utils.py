@@ -1,14 +1,6 @@
-from monotonic_align import maximum_path
-from monotonic_align import mask_from_lens
 from monotonic_align.core import maximum_path_c
 import numpy as np
 import torch
-import copy
-from torch import nn
-import torch.nn.functional as F
-import torchaudio
-import librosa
-import matplotlib.pyplot as plt
 from munch import Munch
 
 def maximum_path(neg_cent, mask):
@@ -51,14 +43,6 @@ def log_norm(x, mean=-4, std=4, dim=2):
     x = torch.log(torch.exp(x * std + mean).norm(dim=dim))
     return x
 
-def get_image(arrs):
-    plt.switch_backend('agg')
-    fig = plt.figure()
-    ax = plt.gca()
-    ax.imshow(arrs)
-
-    return fig
-
 def recursive_munch(d):
     if isinstance(d, dict):
         return Munch((k, recursive_munch(v)) for k, v in d.items())
@@ -66,8 +50,3 @@ def recursive_munch(d):
         return [recursive_munch(v) for v in d]
     else:
         return d
-
-def log_print(message, logger):
-    logger.info(message)
-    print(message)
-    

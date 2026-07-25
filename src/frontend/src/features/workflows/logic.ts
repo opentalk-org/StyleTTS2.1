@@ -44,13 +44,6 @@ export function addNode(schema: WorkflowSchema, graph: WorkflowGraph, type: stri
   return { ...graph, nodes: [...graph.nodes, node] };
 }
 
-export function deleteNode(graph: WorkflowGraph, nodeId: string): WorkflowGraph {
-  return {
-    nodes: graph.nodes.filter((node) => node.id !== nodeId),
-    edges: graph.edges.filter((edge) => edge.source_node !== nodeId && edge.target_node !== nodeId),
-  };
-}
-
 export function deleteNodes(graph: WorkflowGraph, nodeIds: string[]): WorkflowGraph {
   const removed = new Set(nodeIds);
   return {

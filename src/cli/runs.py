@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime, timezone
 
 import httpx
 
@@ -114,19 +113,6 @@ def _duration(milliseconds: float) -> str:
 def _rate(value: float) -> str:
     """Format an items/s rate like the UI (one decimal below 10, else whole)."""
     return f"{value:.1f}" if value < 10 else f"{value:.0f}"
-
-
-def _current_elapsed_ms(started_at: str | None) -> float:
-    """Milliseconds since the in-flight batch started, or 0 if none is running."""
-    if not started_at:
-        return 0.0
-    try:
-        started = datetime.fromisoformat(started_at)
-    except ValueError:
-        return 0.0
-    if started.tzinfo is None:
-        started = started.replace(tzinfo=timezone.utc)
-    return max(0.0, (datetime.now(timezone.utc) - started).total_seconds() * 1000)
 
 
 def cmd_perf(client: BackendClient, args: argparse.Namespace) -> int:

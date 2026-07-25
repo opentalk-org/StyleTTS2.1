@@ -11,24 +11,6 @@ function datasetSelect(datasets: Dataset[]) {
   return datasets.map((d) => ({ value: d.id, label: `${d.name} (${d.files})` }));
 }
 
-export async function uploadAction(datasets: Dataset[]) {
-  const options = datasetSelect(datasets);
-  const speakers = await fetchSpeakers({ query: "", limit: 200, offset: 0 });
-  openParamModal({
-    icon: "upload",
-    title: "Upload audio",
-    submitLabel: "Upload",
-    fields: [
-      { type: "drop", label: "Drop audio files here or click to browse", hint: "WAV, FLAC, MP3 · up to 2 GB per file" },
-      { key: "target", type: "select", label: "Add to dataset", default: options[0]?.value ?? "", options },
-      { key: "speaker_id", type: "select", label: "Assign speaker", default: "", options: [{ value: "", label: "None" }, ...speakers.rows.map((speaker) => ({ value: speaker.id, label: speaker.id }))] },
-    ],
-    onSubmit: () => {
-      showToast("Upload queued");
-    },
-  });
-}
-
 export function addDatasetAction(datasets: Dataset[], onAdd: (datasetId: string) => void) {
   const options = datasetSelect(datasets);
   openParamModal({

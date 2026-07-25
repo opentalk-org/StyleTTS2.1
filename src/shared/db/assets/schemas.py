@@ -11,12 +11,6 @@ class BucketFileCreate(BaseModel):
     used_bytes: int
     sealed: bool
 
-
-class BucketFileRead(BucketFileCreate):
-    id: UUID
-    model_config = ConfigDict(from_attributes=True)
-
-
 class CheckpointCreate(BaseModel):
     name: str
     folder_path: Path

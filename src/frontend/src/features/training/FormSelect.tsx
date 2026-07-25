@@ -16,9 +16,3 @@ export function FormSelect({
   const [localValue, setLocalValue] = useState(defaultValue);
   return <Select value={value ?? localValue} onChange={onChange ?? setLocalValue} options={options} />;
 }
-
-export function opts(items: (string | Option)[]): Option[] {
-  return items.map((o) =>
-    typeof o === "string" ? { value: o, label: o } : o,
-  );
-}

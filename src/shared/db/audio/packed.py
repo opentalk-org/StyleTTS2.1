@@ -40,17 +40,6 @@ def bulk_create_packed_audio_files(
     return items
 
 
-def update_packed_audio_file(
-    session: Session,
-    store: ObjectStore,
-    audio_file_id: uuid.UUID,
-    payload: AudioUpdate,
-    config: AudioPackConfig = AudioPackConfig(),
-) -> AudioFile:
-    items = bulk_update_packed_audio_files(session, store, {audio_file_id: payload}, config)
-    return items[audio_file_id]
-
-
 def bulk_update_packed_audio_files(
     session: Session,
     store: ObjectStore,
@@ -67,11 +56,6 @@ def bulk_update_packed_audio_files(
     if commit:
         session.commit()
     return items
-
-
-def delete_packed_audio_file(session: Session, audio_file_id: uuid.UUID) -> None:
-    bulk_delete_packed_audio_files(session, [audio_file_id])
-
 
 def bulk_delete_packed_audio_files(
     session: Session,

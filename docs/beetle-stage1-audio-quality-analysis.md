@@ -293,8 +293,9 @@ These controls retained PQMF, iSTFT, segments, and all other training settings:
 | Bounded direct PQMF waveform head, step 500 | 0.40733 | unchanged texture |
 | No harmonic source; direct source-filter | .32939/.31453@500 | grid remains |
 | LeakyReLU temporal residuals, step 500 | 0.31309 | unchanged texture; stopped |
+| Raw phase; frequency-equalized complex, step 5000 | 0.27191 | corr .970/.956/.957; rel .187/.262/.256 |
 The artifact survives replacing iSTFT with a direct PQMF waveform head and
 removing harmonic-source injection. PQMF round-trip correlation is 0.99999976,
-so its filters/order are sound. The defect is not the iSTFT head alone. The
-phase formerly excluded 68% of angles via `polar(magnitude, sin(phase))`; fixing
-it is correct but insufficient. Fresh runs seed Python, NumPy, and Torch.
+so its filters/order are sound. Raw phase alone was insufficient, while
+frequency-equalized complex supervision proved the output path can fit upper
+structure; loss weighting was the primary tested bottleneck.

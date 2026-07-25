@@ -1,5 +1,3 @@
-import os
-import yaml
 from collections import OrderedDict
 
 import torch

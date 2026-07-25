@@ -1,11 +1,4 @@
-from math import pi
-from random import randint
-from typing import Any, Optional, Sequence, Tuple, Union
-
-import torch
-from einops import rearrange
 from torch import Tensor, nn
-from tqdm import tqdm
 
 from .utils import *
 from .sampler import *
@@ -44,14 +37,6 @@ def get_default_model_kwargs():
 
 def get_default_sampling_kwargs():
     return dict(sigma_schedule=LinearSchedule(), sampler=VSampler(), clamp=True)
-
-
-class AudioDiffusionModel(Model1d):
-    def __init__(self, **kwargs):
-        super().__init__(**{**get_default_model_kwargs(), **kwargs})
-
-    def sample(self, *args, **kwargs):
-        return super().sample(*args, **{**get_default_sampling_kwargs(), **kwargs})
 
 
 class AudioDiffusionConditional(Model1d):

@@ -10,45 +10,6 @@ import numpy as np
 from runner.nodes.speaker_clustering.edge_shards import EdgeBlock
 
 
-def consolidate_labels(
-    labels: np.ndarray,
-    edge_blocks: Iterable[EdgeBlock],
-    min_support_pairs: int,
-    max_members: int,
-    *,
-    block_rows: int,
-    prototype_neighbors: np.ndarray,
-    check_cancel: Callable[[], None] | None = None,
-) -> int:
-    _validate_inputs(labels, prototype_neighbors, block_rows)
-    connection = sqlite3.connect(":memory:")
-    progress = partial(_sqlite_progress, check_cancel)
-    connection.set_progress_handler(progress, 1_000)
-    try:
-        _create_support_tables(connection)
-        _count_support(
-            connection,
-            labels,
-            edge_blocks,
-            prototype_neighbors,
-            min_support_pairs,
-            block_rows,
-            check_cancel,
-        )
-        return _apply_supported_merges(
-            connection,
-            labels,
-            prototype_neighbors,
-            min_support_pairs,
-            max_members,
-            block_rows,
-            check_cancel,
-        )
-    finally:
-        connection.set_progress_handler(None, 0)
-        connection.close()
-
-
 def consolidate_labels_on_disk(
     labels: np.ndarray,
     edge_blocks: Iterable[EdgeBlock],

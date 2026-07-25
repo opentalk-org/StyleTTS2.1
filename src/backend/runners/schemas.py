@@ -1,6 +1,4 @@
 from datetime import datetime
-from uuid import UUID
-
 from pydantic import BaseModel
 
 from shared.db.runners.schemas import RunnerCreate, RunnerRead
@@ -18,10 +16,5 @@ class RunnerStatusRead(RunnerRead):
 class RunnerPage(BaseModel):
     rows: list[RunnerStatusRead]
     total: int
-
-
-class RunnerManualRead(BaseModel):
-    id: UUID
-
 
 RunnerRegisterRequest = RunnerCreate
