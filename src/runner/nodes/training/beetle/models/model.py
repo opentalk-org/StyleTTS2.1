@@ -62,7 +62,6 @@ class AcousticModels(nn.Module):
         frame_mask: Tensor,
         decoder_acoustic: AcousticFeatures,
         latent_generator: torch.Generator,
-        source_generator: torch.Generator,
     ) -> AcousticSynthesis:
         posterior = self.audio_encoder(mel, frame_mask, latent_generator)
         acoustic = self.feature_linear(
@@ -73,31 +72,23 @@ class AcousticModels(nn.Module):
         return self._render(
             posterior,
             acoustic,
-            decoder_acoustic,
             frame_mask,
-            source_generator,
         )
 
     def _render(
         self,
         posterior: AudioPosterior,
         acoustic: AcousticFeatures,
-        decoder_acoustic: AcousticFeatures,
         frame_mask: Tensor,
-        source_generator: torch.Generator,
     ) -> AcousticSynthesis:
         decoded = self.decoder(
             posterior.latent,
-            decoder_acoustic.f0,
-            decoder_acoustic.n,
             posterior.mask,
             frame_mask,
         )
         waveform = self.generator(
             decoded.features,
-            decoded.f0,
             decoded.mask,
-            source_generator,
         )
         sample_mask = frame_mask.repeat_interleave(
             self.output_hop,
@@ -150,7 +141,7 @@ def build_acoustic_models(
         audio_encoder=AudioEncoder(architecture.posterior),
         feature_linear=FeatureLinear(architecture.feature),
         decoder=Decoder(architecture.decoder),
-        generator=Generator(architecture.generator, config.audio.sample_rate),
+        generator=Generator(architecture.generator),
         f0_extractor=f0_extractor,
         discriminators=build_styletts_discriminators(),
         reconstruction_loss=HiFTNetReconstructionLoss(
