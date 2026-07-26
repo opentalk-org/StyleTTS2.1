@@ -83,20 +83,15 @@ class BeetleTrainer:
         self._loop = state
 
     def discriminator_backward(self, batch: BeetleBatch) -> tuple[TrainingMetric, ...]:
-        waveform, _, frame_mask = self._inputs(batch)
-        predicted_f0_ratio = self.schedules.predicted_f0_ratio(
-            self._loop.optimizer_step
-        )
-        with self.runtime.autocast():
-            view = build_acoustic_training_view(
-                self.acoustic,
-                self.runtime_seed,
-                self._loop,
-                self.device,
-                self.adversarial.segment_samples,
-                waveform,
+        waveform, mel, frame_mask = self._inputs(batch)
+        segment = self._segment(frame_mask, "discriminator")
+        real = segment.samples(waveform)
+        with torch.no_grad(), self.runtime.autocast():
+            posterior = self._synthesize_posterior(
+                mel,
                 frame_mask,
-                predicted_f0_ratio,
+                segment,
+                "discriminator",
             )
         self._acoustic_view = view
         real = view.segment.samples(waveform)
@@ -181,6 +176,7 @@ class BeetleTrainer:
             waveform,
             view,
             self.schedules.acoustic_weights(self._loop.optimizer_step),
+            self._generator("generator", "latent"),
             self._loop.optimizer_step + 1,
         )
 
@@ -230,6 +226,38 @@ class BeetleTrainer:
         reset_optimizers: bool,
     ) -> DataPipelineState:
         return restore_trainer(self, payload, reset_optimizers)
+
+    def _segment(self, frame_mask: Tensor, view: str) -> AlignedSegments:
+        return training_segment(
+            frame_mask,
+            self.adversarial.segment_samples,
+            self.acoustic,
+            self._generator(view, "segment"),
+        )
+
+    def _synthesize_posterior(
+        self,
+        mel: Tensor,
+        frame_mask: Tensor,
+        segment: AlignedSegments,
+        view: str,
+    ) -> AcousticSynthesis:
+        return synthesize_training_posterior(
+            self.acoustic,
+            mel,
+            frame_mask,
+            segment,
+            self._generator(view, "latent"),
+        )
+
+    def _generator(self, view: str, purpose: str) -> torch.Generator:
+        return training_generator(
+            self.runtime_seed,
+            self._loop,
+            self.device,
+            view,
+            purpose,
+        )
 
     def _inputs(self, batch: BeetleBatch) -> tuple[Tensor, Tensor, Tensor]:
         return batch_inputs(batch, self.device)

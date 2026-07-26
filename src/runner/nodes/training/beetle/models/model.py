@@ -72,7 +72,6 @@ class AcousticModels(nn.Module):
         return self._render(
             posterior,
             acoustic,
-            decoder_acoustic,
             frame_mask,
         )
 

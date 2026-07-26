@@ -73,8 +73,10 @@ class GeneratorConfig(StrictConfigModel):
     upsample_kernel_sizes: tuple[int, ...] = Field(min_length=1)
     resblock_kernel_sizes: tuple[int, ...] = Field(min_length=1)
     resblock_dilations: tuple[tuple[int, ...], ...] = Field(min_length=1)
-    final_stage_resblock_bottleneck: int = Field(gt=0)
-    harmonic_count: int = Field(gt=0)
+    initial_frequency_bins: int = Field(gt=0)
+    frequency_upsample_kernel_sizes: tuple[int, ...] = Field(min_length=1)
+    frequency_upsample_paddings: tuple[int, ...] = Field(min_length=1)
+    subbands: int = Field(gt=0)
     istft_n_fft: int = Field(gt=0)
     istft_hop_length: int = Field(gt=0)
 
@@ -82,23 +84,23 @@ class GeneratorConfig(StrictConfigModel):
     def validate_generator_geometry(self) -> "GeneratorConfig":
         if len(self.resblock_kernel_sizes) != len(self.resblock_dilations):
             raise ValueError("each resblock kernel needs a dilation sequence")
-        if len(self.upsample_rates) != len(self.upsample_kernel_sizes):
-            raise ValueError("each upsample rate needs a kernel size")
-        invalid_geometry = any(
-            (kernel - rate) % 2
-            for rate, kernel in zip(
-                self.upsample_rates,
-                self.upsample_kernel_sizes,
-                strict=True,
-            )
-        )
-        if invalid_geometry:
-            raise ValueError("upsample kernel-rate differences must be even")
-        final_channels = self.upsample_initial_channel // (
-            2 ** len(self.upsample_rates)
-        )
-        if final_channels % self.final_stage_resblock_bottleneck:
-            raise ValueError("final generator stage must divide by its bottleneck")
+        if len(self.frequency_upsample_kernel_sizes) != 3:
+            raise ValueError("iSTFTNet2-MB requires three frequency upsampling stages")
+        if len(self.frequency_upsample_paddings) != 3:
+            raise ValueError("iSTFTNet2-MB requires three frequency paddings")
+        if self.temporal_channels % 4:
+            raise ValueError("generator temporal_channels must be divisible by four")
+        if self.istft_n_fft % self.subbands != 0:
+            raise ValueError("istft_n_fft must be divisible by subbands")
+        frequency_bins = self.initial_frequency_bins
+        for kernel_size, padding in zip(
+            self.frequency_upsample_kernel_sizes,
+            self.frequency_upsample_paddings,
+            strict=True,
+        ):
+            frequency_bins = (frequency_bins - 1) * 2 - 2 * padding + kernel_size
+        if frequency_bins != self.istft_n_fft // 2 + 1:
+            raise ValueError("frequency upsampling must match the iSTFT bins")
         return self
 
     def output_hop(self) -> int:

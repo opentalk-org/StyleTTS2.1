@@ -140,12 +140,19 @@ def acoustic_backward(
     waveform: Tensor,
     view: AcousticTrainingView,
     weights: AcousticLossWeights,
+    latent_generator: torch.Generator,
     completed_step: int,
 ) -> AcousticBackwardMetrics:
     real = view.segment.samples(waveform)
     segment_frame_mask = view.synthesis.decoded.mask
     with runtime.autocast():
-        posterior = view.synthesis
+        posterior = synthesize_training_posterior(
+            acoustic,
+            mel,
+            frame_mask,
+            segment,
+            latent_generator,
+        )
         encoder_kl = masked_kl_standard_normal(
             posterior.posterior.mean,
             posterior.posterior.log_scale,
@@ -204,11 +211,8 @@ def synthesize_training_posterior(
     acoustic_models: AcousticModels,
     mel: Tensor,
     frame_mask: Tensor,
-    target: AcousticFeatures,
-    predicted_f0_ratio: float,
+    segment: AlignedSegments,
     latent_generator: torch.Generator,
-    smoothing_generator: torch.Generator,
-    source_generator: torch.Generator,
 ) -> AcousticSynthesis:
     posterior = acoustic_models.audio_encoder(
         mel,
@@ -220,24 +224,6 @@ def synthesize_training_posterior(
         posterior.mask,
         frame_mask,
     )
-    decoder_acoustic = target.blend(acoustic, predicted_f0_ratio)
-    smoothing_kernels = (0, 3, 7)
-    smoothing_index = torch.randint(
-        len(smoothing_kernels),
-        (1,),
-        device=decoder_acoustic.f0.device,
-        generator=smoothing_generator,
-    ).item()
-    smoothing_kernel = smoothing_kernels[smoothing_index]
-    if smoothing_kernel:
-        smoothed_f0 = torch.nn.functional.avg_pool1d(
-            decoder_acoustic.f0.unsqueeze(1),
-            smoothing_kernel,
-            stride=1,
-            padding=smoothing_kernel // 2,
-            count_include_pad=True,
-        ).squeeze(1)
-        decoder_acoustic = AcousticFeatures(smoothed_f0, decoder_acoustic.n)
     decoded = acoustic_models.decoder(
         posterior.latent,
         posterior.mask,
