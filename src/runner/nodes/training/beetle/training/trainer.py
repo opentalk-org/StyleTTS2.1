@@ -87,17 +87,11 @@ class BeetleTrainer:
         waveform, mel, frame_mask = self._inputs(batch)
         segment = self._segment(frame_mask, "discriminator")
         real = segment.samples(waveform)
-        predicted_ratio = self.schedules.predicted_acoustic_ratio(
-            self._loop.optimizer_step
-        )
         with torch.no_grad(), self.runtime.autocast():
-            target = self.acoustic.acoustic_targets(mel, frame_mask)
             posterior = self._synthesize_posterior(
                 mel,
                 frame_mask,
                 segment,
-                target,
-                predicted_ratio,
                 "discriminator",
             )
         with self.runtime.autocast():
@@ -182,7 +176,6 @@ class BeetleTrainer:
             predicted_ratio,
             self.schedules.acoustic_weights(self._loop.optimizer_step),
             self._generator("generator", "latent"),
-            self._generator("generator", "source"),
             self._loop.optimizer_step + 1,
         )
 
@@ -236,8 +229,6 @@ class BeetleTrainer:
         mel: Tensor,
         frame_mask: Tensor,
         segment: AlignedSegments,
-        target: AcousticFeatures,
-        predicted_ratio: float,
         view: str,
     ) -> AcousticSynthesis:
         return synthesize_training_posterior(
@@ -245,10 +236,7 @@ class BeetleTrainer:
             mel,
             frame_mask,
             segment,
-            target,
-            predicted_ratio,
             self._generator(view, "latent"),
-            self._generator(view, "source"),
         )
 
     def _generator(self, view: str, purpose: str) -> torch.Generator:

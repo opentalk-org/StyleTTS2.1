@@ -134,8 +134,8 @@ class BeetleConfig(StrictConfigModel):
 
     @model_validator(mode="after")
     def validate_composition(self) -> "BeetleConfig":
-        if self.audio.hop_length != 300:
-            raise ValueError("hop_length must be exactly 300")
+        if self.audio.hop_length != 256:
+            raise ValueError("hop_length must be exactly 256")
         if self.architecture.posterior.mel_channels != self.audio.mel_channels:
             raise ValueError("posterior mel_channels must match audio mel_channels")
         if self.architecture.generator.output_hop() != self.audio.hop_length:

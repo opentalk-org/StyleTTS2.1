@@ -185,8 +185,7 @@ class TrainingValidationEvaluator(ConditionalValidationEvaluator):
         step: int,
     ) -> AcousticSynthesis:
         latent = self._generator(step, audio_file_id, "posterior-latent")
-        source = self._generator(step, audio_file_id, "posterior-source")
-        return self.acoustic.reconstruct(batch.mel, batch.frame_mask, latent, source)
+        return self.acoustic.reconstruct(batch.mel, batch.frame_mask, latent)
 
     def _generator(
         self,

@@ -90,7 +90,6 @@ def acoustic_backward(
     predicted_ratio: float,
     weights: AcousticLossWeights,
     latent_generator: torch.Generator,
-    source_generator: torch.Generator,
     completed_step: int,
 ) -> AcousticBackwardMetrics:
     real = segment.samples(waveform)
@@ -101,10 +100,7 @@ def acoustic_backward(
             mel,
             frame_mask,
             segment,
-            target,
-            predicted_ratio,
             latent_generator,
-            source_generator,
         )
         encoder_kl = masked_kl_standard_normal(
             posterior.posterior.mean,
@@ -159,10 +155,7 @@ def synthesize_training_posterior(
     mel: Tensor,
     frame_mask: Tensor,
     segment: AlignedSegments,
-    target: AcousticFeatures,
-    predicted_ratio: float,
     latent_generator: torch.Generator,
-    source_generator: torch.Generator,
 ) -> AcousticSynthesis:
     segment_frame_mask = segment.frames(frame_mask)
     encoder_mel = segment.context_frames(
@@ -194,23 +187,14 @@ def synthesize_training_posterior(
         posterior.mask,
         segment_frame_mask,
     )
-    segment_target = AcousticFeatures(
-        segment.frames(target.f0),
-        segment.frames(target.n),
-    )
-    decoder_acoustic = segment_target.blend(acoustic, predicted_ratio)
     decoded = acoustic_models.decoder(
         posterior.latent,
-        decoder_acoustic.f0,
-        decoder_acoustic.n,
         posterior.mask,
         segment_frame_mask,
     )
     waveform = acoustic_models.generator(
         decoded.features,
-        decoded.f0,
         decoded.mask,
-        source_generator,
     )
     sample_mask = segment_frame_mask.repeat_interleave(
         acoustic_models.output_hop,

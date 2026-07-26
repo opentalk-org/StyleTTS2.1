@@ -1,5 +1,3 @@
-from uuid import UUID
-
 import torch
 from torch import Tensor, nn
 
@@ -173,23 +171,10 @@ class ConditionalValidationEvaluator:
         acoustic = self.acoustic.feature_linear(latent, latent_mask, batch.frame_mask)
         decoded = self.acoustic.decoder(
             latent,
-            acoustic.f0,
-            acoustic.n,
             latent_mask,
             batch.frame_mask,
         )
-        generated = []
-        for index, audio_id in enumerate(batch.recording_ids):
-            generator = self._generator(step, audio_id, "source")
-            generated.append(
-                self.acoustic.generator(
-                    decoded.features[index : index + 1],
-                    decoded.f0[index : index + 1],
-                    decoded.mask[index : index + 1],
-                    generator,
-                )
-            )
-        waveform = torch.cat(generated, dim=0)
+        waveform = self.acoustic.generator(decoded.features, decoded.mask)
         sample_mask = batch.frame_mask.repeat_interleave(
             self.acoustic.output_hop,
             dim=-1,
@@ -203,21 +188,6 @@ class ConditionalValidationEvaluator:
     ) -> tuple[Tensor, Tensor]:
         transform = self.acoustic.reconstruction_loss.transforms[0]
         return transform(target[:, 0]), transform(prediction[:, 0])
-
-    def _generator(
-        self,
-        step: int,
-        audio_file_id: UUID,
-        view: str,
-    ) -> torch.Generator:
-        seed = derive_seed(
-            self.runtime_seed,
-            step,
-            audio_file_id,
-            view,
-        )
-        return torch.Generator(device=self.device).manual_seed(seed)
-
 
 def _metric(name: str, value: Tensor) -> TrainingMetric:
     return TrainingMetric(name, float(value.detach().cpu()))
