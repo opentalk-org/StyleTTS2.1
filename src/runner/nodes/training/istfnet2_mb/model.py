@@ -10,31 +10,39 @@ from .stft import TorchSTFT
 LRELU_SLOPE = 0.1
 
 class ResBlock1(torch.nn.Module):
-    def __init__(self, h, channels, kernel_size=3, dilation=(1, 3, 5)):
+    def __init__(
+        self,
+        h,
+        channels,
+        kernel_size=3,
+        dilation=(1, 3, 5),
+        bottleneck=1,
+    ):
         super(ResBlock1, self).__init__()
         self.h = h
+        hidden_channels = channels // bottleneck
         self.convs1 = nn.ModuleList([
-            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=dilation[0],
+            weight_norm(Conv1d(channels, hidden_channels, kernel_size, 1, dilation=dilation[0],
                                padding=get_padding(kernel_size, dilation[0]))),
-            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=dilation[1],
+            weight_norm(Conv1d(channels, hidden_channels, kernel_size, 1, dilation=dilation[1],
                                padding=get_padding(kernel_size, dilation[1]))),
-            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=dilation[2],
+            weight_norm(Conv1d(channels, hidden_channels, kernel_size, 1, dilation=dilation[2],
                                padding=get_padding(kernel_size, dilation[2])))
         ])
         self.convs1.apply(init_weights)
 
         self.convs2 = nn.ModuleList([
-            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=1,
+            weight_norm(Conv1d(hidden_channels, channels, kernel_size, 1, dilation=1,
                                padding=get_padding(kernel_size, 1))),
-            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=1,
+            weight_norm(Conv1d(hidden_channels, channels, kernel_size, 1, dilation=1,
                                padding=get_padding(kernel_size, 1))),
-            weight_norm(Conv1d(channels, channels, kernel_size, 1, dilation=1,
+            weight_norm(Conv1d(hidden_channels, channels, kernel_size, 1, dilation=1,
                                padding=get_padding(kernel_size, 1)))
         ])
         self.convs2.apply(init_weights)
         
         self.alpha1 = nn.ParameterList([nn.Parameter(torch.ones(1, channels, 1)) for i in range(len(self.convs1))])
-        self.alpha2 = nn.ParameterList([nn.Parameter(torch.ones(1, channels, 1)) for i in range(len(self.convs2))])
+        self.alpha2 = nn.ParameterList([nn.Parameter(torch.ones(1, hidden_channels, 1)) for i in range(len(self.convs2))])
 
 
     def forward(self, x):
@@ -342,13 +350,26 @@ class Generator(torch.nn.Module):
                 self.noise_res.append(resblock(h, c_cur, 7, [1,3,5]))
             else:
                 self.noise_convs.append(Conv1d(h.gen_istft_n_fft + 2, c_cur, kernel_size=1))
-                self.noise_res.append(resblock(h, c_cur, 11, [1,3,5]))
+                self.noise_res.append(
+                    ResBlock1(
+                        h,
+                        c_cur,
+                        11,
+                        [1, 3, 5],
+                        h.final_stage_resblock_bottleneck,
+                    )
+                )
             
         self.resblocks = nn.ModuleList()
         for i in range(len(self.ups)):
             ch = h.upsample_initial_channel//(2**(i+1))
             for j, (k, d) in enumerate(zip(h.resblock_kernel_sizes, h.resblock_dilation_sizes)):
-                self.resblocks.append(resblock(h, ch, k, d))
+                bottleneck = (
+                    h.final_stage_resblock_bottleneck
+                    if i == len(self.ups) - 1
+                    else 1
+                )
+                self.resblocks.append(ResBlock1(h, ch, k, d, bottleneck))
 
         self.post_n_fft = h.gen_istft_n_fft
         self.conv_post = weight_norm(Conv1d(ch, self.post_n_fft + 2, 7, 1, padding=3))
@@ -357,7 +378,7 @@ class Generator(torch.nn.Module):
         self.reflection_pad = torch.nn.ReflectionPad1d((1, 0))
         self.stft = TorchSTFT(filter_length=h.gen_istft_n_fft, hop_length=h.gen_istft_hop_size, win_length=h.gen_istft_n_fft)
 
-    def forward(self, x, jdc_mel):  # 62.600 GFLOPs/s total at 24 kHz/hop 256; batch excluded.
+    def forward(self, x, jdc_mel):  # 43.726 GFLOPs/s total at 24 kHz/hop 256; batch excluded.
         f0, _, _ = self.F0_model(jdc_mel.unsqueeze(1))  # 6.770 GFLOPs/s.
         if len(f0.shape) == 1:  # 0.000 GFLOPs/s; shape check.
             f0 = f0.unsqueeze(0)  # 0.000 GFLOPs/s; view.
@@ -373,7 +394,7 @@ class Generator(torch.nn.Module):
         for i in range(self.num_upsamples):  # 0.000 GFLOPs/s; stages i=0,1.
             x = F.leaky_relu(x, LRELU_SLOPE)  # 0.000048, 0.000192 GFLOPs/s.
             x_source = self.noise_convs[i](har)  # 0.111, 0.028 GFLOPs/s.
-            x_source = self.noise_res[i](x_source)  # 4.129, 12.976 GFLOPs/s.
+            x_source = self.noise_res[i](x_source)  # 4.129, 6.488 GFLOPs/s.
             
             x = self.ups[i](x)  # 0.393, 0.786 GFLOPs/s.
             if i == self.num_upsamples - 1:  # 0.000 GFLOPs/s; control.
@@ -381,11 +402,11 @@ class Generator(torch.nn.Module):
                 
             x = x + x_source  # 0.000192, 0.000768 GFLOPs/s.
             xs = None  # 0.000 GFLOPs/s; assignment.
-            for j in range(self.num_kernels):  # Resblocks: 1.769,4.129,6.488; 3.539,8.258,12.976 GFLOPs/s.
+            for j in range(self.num_kernels):  # Resblocks: 1.769,4.129,6.488; 1.769,4.129,6.488 GFLOPs/s.
                 if xs is None:  # 0.000 GFLOPs/s; control.
-                    xs = self.resblocks[i*self.num_kernels+j](x)  # 1.769, 3.539 GFLOPs/s for i=0,1 at j=0.
+                    xs = self.resblocks[i*self.num_kernels+j](x)  # 1.769, 1.769 GFLOPs/s for i=0,1 at j=0.
                 else:  # 0.000 GFLOPs/s; control.
-                    xs += self.resblocks[i*self.num_kernels+j](x)  # 4.129,6.488; 8.258,12.976 GFLOPs/s for j=1,2.
+                    xs += self.resblocks[i*self.num_kernels+j](x)  # 4.129,6.488; 4.129,6.488 GFLOPs/s for j=1,2.
             x = xs / self.num_kernels  # 0.000192, 0.000768 GFLOPs/s.
         x = F.leaky_relu(x)  # 0.000768 GFLOPs/s.
         x = self.conv_post(x)  # 0.194 GFLOPs/s.

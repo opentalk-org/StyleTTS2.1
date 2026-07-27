@@ -20,6 +20,7 @@ class SignalConfig:
 class GeneratorConfig:
     sampling_rate: int = 24_000
     resblock: str = "1"
+    final_stage_resblock_bottleneck: int = 2
     upsample_rates: tuple[int, ...] = (8, 8)
     upsample_kernel_sizes: tuple[int, ...] = (16, 16)
     upsample_initial_channel: int = 512
