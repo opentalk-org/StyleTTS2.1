@@ -11,8 +11,10 @@ context but not this objective.
 
 Latents, noise, and velocity use `[B, C, T]`. Token mask, noise level `t`,
 logarithmic step index `k`, and requested step size `d` use `[B, 1, T]`.
-Conditions are projected token sequences with the same `T`. Invalid positions
-are exact zeros at every construction and reduction boundary.
+Conditions are projected token sequences with the same `T`. The 1D DiT-S/2
+backbone patches adjacent frame pairs, so both frames in each patch share
+`t`, `k`, and `d`. Invalid positions are exact zeros at every construction
+and reduction boundary.
 
 ## Probability path and analytic velocity
 
@@ -29,10 +31,10 @@ For `M=2^K`, the base conditional flow-matching loss is masked MSE between the
 model output `v_theta(x_t,t,d=1/M,conditions)` and analytic velocity `u_t` at
 index `k=K`. The finite anchor follows the released Shortcut Models
 implementation; theoretical `d=0` is represented by the smallest supported
-positive step. Independent per-token `k` and `t` are the adopted Diffusion
+positive step. Independent per-patch `k` and `t` are the adopted Diffusion
 Forcing property. Beetle does not claim to reproduce its autoregressive
 full-sequence objective; it applies the independent-noise principle to a
-masked bidirectional temporal CNN.
+masked bidirectional transformer.
 
 ## Dyadic shortcut target
 
@@ -52,10 +54,10 @@ flow-matching anchor `d=1/M`. No model query uses `d=0`. Base and shortcut
 cases mix within a batch. EMA targets are evaluated before the online optimizer
 update; EMA updates exactly once after that update.
 
-## Per-token time and step sampling
+## Per-patch time and step sampling
 
 Choose a configured smallest interval `1/M`, where `M=2^K`. For each valid
-token, choose the analytic anchor `k=K` according to the configured base-case
+patch, choose the analytic anchor `k=K` according to the configured base-case
 probability; otherwise sample a shortcut index from `{0, ..., K-1}`. Derive
 the physical step rather than sampling it directly:
 
@@ -64,8 +66,8 @@ d = 2^-k
 t = n*d, n ~ UniformInteger({0, ..., 2^k-1})
 ```
 
-Thus all tokens satisfy `t+d<=1`. Anchor tokens use `d=1/M`; shortcut tokens
-use `{1, 1/2, ..., 2/M}`. Stateless seeds include cycle, batch, sample, token,
+Thus all patches satisfy `t+d<=1`. Anchor patches use `d=1/M`; shortcut patches
+use `{1, 1/2, ..., 2/M}`. Stateless seeds include cycle, batch, sample, patch,
 and view so resume recreates every value.
 
 ## One-step and multi-step sampling

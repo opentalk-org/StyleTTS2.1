@@ -203,7 +203,7 @@ class Generator(nn.Module):
         spectrum = self.output_projection(F.leaky_relu(features))
         frequency_bins = self.config.istft_n_fft // 2 + 1
         magnitude = torch.exp(spectrum[:, :frequency_bins].float())
-        phase = torch.sin(spectrum[:, frequency_bins:].float())
+        phase = spectrum[:, frequency_bins:].float()
         waveform = self.istft.inverse(magnitude, phase)
         sample_mask = frame_mask.repeat_interleave(
             self.config.output_hop(),

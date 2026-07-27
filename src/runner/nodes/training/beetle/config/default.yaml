@@ -23,6 +23,7 @@ architecture:
     latent_channels: 192
     upsample_rate: 2
     f0_scale_hz: 256.0
+    residual_layer_count: 2
   decoder:
     latent_channels: 192
     hidden_channels: 1024
@@ -69,7 +70,6 @@ architecture:
     common_channels: 256
     boundary_k_min: 1
     boundary_k_max: 32
-    concat_layers: [2, 5, 8, 11]
     dropout:
       phoneme_embedding: 0.01
       style: 0.1
@@ -92,12 +92,13 @@ architecture:
     dropout: 0.1
   latent_flow:
     latent_channels: 192
-    hidden_channels: 512
+    hidden_channels: 384
     condition_channels: 256
-    time_embedding_channels: 128
+    time_embedding_channels: 256
     layer_count: 12
-    kernel_size: 3
-    dilation_cycle: [1, 2, 4, 8, 16, 32]
+    patch_size: 2
+    attention_heads: 6
+    mlp_ratio: 4.0
     minimum_steps: 128
     base_case_probability: 0.75
     ema_decay: 0.999

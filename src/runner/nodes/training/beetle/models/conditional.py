@@ -191,10 +191,7 @@ def build_conditional_models(
             architecture.conditioning.common_channels,
         ),
         duration_predictor=DurationPredictor(architecture.duration_flow),
-        latent_flow=LatentFlowModel(
-            architecture.latent_flow,
-            architecture.conditioning.concat_layers,
-        ),
+        latent_flow=LatentFlowModel(architecture.latent_flow),
         aligner=dependencies.aligner,
         text_encoder=text_encoder,
         style_speaker_classifier=StyleSpeakerClassifier(

@@ -55,6 +55,7 @@ class FeatureConfig(StrictConfigModel):
     latent_channels: int = Field(gt=0)
     upsample_rate: int = Field(default=2, gt=0)
     f0_scale_hz: float = Field(gt=0)
+    residual_layer_count: int = Field(gt=0)
 
 
 class DecoderConfig(StrictConfigModel):
@@ -161,7 +162,6 @@ class ConditioningConfig(StrictConfigModel):
     common_channels: int = Field(gt=0)
     boundary_k_min: int = Field(ge=1, le=32)
     boundary_k_max: int = Field(ge=1, le=32)
-    concat_layers: tuple[int, ...] = Field(min_length=1)
     dropout: ConditionDropoutConfig
 
     @model_validator(mode="after")
@@ -189,16 +189,21 @@ class LatentFlowConfig(StrictConfigModel):
     condition_channels: int = Field(gt=0)
     time_embedding_channels: int = Field(gt=0)
     layer_count: int = Field(gt=0)
-    kernel_size: int = Field(gt=1)
-    dilation_cycle: tuple[int, ...] = Field(min_length=1)
+    patch_size: int = Field(gt=0)
+    attention_heads: int = Field(gt=0)
+    mlp_ratio: float = Field(gt=0)
     minimum_steps: int = Field(gt=1)
     base_case_probability: float = Field(gt=0, lt=1)
     ema_decay: float = Field(gt=0, lt=1)
 
     @model_validator(mode="after")
-    def validate_dyadic_steps(self) -> "LatentFlowConfig":
+    def validate_architecture(self) -> "LatentFlowConfig":
         if self.minimum_steps & (self.minimum_steps - 1):
             raise ValueError("minimum_steps must be a power of two")
+        if self.hidden_channels % self.attention_heads:
+            raise ValueError("latent-flow hidden channels must divide attention heads")
+        if self.time_embedding_channels % 2:
+            raise ValueError("latent-flow time embedding channels must be even")
         return self
 
 
@@ -271,6 +276,4 @@ class ArchitectureConfig(StrictConfigModel):
             )
         if self.latent_flow.condition_channels != condition:
             raise ValueError("latent-flow condition_channels must match conditioning")
-        if max(self.conditioning.concat_layers) >= self.latent_flow.layer_count:
-            raise ValueError("conditioning concat layer is outside latent flow")
         return self

@@ -121,6 +121,7 @@ def build_acoustic_training_view(
         target,
         predicted_f0_ratio,
         training_generator(runtime_seed, loop, device, "acoustic", "latent"),
+        training_generator(runtime_seed, loop, device, "acoustic", "f0-smoothing"),
         training_generator(runtime_seed, loop, device, "acoustic", "source"),
     )
     return AcousticTrainingView(
@@ -206,6 +207,7 @@ def synthesize_training_posterior(
     target: AcousticFeatures,
     predicted_f0_ratio: float,
     latent_generator: torch.Generator,
+    smoothing_generator: torch.Generator,
     source_generator: torch.Generator,
 ) -> AcousticSynthesis:
     posterior = acoustic_models.audio_encoder(
@@ -214,11 +216,28 @@ def synthesize_training_posterior(
         latent_generator,
     )
     acoustic = acoustic_models.feature_linear(
-        posterior.latent.detach(),
+        posterior.latent,
         posterior.mask,
         frame_mask,
     )
     decoder_acoustic = target.blend(acoustic, predicted_f0_ratio)
+    smoothing_kernels = (0, 3, 7)
+    smoothing_index = torch.randint(
+        len(smoothing_kernels),
+        (1,),
+        device=decoder_acoustic.f0.device,
+        generator=smoothing_generator,
+    ).item()
+    smoothing_kernel = smoothing_kernels[smoothing_index]
+    if smoothing_kernel:
+        smoothed_f0 = torch.nn.functional.avg_pool1d(
+            decoder_acoustic.f0.unsqueeze(1),
+            smoothing_kernel,
+            stride=1,
+            padding=smoothing_kernel // 2,
+            count_include_pad=True,
+        ).squeeze(1)
+        decoder_acoustic = AcousticFeatures(smoothed_f0, decoder_acoustic.n)
     decoded = acoustic_models.decoder(
         posterior.latent,
         decoder_acoustic.f0,
