@@ -3,6 +3,7 @@ from __future__ import annotations
 import itertools
 import logging
 from pathlib import Path
+import time
 
 import soundfile as sf
 import torch
@@ -140,6 +141,47 @@ def train_batch(
     return metrics
 
 
+def parameter_l2_norm(module: nn.Module) -> float:
+    parameters = tuple(module.parameters())
+    squared_norm = torch.zeros(
+        (),
+        device=parameters[0].device,
+        dtype=torch.float32,
+    )
+    for parameter in parameters:
+        squared_norm += parameter.detach().float().square().sum()
+    return float(torch.sqrt(squared_norm))
+
+
+def weight_norm_metrics(
+    generator: nn.Module,
+    mpd: MultiPeriodDiscriminator,
+    mrsd: MultiResolutionSpectralDiscriminator,
+) -> dict[str, float]:
+    metrics = {
+        "weight_norm/generator": parameter_l2_norm(generator),
+        "weight_norm/mpd": parameter_l2_norm(mpd),
+        "weight_norm/mrsd": parameter_l2_norm(mrsd),
+    }
+    metrics.update(
+        {
+            f"weight_norm/mpd_period_{discriminator.period}": parameter_l2_norm(
+                discriminator
+            )
+            for discriminator in mpd.discriminators
+        }
+    )
+    metrics.update(
+        {
+            f"weight_norm/mrsd_fft_{discriminator.n_fft}": parameter_l2_norm(
+                discriminator
+            )
+            for discriminator in mrsd.discriminators
+        }
+    )
+    return metrics
+
+
 def train(
     generator: nn.Module,
     mpd: MultiPeriodDiscriminator,
@@ -199,6 +241,8 @@ def train(
                 device,
             )
             step += 1
+            if step % config.weight_norm_interval == 0:
+                metrics.update(weight_norm_metrics(generator, mpd, mrsd))
             reporter.metrics("train", metrics, step, epoch)
             logger.info(
                 "epoch=%d step=%d generator=%.4f discriminator=%.4f",
@@ -267,6 +311,7 @@ def validate(
     epoch: int,
 ) -> None:
     generator.eval()
+    started = time.perf_counter()
     errors = []
     with torch.no_grad():
         for index, entry in enumerate(entries):
@@ -294,11 +339,18 @@ def validate(
                 target_mel[0],
                 prediction_mel[0],
             )
+    reporter.validation_step_complete(step)
     reporter.metrics(
         "validation",
         {"mel_spec_error": sum(errors) / len(errors)},
         step,
         epoch,
+    )
+    logger.info(
+        "validation step=%d samples=%d seconds=%.2f",
+        step,
+        len(entries),
+        time.perf_counter() - started,
     )
     generator.train()
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -26,6 +27,12 @@ class Reporter:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.run = run
         self.signal = signal
+        self.artifact_executor = ThreadPoolExecutor(
+            max_workers=4,
+            thread_name_prefix="validation-artifacts",
+        )
+        self.sample_futures: list[Future[None]] = []
+        self.step_futures: list[Future[None]] = []
 
     def metrics(
         self,
@@ -41,6 +48,27 @@ class Reporter:
         self.run.track_metrics(metrics, step=step, epoch=epoch)
 
     def validation_sample(
+        self,
+        step: int,
+        index: int,
+        target: Tensor,
+        prediction: Tensor,
+        target_mel: Tensor,
+        prediction_mel: Tensor,
+    ) -> None:
+        self.sample_futures.append(
+            self.artifact_executor.submit(
+                self._write_validation_sample,
+                step,
+                index,
+                target.detach().float().cpu(),
+                prediction.detach().float().cpu(),
+                target_mel.detach().float().cpu(),
+                prediction_mel.detach().float().cpu(),
+            )
+        )
+
+    def _write_validation_sample(
         self,
         step: int,
         index: int,
@@ -79,12 +107,40 @@ class Reporter:
             log_stft(prediction, self.signal),
             "Log-magnitude STFT spectrogram",
         )
-        artifact_path = f"validation/step_{step:09d}/sample_{index:02d}"
-        for path in (target_path, prediction_path, mel_path, stft_path):
-            self.run.log_artifact(path, artifact_path)
+
+    def validation_step_complete(self, step: int) -> None:
+        sample_futures = tuple(self.sample_futures)
+        self.sample_futures.clear()
+        self.step_futures.append(
+            self.artifact_executor.submit(
+                self._upload_validation_step,
+                step,
+                sample_futures,
+            )
+        )
+
+    def _upload_validation_step(
+        self,
+        step: int,
+        sample_futures: tuple[Future[None], ...],
+    ) -> None:
+        for future in sample_futures:
+            future.result()
+        directory = self.output_dir / f"step_{step:09d}"
+        self.run.log_artifacts(
+            directory,
+            f"validation/step_{step:09d}",
+        )
 
     def close(self) -> None:
-        self.run.close()
+        try:
+            for future in self.sample_futures:
+                future.result()
+            for future in self.step_futures:
+                future.result()
+        finally:
+            self.artifact_executor.shutdown(wait=True)
+            self.run.close()
 
 
 def audio_array(waveform: Tensor) -> np.ndarray:

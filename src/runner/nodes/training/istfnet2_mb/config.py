@@ -19,8 +19,8 @@ class SignalConfig:
 class GeneratorConfig:
     sampling_rate: int = 24_000
     resblock: str = "1"
-    upsample_rates: tuple[int, ...] = (10, 5, 3, 2)
-    upsample_kernel_sizes: tuple[int, ...] = (20, 10, 6, 4)
+    upsample_rates: tuple[int, ...] = (10, 6)
+    upsample_kernel_sizes: tuple[int, ...] = (20, 12)
     upsample_initial_channel: int = 512
     resblock_kernel_sizes: tuple[int, ...] = (3, 7, 11)
     resblock_dilation_sizes: tuple[tuple[int, ...], ...] = (
@@ -36,6 +36,7 @@ class GeneratorConfig:
 class TrainingConfig:
     batch_size: int = 16
     workers: int = 8
+    weight_norm_interval: int = 100
     learning_rate: float = 2e-4
     adam_beta1: float = 0.8
     adam_beta2: float = 0.99

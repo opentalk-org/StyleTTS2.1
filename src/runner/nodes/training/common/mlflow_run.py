@@ -25,6 +25,8 @@ class TrackerRun(Protocol):
 
     def log_artifact(self, path: Path, artifact_path: str) -> None: ...
 
+    def log_artifacts(self, path: Path, artifact_path: str) -> None: ...
+
     def close(self) -> None: ...
 
 
@@ -40,6 +42,8 @@ class TrackingClient(Protocol):
     def log_text(self, run_id: str, text: str, artifact_file: str) -> object: ...
 
     def log_artifact(self, run_id: str, local_path: str, artifact_path: str) -> object: ...
+
+    def log_artifacts(self, run_id: str, local_dir: str, artifact_path: str) -> object: ...
 
     def set_terminated(self, run_id: str, status: str) -> object: ...
 
@@ -98,6 +102,9 @@ class MlflowRun:
 
     def log_artifact(self, path: Path, artifact_path: str) -> None:
         self._client.log_artifact(self._run_id, str(path), artifact_path)
+
+    def log_artifacts(self, path: Path, artifact_path: str) -> None:
+        self._client.log_artifacts(self._run_id, str(path), artifact_path)
 
     def close(self) -> None:
         self._flush_pending()
