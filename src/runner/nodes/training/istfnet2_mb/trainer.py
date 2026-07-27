@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 import time
 
@@ -36,7 +37,8 @@ def discriminator_step(
     mpd: MultiPeriodDiscriminator,
     mrsd: MultiResolutionSpectralDiscriminator,
     optimizer: torch.optim.Optimizer,
-) -> tuple[Tensor, Tensor]:
+    gradient_clip_norm: float,
+) -> tuple[Tensor, Tensor, float, float]:
     optimizer.zero_grad(set_to_none=True)
     mpd_real, mpd_fake, _, _ = mpd(real, fake.detach())
     mrsd_real, mrsd_fake, _, _ = mrsd(real, fake.detach())
@@ -48,8 +50,12 @@ def discriminator_step(
         mrsd_fake,
     )
     (period + resolution).backward()
+    gradient_norm, clip_ratio = clip_gradients(
+        itertools.chain(mpd.parameters(), mrsd.parameters()),
+        gradient_clip_norm,
+    )
     optimizer.step()
-    return period.detach(), resolution.detach()
+    return period.detach(), resolution.detach(), gradient_norm, clip_ratio
 
 
 def generator_step(
@@ -61,6 +67,7 @@ def generator_step(
     target_mel: Tensor,
     mel_weight: float,
     optimizer: torch.optim.Optimizer,
+    gradient_clip_norm: float,
 ) -> dict[str, float]:
     optimizer.zero_grad(set_to_none=True)
     set_requires_grad(mpd, False)
@@ -89,6 +96,12 @@ def generator_step(
             + mel_error * mel_weight
         )
         total.backward()
+        gradient_norm, clip_ratio = clip_gradients(
+            itertools.chain.from_iterable(
+                group["params"] for group in optimizer.param_groups
+            ),
+            gradient_clip_norm,
+        )
         optimizer.step()
     finally:
         set_requires_grad(mpd, True)
@@ -100,6 +113,8 @@ def generator_step(
         "feature_resolution": float(resolution_features.detach()),
         "adversarial_period": float(period_adversarial.detach()),
         "adversarial_resolution": float(resolution_adversarial.detach()),
+        "gradient_norm/generator": gradient_norm,
+        "gradient_clip_ratio/generator": clip_ratio,
     }
 
 
@@ -109,6 +124,7 @@ def train_batch(
     mpd: MultiPeriodDiscriminator,
     mrsd: MultiResolutionSpectralDiscriminator,
     mel: LogMelSpectrogram,
+    jdc_mel: LogMelSpectrogram,
     generator_optimizer: torch.optim.Optimizer,
     discriminator_optimizer: torch.optim.Optimizer,
     config: TrainingConfig,
@@ -117,14 +133,24 @@ def train_batch(
     target = waveform.to(device, non_blocking=True)
     real = target.unsqueeze(1)
     target_mel = mel(target)
-    generated_spec, generated_phase = generator(target_mel)
+    target_jdc_mel = jdc_mel(target)
+    generated_spec, generated_phase = generator(
+        target_mel,
+        target_jdc_mel,
+    )
     fake = generator.stft.inverse(generated_spec, generated_phase)
-    period, resolution = discriminator_step(
+    (
+        period,
+        resolution,
+        discriminator_gradient_norm,
+        discriminator_clip_ratio,
+    ) = discriminator_step(
         real,
         fake,
         mpd,
         mrsd,
         discriminator_optimizer,
+        config.discriminator_gradient_clip_norm,
     )
     metrics = generator_step(
         real,
@@ -135,9 +161,12 @@ def train_batch(
         target_mel,
         config.mel_weight,
         generator_optimizer,
+        config.generator_gradient_clip_norm,
     )
     metrics["discriminator_period"] = float(period)
     metrics["discriminator_resolution"] = float(resolution)
+    metrics["gradient_norm/discriminator"] = discriminator_gradient_norm
+    metrics["gradient_clip_ratio/discriminator"] = discriminator_clip_ratio
     return metrics
 
 
@@ -200,7 +229,8 @@ def train(
     generator.to(device)
     mpd.to(device)
     mrsd.to(device)
-    mel = LogMelSpectrogram(signal).to(device)
+    mel = LogMelSpectrogram(signal, signal.f_max).to(device)
+    jdc_mel = LogMelSpectrogram(signal, signal.jdc_f_max).to(device)
     generator_optimizer = torch.optim.AdamW(
         (
             parameter
@@ -235,6 +265,7 @@ def train(
                 mpd,
                 mrsd,
                 mel,
+                jdc_mel,
                 generator_optimizer,
                 discriminator_optimizer,
                 config,
@@ -268,6 +299,7 @@ def train(
                     generator,
                     validation,
                     mel,
+                    jdc_mel,
                     reporter,
                     signal,
                     device,
@@ -304,6 +336,7 @@ def validate(
     generator: nn.Module,
     entries: list[AudioEntry],
     mel: LogMelSpectrogram,
+    jdc_mel: LogMelSpectrogram,
     reporter: Reporter,
     signal: SignalConfig,
     device: torch.device,
@@ -324,7 +357,11 @@ def validate(
                 (0, (-original_length) % signal.hop_length),
             ).to(device)
             target_mel = mel(waveform)
-            generated_spec, generated_phase = generator(target_mel)
+            target_jdc_mel = jdc_mel(waveform)
+            generated_spec, generated_phase = generator(
+                target_mel,
+                target_jdc_mel,
+            )
             prediction = generator.stft.inverse(
                 generated_spec,
                 generated_phase,
@@ -358,3 +395,18 @@ def validate(
 def set_requires_grad(module: nn.Module, enabled: bool) -> None:
     for parameter in module.parameters():
         parameter.requires_grad_(enabled)
+
+
+def clip_gradients(
+    parameters: Iterable[Tensor],
+    max_norm: float,
+) -> tuple[float, float]:
+    gradient_norm = float(
+        nn.utils.clip_grad_norm_(
+            parameters,
+            max_norm,
+            error_if_nonfinite=True,
+        )
+    )
+    clip_ratio = min(1.0, max_norm / max(gradient_norm, 1e-12))
+    return gradient_norm, clip_ratio

@@ -9,12 +9,12 @@ from .config import SignalConfig
 
 
 class LogMelSpectrogram(nn.Module):
-    def __init__(self, config: SignalConfig) -> None:
+    def __init__(self, config: SignalConfig, f_max: float) -> None:
         super().__init__()
         mel_basis = melscale_fbanks(
             n_freqs=config.n_fft // 2 + 1,
             f_min=config.f_min,
-            f_max=config.f_max,
+            f_max=f_max,
             n_mels=config.mel_channels,
             sample_rate=config.sample_rate,
             norm="slaney",

@@ -357,8 +357,8 @@ class Generator(torch.nn.Module):
         self.reflection_pad = torch.nn.ReflectionPad1d((1, 0))
         self.stft = TorchSTFT(filter_length=h.gen_istft_n_fft, hop_length=h.gen_istft_hop_size, win_length=h.gen_istft_n_fft)
 
-    def forward(self, x):  # 55.017 GFLOPs/s total at 24 kHz/hop 300; batch excluded.
-        f0, _, _ = self.F0_model(x.unsqueeze(1))  # 5.777 GFLOPs/s.
+    def forward(self, x, jdc_mel):  # 62.600 GFLOPs/s total at 24 kHz/hop 256; batch excluded.
+        f0, _, _ = self.F0_model(jdc_mel.unsqueeze(1))  # 6.770 GFLOPs/s.
         if len(f0.shape) == 1:  # 0.000 GFLOPs/s; shape check.
             f0 = f0.unsqueeze(0)  # 0.000 GFLOPs/s; view.
         
@@ -369,28 +369,28 @@ class Generator(torch.nn.Module):
         har_spec, har_phase = self.stft.transform(har_source)  # ~0.002 GFLOPs/s FFT; abs/angle excluded.
         har = torch.cat([har_spec, har_phase], dim=1)  # 0.000 GFLOPs/s; concatenation.
         
-        x = self.conv_pre(x)  # 0.046 GFLOPs/s.
+        x = self.conv_pre(x)  # 0.054 GFLOPs/s.
         for i in range(self.num_upsamples):  # 0.000 GFLOPs/s; stages i=0,1.
-            x = F.leaky_relu(x, LRELU_SLOPE)  # 0.000041, 0.000205 GFLOPs/s.
-            x_source = self.noise_convs[i](har)  # 0.108, 0.027 GFLOPs/s.
-            x_source = self.noise_res[i](x_source)  # 4.404, 10.383 GFLOPs/s.
+            x = F.leaky_relu(x, LRELU_SLOPE)  # 0.000048, 0.000192 GFLOPs/s.
+            x_source = self.noise_convs[i](har)  # 0.111, 0.028 GFLOPs/s.
+            x_source = self.noise_res[i](x_source)  # 4.129, 12.976 GFLOPs/s.
             
-            x = self.ups[i](x)  # 0.419, 0.629 GFLOPs/s.
+            x = self.ups[i](x)  # 0.393, 0.786 GFLOPs/s.
             if i == self.num_upsamples - 1:  # 0.000 GFLOPs/s; control.
                 x = self.reflection_pad(x)  # 0.000, 0.000 GFLOPs/s; copy only at i=1.
                 
-            x = x + x_source  # 0.000205, 0.000614 GFLOPs/s.
+            x = x + x_source  # 0.000192, 0.000768 GFLOPs/s.
             xs = None  # 0.000 GFLOPs/s; assignment.
-            for j in range(self.num_kernels):  # Resblocks: 1.887,4.404,6.921; 2.832,6.607,10.383 GFLOPs/s.
+            for j in range(self.num_kernels):  # Resblocks: 1.769,4.129,6.488; 3.539,8.258,12.976 GFLOPs/s.
                 if xs is None:  # 0.000 GFLOPs/s; control.
-                    xs = self.resblocks[i*self.num_kernels+j](x)  # 1.887, 2.832 GFLOPs/s for i=0,1 at j=0.
+                    xs = self.resblocks[i*self.num_kernels+j](x)  # 1.769, 3.539 GFLOPs/s for i=0,1 at j=0.
                 else:  # 0.000 GFLOPs/s; control.
-                    xs += self.resblocks[i*self.num_kernels+j](x)  # 4.404,6.921; 6.607,10.383 GFLOPs/s for j=1,2.
-            x = xs / self.num_kernels  # 0.000205, 0.000614 GFLOPs/s.
-        x = F.leaky_relu(x)  # 0.000614 GFLOPs/s.
-        x = self.conv_post(x)  # 0.189 GFLOPs/s.
-        spec = torch.exp(x[:,:self.post_n_fft // 2 + 1, :])  # 0.000 GFLOPs/s; 0.053M exp evaluations/s.
-        phase = torch.sin(x[:, self.post_n_fft // 2 + 1:, :])  # 0.000 GFLOPs/s; 0.053M sin evaluations/s.
+                    xs += self.resblocks[i*self.num_kernels+j](x)  # 4.129,6.488; 8.258,12.976 GFLOPs/s for j=1,2.
+            x = xs / self.num_kernels  # 0.000192, 0.000768 GFLOPs/s.
+        x = F.leaky_relu(x)  # 0.000768 GFLOPs/s.
+        x = self.conv_post(x)  # 0.194 GFLOPs/s.
+        spec = torch.exp(x[:,:self.post_n_fft // 2 + 1, :])  # 0.000 GFLOPs/s; 0.054M exp evaluations/s.
+        phase = torch.sin(x[:, self.post_n_fft // 2 + 1:, :])  # 0.000 GFLOPs/s; 0.054M sin evaluations/s.
 
         return spec, phase  # 0.000 GFLOPs/s; tuple construction.
 
