@@ -9,13 +9,14 @@ import torch
 from runner.nodes.training.common.mlflow_run import start_mlflow_run
 
 from .cli import parse_args
-from .config import RunConfig, SIGNAL, TRAINING
+from .config import GENERATOR, RunConfig, SIGNAL, TRAINING
 from .data import prepare_audio, training_loader
 from .discriminators import (
     MultiPeriodDiscriminator,
     MultiResolutionSpectralDiscriminator,
 )
-from .model import Generator, JDCNet
+from .jdc import JDCNet
+from .model import Generator
 from .reporting import Reporter
 from .trainer import train
 
@@ -65,7 +66,7 @@ def main() -> int:
         validation_interval=arguments.validation_interval,
         max_steps=arguments.max_steps,
     )
-    f0_model = JDCNet()
+    f0_model = JDCNet(num_class=1, seq_len=192)
     f0_model.load_state_dict(
         torch.load(
             JDC_CHECKPOINT,
@@ -73,13 +74,13 @@ def main() -> int:
             weights_only=False,
         )["model"]
     )
-    generator = Generator(f0_model)
+    generator = Generator(GENERATOR, f0_model)
     run = start_mlflow_run(
         experiment=EXPERIMENT,
         name=arguments.run_name or output_dir.name,
         config={
             "dataset_id": str(arguments.dataset_id),
-            "architecture": "hiftnet_pqmf_4band",
+            "architecture": "hiftnet",
             "parameters": sum(
                 parameter.numel()
                 for parameter in generator.parameters()

@@ -116,7 +116,8 @@ def train_batch(
     target = waveform.to(device, non_blocking=True)
     real = target.unsqueeze(1)
     target_mel = mel(target)
-    fake = generator(target_mel)
+    generated_spec, generated_phase = generator(target_mel)
+    fake = generator.stft.inverse(generated_spec, generated_phase)
     period, resolution = discriminator_step(
         real,
         fake,
@@ -278,7 +279,11 @@ def validate(
                 (0, (-original_length) % signal.hop_length),
             ).to(device)
             target_mel = mel(waveform)
-            prediction = generator(target_mel)
+            generated_spec, generated_phase = generator(target_mel)
+            prediction = generator.stft.inverse(
+                generated_spec,
+                generated_phase,
+            )
             prediction_mel = mel(prediction.squeeze(1))
             errors.append(float(F.l1_loss(prediction_mel, target_mel)))
             reporter.validation_sample(
