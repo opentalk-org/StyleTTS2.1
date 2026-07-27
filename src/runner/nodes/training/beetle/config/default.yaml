@@ -184,7 +184,7 @@ training:
     minimum_learning_rate_ratio: 1.0
     maximum_gradient_norm: 100.0
   losses:
-    encoder_kl: {value: 0.01, start_step: 0, warmup_steps: 5000}
+    encoder_kl: {value: 0.1, start_step: 0, warmup_steps: 0}
     f0: {value: 1.0, start_step: 0, warmup_steps: 0}
     n: {value: 1.0, start_step: 0, warmup_steps: 0}
     reconstruction: {value: 45.0, start_step: 0, warmup_steps: 0}
