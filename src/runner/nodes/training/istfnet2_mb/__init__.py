@@ -1,5 +1,5 @@
-"""Paper-faithful iSTFTNet2-MB vocoder training."""
+"""Four-band PQMF HiFTNet vocoder training."""
 
-from .model import ISTFTNet2MB
+from .model import Generator
 
-__all__ = ["ISTFTNet2MB"]
+__all__ = ["Generator"]

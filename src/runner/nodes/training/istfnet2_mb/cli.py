@@ -10,7 +10,7 @@ from .config import TRAINING
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train the paper-faithful iSTFTNet2-MB vocoder."
+        description="Train the four-band PQMF vocoder."
     )
     parser.add_argument("--dataset-id", required=True, type=UUID)
     parser.add_argument("--output-dir", required=True, type=Path)
@@ -24,7 +24,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--workers", type=nonnegative_int, default=TRAINING.workers)
     parser.add_argument("--validation-samples", type=positive_int, default=16)
-    parser.add_argument("--validation-interval", type=positive_int, default=500)
+    parser.add_argument("--validation-interval", type=positive_int, default=1_000)
     parser.add_argument("--checkpoint-interval", type=positive_int, default=5_000)
     parser.add_argument("--max-train-items", type=positive_int)
     parser.add_argument("--max-steps", type=positive_int)

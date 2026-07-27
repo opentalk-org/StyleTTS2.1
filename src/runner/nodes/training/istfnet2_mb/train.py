@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, replace
 import logging
+from pathlib import Path
 
 import torch
 
@@ -14,11 +15,14 @@ from .discriminators import (
     MultiPeriodDiscriminator,
     MultiResolutionSpectralDiscriminator,
 )
-from .model import ISTFTNet2MB
+from .model import Generator, JDCNet
 from .reporting import Reporter
 from .trainer import train
 
 EXPERIMENT = "istftnet2_mb_training"
+JDC_CHECKPOINT = (
+    Path(__file__).parents[1] / "hiftnet" / "Utils" / "JDC" / "bst.t7"
+)
 
 
 def main() -> int:
@@ -28,7 +32,7 @@ def main() -> int:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     if not torch.cuda.is_available():
-        raise RuntimeError("iSTFTNet2-MB training requires CUDA")
+        raise RuntimeError("HiFTNet-PQMF training requires CUDA")
     torch.manual_seed(TRAINING.seed)
     torch.cuda.manual_seed(TRAINING.seed)
     torch.backends.cudnn.benchmark = True
@@ -61,13 +65,26 @@ def main() -> int:
         validation_interval=arguments.validation_interval,
         max_steps=arguments.max_steps,
     )
+    f0_model = JDCNet()
+    f0_model.load_state_dict(
+        torch.load(
+            JDC_CHECKPOINT,
+            map_location="cpu",
+            weights_only=False,
+        )["model"]
+    )
+    generator = Generator(f0_model)
     run = start_mlflow_run(
         experiment=EXPERIMENT,
         name=arguments.run_name or output_dir.name,
         config={
             "dataset_id": str(arguments.dataset_id),
-            "architecture": "paper_istftnet2_mb",
-            "parameters": 827_048,
+            "architecture": "hiftnet_pqmf_4band",
+            "parameters": sum(
+                parameter.numel()
+                for parameter in generator.parameters()
+                if parameter.requires_grad
+            ),
             "validation_samples": arguments.validation_samples,
             "max_train_items": arguments.max_train_items,
             **asdict(SIGNAL),
@@ -78,7 +95,7 @@ def main() -> int:
     reporter = Reporter(output_dir / "samples", run, SIGNAL)
     try:
         train(
-            ISTFTNet2MB(),
+            generator,
             MultiPeriodDiscriminator(),
             MultiResolutionSpectralDiscriminator(),
             loader,

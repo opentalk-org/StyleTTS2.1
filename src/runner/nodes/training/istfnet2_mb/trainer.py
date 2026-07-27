@@ -159,7 +159,11 @@ def train(
     mrsd.to(device)
     mel = LogMelSpectrogram(signal).to(device)
     generator_optimizer = torch.optim.AdamW(
-        generator.parameters(),
+        (
+            parameter
+            for parameter in generator.parameters()
+            if parameter.requires_grad
+        ),
         config.learning_rate,
         betas=(config.adam_beta1, config.adam_beta2),
     )
