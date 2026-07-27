@@ -28,6 +28,10 @@ def collate_validation_recording(
     dynamic_frames = original_frames + original_frames % 2
     padded_frames = dynamic_frames
     mel = F.pad(processed.mel, (0, padded_frames - original_frames)).unsqueeze(0)
+    jdc_mel = F.pad(
+        processed.jdc_mel,
+        (0, padded_frames - original_frames),
+    ).unsqueeze(0)
     padded_samples = padded_frames * config.audio.hop_length
     waveform = F.pad(
         processed.waveform,
@@ -62,6 +66,7 @@ def collate_validation_recording(
     batch = BeetleBatch(
         waveform=waveform,
         mel=mel,
+        jdc_mel=jdc_mel,
         phoneme_ids=phoneme_ids.unsqueeze(0),
         text_input_ids=text_ids.unsqueeze(0),
         language_ids=torch.tensor([language_id], dtype=torch.long),

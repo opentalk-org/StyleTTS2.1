@@ -65,7 +65,17 @@ class BatchCollator:
             tuple(item.target.mel for item in prepared),
             self.minimum_frame_count,
         )
-        target_waveforms = _fit_waveform_frames(target_waveforms, mels.shape[-1])
+        jdc_mels, jdc_frame_lengths = _pad_mels(
+            tuple(item.target.jdc_mel for item in prepared),
+            self.minimum_frame_count,
+        )
+        if not torch.equal(frame_lengths, jdc_frame_lengths):
+            raise ValueError("conditioning and JDC mel frame lengths differ")
+        target_waveforms = _fit_waveform_frames(
+            target_waveforms,
+            mels.shape[-1],
+            self.preprocessor.hop_length,
+        )
         phonemes, phoneme_lengths = _pad_ids(tuple(item.phoneme_ids for item in prepared))
         texts, text_lengths = _pad_ids(tuple(item.text_ids for item in prepared))
         style_prompt, style_prompt_lengths = _pad_ids(
@@ -82,6 +92,7 @@ class BatchCollator:
         return BeetleBatch(
             waveform=target_waveforms,
             mel=mels,
+            jdc_mel=jdc_mels,
             phoneme_ids=phonemes,
             text_input_ids=texts,
             language_ids=self._resolve_language_ids(
@@ -229,8 +240,12 @@ def _length_mask(lengths: Tensor, maximum: int) -> Tensor:
     return torch.arange(maximum).unsqueeze(0) < lengths.unsqueeze(1)
 
 
-def _fit_waveform_frames(waveform: Tensor, frame_count: int) -> Tensor:
-    target = frame_count * 300
+def _fit_waveform_frames(
+    waveform: Tensor,
+    frame_count: int,
+    hop_length: int,
+) -> Tensor:
+    target = frame_count * hop_length
     if waveform.shape[-1] == target:
         return waveform
     output = torch.zeros(waveform.shape[0], 1, target)

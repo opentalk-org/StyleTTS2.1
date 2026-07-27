@@ -1,5 +1,5 @@
 from .acoustic import (
-    MultiResolutionReconstructionLoss,
+    HiFTNetReconstructionLoss,
     ReconstructionLoss,
     masked_f0_smooth_l1,
     masked_kl_standard_normal,
@@ -17,7 +17,7 @@ from .adversarial import (
 
 __all__ = [
     "GeneratorAdversarialLoss",
-    "MultiResolutionReconstructionLoss",
+    "HiFTNetReconstructionLoss",
     "ReconstructionLoss",
     "discriminator_lsgan_loss",
     "discriminator_step_loss",

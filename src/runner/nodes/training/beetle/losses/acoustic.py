@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
-from torchaudio.transforms import MelSpectrogram
+from torchaudio.functional import melscale_fbanks
 
 
 @dataclass(frozen=True)
@@ -39,14 +39,6 @@ class ReconstructionLoss:
     bands: tuple[FrequencyBandLoss, ...]
 
 
-FREQUENCY_BANDS = (
-    FrequencyBand(0, 1000),
-    FrequencyBand(1000, 4000),
-    FrequencyBand(4000, 8000),
-    FrequencyBand(8000, 12000),
-)
-
-
 def _expanded_mask(values: Tensor, mask: Tensor) -> Tensor:
     return torch.broadcast_to(mask.to(dtype=torch.bool), values.shape)
 
@@ -59,7 +51,9 @@ def _masked_mean(values: Tensor, mask: Tensor) -> Tensor:
 
 
 def masked_kl_standard_normal(mean: Tensor, log_scale: Tensor, mask: Tensor) -> Tensor:
-    divergence = 0.5 * (mean.square() + torch.exp(2 * log_scale) - 1 - 2 * log_scale)
+    divergence = 0.5 * (
+        mean.square() + torch.exp(2 * log_scale) - 1 - 2 * log_scale
+    )
     return _masked_mean(divergence.sum(dim=1, keepdim=True), mask)
 
 
@@ -98,137 +92,82 @@ def multiresolution_l1(
     return torch.stack(losses).mean()
 
 
-class StyleTTSMelTransform(nn.Module):
+class LogMelSpectrogram(nn.Module):
     def __init__(
         self,
-        resolution: SpectralResolution,
         sample_rate: int,
+        n_fft: int,
+        hop_length: int,
+        win_length: int,
         mel_channels: int,
+        f_min: float,
+        f_max: float,
     ) -> None:
         super().__init__()
-        self.resolution = resolution
-        self.transform = MelSpectrogram(
-            sample_rate=sample_rate,
-            n_fft=resolution.n_fft,
-            win_length=resolution.win_length,
-            hop_length=resolution.hop_length,
-            window_fn=torch.hann_window,
+        mel_basis = melscale_fbanks(
+            n_freqs=n_fft // 2 + 1,
+            f_min=f_min,
+            f_max=f_max,
             n_mels=mel_channels,
-        )
-        self.register_buffer(
-            "stft_window",
-            torch.hann_window(resolution.win_length),
-            persistent=False,
-        )
-        mel_max = 2595 * torch.log10(torch.tensor(1 + sample_rate / 1400))
-        mel_points = torch.linspace(0, mel_max, self.transform.n_mels + 2)[1:-1]
-        centers = 700 * (torch.pow(10, mel_points / 2595) - 1)
-        band_masks = torch.stack(
-            tuple(
-                (centers >= band.minimum_hz) & (centers < band.maximum_hz)
-                for band in FREQUENCY_BANDS
-            )
-        )
-        self.register_buffer("frequency_band_masks", band_masks, persistent=False)
+            sample_rate=sample_rate,
+            norm="slaney",
+            mel_scale="slaney",
+        ).transpose(0, 1)
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.win_length = win_length
+        self.register_buffer("mel_basis", mel_basis)
+        self.register_buffer("window", torch.hann_window(win_length))
 
     def forward(self, waveform: Tensor) -> Tensor:
-        mel = self.transform(waveform)
-        return (torch.log(1e-5 + mel) + 4) / 4
-
-    def complex_spectrum(self, waveform: Tensor) -> Tensor:
-        return torch.stft(
-            waveform,
-            n_fft=self.resolution.n_fft,
-            hop_length=self.resolution.hop_length,
-            win_length=self.resolution.win_length,
-            window=self.stft_window,
+        padding = (self.n_fft - self.hop_length) // 2
+        padded = F.pad(
+            waveform.unsqueeze(1),
+            (padding, padding),
+            mode="reflect",
+        ).squeeze(1)
+        spectrum = torch.stft(
+            padded,
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            win_length=self.win_length,
+            window=self.window,
+            center=False,
             return_complex=True,
         )
+        magnitude = torch.sqrt(
+            torch.view_as_real(spectrum).square().sum(dim=-1) + 1e-9
+        )
+        mel = torch.matmul(self.mel_basis, magnitude)
+        return torch.log(torch.clamp(mel, min=1e-5))
 
 
-class MultiResolutionReconstructionLoss(nn.Module):
+class HiFTNetReconstructionLoss(nn.Module):
     def __init__(
         self,
         sample_rate: int,
+        n_fft: int,
+        hop_length: int,
+        win_length: int,
         mel_channels: int,
-        complex_reconstruction_steps: int,
-        resolutions: tuple[SpectralResolution, ...] = (
-            SpectralResolution(1024, 120, 600),
-            SpectralResolution(2048, 240, 1200),
-            SpectralResolution(512, 50, 240),
-        ),
+        f_min: float,
+        f_max: float,
     ) -> None:
         super().__init__()
-        self.complex_reconstruction_steps = complex_reconstruction_steps
+        self.resolution = SpectralResolution(n_fft, hop_length, win_length)
         self.transforms = nn.ModuleList(
-            StyleTTSMelTransform(resolution, sample_rate, mel_channels)
-            for resolution in resolutions
+            (
+                LogMelSpectrogram(
+                    sample_rate,
+                    n_fft,
+                    hop_length,
+                    win_length,
+                    mel_channels,
+                    f_min,
+                    f_max,
+                ),
+            )
         )
-
-    def _resolution_loss(
-        self,
-        transform: StyleTTSMelTransform,
-        predicted: Tensor,
-        target: Tensor,
-        lengths: Tensor,
-        include_diagnostics: bool,
-        include_complex: bool,
-    ) -> tuple[Tensor, tuple[Tensor, ...]]:
-        total = predicted.new_zeros(())
-        band_totals = (
-            tuple(predicted.new_zeros(()) for _ in FREQUENCY_BANDS)
-            if include_diagnostics
-            else ()
-        )
-        for length in torch.unique(lengths):
-            selected = lengths == length
-            sample_count = selected.sum()
-            valid_samples = int(length.item())
-            predicted_mel = transform(predicted[selected, 0, :valid_samples])
-            target_mel = transform(target[selected, 0, :valid_samples])
-            difference = (target_mel - predicted_mel).abs()
-            convergence = difference.sum()
-            convergence = convergence / torch.norm(target_mel, p=1)
-            if include_complex:
-                predicted_spectrum = transform.complex_spectrum(
-                    predicted[selected, 0, :valid_samples]
-                )
-                target_spectrum = transform.complex_spectrum(
-                    target[selected, 0, :valid_samples]
-                )
-                predicted_magnitude = predicted_spectrum.abs()
-                target_magnitude = target_spectrum.abs()
-                magnitude_difference = (
-                    target_magnitude - predicted_magnitude
-                ).abs().sum(dim=(0, 2))
-                target_energy = target_magnitude.sum(dim=(0, 2))
-                magnitude_convergence = (
-                    magnitude_difference / target_energy.clamp_min(1e-5)
-                ).mean()
-                convergence = convergence * 0.75 + magnitude_convergence * 0.25
-            total = total + convergence * sample_count / predicted.shape[0]
-            if include_diagnostics:
-                band_totals = tuple(
-                    band_total
-                    + self._band_loss(transform, difference, target_mel, band_index)
-                    * sample_count
-                    / predicted.shape[0]
-                    for band_index, band_total in enumerate(
-                        band_totals,
-                    )
-                )
-        return total, band_totals
-
-    @staticmethod
-    def _band_loss(
-        transform: StyleTTSMelTransform,
-        difference: Tensor,
-        target: Tensor,
-        band_index: int,
-    ) -> Tensor:
-        selected = transform.frequency_band_masks[band_index]
-        denominator = target[:, selected, :].abs().sum()
-        return difference[:, selected, :].sum() / denominator
 
     def forward(
         self,
@@ -238,46 +177,13 @@ class MultiResolutionReconstructionLoss(nn.Module):
         completed_step: int,
         include_diagnostics: bool = False,
     ) -> ReconstructionLoss:
-        lengths = sample_mask.sum(dim=(1, 2))
-        torch._assert_async(
-            torch.all(lengths > 0),
-            "reconstruction loss requires valid waveform samples",
-        )
-        results = tuple(
-            self._resolution_loss(
-                transform,
-                predicted,
-                target,
-                lengths,
-                include_diagnostics,
-                completed_step <= self.complex_reconstruction_steps,
-            )
-            for transform in self.transforms
-        )
-        losses = torch.stack(tuple(result[0] for result in results))
-        mel = losses.mean()
-        band_losses = (
-            torch.stack(tuple(torch.stack(result[1]) for result in results)).mean(dim=0)
-            if include_diagnostics
-            else ()
-        )
+        del sample_mask, completed_step, include_diagnostics
+        predicted_mel = self.transforms[0](predicted[:, 0])
+        target_mel = self.transforms[0](target[:, 0])
+        mel = F.l1_loss(predicted_mel, target_mel)
         return ReconstructionLoss(
-            mel=mel,
-            total=mel,
-            resolutions=tuple(
-                ResolutionLoss(transform.resolution, value)
-                for transform, value in zip(self.transforms, losses, strict=True)
-            ),
-            bands=(
-                tuple(
-                    FrequencyBandLoss(band, value)
-                    for band, value in zip(
-                        FREQUENCY_BANDS,
-                        band_losses,
-                        strict=True,
-                    )
-                )
-                if include_diagnostics
-                else ()
-            ),
+            mel,
+            mel,
+            (ResolutionLoss(self.resolution, mel),),
+            (),
         )

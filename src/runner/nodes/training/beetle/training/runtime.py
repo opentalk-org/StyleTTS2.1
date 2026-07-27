@@ -88,9 +88,8 @@ def load_text_resources(model_name: str) -> TextResources:
 
 def load_f0_extractor() -> F0Extractor:
     checkpoint = (
-        Path(__file__).parents[1]
-        / "external"
-        / "StyleTTS2"
+        Path(__file__).parents[2]
+        / "hiftnet"
         / "Utils"
         / "JDC"
         / "bst.t7"

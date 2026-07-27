@@ -83,7 +83,7 @@ class StepSchedule:
 class TrainingSchedules:
     acoustic: tuple[StepSchedule, ...]
     conditional: tuple[StepSchedule, ...]
-    acoustic_prediction: StepSchedule
+    f0_prediction: StepSchedule
 
     @classmethod
     def from_config(cls, config: TrainingConfig) -> "TrainingSchedules":
@@ -94,7 +94,7 @@ class TrainingSchedules:
                 loss_weight_schedule(getattr(losses, name))
                 for name in _CONDITIONAL_NAMES
             ),
-            loss_weight_schedule(config.acoustic_prediction),
+            loss_weight_schedule(config.f0_prediction),
         )
 
     def acoustic_weights(self, optimizer_step: int) -> AcousticLossWeights:
@@ -105,8 +105,8 @@ class TrainingSchedules:
         values = tuple(schedule.value(optimizer_step) for schedule in self.conditional)
         return ConditionalLossWeights(*values)
 
-    def predicted_acoustic_ratio(self, optimizer_step: int) -> float:
-        return self.acoustic_prediction.value(optimizer_step)
+    def predicted_f0_ratio(self, optimizer_step: int) -> float:
+        return self.f0_prediction.value(optimizer_step)
 
     def state(self, optimizer_step: int) -> LossScheduleState:
         values = (

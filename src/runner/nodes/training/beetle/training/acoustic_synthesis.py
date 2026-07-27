@@ -22,14 +22,25 @@ from .state import LoopState
 
 @dataclass(frozen=True)
 class AcousticBackwardMetrics:
-    prediction_ratio: float
+    f0_prediction_ratio: float
     encoder_kl: Tensor
     f0: Tensor
     n: Tensor
     reconstruction: Tensor
     adversarial: Tensor
+    feature_period: Tensor
+    feature_resolution: Tensor
     feature_matching: Tensor
+    vocoder_total: Tensor
     total: Tensor
+
+
+@dataclass(frozen=True)
+class AcousticTrainingView:
+    target: AcousticFeatures
+    segment: AlignedSegments
+    synthesis: AcousticSynthesis
+    predicted_f0_ratio: float
 
 
 def batch_inputs(
@@ -77,35 +88,55 @@ def training_segment(
     )
 
 
+def build_acoustic_training_view(
+    acoustic: AcousticModels,
+    runtime_seed: int,
+    loop: LoopState,
+    device: torch.device,
+    segment_samples: int,
+    mel: Tensor,
+    frame_mask: Tensor,
+    target: AcousticFeatures,
+    predicted_f0_ratio: float,
+) -> AcousticTrainingView:
+    segment = training_segment(
+        frame_mask,
+        segment_samples,
+        acoustic,
+        training_generator(runtime_seed, loop, device, "acoustic", "segment"),
+    )
+    synthesis = synthesize_training_posterior(
+        acoustic,
+        mel,
+        frame_mask,
+        segment,
+        target,
+        predicted_f0_ratio,
+        training_generator(runtime_seed, loop, device, "acoustic", "latent"),
+        training_generator(runtime_seed, loop, device, "acoustic", "source"),
+    )
+    return AcousticTrainingView(
+        target,
+        segment,
+        synthesis,
+        predicted_f0_ratio,
+    )
+
+
 def acoustic_backward(
     acoustic: AcousticModels,
     runtime: DistributedRuntime,
     optimizer: ScheduledOptimizer,
     accumulation_steps: int,
     waveform: Tensor,
-    mel: Tensor,
-    frame_mask: Tensor,
-    target: AcousticFeatures,
-    segment: AlignedSegments,
-    predicted_ratio: float,
+    view: AcousticTrainingView,
     weights: AcousticLossWeights,
-    latent_generator: torch.Generator,
-    source_generator: torch.Generator,
     completed_step: int,
 ) -> AcousticBackwardMetrics:
-    real = segment.samples(waveform)
-    segment_frame_mask = segment.frames(frame_mask)
+    real = view.segment.samples(waveform)
+    segment_frame_mask = view.synthesis.decoded.mask
     with runtime.autocast():
-        posterior = synthesize_training_posterior(
-            acoustic,
-            mel,
-            frame_mask,
-            segment,
-            target,
-            predicted_ratio,
-            latent_generator,
-            source_generator,
-        )
+        posterior = view.synthesis
         encoder_kl = masked_kl_standard_normal(
             posterior.posterior.mean,
             posterior.posterior.log_scale,
@@ -113,13 +144,13 @@ def acoustic_backward(
         )
         f0 = masked_f0_smooth_l1(
             posterior.acoustic.f0,
-            segment.frames(target.f0),
+            view.segment.frames(view.target.f0),
             segment_frame_mask,
             acoustic.feature_linear.config.f0_scale_hz,
         )
         n = masked_n_smooth_l1(
             posterior.acoustic.n,
-            segment.frames(target.n),
+            view.segment.frames(view.target.n),
             segment_frame_mask,
         )
         reconstruction = acoustic.reconstruction_loss(
@@ -133,23 +164,29 @@ def acoustic_backward(
             real,
             posterior.waveform,
         )
-        total = (
-            encoder_kl * weights.encoder_kl
-            + f0 * weights.f0
-            + n * weights.n
-            + reconstruction * weights.reconstruction
+        vocoder_total = (
+            reconstruction * weights.reconstruction
             + adversarial_view.adversarial * weights.generator_adversarial
             + adversarial_view.feature_matching * weights.feature_matching
         )
+        total = (
+            vocoder_total
+            + encoder_kl * weights.encoder_kl
+            + f0 * weights.f0
+            + n * weights.n
+        )
     optimizer.backward(total / accumulation_steps)
     return AcousticBackwardMetrics(
-        predicted_ratio,
+        view.predicted_f0_ratio,
         encoder_kl.detach(),
         f0.detach(),
         n.detach(),
         reconstruction.detach(),
         adversarial_view.adversarial.detach(),
+        adversarial_view.feature_period.detach(),
+        adversarial_view.feature_resolution.detach(),
         adversarial_view.feature_matching.detach(),
+        vocoder_total.detach(),
         total.detach(),
     )
 
@@ -160,7 +197,7 @@ def synthesize_training_posterior(
     frame_mask: Tensor,
     segment: AlignedSegments,
     target: AcousticFeatures,
-    predicted_ratio: float,
+    predicted_f0_ratio: float,
     latent_generator: torch.Generator,
     source_generator: torch.Generator,
 ) -> AcousticSynthesis:
@@ -198,7 +235,7 @@ def synthesize_training_posterior(
         segment.frames(target.f0),
         segment.frames(target.n),
     )
-    decoder_acoustic = segment_target.blend(acoustic, predicted_ratio)
+    decoder_acoustic = segment_target.blend(acoustic, predicted_f0_ratio)
     decoded = acoustic_models.decoder(
         posterior.latent,
         decoder_acoustic.f0,

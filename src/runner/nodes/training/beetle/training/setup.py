@@ -97,6 +97,11 @@ def build_optimizers(
                 config.generator_optimizer.maximum_gradient_norm,
                 runtime,
                 (
+                    NamedGradientGroup(
+                        "generator_parameters",
+                        modules,
+                        GradientClipping.CLIP,
+                    ),
                     *_acoustic_gradient_groups(acoustic),
                     *_conditional_gradient_groups(conditional),
                 ),
@@ -201,16 +206,16 @@ def tensor_metric(name: str, value: Tensor) -> TrainingMetric:
 
 def _acoustic_gradient_groups(models: AcousticModels) -> tuple[NamedGradientGroup, ...]:
     return (
-        NamedGradientGroup("audio_encoder", (models.audio_encoder,), GradientClipping.CLIP),
+        NamedGradientGroup("audio_encoder", (models.audio_encoder,), GradientClipping.OBSERVE),
         NamedGradientGroup("feature_linear", (models.feature_linear,), GradientClipping.OBSERVE),
-        NamedGradientGroup("decoder", (models.decoder,), GradientClipping.CLIP),
+        NamedGradientGroup("decoder", (models.decoder,), GradientClipping.OBSERVE),
         NamedGradientGroup("generator", (models.generator,), GradientClipping.OBSERVE),
     )
 
 
 def _conditional_gradient_groups(models: ConditionalModels) -> tuple[NamedGradientGroup, ...]:
     return tuple(
-        NamedGradientGroup(name, modules, GradientClipping.CLIP)
+        NamedGradientGroup(name, modules, GradientClipping.OBSERVE)
         for name, modules in (
             (
                 "phoneme_encoders",

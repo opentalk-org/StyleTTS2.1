@@ -9,6 +9,7 @@ from torch import Tensor
 from torch.nn import functional as F
 
 from ..config.data import AugmentationConfig
+from ..losses.acoustic import LogMelSpectrogram
 from .records import SegmentKey
 from shared.db.audio.ranges.wav import WavClip
 
@@ -17,6 +18,7 @@ from shared.db.audio.ranges.wav import WavClip
 class ProcessedAudio:
     waveform: Tensor
     mel: Tensor
+    jdc_mel: Tensor
 
 
 class AudioPreprocessor:
@@ -29,21 +31,28 @@ class AudioPreprocessor:
         mel_channels: int,
         f_min: float,
         f_max: float,
+        jdc_f_max: float,
     ) -> None:
         self.sample_rate = sample_rate
         self.n_fft = n_fft
         self.hop_length = hop_length
-        self.mel_transform = torchaudio.transforms.MelSpectrogram(
-            sample_rate=sample_rate,
-            n_fft=n_fft,
-            win_length=win_length,
-            hop_length=hop_length,
-            f_min=f_min,
-            f_max=f_max,
-            n_mels=mel_channels,
-            power=1.0,
-            center=True,
-            normalized=False,
+        self.mel_transform = LogMelSpectrogram(
+            sample_rate,
+            n_fft,
+            hop_length,
+            win_length,
+            mel_channels,
+            f_min,
+            f_max,
+        )
+        self.jdc_mel_transform = LogMelSpectrogram(
+            sample_rate,
+            n_fft,
+            hop_length,
+            win_length,
+            mel_channels,
+            f_min,
+            jdc_f_max,
         )
 
     def decode(self, clip: WavClip, key: SegmentKey) -> ProcessedAudio:
@@ -51,12 +60,18 @@ class AudioPreprocessor:
         if waveform.shape[-1] < self.n_fft:
             waveform = F.pad(waveform, (0, self.n_fft - waveform.shape[-1]))
         mel = self.mel_transform(waveform).squeeze(0)
-        mel = torch.log(mel.clamp_min(1e-5))
+        jdc_mel = self.jdc_mel_transform(waveform).squeeze(0)
         target_samples = mel.shape[-1] * self.hop_length
         waveform = _fit_length(waveform, target_samples)
         if not torch.isfinite(mel).all():
             raise ValueError(f"non-finite mel features for {key}")
-        return ProcessedAudio(waveform.contiguous(), mel.contiguous())
+        if not torch.isfinite(jdc_mel).all():
+            raise ValueError(f"non-finite JDC mel features for {key}")
+        return ProcessedAudio(
+            waveform.contiguous(),
+            mel.contiguous(),
+            jdc_mel.contiguous(),
+        )
 
     def decode_waveform(self, clip: WavClip, key: SegmentKey) -> Tensor:
         try:

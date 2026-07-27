@@ -2,10 +2,10 @@ from dataclasses import dataclass
 
 import torch
 from torch import Tensor, nn
-from torchaudio.transforms import MelSpectrogram
 
 from ...config import BeetleConfig
 from ...data.records import BeetleBatch
+from ...losses.acoustic import LogMelSpectrogram
 from ...models.acoustic import log_mel_l2_energy
 from ...models.conditional import ConditionalModels
 from ...models.modules.audio import AcousticFeatures
@@ -39,24 +39,25 @@ class WaveformMelExtractor(nn.Module):
         audio = config.audio
         self.hop_length = audio.hop_length
         self.n_fft = audio.n_fft
-        self.transform = MelSpectrogram(
-            sample_rate=audio.sample_rate,
-            n_fft=audio.n_fft,
-            win_length=audio.win_length,
-            hop_length=audio.hop_length,
-            f_min=audio.f_min,
-            f_max=audio.f_max,
-            n_mels=audio.mel_channels,
-            power=1.0,
-            center=True,
-            normalized=False,
+        self.transform = LogMelSpectrogram(
+            audio.sample_rate,
+            audio.n_fft,
+            audio.hop_length,
+            audio.win_length,
+            audio.mel_channels,
+            audio.f_min,
+            audio.f_max,
         )
 
     def forward(self, waveform: Tensor, lengths: Tensor) -> MelBatch:
         required = max(waveform.shape[2], self.n_fft)
         padded = torch.nn.functional.pad(waveform, (0, required - waveform.shape[2]))
-        mel = torch.log(self.transform(padded[:, 0]).clamp_min(1e-5))
-        frame_lengths = torch.div(lengths, self.hop_length, rounding_mode="floor") + 1
+        mel = self.transform(padded[:, 0])
+        frame_lengths = torch.div(
+            lengths,
+            self.hop_length,
+            rounding_mode="floor",
+        ).clamp_min(1)
         maximum = int(frame_lengths.max().clamp_min(1))
         maximum += maximum % 2
         mel = mel[:, :, :maximum]
@@ -83,7 +84,7 @@ def acoustic_statistics(
     batch: BeetleBatch,
 ) -> ConditionalAcousticTargets:
     with torch.no_grad():
-        f0 = models.f0_extractor(batch.mel, batch.frame_mask)
+        f0 = models.f0_extractor(batch.jdc_mel, batch.frame_mask)
     n = log_mel_l2_energy(batch.mel, batch.frame_mask)
     f0_mask = batch.frame_mask[:, 0] & (f0 > 0)
     n_mask = batch.frame_mask[:, 0]

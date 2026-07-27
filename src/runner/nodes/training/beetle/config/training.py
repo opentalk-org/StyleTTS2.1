@@ -61,10 +61,9 @@ class TrainingConfig(StrictConfigModel):
     total_steps: int = Field(gt=0)
     validation_every_steps: int = Field(gt=0)
     overfit_validation_recording: bool
-    complex_reconstruction_steps: int = Field(ge=0)
     full_audio_ratio: float = Field(ge=0, le=1)
     precision: Precision
-    acoustic_prediction: ScheduledWeight
+    f0_prediction: ScheduledWeight
     generator_optimizer: OptimizerConfig
     discriminator_optimizer: OptimizerConfig
     losses: LossWeights
@@ -134,8 +133,8 @@ class BeetleConfig(StrictConfigModel):
 
     @model_validator(mode="after")
     def validate_composition(self) -> "BeetleConfig":
-        if self.audio.hop_length != 300:
-            raise ValueError("hop_length must be exactly 300")
+        if self.audio.hop_length != 256:
+            raise ValueError("hop_length must be exactly 256")
         if self.architecture.posterior.mel_channels != self.audio.mel_channels:
             raise ValueError("posterior mel_channels must match audio mel_channels")
         if self.architecture.generator.output_hop() != self.audio.hop_length:
@@ -170,8 +169,4 @@ class BeetleConfig(StrictConfigModel):
                     "validation-recording overfit requires one matching training "
                     "and validation audio ID"
                 )
-        if self.training.complex_reconstruction_steps > self.training.total_steps:
-            raise ValueError(
-                "complex reconstruction steps cannot exceed total training steps"
-            )
         return self

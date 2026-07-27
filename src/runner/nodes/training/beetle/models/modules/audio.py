@@ -186,8 +186,8 @@ class F0Extractor(nn.Module):
     @classmethod
     def from_checkpoint(cls, path: str | Path) -> "F0Extractor":
         model = JDCNet(num_class=1, seq_len=192)
-        payload = torch.load(Path(path), map_location="cpu", weights_only=True)
-        model.load_state_dict(payload["net"])
+        payload = torch.load(Path(path), map_location="cpu", weights_only=False)
+        model.load_state_dict(payload["model"])
         return cls(model)
 
     def train(self, mode: bool = True) -> "F0Extractor":

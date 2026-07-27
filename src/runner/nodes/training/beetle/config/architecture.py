@@ -15,6 +15,7 @@ class AudioConfig(StrictConfigModel):
     mel_channels: int = Field(gt=0)
     f_min: float = Field(ge=0)
     f_max: float = Field(gt=0)
+    jdc_f_max: float = Field(gt=0)
 
     @model_validator(mode="after")
     def validate_spectrum(self) -> "AudioConfig":
@@ -22,6 +23,8 @@ class AudioConfig(StrictConfigModel):
             raise ValueError("win_length must not exceed n_fft")
         if self.f_max > self.sample_rate / 2:
             raise ValueError("f_max must not exceed Nyquist frequency")
+        if self.jdc_f_max > self.f_max:
+            raise ValueError("jdc_f_max must not exceed conditioning f_max")
         return self
 
 
@@ -61,66 +64,47 @@ class DecoderConfig(StrictConfigModel):
     generator_channels: int = Field(gt=0)
     decode_block_count: int = Field(gt=0)
     dropout: float = Field(ge=0, lt=1)
-    f0_smoothing_kernel_sizes: tuple[int, ...] = Field(min_length=1)
-    n_smoothing_kernel_sizes: tuple[int, ...] = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def validate_smoothing_kernels(self) -> "DecoderConfig":
-        fields = (
-            ("f0_smoothing_kernel_sizes", self.f0_smoothing_kernel_sizes),
-            ("n_smoothing_kernel_sizes", self.n_smoothing_kernel_sizes),
-        )
-        for field, kernels in fields:
-            invalid = any(
-                kernel < 0 or (kernel != 0 and kernel % 2 == 0)
-                for kernel in kernels
-            )
-            if invalid:
-                raise ValueError(
-                    f"{field} must contain only zero or positive odd integers"
-                )
-        return self
 
 class GeneratorConfig(StrictConfigModel):
     input_channels: int = Field(gt=0)
-    frame_channels: int = Field(gt=0)
-    temporal_channels: int = Field(gt=0)
-    temporal_upsample_rate: int = Field(gt=0)
-    temporal_upsample_kernel_size: int = Field(gt=1)
+    upsample_initial_channel: int = Field(gt=0)
+    upsample_rates: tuple[int, ...] = Field(min_length=1)
+    upsample_kernel_sizes: tuple[int, ...] = Field(min_length=1)
     resblock_kernel_sizes: tuple[int, ...] = Field(min_length=1)
     resblock_dilations: tuple[tuple[int, ...], ...] = Field(min_length=1)
-    initial_frequency_bins: int = Field(gt=0)
-    frequency_upsample_kernel_sizes: tuple[int, ...] = Field(min_length=1)
+    final_stage_resblock_bottleneck: int = Field(gt=0)
     harmonic_count: int = Field(gt=0)
-    subbands: int = Field(gt=0)
     istft_n_fft: int = Field(gt=0)
     istft_hop_length: int = Field(gt=0)
-    source_n_fft: int = Field(gt=0)
-    source_hop_length: int = Field(gt=0)
 
     @model_validator(mode="after")
     def validate_generator_geometry(self) -> "GeneratorConfig":
         if len(self.resblock_kernel_sizes) != len(self.resblock_dilations):
             raise ValueError("each resblock kernel needs a dilation sequence")
-        if len(self.frequency_upsample_kernel_sizes) != 3:
-            raise ValueError("iSTFTNet2-MB requires three frequency upsampling stages")
-        if self.temporal_channels % 4:
-            raise ValueError("generator temporal_channels must be divisible by four")
-        if self.istft_n_fft % self.subbands != 0:
-            raise ValueError("istft_n_fft must be divisible by subbands")
-        frequency_bins = self.initial_frequency_bins
-        for kernel_size in self.frequency_upsample_kernel_sizes:
-            frequency_bins = (frequency_bins - 1) * 2 - 2 + kernel_size
-        if frequency_bins != self.istft_n_fft // 2 + 1:
-            raise ValueError("frequency upsampling must match the iSTFT bins")
-        if self.output_hop() % self.source_hop_length:
-            raise ValueError("source_hop_length must divide output hop")
-        if self.output_hop() // self.source_hop_length != self.temporal_upsample_rate:
-            raise ValueError("harmonic-source frames must match temporal upsampling")
+        if len(self.upsample_rates) != len(self.upsample_kernel_sizes):
+            raise ValueError("each upsample rate needs a kernel size")
+        invalid_geometry = any(
+            (kernel - rate) % 2
+            for rate, kernel in zip(
+                self.upsample_rates,
+                self.upsample_kernel_sizes,
+                strict=True,
+            )
+        )
+        if invalid_geometry:
+            raise ValueError("upsample kernel-rate differences must be even")
+        final_channels = self.upsample_initial_channel // (
+            2 ** len(self.upsample_rates)
+        )
+        if final_channels % self.final_stage_resblock_bottleneck:
+            raise ValueError("final generator stage must divide by its bottleneck")
         return self
 
     def output_hop(self) -> int:
-        return self.temporal_upsample_rate * self.istft_hop_length * self.subbands
+        rate = self.istft_hop_length
+        for upsample_rate in self.upsample_rates:
+            rate *= upsample_rate
+        return rate
 
 class PhonemeConfig(StrictConfigModel):
     model_path: str = Field(min_length=1)

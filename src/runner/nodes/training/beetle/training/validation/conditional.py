@@ -106,7 +106,11 @@ class ConditionalValidationEvaluator:
             inputs.latent_mask,
         )
         synthesis = self._synthesize(latent, inputs.latent_mask, batch, step)
-        targets = self.acoustic.acoustic_targets(batch.mel, batch.frame_mask)
+        targets = self.acoustic.acoustic_targets(
+            batch.mel,
+            batch.jdc_mel,
+            batch.frame_mask,
+        )
         weights = self.schedules.conditional_weights(step)
         metrics = tuple(
             _metric(name, value)
