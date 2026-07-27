@@ -121,7 +121,7 @@ architecture:
     projection_channels: 256
 data:
   selection:
-    dataset_id: b6d6f5a2-1f67-4e02-a3d6-f183c91837d2
+    dataset_id: 022c31b6-83be-4cd6-9835-25aa3830357b
     audio_file_ids: []
   maximum_seconds: 8.0
   prefetch:
@@ -164,7 +164,7 @@ training:
   batch_size: 64
   accumulation_steps: 1
   total_steps: 10000
-  validation_every_steps: 1000
+  validation_every_steps: 500
   overfit_validation_recording: false
   complex_reconstruction_steps: 10000
   full_audio_ratio: 0.1
