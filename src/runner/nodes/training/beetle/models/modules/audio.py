@@ -191,8 +191,7 @@ class F0Extractor(nn.Module):
         return cls(model)
 
     def train(self, mode: bool = True) -> "F0Extractor":
-        del mode
-        super().train(False)
+        super().train(mode)
         return self
 
     def forward(self, mel: Tensor, mask: Tensor) -> Tensor:

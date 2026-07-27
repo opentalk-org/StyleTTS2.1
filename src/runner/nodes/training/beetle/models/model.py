@@ -4,7 +4,7 @@ import torch
 from torch import Tensor, nn
 
 from ..config import BeetleConfig
-from ..losses.acoustic import HiFTNetReconstructionLoss
+from ..losses.acoustic import HiFTNetReconstructionLoss, LogMelSpectrogram
 from .acoustic import log_mel_l2_energy
 from .modules.audio import (
     AcousticFeatures,
@@ -41,6 +41,7 @@ class AcousticModels(nn.Module):
         f0_extractor: F0Extractor,
         discriminators: StyleTTSDiscriminators,
         reconstruction_loss: HiFTNetReconstructionLoss,
+        jdc_transform: LogMelSpectrogram,
     ) -> None:
         super().__init__()
         self.audio_encoder = audio_encoder
@@ -50,6 +51,7 @@ class AcousticModels(nn.Module):
         self.f0_extractor = f0_extractor
         self.discriminators = discriminators
         self.reconstruction_loss = reconstruction_loss
+        self.jdc_transform = jdc_transform
         self.output_hop = generator.config.output_hop()
         self.latent_downsample_rate = audio_encoder.config.downsample_rate
         self.encoder_context_frames = audio_encoder.config.receptive_field_mel_frames()
@@ -72,6 +74,7 @@ class AcousticModels(nn.Module):
             posterior,
             acoustic,
             decoder_acoustic,
+            mel,
             frame_mask,
             source_generator,
         )
@@ -81,6 +84,7 @@ class AcousticModels(nn.Module):
         posterior: AudioPosterior,
         acoustic: AcousticFeatures,
         decoder_acoustic: AcousticFeatures,
+        generator_features: Tensor,
         frame_mask: Tensor,
         source_generator: torch.Generator,
     ) -> AcousticSynthesis:
@@ -92,7 +96,7 @@ class AcousticModels(nn.Module):
             frame_mask,
         )
         waveform = self.generator(
-            decoded.features,
+            generator_features,
             decoded.f0,
             decoded.mask,
             source_generator,
@@ -159,5 +163,14 @@ def build_acoustic_models(
             mel_channels=config.audio.mel_channels,
             f_min=config.audio.f_min,
             f_max=config.audio.f_max,
+        ),
+        jdc_transform=LogMelSpectrogram(
+            sample_rate=config.audio.sample_rate,
+            n_fft=config.audio.n_fft,
+            hop_length=config.audio.hop_length,
+            win_length=config.audio.win_length,
+            mel_channels=config.audio.mel_channels,
+            f_min=config.audio.f_min,
+            f_max=config.audio.jdc_f_max,
         ),
     )

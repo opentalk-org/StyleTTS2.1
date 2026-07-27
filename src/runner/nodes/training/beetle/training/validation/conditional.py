@@ -187,7 +187,7 @@ class ConditionalValidationEvaluator:
             generator = self._generator(step, audio_id, "source")
             generated.append(
                 self.acoustic.generator(
-                    decoded.features[index : index + 1],
+                    batch.mel[index : index + 1],
                     decoded.f0[index : index + 1],
                     decoded.mask[index : index + 1],
                     generator,

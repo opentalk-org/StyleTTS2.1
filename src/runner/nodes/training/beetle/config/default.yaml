@@ -31,7 +31,7 @@ architecture:
     decode_block_count: 4
     dropout: 0.1
   generator:
-    input_channels: 512
+    input_channels: 80
     upsample_initial_channel: 512
     upsample_rates: [8, 8]
     upsample_kernel_sizes: [16, 16]
@@ -162,16 +162,16 @@ training:
   overfit_validation_recording: false
   full_audio_ratio: 0.1
   precision: float32
-  f0_prediction: {value: 1.0, start_step: 1000, warmup_steps: 4000}
+  f0_prediction: {value: 0.0, start_step: 0, warmup_steps: 0}
   generator_optimizer:
     learning_rate: 0.0002
     beta1: 0.8
     beta2: 0.99
     epsilon: 0.00000001
     weight_decay: 0.01
-    warmup_steps: 100
+    warmup_steps: 0
     decay_steps: 9900
-    minimum_learning_rate_ratio: 0.1
+    minimum_learning_rate_ratio: 1.0
     maximum_gradient_norm: 5000.0
   discriminator_optimizer:
     learning_rate: 0.0002
@@ -179,9 +179,9 @@ training:
     beta2: 0.99
     epsilon: 0.00000001
     weight_decay: 0.01
-    warmup_steps: 100
+    warmup_steps: 0
     decay_steps: 9900
-    minimum_learning_rate_ratio: 0.1
+    minimum_learning_rate_ratio: 1.0
     maximum_gradient_norm: 100.0
   losses:
     encoder_kl: {value: 0.0, start_step: 0, warmup_steps: 5000}

@@ -89,7 +89,6 @@ class AudioPreprocessor:
             raise ValueError(f"non-finite WAV samples for {key}")
         if sample_rate != self.sample_rate:
             waveform = torchaudio.functional.resample(waveform, sample_rate, self.sample_rate)
-        waveform = waveform.clamp(-1, 1)
         return waveform.contiguous()
 
     def augment(

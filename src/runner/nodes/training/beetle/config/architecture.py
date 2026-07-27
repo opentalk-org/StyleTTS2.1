@@ -255,8 +255,6 @@ class ArchitectureConfig(StrictConfigModel):
             raise ValueError("embedding input_channels must match posterior latent_channels")
         if self.latent_flow.latent_channels != latent:
             raise ValueError("latent-flow latent_channels must match posterior latent_channels")
-        if self.generator.input_channels != self.decoder.generator_channels:
-            raise ValueError("generator input_channels must match decoder generator_channels")
         condition = self.conditioning.common_channels
         duration_condition = (
             self.phoneme.cnn_hidden_channels

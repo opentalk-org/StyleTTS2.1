@@ -195,12 +195,12 @@ class Generator(nn.Module):
             if stage == len(self.upsamples) - 1:
                 features = self.reflection_pad(features)
             features = features + source.to(dtype=features.dtype)
-            paths = tuple(
-                self.resblocks[stage * kernel_count + path](features)
-                for path in range(kernel_count)
-            )
-            features = torch.stack(paths).mean(dim=0)
-        spectrum = self.output_projection(F.leaky_relu(features, 0.1))
+            paths = None
+            for path in range(kernel_count):
+                residual = self.resblocks[stage * kernel_count + path](features)
+                paths = residual if paths is None else paths + residual
+            features = paths / kernel_count
+        spectrum = self.output_projection(F.leaky_relu(features))
         frequency_bins = self.config.istft_n_fft // 2 + 1
         magnitude = torch.exp(spectrum[:, :frequency_bins].float())
         phase = torch.sin(spectrum[:, frequency_bins:].float())

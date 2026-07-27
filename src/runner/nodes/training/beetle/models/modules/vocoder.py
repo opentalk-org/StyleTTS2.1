@@ -23,6 +23,7 @@ class HarmonicSource(nn.Module):
         f0: Tensor,
         generator: torch.Generator,
     ) -> Tensor:
+        del generator
         with torch.no_grad():
             sampled = F.interpolate(
                 f0.float().unsqueeze(1),
@@ -42,7 +43,6 @@ class HarmonicSource(nn.Module):
                 self.harmonic_count + 1,
                 device=f0.device,
                 dtype=torch.float32,
-                generator=generator,
             )
             initial_phase[:, 0] = 0
             phase_increments[:, 0] = (
@@ -69,14 +69,11 @@ class HarmonicSource(nn.Module):
             voiced = (sampled > 10).to(dtype=torch.float32)
             sine = torch.sin(phase) * 0.1 * voiced
             noise_scale = voiced * 0.003 + (1 - voiced) * (0.1 / 3)
-            noise = torch.randn(
-                sine.shape,
-                device=sine.device,
-                dtype=torch.float32,
-                generator=generator,
-            )
+            noise = torch.randn_like(sine)
             excitation = sine + noise * noise_scale
-        return torch.tanh(self.merge(excitation)).transpose(1, 2)
+        merged = torch.tanh(self.merge(excitation))
+        torch.randn_like(voiced).mul_(0.1 / 3)
+        return merged.transpose(1, 2)
 
 
 class ISTFT(nn.Module):

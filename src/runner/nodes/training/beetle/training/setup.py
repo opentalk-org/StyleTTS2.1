@@ -97,11 +97,6 @@ def build_optimizers(
                 config.generator_optimizer.maximum_gradient_norm,
                 runtime,
                 (
-                    NamedGradientGroup(
-                        "generator_parameters",
-                        modules,
-                        GradientClipping.CLIP,
-                    ),
                     *_acoustic_gradient_groups(acoustic),
                     *_conditional_gradient_groups(conditional),
                 ),
@@ -128,8 +123,9 @@ def prepare_training_modules(
     for module in trainable_acoustic:
         module.to(runtime.device).requires_grad_(True).train()
     acoustic.reconstruction_loss.to(runtime.device).train()
+    acoustic.jdc_transform.to(runtime.device).train()
     acoustic.discriminators.to(runtime.device).requires_grad_(True).train()
-    acoustic.f0_extractor.to(runtime.device).requires_grad_(False).eval()
+    acoustic.f0_extractor.to(runtime.device).requires_grad_(False).train()
     names = ("audio_encoder", "feature_linear", "decoder", "generator", "discriminators")
     for name in names:
         setattr(acoustic, name, runtime.prepare_module(getattr(acoustic, name)))
@@ -209,7 +205,7 @@ def _acoustic_gradient_groups(models: AcousticModels) -> tuple[NamedGradientGrou
         NamedGradientGroup("audio_encoder", (models.audio_encoder,), GradientClipping.OBSERVE),
         NamedGradientGroup("feature_linear", (models.feature_linear,), GradientClipping.OBSERVE),
         NamedGradientGroup("decoder", (models.decoder,), GradientClipping.OBSERVE),
-        NamedGradientGroup("generator", (models.generator,), GradientClipping.OBSERVE),
+        NamedGradientGroup("generator", (models.generator,), GradientClipping.CLIP),
     )
 
 

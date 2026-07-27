@@ -83,25 +83,19 @@ class BeetleTrainer:
         self._loop = state
 
     def discriminator_backward(self, batch: BeetleBatch) -> tuple[TrainingMetric, ...]:
-        waveform, mel, frame_mask = self._inputs(batch)
+        waveform, _, frame_mask = self._inputs(batch)
         predicted_f0_ratio = self.schedules.predicted_f0_ratio(
             self._loop.optimizer_step
         )
         with self.runtime.autocast():
-            target = self.acoustic.acoustic_targets(
-                mel,
-                batch.jdc_mel.to(self.device, non_blocking=True),
-                frame_mask,
-            )
             view = build_acoustic_training_view(
                 self.acoustic,
                 self.runtime_seed,
                 self._loop,
                 self.device,
                 self.adversarial.segment_samples,
-                mel,
+                waveform,
                 frame_mask,
-                target,
                 predicted_f0_ratio,
             )
         self._acoustic_view = view

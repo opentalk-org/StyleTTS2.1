@@ -39,6 +39,31 @@ class AlignedSegments:
         starts = torch.floor(samples * aligned_choices).to(dtype=torch.long)
         return cls(starts * frame_alignment, frame_count, frame_alignment, sample_hop)
 
+    @classmethod
+    def reference_chunks(
+        cls,
+        frame_mask: Tensor,
+        frame_count: int,
+        sample_hop: int,
+        generator: torch.Generator,
+    ) -> "AlignedSegments":
+        lengths = frame_mask[:, 0].sum(dim=1)
+        torch._assert_async(
+            torch.all(lengths >= frame_count),
+            "utterance is shorter than adversarial segment",
+        )
+        complete = torch.div(lengths, frame_count, rounding_mode="floor")
+        remainder = lengths.remainder(frame_count)
+        choices = complete + (remainder > 0)
+        selected = torch.floor(
+            torch.rand(lengths.shape, device=lengths.device, generator=generator)
+            * choices
+        ).to(dtype=torch.long)
+        starts = selected * frame_count
+        tail = (remainder > 0) & (selected == complete)
+        starts = torch.where(tail, lengths - frame_count, starts)
+        return cls(starts, frame_count, frame_count, sample_hop)
+
     def frames(self, values: Tensor) -> Tensor:
         return self._take(values, self.frame_starts, self.frame_count)
 
