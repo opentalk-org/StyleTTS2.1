@@ -74,7 +74,6 @@ class AcousticModels(nn.Module):
             posterior,
             acoustic,
             decoder_acoustic,
-            mel,
             frame_mask,
             source_generator,
         )
@@ -84,7 +83,6 @@ class AcousticModels(nn.Module):
         posterior: AudioPosterior,
         acoustic: AcousticFeatures,
         decoder_acoustic: AcousticFeatures,
-        generator_features: Tensor,
         frame_mask: Tensor,
         source_generator: torch.Generator,
     ) -> AcousticSynthesis:
@@ -96,7 +94,7 @@ class AcousticModels(nn.Module):
             frame_mask,
         )
         waveform = self.generator(
-            generator_features,
+            decoded.features,
             decoded.f0,
             decoded.mask,
             source_generator,

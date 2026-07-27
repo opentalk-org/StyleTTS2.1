@@ -31,7 +31,7 @@ architecture:
     decode_block_count: 4
     dropout: 0.1
   generator:
-    input_channels: 80
+    input_channels: 512
     upsample_initial_channel: 512
     upsample_rates: [8, 8]
     upsample_kernel_sizes: [16, 16]
@@ -184,7 +184,7 @@ training:
     minimum_learning_rate_ratio: 1.0
     maximum_gradient_norm: 100.0
   losses:
-    encoder_kl: {value: 0.0, start_step: 0, warmup_steps: 5000}
+    encoder_kl: {value: 0.01, start_step: 0, warmup_steps: 5000}
     f0: {value: 1.0, start_step: 0, warmup_steps: 0}
     n: {value: 1.0, start_step: 0, warmup_steps: 0}
     reconstruction: {value: 45.0, start_step: 0, warmup_steps: 0}

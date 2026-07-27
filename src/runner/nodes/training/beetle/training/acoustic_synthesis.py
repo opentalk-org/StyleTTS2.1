@@ -227,7 +227,7 @@ def synthesize_training_posterior(
         frame_mask,
     )
     waveform = acoustic_models.generator(
-        mel,
+        decoded.features,
         decoded.f0,
         decoded.mask,
         source_generator,
