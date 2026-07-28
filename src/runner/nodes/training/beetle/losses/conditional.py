@@ -1,7 +1,6 @@
-import math
 from dataclasses import dataclass, fields
 
-from torch import Tensor, nn
+from torch import Tensor
 
 from ..models.modules.aligner import AlignerOutput
 from ..models.modules.audio import AcousticFeatures
@@ -17,7 +16,7 @@ from .embeddings import (
     style_statistics_loss,
     supervised_contrastive_loss,
 )
-from .flow import base_flow_loss, shortcut_loss
+from .flow import base_flow_loss
 
 
 @dataclass(frozen=True)
@@ -157,7 +156,6 @@ class ConditionalLossOutput:
 
 def compute_conditional_losses(
     models: ConditionalModels,
-    ema_latent_flow: nn.Module,
     inputs: ConditionalLossInput,
 ) -> ConditionalLossOutput:
     style_views = models.style_encoder(inputs.style_view_latent, inputs.style_view_mask)
@@ -165,7 +163,7 @@ def compute_conditional_losses(
     prediction = models.latent_flow(
         inputs.flow_sample.state,
         inputs.flow_sample.time,
-        inputs.flow_sample.step,
+        inputs.flow_sample.step_level,
         inputs.conditions,
         inputs.latent_mask,
     )
@@ -176,9 +174,6 @@ def compute_conditional_losses(
         generated_latent,
         inputs.target_latent_mask,
     )
-    flow_index = int(math.log2(inputs.minimum_flow_steps))
-    base_mask = inputs.latent_mask & (inputs.flow_sample.step_index == flow_index)
-    shortcut_mask = inputs.latent_mask & (inputs.flow_sample.step_index < flow_index)
     alignment = compute_alignment_losses(
         inputs.alignment,
         inputs.phonemes,
@@ -195,17 +190,9 @@ def compute_conditional_losses(
         latent_flow=base_flow_loss(
             prediction,
             inputs.flow_sample.velocity,
-            base_mask,
-        ),
-        shortcut=shortcut_loss(
-            prediction,
-            ema_latent_flow,
-            inputs.flow_sample,
-            inputs.conditions,
             inputs.latent_mask,
-            shortcut_mask,
-            inputs.minimum_flow_steps,
         ),
+        shortcut=prediction.new_zeros(()),
         align_s2s=alignment.s2s,
         align_mono=alignment.mono,
         align_ctc=alignment.ctc,

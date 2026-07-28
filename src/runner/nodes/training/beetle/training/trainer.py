@@ -131,9 +131,7 @@ class BeetleTrainer:
         self._acoustic_view = None
         inputs = self.input_builder.build(self.conditional, batch, self._loop, target)
         with self.runtime.autocast():
-            conditional_losses = compute_conditional_losses(
-                self.conditional, self.ema_latent_flow, inputs
-            )
+            conditional_losses = compute_conditional_losses(self.conditional, inputs)
             conditional_total = conditional_losses.total(
                 self.schedules.conditional_weights(self._loop.optimizer_step)
             )

@@ -100,8 +100,7 @@ architecture:
     attention_heads: 6
     mlp_ratio: 4.0
     minimum_steps: 128
-    base_case_probability: 0.75
-    ema_decay: 0.999
+    ema_decay: 0.99
   aligner:
     checkpoint_asset_id: 653025b8-9aea-403e-86f4-2ca9ef98ff74
     checkpoint_filename: epoch_00080.pth
@@ -116,7 +115,7 @@ architecture:
     projection_channels: 256
 data:
   selection:
-    dataset_id: 022c31b6-83be-4cd6-9835-25aa3830357b
+    dataset_id: b6d6f5a2-1f67-4e02-a3d6-f183c91837d2
     audio_file_ids: []
   maximum_seconds: 8.0
   prefetch:
@@ -158,12 +157,13 @@ conditioning_objective:
 training:
   batch_size: 16
   accumulation_steps: 1
-  total_steps: 10000
+  total_steps: 50000
   validation_every_steps: 500
   overfit_validation_recording: false
   full_audio_ratio: 0.1
   precision: float32
   f0_prediction: {value: 0.0, start_step: 0, warmup_steps: 0}
+  latent_flow_weight_decay: 0.1
   generator_optimizer:
     learning_rate: 0.0002
     beta1: 0.8
@@ -193,15 +193,15 @@ training:
     generator_adversarial: {value: 1.0, start_step: 0, warmup_steps: 0}
     feature_matching: {value: 1.0, start_step: 0, warmup_steps: 0}
     duration_flow: {value: 10.0, start_step: 0, warmup_steps: 0}
-    latent_flow: {value: 100.0, start_step: 0, warmup_steps: 0}
-    shortcut: {value: 1.0, start_step: 0, warmup_steps: 0}
+    latent_flow: {value: 1.0, start_step: 0, warmup_steps: 0}
+    shortcut: {value: 0.0, start_step: 0, warmup_steps: 0}
     align_s2s: {value: 1.0, start_step: 0, warmup_steps: 0}
     align_mono: {value: 1.0, start_step: 0, warmup_steps: 0}
     align_ctc: {value: 1.0, start_step: 0, warmup_steps: 0}
-    voice_contrastive: {value: 1.0, start_step: 0, warmup_steps: 0}
-    voice_ge2e: {value: 1.0, start_step: 0, warmup_steps: 0}
-    style_contrastive: {value: 1.0, start_step: 0, warmup_steps: 0}
-    style_ge2e: {value: 1.0, start_step: 0, warmup_steps: 0}
-    style_speaker_adversarial: {value: 0.1, start_step: 0, warmup_steps: 100}
-    style_statistics: {value: 1.0, start_step: 0, warmup_steps: 0}
-    style_reencoding: {value: 1.0, start_step: 0, warmup_steps: 0}
+    voice_contrastive: {value: 0.0, start_step: 0, warmup_steps: 0}
+    voice_ge2e: {value: 0.0, start_step: 0, warmup_steps: 0}
+    style_contrastive: {value: 0.0, start_step: 0, warmup_steps: 0}
+    style_ge2e: {value: 0.0, start_step: 0, warmup_steps: 0}
+    style_speaker_adversarial: {value: 0.0, start_step: 0, warmup_steps: 0}
+    style_statistics: {value: 0.0, start_step: 0, warmup_steps: 0}
+    style_reencoding: {value: 0.0, start_step: 0, warmup_steps: 0}

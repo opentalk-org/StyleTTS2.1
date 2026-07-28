@@ -193,7 +193,6 @@ class LatentFlowConfig(StrictConfigModel):
     attention_heads: int = Field(gt=0)
     mlp_ratio: float = Field(gt=0)
     minimum_steps: int = Field(gt=1)
-    base_case_probability: float = Field(gt=0, lt=1)
     ema_decay: float = Field(gt=0, lt=1)
 
     @model_validator(mode="after")

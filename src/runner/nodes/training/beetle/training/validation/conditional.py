@@ -8,7 +8,7 @@ from ...data.sampling import derive_seed
 from ...data.validation_records import ValidationRecording
 from ...losses.conditional import compute_conditional_losses
 from ...models.model import AcousticModels
-from ...models.modules.conditioning import ProjectedConditions
+from ...models.modules.audio import AcousticFeatures
 from ...models.modules.latent_flow import integrate_latent_flow
 from ...models.conditional import ConditionalModels
 from ..reporting import TrainingMetric
@@ -23,15 +23,6 @@ from .types import (
     trim_signal_pair,
     trim_waveform_pair,
 )
-
-
-def one_step_ema_latent(
-    ema_latent_flow: nn.Module,
-    noise: Tensor,
-    conditions: ProjectedConditions,
-    mask: Tensor,
-) -> Tensor:
-    return integrate_latent_flow(ema_latent_flow, noise, conditions, mask, 1)
 
 
 class ConditionalValidationEvaluator:
@@ -98,18 +89,25 @@ class ConditionalValidationEvaluator:
             (),
         )
         inputs = self.input_builder.build_validation(self.models, batch, loop)
-        losses = compute_conditional_losses(self.models, self.ema_latent_flow, inputs)
-        latent = one_step_ema_latent(
+        losses = compute_conditional_losses(self.models, inputs)
+        latent = integrate_latent_flow(
             self.ema_latent_flow,
             inputs.flow_sample.noise,
             inputs.conditions,
             inputs.latent_mask,
+            inputs.minimum_flow_steps,
         )
-        synthesis = self._synthesize(latent, inputs.latent_mask, batch, step)
         targets = self.acoustic.acoustic_targets(
             batch.mel,
             batch.jdc_mel,
             batch.frame_mask,
+        )
+        synthesis = self._synthesize(
+            latent,
+            inputs.latent_mask,
+            targets.f0,
+            batch,
+            step,
         )
         weights = self.schedules.conditional_weights(step)
         metrics = tuple(
@@ -171,10 +169,16 @@ class ConditionalValidationEvaluator:
         self,
         latent: Tensor,
         latent_mask: Tensor,
+        target_f0: Tensor,
         batch: object,
         step: int,
     ) -> ConditionalSynthesis:
-        acoustic = self.acoustic.feature_linear(latent, latent_mask, batch.frame_mask)
+        predicted = self.acoustic.feature_linear(
+            latent,
+            latent_mask,
+            batch.frame_mask,
+        )
+        acoustic = AcousticFeatures(target_f0, predicted.n)
         decoded = self.acoustic.decoder(
             latent,
             acoustic.f0,

@@ -36,7 +36,7 @@ class LatentFlowModel(nn.Module):
             config.time_embedding_channels,
             config.hidden_channels,
         )
-        self.step_embedding = ScalarEmbedding(
+        self.step_level_embedding = ScalarEmbedding(
             config.time_embedding_channels,
             config.hidden_channels,
         )
@@ -59,7 +59,7 @@ class LatentFlowModel(nn.Module):
         self,
         state: Tensor,
         time: Tensor,
-        step: Tensor,
+        step_level: Tensor,
         conditions: ProjectedConditions,
         mask: Tensor,
     ) -> Tensor:
@@ -72,11 +72,13 @@ class LatentFlowModel(nn.Module):
         features = self.input_projection(padded_state).transpose(1, 2)
         condition = self.condition_projection(padded_condition).transpose(1, 2)
         time_tokens = time[:, 0, :: self.config.patch_size]
-        step_tokens = step[:, 0, :: self.config.patch_size]
+        step_level_tokens = step_level[:, 0, :: self.config.patch_size].to(
+            dtype=state.dtype
+        )
         condition = (
             condition
             + self.time_embedding(time_tokens)
-            + self.step_embedding(step_tokens)
+            + self.step_level_embedding(step_level_tokens)
         )
         features = features + position_embedding(
             features.shape[1],
@@ -98,7 +100,7 @@ class LatentFlowModel(nn.Module):
         return output[..., :frame_count] * numeric_mask
 
     def _initialize_dit(self) -> None:
-        for embedding in (self.time_embedding, self.step_embedding):
+        for embedding in (self.time_embedding, self.step_level_embedding):
             nn.init.normal_(embedding.layers[0].weight, std=0.02)
             nn.init.normal_(embedding.layers[2].weight, std=0.02)
         for block in self.blocks:
