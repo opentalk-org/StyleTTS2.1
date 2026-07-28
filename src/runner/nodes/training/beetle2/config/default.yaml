@@ -154,7 +154,7 @@ conditioning_objective:
   consistency_cosine_weight: 1.0
   consistency_mse_weight: 1.0
 training:
-  stage: posterior
+  stage: latent_flow
   batch_size: 32
   accumulation_steps: 1
   total_steps: 50000

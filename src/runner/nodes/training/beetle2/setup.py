@@ -25,6 +25,8 @@ from .models import (
 from .models.modules.aligner import PhonemeAligner
 from .models.modules.alignment_backbone import StyleTTSAlignerBackbone
 from .models.modules.audio import AudioEncoder
+from .models.modules.decoder import Decoder
+from .models.modules.generator import Generator
 from .phonemes import PhonemeTokenizer
 
 
@@ -37,23 +39,31 @@ class TextResources:
 
 
 @dataclass
-class TrainingModels:
-    acoustic: AcousticModels | None
-    conditional: ConditionalModels | None
-    latent_flow_ema: nn.Module | None
-
-
-@dataclass
 class TrainingOptimizers:
     generator: torch.optim.AdamW
     discriminator: torch.optim.AdamW | None
 
 
 class FrozenAcoustic(nn.Module):
-    def __init__(self, audio_encoder: AudioEncoder, f0_extractor: F0Extractor) -> None:
+    def __init__(
+        self,
+        audio_encoder: AudioEncoder,
+        f0_extractor: F0Extractor,
+        decoder: Decoder,
+        generator: Generator,
+    ) -> None:
         super().__init__()
         self.audio_encoder = audio_encoder
         self.f0_extractor = f0_extractor
+        self.decoder = decoder
+        self.generator = generator
+
+
+@dataclass
+class TrainingModels:
+    acoustic: AcousticModels | None
+    conditional: ConditionalModels | None
+    latent_flow_ema: nn.Module | None
 
 
 def load_text_resources(config: BeetleConfig) -> TextResources:
@@ -147,6 +157,11 @@ def build_models(
             acoustic_dependency = FrozenAcoustic(
                 AudioEncoder(config.architecture.posterior),
                 f0_extractor,
+                Decoder(config.architecture.decoder),
+                Generator(
+                    config.architecture.generator,
+                    config.audio.sample_rate,
+                ),
             ).requires_grad_(False)
         else:
             acoustic_dependency = acoustic
@@ -286,6 +301,8 @@ def prepare_training(
         if acoustic is None:
             conditional.audio_encoder.requires_grad_(False).train()
             conditional.f0_extractor.requires_grad_(False).train()
+            conditional.decoder.requires_grad_(False).eval()
+            conditional.generator.requires_grad_(False).eval()
         named = (
             "phoneme_encoder",
             "latent_phoneme_encoder",
@@ -322,6 +339,8 @@ def prepare_training(
     if conditional is not None and acoustic is not None:
         conditional.audio_encoder = acoustic.audio_encoder
         conditional.f0_extractor = acoustic.f0_extractor
+        conditional.decoder = acoustic.decoder
+        conditional.generator = acoustic.generator
     if models.latent_flow_ema is not None:
         models.latent_flow_ema.to(accelerator.device).requires_grad_(False).eval()
     return models, optimizers

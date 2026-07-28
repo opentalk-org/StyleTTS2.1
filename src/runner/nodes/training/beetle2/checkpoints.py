@@ -169,21 +169,22 @@ class CheckpointManager:
         return output
 
     def _model_targets(self, models: TrainingModels) -> dict[str, nn.Module]:
-        targets: dict[str, nn.Module] = {}
         acoustic = models.acoustic
         conditional = models.conditional
+        posterior = acoustic if acoustic is not None else conditional
+        assert posterior is not None
+        targets: dict[str, nn.Module] = {
+            "posterior.audio_encoder": posterior.audio_encoder,
+            "posterior.decoder": posterior.decoder,
+            "posterior.generator": posterior.generator,
+        }
         if acoustic is not None:
             targets.update(
                 {
-                    "posterior.audio_encoder": acoustic.audio_encoder,
                     "posterior.feature_linear": acoustic.feature_linear,
-                    "posterior.decoder": acoustic.decoder,
-                    "posterior.generator": acoustic.generator,
                     "posterior.discriminators": acoustic.discriminators,
                 }
             )
-        elif conditional is not None:
-            targets["posterior.audio_encoder"] = conditional.audio_encoder
         if conditional is not None:
             targets.update(
                 {

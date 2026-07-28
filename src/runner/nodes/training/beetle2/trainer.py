@@ -866,6 +866,22 @@ class Trainer:
             alignment = inputs.alignment.hard_alignment[0]
             target_f0 = inputs.acoustic_target.f0
             target_n = inputs.acoustic_target.n
+            if stage is TrainingStage.LATENT_FLOW:
+                with self.accelerator.autocast():
+                    decoded = conditional_models.decoder(
+                        generated_latent,
+                        target_f0,
+                        target_n,
+                        inputs.latent_mask,
+                        values.frame_mask,
+                    )
+                    generated = conditional_models.generator(
+                        decoded.features,
+                        decoded.f0,
+                        decoded.mask,
+                        self.generator(f"validation-{position}-flow-source"),
+                    )
+                prediction = generated[0, :, :sample_count]
             if stage is TrainingStage.END_TO_END:
                 if acoustic_models is None:
                     raise RuntimeError("end-to-end acoustic model is unavailable")

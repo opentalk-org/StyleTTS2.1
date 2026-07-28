@@ -67,6 +67,8 @@ class ConditionalModels(nn.Module):
         self,
         audio_encoder: nn.Module,
         f0_extractor: nn.Module,
+        decoder: nn.Module,
+        generator: nn.Module,
         phoneme_encoder: PhonemeEncoder,
         latent_phoneme_encoder: LatentPhonemeEncoder,
         duration_phoneme_encoder: DurationPhonemeEncoder,
@@ -88,6 +90,8 @@ class ConditionalModels(nn.Module):
         super().__init__()
         self.audio_encoder = audio_encoder
         self.f0_extractor = f0_extractor
+        self.decoder = decoder
+        self.generator = generator
         self.phoneme_encoder = phoneme_encoder
         self.latent_phoneme_encoder = latent_phoneme_encoder
         self.duration_phoneme_encoder = duration_phoneme_encoder
@@ -165,6 +169,8 @@ def build_conditional_models(
     return ConditionalModels(
         audio_encoder=acoustic.audio_encoder,
         f0_extractor=acoustic.f0_extractor,
+        decoder=acoustic.decoder,
+        generator=acoustic.generator,
         phoneme_encoder=PhonemeEncoder(
             dependencies.phoneme_bert,
             architecture.phoneme.projection_channels,
