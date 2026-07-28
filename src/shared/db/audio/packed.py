@@ -148,6 +148,12 @@ def _replace_item_from_write(item: AudioFile, writer: AudioPackWriter, payload: 
     item.speaker_id = payload.annotations.speaker_id
     item.score = payload.annotations.score
     item.accuracy = payload.annotations.accuracy
+    if "language" in payload.model_fields_set:
+        item.language = payload.language
+    if "style_prompt" in payload.model_fields_set:
+        item.style_prompt = payload.style_prompt
+    if "voice_prompt" in payload.model_fields_set:
+        item.voice_prompt = payload.voice_prompt
     item.segments = payload.segments
     item.metadata_ = payload.annotations.metadata
     item.virtual = payload.virtual

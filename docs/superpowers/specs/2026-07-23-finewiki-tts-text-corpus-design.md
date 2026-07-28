@@ -60,10 +60,10 @@ removing `<m/>` markers and collapsing whitespace. A source row is excluded
 when its phoneme string has a similarity score of at least 0.70 against an old
 line from the same language.
 
-Matching first restricts comparisons by compatible string lengths and indexed
-character n-grams. Exact matches are accepted immediately; approximate
-candidates are scored only after shortlisting. This avoids an all-pairs scan
-while preserving the configured threshold.
+Matching uses an exhaustive all-pairs `rapidfuzz.fuzz.ratio` comparison within
+each language. The compiled scorer processes Parquet batches as matrices, so
+every pair at or above the configured threshold is excluded without relying on
+a shortlist that could miss short or low-overlap strings.
 
 The manifest reports the number of old lines, matched old lines, excluded
 source rows, and unmatched old lines for every language. Unmatched old lines
@@ -89,6 +89,8 @@ Rows are unique within each voice and preferred unique across its language.
 If a bin cannot be filled uniquely, a second pass may reuse a row. A source row
 may occur at most twice across the complete corpus. Generation fails with the
 language, voice, and deficient bins if the exact contract cannot be satisfied.
+Candidate collection uses a bounded priority heap per bin, retaining no more
+than the aggregate bin requirement while still counting all eligible rows.
 
 ## Outputs
 
@@ -104,8 +106,9 @@ Block directories hold at most 15 voice files so generated output respects the
 repository folder-size convention.
 
 Generation is atomic. It builds into a sibling temporary directory, validates
-the complete corpus, then replaces the previous generated output. A failure
-keeps diagnostics and does not publish a partial corpus.
+the complete corpus, then publishes with an atomic directory exchange when an
+older output exists. A failure retains the staging directory for diagnostics
+and does not publish a partial corpus.
 
 ## Validation
 

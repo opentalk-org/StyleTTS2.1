@@ -81,13 +81,12 @@ scores below and above 0.70, length-incompatible strings, and short strings.
 
 Run the two temporary test modules through Nix.
 
-- [ ] **Step 3: Implement normalization and indexed matching**
+- [ ] **Step 3: Implement normalization and exhaustive matching**
 
-Use normalized character trigrams as an inverted shortlist. Exact matches score
-1.0. For approximate candidates, reject impossible length ratios, rank shared
-trigram candidates, then use `difflib.SequenceMatcher(None, value, old).ratio()`.
-Strings shorter than three characters use the compatible-length short-string
-index. Return the maximum score, or 0.0 when no candidate is compatible.
+Use batched `rapidfuzz.fuzz.ratio` matrices to compare every source value with
+every normalized prior line in its language. Report every prior-line index
+meeting the threshold, including duplicate prior lines. Return the maximum
+score, or 0.0 when no prior line meets the threshold.
 
 - [ ] **Step 4: Run tests and confirm the 0.70 boundary**
 
@@ -151,8 +150,8 @@ Run `test_select.py`; expected failure is the missing selector.
 Validate exact columns `lang`, `text`, and `phonemes`. Iterate batches, enforce
 the filename language, normalize both strings, assign phoneme bin, apply the
 0.70 exclusion index, and retain candidates by bin in deterministic
-Blake2-priority order. Collect enough candidates for aggregate voice quotas and
-retain exclusion statistics.
+Blake2-priority order. Bound each bin with a priority heap sized to its
+aggregate voice quota, count all eligible rows, and retain exclusion statistics.
 
 - [ ] **Step 4: Implement voice assignment**
 
@@ -194,7 +193,8 @@ Write into a sibling `.<name>-<random>` directory. Normalize newlines in each
 text, validate all selections, write blocks of at most 15 files, and serialize
 a manifest with plan, per-voice bin counts, source row indices, exclusions,
 reuse counts, and input paths. Replace only the generated output directory
-after all validation succeeds.
+after all validation succeeds, using an atomic directory exchange when an old
+output is present and retaining failed staging output for diagnostics.
 
 - [ ] **Step 4: Implement the CLI**
 

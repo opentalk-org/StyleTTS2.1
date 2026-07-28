@@ -84,3 +84,21 @@ def bulk_update_audio_annotations(
     session.execute(audio_annotation_update_statement(), payloads)
     if commit:
         session.commit()
+
+
+def replace_audio_language(
+    session: Session,
+    source: str,
+    target: str,
+    commit: bool = True,
+) -> int:
+    if source == target:
+        raise ValueError("source and target languages must differ")
+    result = session.execute(
+        update(AudioFile)
+        .where(AudioFile.language == source)
+        .values(language=target)
+    )
+    if commit:
+        session.commit()
+    return int(result.rowcount)
