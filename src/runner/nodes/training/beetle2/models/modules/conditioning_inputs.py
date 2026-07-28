@@ -84,30 +84,3 @@ class ConditionChannels:
 
     def total(self) -> int:
         return sum(getattr(self, name) for name in CONDITION_SOURCE_NAMES)
-
-
-@dataclass(frozen=True)
-class ConditionVectors:
-    style: Tensor
-    voice: Tensor
-    pooled_phoneme: Tensor
-    pre_text: Tensor
-    post_text: Tensor
-    pre_audio: Tensor
-    post_audio: Tensor
-    language: Tensor
-
-    def at_rate(self, phoneme: Tensor) -> ConditionInputs:
-        tokens = phoneme.shape[2]
-        vectors = (
-            self.style,
-            self.voice,
-            self.pooled_phoneme,
-            self.pre_text,
-            self.post_text,
-            self.pre_audio,
-            self.post_audio,
-            self.language,
-        )
-        expanded = tuple(value.unsqueeze(2).expand(-1, -1, tokens) for value in vectors)
-        return ConditionInputs(phoneme, *expanded)

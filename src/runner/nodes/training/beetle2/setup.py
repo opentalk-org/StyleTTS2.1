@@ -17,6 +17,7 @@ from .models import (
     ConditionalDependencies,
     ConditionalModels,
     F0Extractor,
+    FeatureLinear,
     build_acoustic_models,
     build_conditional_models,
     compile_acoustic,
@@ -47,12 +48,14 @@ class FrozenAcoustic(nn.Module):
     def __init__(
         self,
         audio_encoder: AudioEncoder,
+        feature_linear: FeatureLinear,
         f0_extractor: F0Extractor,
         decoder: Decoder,
         generator: Generator,
     ) -> None:
         super().__init__()
         self.audio_encoder = audio_encoder
+        self.feature_linear = feature_linear
         self.f0_extractor = f0_extractor
         self.decoder = decoder
         self.generator = generator
@@ -158,6 +161,7 @@ def build_models(
         if acoustic is None:
             acoustic_dependency = FrozenAcoustic(
                 AudioEncoder(config.architecture.posterior),
+                FeatureLinear(config.architecture.feature),
                 f0_extractor,
                 Decoder(config.architecture.decoder),
                 Generator(
@@ -297,6 +301,7 @@ def prepare_training(
         conditional.text_encoder.requires_grad_(False).eval()
         if acoustic is None:
             conditional.audio_encoder.requires_grad_(False).train()
+            conditional.feature_linear.requires_grad_(False).eval()
             conditional.f0_extractor.requires_grad_(False).train()
             conditional.decoder.requires_grad_(False).eval()
             conditional.generator.requires_grad_(False).eval()
@@ -335,6 +340,7 @@ def prepare_training(
         optimizers.discriminator = prepared[module_count + 1]
     if conditional is not None and acoustic is not None:
         conditional.audio_encoder = acoustic.audio_encoder
+        conditional.feature_linear = acoustic.feature_linear
         conditional.f0_extractor = acoustic.f0_extractor
         conditional.decoder = acoustic.decoder
         conditional.generator = acoustic.generator

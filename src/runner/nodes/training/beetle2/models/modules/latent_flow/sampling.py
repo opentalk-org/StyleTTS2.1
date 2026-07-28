@@ -18,17 +18,13 @@ class FlowTrainingSample:
 
 def sample_flow_training_case(
     latent: Tensor,
+    noise: Tensor,
     mask: Tensor,
     minimum_steps: int,
     generator: torch.Generator,
 ) -> FlowTrainingSample:
     numeric_mask = mask.to(dtype=latent.dtype)
-    noise = torch.randn(
-        latent.shape,
-        dtype=latent.dtype,
-        device=latent.device,
-        generator=generator,
-    ) * numeric_mask
+    noise = noise * numeric_mask
     item_shape = (latent.shape[0], 1, 1)
     step_level = torch.full(
         item_shape,

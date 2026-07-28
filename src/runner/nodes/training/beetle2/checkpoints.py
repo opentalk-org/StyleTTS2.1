@@ -188,13 +188,13 @@ class CheckpointManager:
         assert posterior is not None
         targets: dict[str, nn.Module] = {
             "posterior.audio_encoder": posterior.audio_encoder,
+            "posterior.feature_linear": posterior.feature_linear,
             "posterior.decoder": posterior.decoder,
             "posterior.generator": posterior.generator,
         }
         if acoustic is not None:
             targets.update(
                 {
-                    "posterior.feature_linear": acoustic.feature_linear,
                     "posterior.discriminators": acoustic.discriminators,
                 }
             )

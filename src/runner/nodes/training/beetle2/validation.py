@@ -124,7 +124,7 @@ class ValidationArtifacts:
                     "Latent",
                 )
             )
-        if sample.target_f0 is not None and sample.predicted_f0 is not None:
+        if sample.target_f0 is not None:
             paths.append(
                 self._lines(
                     directory / "f0.png",
@@ -133,7 +133,7 @@ class ValidationArtifacts:
                     "F0",
                 )
             )
-        if sample.target_n is not None and sample.predicted_n is not None:
+        if sample.target_n is not None:
             paths.append(
                 self._lines(
                     directory / "n.png",
@@ -309,13 +309,17 @@ class ValidationArtifacts:
         self,
         path: Path,
         target: Tensor,
-        prediction: Tensor,
+        prediction: Tensor | None,
         title: str,
     ) -> Path:
         figure = Figure(figsize=(10, 5), layout="constrained")
         axis = figure.subplots()
         axis.plot(target.detach().float().cpu().flatten().numpy(), label="ground truth")
-        axis.plot(prediction.detach().float().cpu().flatten().numpy(), label="prediction")
+        if prediction is not None:
+            axis.plot(
+                prediction.detach().float().cpu().flatten().numpy(),
+                label="prediction",
+            )
         axis.set_title(title)
         axis.legend()
         figure.savefig(path, dpi=120)

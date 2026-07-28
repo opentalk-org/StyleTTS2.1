@@ -10,7 +10,6 @@ from .conditioning_inputs import (
     ConditionChannels,
     ConditionInputs,
     ConditionKeep,
-    ConditionVectors,
 )
 
 __all__ = [
@@ -20,7 +19,6 @@ __all__ = [
     "ConditionChannels",
     "ConditionInputs",
     "ConditionKeep",
-    "ConditionVectors",
     "MaskedAttentivePool1d",
     "ProjectedConditions",
 ]

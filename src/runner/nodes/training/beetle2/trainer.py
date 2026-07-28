@@ -505,13 +505,12 @@ class Trainer:
         builder = self.conditioning
         if conditional_models is None or builder is None:
             raise RuntimeError("conditional stage was not prepared")
-        targets = builder.acoustic_targets(conditional_models, batch)
         inputs = builder.build(
             conditional_models,
             batch,
             self.step,
             self.batch_index,
-            targets,
+            validation=False,
         )
         with self.accelerator.autocast():
             style_views = conditional_models.style_encoder(
@@ -662,8 +661,8 @@ class Trainer:
                 )
                 decoded = acoustic_models.decoder(
                     posterior.latent,
-                    target_f0,
-                    target_n,
+                    features.voiced_f0,
+                    features.n,
                     posterior.mask,
                     values.frame_mask,
                 )
@@ -748,11 +747,12 @@ class Trainer:
         else:
             if conditional_models is None or self.conditioning is None:
                 raise RuntimeError("conditional validation model is unavailable")
-            inputs = self.conditioning.build_validation(
+            inputs = self.conditioning.build(
                 conditional_models,
                 values,
                 self.step,
                 position,
+                validation=True,
             )
             with self.accelerator.autocast():
                 style_views = conditional_models.style_encoder(
@@ -846,9 +846,17 @@ class Trainer:
                 losses = compute_conditional_losses(loss_inputs, outputs)
                 metrics.update(self.conditional_metrics(losses))
                 conditional_total = losses.total(self.conditional_weights())
+                generation_noise = torch.randn(
+                    inputs.flow_sample.noise.shape,
+                    dtype=inputs.flow_sample.noise.dtype,
+                    device=inputs.flow_sample.noise.device,
+                    generator=self.generator(
+                        f"validation-{position}-generation-noise"
+                    ),
+                ) * inputs.latent_mask
                 generated_latent = integrate_latent_flow(
                     conditional_models.latent_flow,
-                    inputs.flow_sample.noise,
+                    generation_noise,
                     inputs.conditions,
                     inputs.latent_mask,
                     self.config.architecture.latent_flow.minimum_steps,
@@ -863,10 +871,15 @@ class Trainer:
             target_n = inputs.acoustic_target.n
             if stage is TrainingStage.LATENT_FLOW:
                 with self.accelerator.autocast():
+                    predicted_acoustic = conditional_models.feature_linear(
+                        generated_latent,
+                        inputs.latent_mask,
+                        values.frame_mask,
+                    )
                     decoded = conditional_models.decoder(
                         generated_latent,
-                        target_f0,
-                        target_n,
+                        predicted_acoustic.voiced_f0,
+                        predicted_acoustic.n,
                         inputs.latent_mask,
                         values.frame_mask,
                     )
@@ -877,6 +890,8 @@ class Trainer:
                         self.generator(f"validation-{position}-flow-source"),
                     )
                 prediction = generated[0, :, :sample_count]
+                predicted_f0 = predicted_acoustic.voiced_f0[0]
+                predicted_n = predicted_acoustic.n[0]
             if stage is TrainingStage.END_TO_END:
                 if acoustic_models is None:
                     raise RuntimeError("end-to-end acoustic model is unavailable")
@@ -888,8 +903,8 @@ class Trainer:
                     )
                     decoded = acoustic_models.decoder(
                         generated_latent,
-                        inputs.acoustic_target.f0,
-                        inputs.acoustic_target.n,
+                        predicted_acoustic.voiced_f0,
+                        predicted_acoustic.n,
                         inputs.latent_mask,
                         values.frame_mask,
                     )
@@ -911,8 +926,8 @@ class Trainer:
                     )
                     posterior_decoded = acoustic_models.decoder(
                         posterior.latent,
-                        inputs.acoustic_target.f0,
-                        inputs.acoustic_target.n,
+                        posterior_acoustic.voiced_f0,
+                        posterior_acoustic.n,
                         posterior.mask,
                         values.frame_mask,
                     )

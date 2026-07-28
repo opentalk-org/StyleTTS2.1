@@ -65,6 +65,7 @@ class ConditionalModels(nn.Module):
     def __init__(
         self,
         audio_encoder: nn.Module,
+        feature_linear: nn.Module,
         f0_extractor: nn.Module,
         decoder: nn.Module,
         generator: nn.Module,
@@ -88,6 +89,7 @@ class ConditionalModels(nn.Module):
     ) -> None:
         super().__init__()
         self.audio_encoder = audio_encoder
+        self.feature_linear = feature_linear
         self.f0_extractor = f0_extractor
         self.decoder = decoder
         self.generator = generator
@@ -167,6 +169,7 @@ def build_conditional_models(
     )
     return ConditionalModels(
         audio_encoder=acoustic.audio_encoder,
+        feature_linear=acoustic.feature_linear,
         f0_extractor=acoustic.f0_extractor,
         decoder=acoustic.decoder,
         generator=acoustic.generator,
