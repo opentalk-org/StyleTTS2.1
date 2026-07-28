@@ -341,7 +341,7 @@ class Trainer:
             target_f0 = acoustic_models.f0_extractor(jdc_mel, frame_mask)
             target_n = acoustic_models.n_target(mel, frame_mask)
             posterior = acoustic_models.audio_encoder(
-                mel,
+                jdc_mel,
                 frame_mask,
                 self.generator("acoustic-latent"),
             )
@@ -351,9 +351,10 @@ class Trainer:
                 frame_mask,
             )
             f0_ratio = self.loss_weight(self.config.training.f0_prediction)
+            n_ratio = self.loss_weight(self.config.training.n_prediction)
             decoder_acoustic = AcousticFeatures(
                 target_f0 * (1 - f0_ratio) + predicted.voiced_f0 * f0_ratio,
-                target_n * (1 - f0_ratio) + predicted.n * f0_ratio,
+                target_n * (1 - n_ratio) + predicted.n * n_ratio,
             )
             smoothing_kernels = (0, 3, 7)
             smoothing_index = torch.randint(
@@ -411,7 +412,6 @@ class Trainer:
                 predicted.voicing_logits,
                 target_f0,
                 decoded.mask,
-                acoustic_models.feature_linear.config.f0_scale_hz,
             )
             f0 = pitch.total
             n = masked_n_smooth_l1(
@@ -475,6 +475,7 @@ class Trainer:
             "vocoder_total": vocoder_total,
             "discriminator_total": discriminator_total,
             "f0_prediction_ratio": f0_ratio,
+            "n_prediction_ratio": n_ratio,
             "generator_total": generator_total,
         }
 
@@ -614,9 +615,11 @@ class Trainer:
         prediction = None
         predicted_latent = None
         predicted_f0 = None
+        predicted_n = None
         alignment = None
         metrics: dict[str, Tensor | float] = {}
         target_f0 = None
+        target_n = None
         if stage is TrainingStage.POSTERIOR:
             if acoustic_models is None:
                 raise RuntimeError("posterior validation model is unavailable")
@@ -627,7 +630,7 @@ class Trainer:
                 )
                 target_n = acoustic_models.n_target(values.mel, values.frame_mask)
                 posterior = acoustic_models.audio_encoder(
-                    values.mel,
+                    values.jdc_mel,
                     values.frame_mask,
                     self.generator(f"validation-{position}-latent"),
                 )
@@ -652,6 +655,7 @@ class Trainer:
                 prediction = generated[0, :, :sample_count]
                 predicted_latent = posterior.latent[0]
                 predicted_f0 = features.voiced_f0[0]
+                predicted_n = features.n[0]
                 metrics["encoder_kl"] = masked_kl_standard_normal(
                     posterior.mean,
                     posterior.log_scale,
@@ -662,7 +666,6 @@ class Trainer:
                     features.voicing_logits,
                     target_f0,
                     values.frame_mask,
-                    acoustic_models.feature_linear.config.f0_scale_hz,
                 )
                 metrics["f0"] = pitch.total
                 metrics["f0_regression"] = pitch.regression
@@ -839,6 +842,7 @@ class Trainer:
             predicted_latent = generated_latent[0]
             alignment = inputs.alignment.hard_alignment[0]
             target_f0 = inputs.acoustic_target.f0
+            target_n = inputs.acoustic_target.n
             if stage is TrainingStage.END_TO_END:
                 if acoustic_models is None:
                     raise RuntimeError("end-to-end acoustic model is unavailable")
@@ -862,7 +866,7 @@ class Trainer:
                         self.generator(f"validation-{position}-flow-source"),
                     )
                     posterior = acoustic_models.audio_encoder(
-                        values.mel,
+                        values.jdc_mel,
                         values.frame_mask,
                         self.generator(f"validation-{position}-posterior-latent"),
                     )
@@ -896,7 +900,6 @@ class Trainer:
                         posterior_acoustic.voicing_logits,
                         inputs.acoustic_target.f0,
                         values.frame_mask,
-                        acoustic_models.feature_linear.config.f0_scale_hz,
                     )
                     metrics["f0"] = pitch.total
                     metrics["f0_regression"] = pitch.regression
@@ -961,6 +964,7 @@ class Trainer:
                     )
                 prediction = generated[0, :, :sample_count]
                 predicted_f0 = predicted_acoustic.voiced_f0[0]
+                predicted_n = predicted_acoustic.n[0]
         scalars = {
             f"validation/{name}": (
                 float(value.detach().float().cpu())
@@ -980,6 +984,8 @@ class Trainer:
                     predicted_latent,
                     target_f0[0] if target_f0 is not None else None,
                     predicted_f0,
+                    target_n[0] if target_n is not None else None,
+                    predicted_n,
                     alignment,
                 ),
                 scalars,

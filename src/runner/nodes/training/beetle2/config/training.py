@@ -71,6 +71,7 @@ class TrainingConfig(StrictConfigModel):
     full_audio_ratio: float = Field(ge=0, le=1)
     precision: Precision
     f0_prediction: ScheduledWeight
+    n_prediction: ScheduledWeight
     latent_flow_weight_decay: float = Field(ge=0)
     generator_optimizer: OptimizerConfig
     discriminator_optimizer: OptimizerConfig

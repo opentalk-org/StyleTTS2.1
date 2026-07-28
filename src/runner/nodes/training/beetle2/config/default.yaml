@@ -157,12 +157,13 @@ training:
   stage: posterior
   batch_size: 32
   accumulation_steps: 1
-  total_steps: 16667
+  total_steps: 50000
   validation_every_steps: 500
   overfit_validation_recording: false
   full_audio_ratio: 0.1
   precision: float16
-  f0_prediction: {value: 0.0, start_step: 0, warmup_steps: 0}
+  f0_prediction: {value: 1.0, start_step: 23500, warmup_steps: 1500}
+  n_prediction: {value: 1.0, start_step: 23500, warmup_steps: 1500}
   latent_flow_weight_decay: 0.1
   generator_optimizer:
     learning_rate: 0.0002

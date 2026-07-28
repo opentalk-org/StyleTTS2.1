@@ -20,6 +20,8 @@ class ValidationSample:
     predicted_latent: Tensor | None
     target_f0: Tensor | None
     predicted_f0: Tensor | None
+    target_n: Tensor | None
+    predicted_n: Tensor | None
     alignment: Tensor | None
 
 
@@ -129,6 +131,15 @@ class ValidationArtifacts:
                     sample.target_f0,
                     sample.predicted_f0,
                     "F0",
+                )
+            )
+        if sample.target_n is not None and sample.predicted_n is not None:
+            paths.append(
+                self._lines(
+                    directory / "n.png",
+                    sample.target_n,
+                    sample.predicted_n,
+                    "N",
                 )
             )
         if sample.alignment is not None:
@@ -283,7 +294,13 @@ class ValidationArtifacts:
             matrix = values.detach().float().cpu().squeeze().numpy()
             if matrix.ndim == 1:
                 matrix = matrix[None, :]
-            axis.imshow(matrix, origin="lower", aspect="auto")
+            axis.imshow(
+                matrix,
+                origin="lower",
+                aspect="auto",
+                interpolation="nearest",
+                resample=False,
+            )
             axis.set_title(f"{title}: {label}")
         figure.savefig(path, dpi=120)
         return path

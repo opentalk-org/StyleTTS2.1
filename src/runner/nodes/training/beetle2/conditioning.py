@@ -159,7 +159,7 @@ class WaveformMelExtractor(nn.Module):
             audio.win_length,
             audio.mel_channels,
             audio.f_min,
-            audio.f_max,
+            audio.jdc_f_max,
         )
 
     def forward(self, waveform: Tensor, lengths: Tensor) -> tuple[Tensor, Tensor]:
@@ -326,7 +326,7 @@ class ConditionalInputBuilder:
         )
         with torch.set_grad_enabled(posterior_gradients):
             posterior = models.audio_encoder(
-                values.mel, values.frame_mask, target_generator
+                values.jdc_mel, values.frame_mask, target_generator
             )
         alignment = models.aligner(
             values.mel,

@@ -74,13 +74,12 @@ def masked_pitch_loss(
     voicing_logits: Tensor,
     target: Tensor,
     mask: Tensor,
-    scale_hz: float,
 ) -> PitchLoss:
     valid = mask[:, 0].to(dtype=torch.bool)
     voiced = valid & target.gt(0)
-    regression_values = F.smooth_l1_loss(
-        predicted_f0 / scale_hz,
-        target / scale_hz,
+    regression_values = 0.1 * F.smooth_l1_loss(
+        predicted_f0,
+        target,
         reduction="none",
     )
     voiced_count = voiced.sum().clamp_min(1)
