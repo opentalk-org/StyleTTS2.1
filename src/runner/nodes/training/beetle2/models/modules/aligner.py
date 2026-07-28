@@ -1,11 +1,16 @@
 from dataclasses import dataclass
+import logging
 from pathlib import Path
+from typing import Sequence
 
 import torch
 from monotonic_align import maximum_path
 from torch import Tensor, nn
 
 from ...config.architecture import AlignerConfig
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -33,10 +38,47 @@ class PhonemeAligner(nn.Module):
         self.token_count = token_count
         self.frame_reduction = frame_reduction
 
-    def load_checkpoint(self, checkpoint_path: Path) -> None:
+    def load_checkpoint(
+        self,
+        checkpoint_path: Path,
+        source_symbols: Sequence[str],
+        target_symbols: Sequence[str],
+    ) -> None:
         payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         state = payload["model"]
+        target = self.backbone.state_dict()
+        vocabulary_weights = (
+            "ctc_linear.2.linear_layer.weight",
+            "ctc_linear.2.linear_layer.bias",
+            "asr_s2s.embedding.weight",
+            "asr_s2s.project_to_n_symbols.weight",
+            "asr_s2s.project_to_n_symbols.bias",
+        )
+        source_ids = {
+            symbol: index for index, symbol in enumerate(source_symbols)
+        }
+        copied = 0
+        for name in vocabulary_weights:
+            resized = target[name]
+            source = state[name]
+            for target_id, symbol in enumerate(target_symbols):
+                source_id = source_ids.get(symbol)
+                if source_id is not None:
+                    resized[target_id].copy_(source[source_id])
+                    if name == vocabulary_weights[0]:
+                        copied += 1
+            state[name] = resized
+        special_rows = {0: 0, 1: 1, 2: 3}
+        for name in vocabulary_weights:
+            for target_id, source_id in special_rows.items():
+                state[name][target_id].copy_(payload["model"][name][source_id])
         self.backbone.load_state_dict(state, strict=True)
+        logger.info(
+            "resized aligner vocabulary from %d to %d tokens; retained %d symbol rows",
+            len(source_symbols),
+            len(target_symbols),
+            copied,
+        )
 
     def forward(
         self,

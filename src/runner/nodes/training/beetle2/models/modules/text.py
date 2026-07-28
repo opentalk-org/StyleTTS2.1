@@ -16,13 +16,11 @@ class PhonemeEncoding:
 
 
 class PhonemeEncoder(nn.Module):
-    def __init__(self, embedding: nn.Embedding, output_channels: int) -> None:
+    def __init__(self, input_channels: int, output_channels: int) -> None:
         super().__init__()
-        self.embedding = embedding
-        self.projection = nn.Linear(embedding.embedding_dim, output_channels)
+        self.projection = nn.Linear(input_channels, output_channels)
 
-    def forward(self, input_ids: Tensor, mask: Tensor) -> PhonemeEncoding:
-        encoded = self.embedding(input_ids)
+    def forward(self, encoded: Tensor, mask: Tensor) -> PhonemeEncoding:
         numeric_mask = mask.unsqueeze(2).to(dtype=encoded.dtype)
         tokens = self.projection(encoded) * numeric_mask
         tokens = tokens.transpose(1, 2)
@@ -110,27 +108,3 @@ class ContextAudioEncoder(nn.Module):
         features = self.input(latent * numeric_mask) * numeric_mask
         features = self.stack(features, numeric_mask)
         return self.pool(features, mask.to(dtype=torch.bool))
-
-
-@dataclass(frozen=True)
-class PromptEncoding:
-    style: Tensor
-    voice: Tensor
-
-
-class TextEncoder(nn.Module):
-    def __init__(self, embedding: nn.Embedding, output_channels: int) -> None:
-        super().__init__()
-        self.embedding = embedding
-        self.style_projection = nn.Linear(embedding.embedding_dim, output_channels)
-        self.voice_projection = nn.Linear(embedding.embedding_dim, output_channels)
-
-    def forward(self, input_ids: Tensor, mask: Tensor) -> PromptEncoding:
-        tokens = self.embedding(input_ids)
-        numeric_mask = mask.unsqueeze(2).to(dtype=tokens.dtype)
-        pooled = (tokens * numeric_mask).sum(dim=1)
-        pooled = pooled / numeric_mask.sum(dim=1).clamp_min(1)
-        return PromptEncoding(
-            style=self.style_projection(pooled),
-            voice=self.voice_projection(pooled),
-        )

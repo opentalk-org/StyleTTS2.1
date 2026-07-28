@@ -16,6 +16,7 @@ from .setup import TrainingModels, TrainingOptimizers
 
 
 CONDITIONAL_NAMES = (
+    "plbert",
     "phoneme_encoder",
     "latent_phoneme_encoder",
     "duration_phoneme_encoder",

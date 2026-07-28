@@ -15,20 +15,19 @@ from .modules.embeddings import (
     VoiceEncoder,
 )
 from .modules.latent_flow import LatentFlowModel
+from .modules.plbert import PlBertEncoder
 from .modules.text import (
     ContextAudioEncoder,
     ContextPhonemeEncoder,
     DurationPhonemeEncoder,
     LatentPhonemeEncoder,
     PhonemeEncoder,
-    TextEncoder,
 )
 
 
 @dataclass(frozen=True)
 class ConditionalDependencies:
-    phoneme_embedding: nn.Embedding
-    text_embedding: nn.Embedding
+    plbert: PlBertEncoder
     aligner: PhonemeAligner
 
 
@@ -37,16 +36,10 @@ class ConditionalParameterReport:
     inference: int
     frozen_helper: int
     training_only: int
-    excluded_text: int
 
     @property
     def total(self) -> int:
-        return (
-            self.inference
-            + self.frozen_helper
-            + self.training_only
-            + self.excluded_text
-        )
+        return self.inference + self.frozen_helper + self.training_only
 
 
 def _parameter_count(modules: tuple[nn.Module, ...]) -> tuple[int, set[int]]:
@@ -69,6 +62,7 @@ class ConditionalModels(nn.Module):
         f0_extractor: nn.Module,
         decoder: nn.Module,
         generator: nn.Module,
+        plbert: PlBertEncoder,
         phoneme_encoder: PhonemeEncoder,
         latent_phoneme_encoder: LatentPhonemeEncoder,
         duration_phoneme_encoder: DurationPhonemeEncoder,
@@ -81,7 +75,6 @@ class ConditionalModels(nn.Module):
         duration_predictor: DurationPredictor,
         latent_flow: LatentFlowModel,
         aligner: PhonemeAligner,
-        text_encoder: TextEncoder,
         style_speaker_classifier: StyleSpeakerClassifier,
         style_statistics_head: StyleStatisticsHead,
         voice_ge2e: GE2ELoss,
@@ -93,6 +86,7 @@ class ConditionalModels(nn.Module):
         self.f0_extractor = f0_extractor
         self.decoder = decoder
         self.generator = generator
+        self.plbert = plbert
         self.phoneme_encoder = phoneme_encoder
         self.latent_phoneme_encoder = latent_phoneme_encoder
         self.duration_phoneme_encoder = duration_phoneme_encoder
@@ -105,7 +99,6 @@ class ConditionalModels(nn.Module):
         self.duration_predictor = duration_predictor
         self.latent_flow = latent_flow
         self.aligner = aligner
-        self.text_encoder = text_encoder
         self.style_speaker_classifier = style_speaker_classifier
         self.style_statistics_head = style_statistics_head
         self.voice_ge2e = voice_ge2e
@@ -115,6 +108,7 @@ class ConditionalModels(nn.Module):
         self, acoustic_inference_parameters: int
     ) -> ConditionalParameterReport:
         inference_modules = (
+            self.plbert,
             self.phoneme_encoder,
             self.latent_phoneme_encoder,
             self.duration_phoneme_encoder,
@@ -137,12 +131,10 @@ class ConditionalModels(nn.Module):
         inference, _ = _parameter_count(inference_modules)
         helper, _ = _parameter_count((self.f0_extractor,))
         training, _ = _parameter_count(training_modules)
-        text, _ = _parameter_count((self.text_encoder,))
         return ConditionalParameterReport(
             inference=acoustic_inference_parameters + inference,
             frozen_helper=helper,
             training_only=training,
-            excluded_text=text,
         )
 
 
@@ -152,10 +144,6 @@ def build_conditional_models(
     dependencies: ConditionalDependencies,
 ) -> ConditionalModels:
     architecture = config.architecture
-    text_encoder = TextEncoder(
-        dependencies.text_embedding,
-        architecture.text_encoder.projection_channels,
-    ).requires_grad_(False)
     condition_channels = ConditionChannels(
         phoneme=architecture.phoneme.cnn_hidden_channels,
         style=architecture.embeddings.embedding_channels,
@@ -173,8 +161,9 @@ def build_conditional_models(
         f0_extractor=acoustic.f0_extractor,
         decoder=acoustic.decoder,
         generator=acoustic.generator,
+        plbert=dependencies.plbert,
         phoneme_encoder=PhonemeEncoder(
-            dependencies.phoneme_embedding,
+            dependencies.plbert.output_channels,
             architecture.phoneme.projection_channels,
         ),
         latent_phoneme_encoder=LatentPhonemeEncoder(architecture.phoneme),
@@ -200,7 +189,6 @@ def build_conditional_models(
         duration_predictor=DurationPredictor(architecture.duration_flow),
         latent_flow=LatentFlowModel(architecture.latent_flow),
         aligner=dependencies.aligner,
-        text_encoder=text_encoder,
         style_speaker_classifier=StyleSpeakerClassifier(
             architecture.embeddings.embedding_channels,
             architecture.embeddings.speaker_classes,

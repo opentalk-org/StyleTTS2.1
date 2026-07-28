@@ -23,6 +23,7 @@ class ValidationSample:
     target_n: Tensor | None
     predicted_n: Tensor | None
     alignment: Tensor | None
+    soft_alignment: Tensor | None
 
 
 class ValidationArtifacts:
@@ -147,7 +148,15 @@ class ValidationArtifacts:
                 self._matrix(
                     directory / "alignment.png",
                     sample.alignment,
-                    "Phoneme alignment",
+                    "Hard phoneme alignment",
+                )
+            )
+        if sample.soft_alignment is not None:
+            paths.append(
+                self._matrix(
+                    directory / "soft_alignment.png",
+                    sample.soft_alignment,
+                    "Soft phoneme alignment",
                 )
             )
         manifest = directory / "metrics.json"

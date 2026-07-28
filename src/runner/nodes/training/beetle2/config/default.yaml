@@ -41,9 +41,11 @@ architecture:
     harmonic_count: 8
     istft_n_fft: 16
     istft_hop_length: 4
-  phoneme_token_count: 178
+  phoneme_token_count: 508
   phoneme:
-    model_path: src/runner/nodes/training/beetle/external/StyleTTS2/Utils/PLBERT
+    model_path: .data/beetle2/lang-pl-bert
+    learning_rate: 0.00001
+    weight_decay: 0.0001
     projection_channels: 256
     cnn_hidden_channels: 384
     cnn_layers: 5
@@ -107,10 +109,6 @@ architecture:
     token_embedding_channels: 512
     frame_reduction: 2
     blank_id: 0
-  text_encoder:
-    pretrained_model: bert-base-multilingual-cased
-    hidden_channels: 768
-    projection_channels: 256
 data:
   selection:
     dataset_id: b6d6f5a2-1f67-4e02-a3d6-f183c91837d2

@@ -97,6 +97,8 @@ class ConditionalBatchStatistics:
 @dataclass(frozen=True)
 class ConditionalTrainingInput:
     duration_nll: Tensor
+    duration_condition: Tensor
+    duration_target: Tensor
     phoneme_mask: Tensor
     flow_sample: FlowTrainingSample
     conditions: ProjectedConditions
@@ -196,11 +198,29 @@ class ConditionalInputBuilder:
             values.phoneme_ids,
             values.phoneme_mask,
         )
-        phoneme = models.phoneme_encoder(values.phoneme_ids, values.phoneme_mask)
+        contextual_phonemes = models.plbert(
+            values.phoneme_ids,
+            values.phoneme_mask,
+            values.language_ids,
+        )
+        phoneme = models.phoneme_encoder(
+            contextual_phonemes,
+            values.phoneme_mask,
+        )
         latent_tokens = models.latent_phoneme_encoder(phoneme.tokens, phoneme.mask)
+        soft_selection = torch.rand(
+            (),
+            device=self.device,
+            generator=self._generator(step, batch_index, "soft-alignment"),
+        ) < (0.0 if validation else 0.5)
+        selected_alignment = torch.where(
+            soft_selection,
+            alignment.soft_alignment,
+            alignment.hard_alignment.detach(),
+        )
         aligned_tokens, aligned_mask = align_phoneme_tokens(
             latent_tokens,
-            alignment.hard_alignment.detach(),
+            selected_alignment,
         )
         torch._assert_async(
             torch.all(aligned_mask == posterior.mask),
@@ -355,8 +375,9 @@ class ConditionalInputBuilder:
             language=language.unsqueeze(2).expand(-1, -1, latent_frames),
         )
         conditions = models.condition_bank(latent_inputs, keep)
+        duration_target = alignment.durations.detach().clamp_min(1).unsqueeze(1)
         duration_nll = models.duration_predictor(
-            alignment.durations.detach().clamp_min(1).unsqueeze(1),
+            duration_target,
             duration_condition,
             phoneme.mask,
             self._generator(step, batch_index, "duration"),
@@ -414,6 +435,8 @@ class ConditionalInputBuilder:
         settings = self.settings
         return ConditionalTrainingInput(
             duration_nll=duration_nll,
+            duration_condition=duration_condition,
+            duration_target=duration_target,
             phoneme_mask=phoneme.mask,
             flow_sample=flow_sample,
             conditions=conditions,

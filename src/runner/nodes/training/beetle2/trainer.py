@@ -649,6 +649,7 @@ class Trainer:
         predicted_f0 = None
         predicted_n = None
         alignment = None
+        soft_alignment = None
         metrics: dict[str, Tensor | float] = {}
         target_f0 = None
         target_n = None
@@ -767,6 +768,18 @@ class Trainer:
                 validation=True,
             )
             with self.accelerator.autocast():
+                predicted_duration = conditional_models.duration_predictor.sample(
+                    inputs.duration_condition,
+                    inputs.phoneme_mask,
+                    self.generator(f"validation-{position}-duration"),
+                )
+                duration_mask = inputs.phoneme_mask.to(
+                    dtype=predicted_duration.dtype
+                )
+                metrics["duration_mae_frames"] = (
+                    (predicted_duration - inputs.duration_target).abs()
+                    * duration_mask
+                ).sum() / duration_mask.sum().clamp_min(1)
                 style_views = conditional_models.style_encoder(
                     inputs.style_view_latent,
                     inputs.style_view_mask,
@@ -876,6 +889,7 @@ class Trainer:
             )[0]
             predicted_latent = generated_latent[0]
             alignment = inputs.alignment.hard_alignment[0]
+            soft_alignment = inputs.alignment.soft_alignment[0]
             target_f0 = inputs.acoustic_target.f0
             target_n = inputs.acoustic_target.n
             if stage is TrainingStage.LATENT_FLOW:
@@ -1045,6 +1059,7 @@ class Trainer:
                     target_n[0] if target_n is not None else None,
                     predicted_n,
                     alignment,
+                    soft_alignment,
                 ),
                 scalars,
             )
@@ -1194,6 +1209,11 @@ class Trainer:
                     else:
                         self.metric_sums[name] += value
                 self.metric_sums["optimizer/generator_learning_rate"] += generator_lr
+                self.metric_sums["optimizer/plbert_learning_rate"] += (
+                    self.config.architecture.phoneme.learning_rate
+                    * generator_lr
+                    / self.config.training.generator_optimizer.learning_rate
+                )
                 self.metric_sums["optimizer/generator_gradient_norm"] += float(
                     generator_norm
                 )
@@ -1460,6 +1480,7 @@ class Trainer:
         if conditional_models is not None:
             groups.extend(
                 (
+                    ("plbert", (conditional_models.plbert,), False),
                     (
                         "phoneme_encoders",
                         (
@@ -1650,7 +1671,7 @@ class Trainer:
         learning_rate: float,
     ) -> None:
         for group in optimizer.param_groups:
-            group["lr"] = learning_rate
+            group["lr"] = learning_rate * group["learning_rate_scale"]
 
     def training_modules(self) -> tuple[nn.Module, ...]:
         modules: list[nn.Module] = []

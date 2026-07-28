@@ -48,7 +48,7 @@ class SequenceAligner(nn.Module):
     ) -> tuple[Tensor, Tensor, Tensor]:
         self._initialize(memory, memory_mask)
         random_mask = torch.rand(text_input.shape, device=text_input.device) < 0.1
-        decoder_ids = text_input.clone().masked_fill_(random_mask, 3)
+        decoder_ids = text_input.clone().masked_fill_(random_mask, 2)
         inputs = self.embedding(decoder_ids).transpose(0, 1)
         start_ids = torch.full(
             (inputs.shape[1],),

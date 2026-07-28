@@ -108,6 +108,8 @@ class GeneratorConfig(StrictConfigModel):
 
 class PhonemeConfig(StrictConfigModel):
     model_path: str = Field(min_length=1)
+    learning_rate: float = Field(gt=0)
+    weight_decay: float = Field(ge=0)
     projection_channels: int = Field(gt=0)
     cnn_hidden_channels: int = Field(gt=0)
     cnn_layers: int = Field(gt=0)
@@ -214,12 +216,6 @@ class AlignerConfig(StrictConfigModel):
     blank_id: int = Field(ge=0)
 
 
-class TextEncoderConfig(StrictConfigModel):
-    pretrained_model: str = Field(min_length=1)
-    hidden_channels: int = Field(gt=0)
-    projection_channels: int = Field(gt=0)
-
-
 class ArchitectureConfig(StrictConfigModel):
     posterior: PosteriorEncoderConfig
     feature: FeatureConfig
@@ -234,7 +230,6 @@ class ArchitectureConfig(StrictConfigModel):
     duration_flow: DurationFlowConfig
     latent_flow: LatentFlowConfig
     aligner: AlignerConfig
-    text_encoder: TextEncoderConfig
 
     @model_validator(mode="after")
     def validate_audio_rates(self) -> "ArchitectureConfig":
