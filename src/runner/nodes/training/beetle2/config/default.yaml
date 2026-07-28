@@ -99,7 +99,6 @@ architecture:
     attention_heads: 6
     mlp_ratio: 4.0
     minimum_steps: 128
-    ema_decay: 0.99
   aligner:
     checkpoint_asset_id: 653025b8-9aea-403e-86f4-2ca9ef98ff74
     checkpoint_filename: epoch_00080.pth

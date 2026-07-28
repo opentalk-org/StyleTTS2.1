@@ -1,13 +1,12 @@
-import copy
 from dataclasses import dataclass
 from pathlib import Path
 
 import torch
-import yaml
 from accelerate import Accelerator
 from huggingface_hub import snapshot_download
+from safetensors import safe_open
 from torch import nn
-from transformers import AlbertConfig, AlbertModel, BertModel, BertTokenizerFast
+from transformers import BertTokenizerFast
 
 from shared.db.assets import crud as asset_crud
 from shared.db.connection import database_session
@@ -34,8 +33,8 @@ from .phonemes import PhonemeTokenizer
 class TextResources:
     phoneme_tokenizer: PhonemeTokenizer
     text_tokenizer: BertTokenizerFast
-    phoneme_model: AlbertModel | None
-    text_model: BertModel | None
+    phoneme_embedding: nn.Embedding | None
+    text_embedding: nn.Embedding | None
 
 
 @dataclass
@@ -63,7 +62,6 @@ class FrozenAcoustic(nn.Module):
 class TrainingModels:
     acoustic: AcousticModels | None
     conditional: ConditionalModels | None
-    latent_flow_ema: nn.Module | None
 
 
 def load_text_resources(config: BeetleConfig) -> TextResources:
@@ -75,12 +73,10 @@ def load_text_resources(config: BeetleConfig) -> TextResources:
         )
     )
     text_tokenizer = BertTokenizerFast.from_pretrained(text_snapshot)
-    phoneme_model = None
-    text_model = None
+    phoneme_embedding = None
+    text_embedding = None
     if stage is not TrainingStage.POSTERIOR:
         model_path = Path(config.architecture.phoneme.model_path)
-        settings = yaml.safe_load((model_path / "config.yml").read_text())
-        phoneme_model = AlbertModel(AlbertConfig(**settings["model_params"]))
         checkpoints = sorted(
             model_path.glob("step_*.t7"),
             key=lambda path: int(path.stem.removeprefix("step_")),
@@ -88,21 +84,27 @@ def load_text_resources(config: BeetleConfig) -> TextResources:
         if not checkpoints:
             raise ValueError(f"PL-BERT checkpoint is missing from {model_path}")
         payload = torch.load(checkpoints[-1], map_location="cpu", weights_only=False)
-        prefix = "module.encoder."
-        state = {
-            key.removeprefix(prefix): value
-            for key, value in payload["net"].items()
-            if key.startswith(prefix) and not key.endswith("position_ids")
-        }
-        incompatible = phoneme_model.load_state_dict(state, strict=False)
-        if incompatible.missing_keys or incompatible.unexpected_keys:
-            raise ValueError(f"PL-BERT checkpoint keys do not match: {incompatible}")
-        text_model = BertModel.from_pretrained(text_snapshot)
+        phoneme_weight = payload["net"][
+            "module.encoder.embeddings.word_embeddings.weight"
+        ]
+        phoneme_embedding = nn.Embedding.from_pretrained(
+            phoneme_weight,
+            freeze=False,
+        )
+        with safe_open(
+            text_snapshot / "model.safetensors",
+            framework="pt",
+            device="cpu",
+        ) as checkpoint:
+            text_weight = checkpoint.get_tensor(
+                "bert.embeddings.word_embeddings.weight"
+            )
+        text_embedding = nn.Embedding.from_pretrained(text_weight, freeze=True)
     return TextResources(
         PhonemeTokenizer(),
         text_tokenizer,
-        phoneme_model,
-        text_model,
+        phoneme_embedding,
+        text_embedding,
     )
 
 
@@ -150,8 +152,8 @@ def build_models(
     if stage in (TrainingStage.POSTERIOR, TrainingStage.END_TO_END):
         acoustic = build_acoustic_models(config, f0_extractor)
     if stage is not TrainingStage.POSTERIOR:
-        if resources.phoneme_model is None or resources.text_model is None:
-            raise RuntimeError("conditional text models were not loaded")
+        assert resources.phoneme_embedding is not None
+        assert resources.text_embedding is not None
         acoustic_dependency: nn.Module
         if acoustic is None:
             acoustic_dependency = FrozenAcoustic(
@@ -169,19 +171,14 @@ def build_models(
             config,
             acoustic_dependency,
             ConditionalDependencies(
-                resources.phoneme_model,
-                resources.text_model,
+                resources.phoneme_embedding,
+                resources.text_embedding,
                 load_aligner(config),
             ),
         )
-    ema = (
-        copy.deepcopy(conditional.latent_flow).requires_grad_(False).eval()
-        if conditional is not None
-        else None
-    )
     if config.runtime.compile and acoustic is not None:
         compile_acoustic(acoustic)
-    return TrainingModels(acoustic, conditional, ema)
+    return TrainingModels(acoustic, conditional)
 
 
 def trainable_conditional_modules(
@@ -341,6 +338,4 @@ def prepare_training(
         conditional.f0_extractor = acoustic.f0_extractor
         conditional.decoder = acoustic.decoder
         conditional.generator = acoustic.generator
-    if models.latent_flow_ema is not None:
-        models.latent_flow_ema.to(accelerator.device).requires_grad_(False).eval()
     return models, optimizers

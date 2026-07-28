@@ -2,7 +2,6 @@ from dataclasses import dataclass
 
 import torch
 from torch import Tensor, nn
-from transformers import BertModel, PreTrainedModel
 
 from ...config.architecture import ContextConfig, PhonemeConfig
 from .conditioning import MaskedAttentivePool1d
@@ -17,30 +16,18 @@ class PhonemeEncoding:
 
 
 class PhonemeEncoder(nn.Module):
-    def __init__(self, bert: PreTrainedModel, output_channels: int) -> None:
+    def __init__(self, embedding: nn.Embedding, output_channels: int) -> None:
         super().__init__()
-        self.bert = bert
-        self.projection = nn.Conv1d(bert.config.hidden_size, output_channels, 1)
+        self.embedding = embedding
+        self.projection = nn.Linear(embedding.embedding_dim, output_channels)
 
     def forward(self, input_ids: Tensor, mask: Tensor) -> PhonemeEncoding:
-        # PL-BERT has learned positions for 512 tokens, while a recording may be
-        # much longer. Independent windows preserve every phoneme without
-        # inventing positional embeddings outside the pretrained range.
-        window_size = self.bert.config.max_position_embeddings
-        windows = []
-        for start in range(0, input_ids.shape[1], window_size):
-            end = start + window_size
-            windows.append(
-                self.bert(
-                    input_ids=input_ids[:, start:end],
-                    attention_mask=mask[:, start:end],
-                    return_dict=True,
-                ).last_hidden_state
-            )
-        encoded = torch.cat(windows, dim=1).transpose(1, 2)
-        numeric_mask = mask.unsqueeze(1).to(dtype=encoded.dtype)
+        encoded = self.embedding(input_ids)
+        numeric_mask = mask.unsqueeze(2).to(dtype=encoded.dtype)
         tokens = self.projection(encoded) * numeric_mask
-        pooled = tokens.sum(dim=2) / numeric_mask.sum(dim=2).clamp_min(1)
+        tokens = tokens.transpose(1, 2)
+        channel_mask = numeric_mask.transpose(1, 2)
+        pooled = tokens.sum(dim=2) / channel_mask.sum(dim=2).clamp_min(1)
         return PhonemeEncoding(tokens=tokens, pooled=pooled, mask=mask.unsqueeze(1))
 
 
@@ -132,18 +119,14 @@ class PromptEncoding:
 
 
 class TextEncoder(nn.Module):
-    def __init__(self, bert: BertModel, output_channels: int) -> None:
+    def __init__(self, embedding: nn.Embedding, output_channels: int) -> None:
         super().__init__()
-        self.bert = bert
-        self.style_projection = nn.Linear(bert.config.hidden_size, output_channels)
-        self.voice_projection = nn.Linear(bert.config.hidden_size, output_channels)
+        self.embedding = embedding
+        self.style_projection = nn.Linear(embedding.embedding_dim, output_channels)
+        self.voice_projection = nn.Linear(embedding.embedding_dim, output_channels)
 
     def forward(self, input_ids: Tensor, mask: Tensor) -> PromptEncoding:
-        tokens = self.bert(
-            input_ids=input_ids,
-            attention_mask=mask,
-            return_dict=True,
-        ).last_hidden_state
+        tokens = self.embedding(input_ids)
         numeric_mask = mask.unsqueeze(2).to(dtype=tokens.dtype)
         pooled = (tokens * numeric_mask).sum(dim=1)
         pooled = pooled / numeric_mask.sum(dim=1).clamp_min(1)

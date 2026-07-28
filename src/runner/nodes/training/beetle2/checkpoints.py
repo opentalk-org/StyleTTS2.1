@@ -33,6 +33,13 @@ CONDITIONAL_NAMES = (
     "voice_ge2e",
     "style_ge2e",
 )
+POSTERIOR_NAMES = (
+    "audio_encoder",
+    "decoder",
+    "generator",
+    "feature_linear",
+    "discriminators",
+)
 
 
 @dataclass(frozen=True)
@@ -120,7 +127,13 @@ class CheckpointManager:
         output = self.root / f"step_{step}"
         if not self.accelerator.is_main_process:
             return output
-        states = dict(self.inherited_model_states)
+        known_names = {f"posterior.{name}" for name in POSTERIOR_NAMES}
+        known_names.update(f"conditional.{name}" for name in CONDITIONAL_NAMES)
+        states = {
+            name: state
+            for name, state in self.inherited_model_states.items()
+            if name in known_names
+        }
         states.update(
             {
                 name: self.accelerator.unwrap_model(module).state_dict()
@@ -192,8 +205,6 @@ class CheckpointManager:
                     for name in CONDITIONAL_NAMES
                 }
             )
-        if models.latent_flow_ema is not None:
-            targets["conditional.latent_flow_ema"] = models.latent_flow_ema
         return targets
 
     def _checkpoint_file(self, path: Path) -> Path:

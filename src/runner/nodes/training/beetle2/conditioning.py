@@ -402,6 +402,16 @@ class ConditionalInputBuilder:
                 self._generator(step, batch_index, "condition-dropout"),
             )
         )
+        disabled = torch.zeros_like(sampled_keep.phoneme)
+        sampled_keep = replace(
+            sampled_keep,
+            pooled_phoneme=disabled,
+            pre_text=disabled,
+            post_text=disabled,
+            pre_audio=disabled,
+            post_audio=disabled,
+            language=disabled,
+        )
         keep = replace(
             sampled_keep,
             pre_text=sampled_keep.pre_text & pre_text_available,

@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 
 from torch import nn
-from transformers import BertModel, PreTrainedModel
 
 from ..config import BeetleConfig
 from ..losses.embeddings import GE2ELoss
@@ -28,8 +27,8 @@ from .modules.text import (
 
 @dataclass(frozen=True)
 class ConditionalDependencies:
-    phoneme_bert: PreTrainedModel
-    text_bert: BertModel
+    phoneme_embedding: nn.Embedding
+    text_embedding: nn.Embedding
     aligner: PhonemeAligner
 
 
@@ -152,7 +151,7 @@ def build_conditional_models(
 ) -> ConditionalModels:
     architecture = config.architecture
     text_encoder = TextEncoder(
-        dependencies.text_bert,
+        dependencies.text_embedding,
         architecture.text_encoder.projection_channels,
     ).requires_grad_(False)
     condition_channels = ConditionChannels(
@@ -172,7 +171,7 @@ def build_conditional_models(
         decoder=acoustic.decoder,
         generator=acoustic.generator,
         phoneme_encoder=PhonemeEncoder(
-            dependencies.phoneme_bert,
+            dependencies.phoneme_embedding,
             architecture.phoneme.projection_channels,
         ),
         latent_phoneme_encoder=LatentPhonemeEncoder(architecture.phoneme),

@@ -120,7 +120,6 @@ class Trainer:
         self.model_bundle: TrainingModels
         self.acoustic_models: AcousticModels | None
         self.conditional_models: ConditionalModels | None
-        self.latent_flow_ema: nn.Module | None
         self.optimizers: TrainingOptimizers
         self.checkpoints: CheckpointManager
         self.conditioning: ConditionalInputBuilder | None
@@ -219,7 +218,6 @@ class Trainer:
         )
         self.acoustic_models = self.model_bundle.acoustic
         self.conditional_models = self.model_bundle.conditional
-        self.latent_flow_ema = self.model_bundle.latent_flow_ema
         self.conditioning = (
             ConditionalInputBuilder(
                 self.config,
@@ -848,11 +846,8 @@ class Trainer:
                 losses = compute_conditional_losses(loss_inputs, outputs)
                 metrics.update(self.conditional_metrics(losses))
                 conditional_total = losses.total(self.conditional_weights())
-                latent_flow_ema = self.latent_flow_ema
-                if latent_flow_ema is None:
-                    raise RuntimeError("latent flow EMA is unavailable")
                 generated_latent = integrate_latent_flow(
-                    latent_flow_ema,
+                    conditional_models.latent_flow,
                     inputs.flow_sample.noise,
                     inputs.conditions,
                     inputs.latent_mask,
@@ -1169,12 +1164,6 @@ class Trainer:
                     scaler.step(self.optimizers.generator.optimizer)
                     scaler.update()
                 self.step += 1
-                try:
-                    self.update_ema()
-                except Exception as error:
-                    if not self.recovery_allowed():
-                        raise
-                    self.record_recovery("ema", error)
                 for name, value in gradient_metrics.items():
                     if name.endswith(("_clip_coefficient", "_was_clipped")):
                         self.sparse_metrics[name] = value
@@ -1639,35 +1628,12 @@ class Trainer:
         for group in optimizer.param_groups:
             group["lr"] = learning_rate
 
-    @torch.no_grad()
-    def update_ema(self) -> None:
-        conditional_models = self.conditional_models
-        latent_flow_ema = self.latent_flow_ema
-        if conditional_models is None or latent_flow_ema is None:
-            return
-        online = self.accelerator.unwrap_model(conditional_models.latent_flow)
-        decay = self.config.architecture.latent_flow.ema_decay
-        for ema_parameter, parameter in zip(
-            latent_flow_ema.parameters(),
-            online.parameters(),
-            strict=True,
-        ):
-            ema_parameter.mul_(decay).add_(parameter, alpha=1 - decay)
-        for ema_buffer, buffer in zip(
-            latent_flow_ema.buffers(),
-            online.buffers(),
-            strict=True,
-        ):
-            ema_buffer.copy_(buffer)
-
     def training_modules(self) -> tuple[nn.Module, ...]:
         modules: list[nn.Module] = []
         if self.acoustic_models is not None:
             modules.append(self.acoustic_models)
         if self.conditional_models is not None:
             modules.append(self.conditional_models)
-        if self.latent_flow_ema is not None:
-            modules.append(self.latent_flow_ema)
         return tuple(modules)
 
     def generator(self, label: str) -> torch.Generator:
