@@ -38,6 +38,7 @@ dependencies = [
     "onnxruntime>=1.20",
     "openai-whisper>=20240930",
     "pandas>=2.2",
+    "phaseaug==1.0.1",
     "phonemizer>=3.3",
     "pydantic>=2.9",
     "psycopg[binary]>=3.2",

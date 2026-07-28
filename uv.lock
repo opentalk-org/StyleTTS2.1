@@ -244,6 +244,14 @@ wheels = [
 ]
 
 [[package]]
+name = "alias-free-torch"
+version = "0.0.6"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b8/8e/8dd4d6de0fbba9d8f10d7b655be0578d5bda6e4db425210c265b0ea6c804/alias_free_torch-0.0.6-py3-none-any.whl", hash = "sha256:3a77e81147caf00f0b05483498e672ad3623b05800b82ace163d7adecac8b033", size = 9659, upload-time = "2022-07-26T01:29:40.719Z" },
+]
+
+[[package]]
 name = "annotated-doc"
 version = "0.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -5704,6 +5712,20 @@ wheels = [
 ]
 
 [[package]]
+name = "phaseaug"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "alias-free-torch" },
+    { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux'" },
+    { name = "torch", version = "2.12.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9e/25/232eb1ec752801f014577c19321862c231bf0ac5fdc4acda70ae3f9a04e3/phaseaug-1.0.1.tar.gz", hash = "sha256:721584fb53eab0c38ccaf607f44bc73e523f1ae8b2e3653cf6455efd3deb3371", size = 6047, upload-time = "2023-04-25T23:14:05.223Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d5/c4/ee8fe3e21adc88b475f42271f650152f334bddd79bbe48fc4ed00d85d75c/phaseaug-1.0.1-py3-none-any.whl", hash = "sha256:888b91e4d2eb7e5bc309a0d9eb2de132cd8dee4631535337f90bc5a0144f2dd2", size = 6174, upload-time = "2023-04-25T23:14:03.629Z" },
+]
+
+[[package]]
 name = "phonemizer"
 version = "3.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -7679,6 +7701,7 @@ dependencies = [
     { name = "openai-whisper" },
     { name = "orpheus-speech" },
     { name = "pandas" },
+    { name = "phaseaug" },
     { name = "phonemizer" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pyarrow" },
@@ -7730,6 +7753,7 @@ requires-dist = [
     { name = "openai-whisper", specifier = ">=20240930" },
     { name = "orpheus-speech" },
     { name = "pandas", specifier = ">=2.2" },
+    { name = "phaseaug", specifier = "==1.0.1" },
     { name = "phonemizer", specifier = ">=3.3" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pyarrow", specifier = ">=20.0" },

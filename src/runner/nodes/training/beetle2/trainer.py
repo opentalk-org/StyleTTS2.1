@@ -388,9 +388,19 @@ class Trainer:
                 decoded.mask,
                 self.generator("acoustic-source"),
             )
+            with torch.autocast(
+                device_type=real.device.type,
+                enabled=False,
+            ):
+                discriminator_real, discriminator_fake = (
+                    acoustic_models.phase_augmentation.forward_sync(
+                        real.float(),
+                        generated.detach().float(),
+                    )
+                )
             discriminator_output = acoustic_models.discriminators(
-                real,
-                generated.detach(),
+                discriminator_real,
+                discriminator_fake,
             )
             discriminator = discriminator_step_loss(
                 discriminator_output.real.logits,
@@ -434,7 +444,20 @@ class Trainer:
             )
             for parameter in discriminator_parameters:
                 parameter.requires_grad_(False)
-            adversarial_output = acoustic_models.discriminators(real, generated)
+            with torch.autocast(
+                device_type=real.device.type,
+                enabled=False,
+            ):
+                generator_real, generator_fake = (
+                    acoustic_models.phase_augmentation.forward_sync(
+                        real.float(),
+                        generated.float(),
+                    )
+                )
+            adversarial_output = acoustic_models.discriminators(
+                generator_real,
+                generator_fake,
+            )
             for parameter in discriminator_parameters:
                 parameter.requires_grad_(True)
             adversarial = generator_step_loss(

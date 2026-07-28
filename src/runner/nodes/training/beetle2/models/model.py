@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 import torch
+from phaseaug.phaseaug import PhaseAug
 from torch import Tensor, nn
 
 from ..config import BeetleConfig
@@ -40,6 +41,7 @@ class AcousticModels(nn.Module):
         generator: Generator,
         f0_extractor: F0Extractor,
         discriminators: StyleTTSDiscriminators,
+        phase_augmentation: PhaseAug,
         reconstruction_loss: HiFTNetReconstructionLoss,
         jdc_transform: LogMelSpectrogram,
     ) -> None:
@@ -50,6 +52,7 @@ class AcousticModels(nn.Module):
         self.generator = generator
         self.f0_extractor = f0_extractor
         self.discriminators = discriminators
+        self.phase_augmentation = phase_augmentation
         self.reconstruction_loss = reconstruction_loss
         self.jdc_transform = jdc_transform
         self.output_hop = generator.config.output_hop()
@@ -153,6 +156,7 @@ def build_acoustic_models(
         generator=Generator(architecture.generator, config.audio.sample_rate),
         f0_extractor=f0_extractor,
         discriminators=build_styletts_discriminators(),
+        phase_augmentation=PhaseAug(),
         reconstruction_loss=HiFTNetReconstructionLoss(
             sample_rate=config.audio.sample_rate,
             n_fft=config.audio.n_fft,
