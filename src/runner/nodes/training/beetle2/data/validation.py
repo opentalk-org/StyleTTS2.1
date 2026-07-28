@@ -74,6 +74,26 @@ def select_validation_audio_ids(
     return tuple(selected)
 
 
+def select_validation_voice_reference_ids(
+    index: DatabaseSegmentIndex,
+    audio_file_ids: tuple[UUID, ...],
+    runtime_seed: int,
+) -> tuple[UUID, ...]:
+    references = []
+    for audio_id in audio_file_ids:
+        voice = index.validation.voice_for(audio_id)
+        candidates = tuple(
+            candidate
+            for candidate in index.validation.conditional_by_voice[voice]
+            if candidate != audio_id
+        )
+        rng = random.Random(
+            derive_seed(runtime_seed, "validation-voice-reference", audio_id)
+        )
+        references.append(rng.choice(candidates) if candidates else audio_id)
+    return tuple(references)
+
+
 class ValidationLoader:
     def __init__(self, config: BeetleConfig) -> None:
         self.config = config
@@ -116,27 +136,26 @@ class ValidationLoader:
     def collate(
         self,
         source: ValidationSource,
+        audio_file_ids: tuple[UUID, ...],
+        voice_reference_audio_file_ids: tuple[UUID, ...],
         phoneme_tokenizer: ValidationTokenizer,
         text_tokenizer: ValidationTokenizer,
     ) -> tuple[ValidationRecording, ...]:
+        items = {item.stored.audio_file_id: item for item in source.items}
         return tuple(
             collate_validation_recording(
                 self.config,
-                item,
+                items[audio_id],
+                items[reference_id],
                 phoneme_tokenizer,
                 text_tokenizer,
             )
-            for item in source.items
+            for audio_id, reference_id in zip(
+                audio_file_ids,
+                voice_reference_audio_file_ids,
+                strict=True,
+            )
         )
-
-    def load(
-        self,
-        audio_file_ids: tuple[UUID, ...],
-        phoneme_tokenizer: ValidationTokenizer,
-        text_tokenizer: ValidationTokenizer,
-    ) -> tuple[ValidationRecording, ...]:
-        source = self.load_source(audio_file_ids)
-        return self.collate(source, phoneme_tokenizer, text_tokenizer)
 
 
 def _load_stored_audio(

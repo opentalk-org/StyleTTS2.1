@@ -19,6 +19,7 @@ class ValidationTokenizer(Protocol):
 def collate_validation_recording(
     config: BeetleConfig,
     item: PreparedValidationAudio,
+    voice_reference: PreparedValidationAudio,
     phoneme_tokenizer: ValidationTokenizer,
     text_tokenizer: ValidationTokenizer,
 ) -> ValidationRecording:
@@ -62,6 +63,16 @@ def collate_validation_recording(
     prompt_voice = voice_prompt.unsqueeze(0)
     views = waveform.unsqueeze(1).repeat(1, 2, 1, 1)
     view_lengths = waveform_lengths.unsqueeze(1).repeat(1, 2)
+    maximum_reference_samples = config.adversarial.segment_samples
+    voice_reference_waveform = voice_reference.processed.waveform[
+        :, :maximum_reference_samples
+    ].unsqueeze(0)
+    voice_reference_lengths = torch.tensor(
+        [voice_reference_waveform.shape[-1]],
+        dtype=torch.long,
+    )
+    voice_views = voice_reference_waveform.repeat(2, 1, 1)
+    voice_view_lengths = voice_reference_lengths.repeat(2)
     speaker_id = stored.segments[0].speaker_id
     batch = BeetleBatch(
         waveform=waveform,
@@ -75,7 +86,9 @@ def collate_validation_recording(
         style_prompt_ids=prompt_style,
         voice_prompt_ids=prompt_voice,
         style_views=views,
-        voice_views=views.clone(),
+        voice_views=voice_views,
+        voice_condition_indices=torch.zeros(1, dtype=torch.long),
+        voice_auxiliary_view_count=2,
         waveform_lengths=waveform_lengths,
         frame_lengths=frame_lengths,
         phoneme_lengths=phoneme_lengths,
@@ -83,7 +96,7 @@ def collate_validation_recording(
         style_prompt_lengths=torch.tensor([style_prompt.numel()]),
         voice_prompt_lengths=torch.tensor([voice_prompt.numel()]),
         style_view_lengths=view_lengths,
-        voice_view_lengths=view_lengths.clone(),
+        voice_view_lengths=voice_view_lengths,
         frame_mask=frame_mask,
         phoneme_mask=phoneme_mask,
         text_mask=text_mask,
@@ -95,7 +108,7 @@ def collate_validation_recording(
         speaker_ids=(speaker_id,),
         recording_ids=(stored.audio_file_id,),
         style_group_ids=(str(stored.audio_file_id),),
-        voice_group_ids=(speaker_id,),
+        voice_group_ids=(speaker_id, speaker_id),
     )
     return ValidationRecording(
         stored.audio_file_id,

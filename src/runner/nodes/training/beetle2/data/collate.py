@@ -11,6 +11,7 @@ from .records import (
     BeetleBatch,
     FetchedBatch,
     FetchedEmbeddingGroup,
+    FetchedEmbeddingView,
     FetchedExample,
 )
 
@@ -34,6 +35,13 @@ class _PreparedGroups:
     waveforms: Tensor
     lengths: Tensor
     distances: Tensor
+    group_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _PreparedVoiceViews:
+    waveforms: Tensor
+    lengths: Tensor
     group_ids: tuple[str, ...]
 
 
@@ -84,7 +92,7 @@ class BatchCollator:
         voice_prompt, voice_prompt_lengths = _pad_ids(
             tuple(item.voice_prompt_ids for item in prepared)
         )
-        voice_groups = self._prepare_groups(fetched.voice_groups)
+        voice_views = self._prepare_voice_views(fetched.voice_groups)
         style_groups = self._prepare_groups(fetched.style_groups)
         batch_size = len(prepared)
         max_phonemes = phonemes.shape[-1]
@@ -103,7 +111,12 @@ class BatchCollator:
             style_prompt_ids=style_prompt,
             voice_prompt_ids=voice_prompt,
             style_views=style_groups.waveforms,
-            voice_views=voice_groups.waveforms,
+            voice_views=voice_views.waveforms,
+            voice_condition_indices=torch.tensor(
+                fetched.voice_condition_indices,
+                dtype=torch.long,
+            ),
+            voice_auxiliary_view_count=fetched.voice_auxiliary_view_count,
             waveform_lengths=waveform_lengths,
             frame_lengths=frame_lengths,
             phoneme_lengths=phoneme_lengths,
@@ -111,7 +124,7 @@ class BatchCollator:
             style_prompt_lengths=style_prompt_lengths,
             voice_prompt_lengths=voice_prompt_lengths,
             style_view_lengths=style_groups.lengths,
-            voice_view_lengths=voice_groups.lengths,
+            voice_view_lengths=voice_views.lengths,
             frame_mask=_length_mask(frame_lengths, max_frames).unsqueeze(1),
             phoneme_mask=_length_mask(phoneme_lengths, max_phonemes),
             text_mask=_length_mask(text_lengths, texts.shape[-1]),
@@ -123,7 +136,7 @@ class BatchCollator:
             speaker_ids=tuple(item.source.speaker_id for item in prepared),
             recording_ids=tuple(item.source.plan.key.audio_file_id for item in prepared),
             style_group_ids=style_groups.group_ids,
-            voice_group_ids=voice_groups.group_ids,
+            voice_group_ids=voice_views.group_ids,
         )
 
     def _resolve_language_ids(self, languages: tuple[str | None, ...]) -> Tensor:
@@ -152,20 +165,11 @@ class BatchCollator:
             return _PreparedGroups(empty, torch.zeros(0, 0, dtype=torch.long), torch.zeros(0, 0), ())
         prepared = []
         distances = []
-        maximum_samples = self.minimum_frame_count * self.preprocessor.hop_length
         for group in groups:
             group_audio = []
             group_distances = []
             for view in group.views:
-                audio = self.preprocessor.decode_waveform(view.clip, view.plan.key)
-                audio = _crop_embedding_view(
-                    audio,
-                    maximum_samples,
-                    view.plan.seed,
-                )
-                group_audio.append(
-                    self.preprocessor.augment(audio, view.plan.seed, self.augmentation)
-                )
+                group_audio.append(self._prepare_embedding_view(view))
                 group_distances.append(view.plan.distance_seconds)
             prepared.append(tuple(group_audio))
             distances.append(tuple(group_distances))
@@ -175,6 +179,33 @@ class BatchCollator:
             lengths,
             torch.tensor(distances, dtype=torch.float32),
             tuple(group.group_id for group in groups),
+        )
+
+    def _prepare_voice_views(
+        self,
+        groups: tuple[FetchedEmbeddingGroup, ...],
+    ) -> _PreparedVoiceViews:
+        waveforms = []
+        group_ids = []
+        for group in groups:
+            for view in group.views:
+                waveforms.append(self._prepare_embedding_view(view))
+                group_ids.append(group.group_id)
+        padded, lengths = _pad_waveforms(tuple(waveforms))
+        return _PreparedVoiceViews(padded, lengths, tuple(group_ids))
+
+    def _prepare_embedding_view(self, view: FetchedEmbeddingView) -> Tensor:
+        maximum_samples = self.minimum_frame_count * self.preprocessor.hop_length
+        waveform = self.preprocessor.decode_waveform(view.clip, view.plan.key)
+        waveform = _crop_embedding_view(
+            waveform,
+            maximum_samples,
+            view.plan.seed,
+        )
+        return self.preprocessor.augment(
+            waveform,
+            view.plan.seed,
+            self.augmentation,
         )
 
 

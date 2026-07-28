@@ -53,7 +53,13 @@ class DatabaseBatchLoader:
             _fetched_group(group, clip_map) for group in planned.style_groups
         )
         return self.collator.collate(
-            FetchedBatch(examples, voice_groups, style_groups)
+            FetchedBatch(
+                examples,
+                voice_groups,
+                style_groups,
+                planned.voice_condition_indices,
+                planned.voice_auxiliary_view_count,
+            )
         )
 
     @staticmethod

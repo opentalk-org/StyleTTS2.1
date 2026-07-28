@@ -65,7 +65,7 @@ class _PermutationPool:
     def restore(self, state: PoolState) -> None:
         expected = self._permutation(state.cycle_index)
         self.cycle_index = state.cycle_index
-        self.permutation = state.permutation
+        self.permutation = expected
         self.next_position = state.next_position
 
     def _permutation(self, cycle_index: int) -> tuple[SegmentKey, ...]:
@@ -148,23 +148,30 @@ class ContinuousBatchPlanner:
         random.Random(
             derive_seed(self.seed, start_batch_index, "window-order")
         ).shuffle(global_batches)
-        group_batches = tuple(
-            self.embedding_groups.plan(planned_batch_index)
-            for planned_batch_index in range(
-                start_batch_index,
-                start_batch_index + batch_count,
-            )
-        )
         local_start = self.shard.rank * self.batch_size
         local_end = local_start + self.batch_size
-        self.pending_batches = tuple(
-            PlannedBatch(global_batch[local_start:local_end], voice_groups, style_groups)
-            for global_batch, (voice_groups, style_groups) in zip(
-                global_batches,
-                group_batches,
-                strict=True,
+        pending_batches = []
+        for offset, global_batch in enumerate(global_batches):
+            local_batch = global_batch[local_start:local_end]
+            (
+                voice_groups,
+                style_groups,
+                voice_condition_indices,
+                voice_auxiliary_view_count,
+            ) = self.embedding_groups.plan(
+                local_batch,
+                start_batch_index + offset,
             )
-        )
+            pending_batches.append(
+                PlannedBatch(
+                    local_batch,
+                    voice_groups,
+                    style_groups,
+                    voice_condition_indices,
+                    voice_auxiliary_view_count,
+                )
+            )
+        self.pending_batches = tuple(pending_batches)
         self.planning_batch_index += batch_count
         self.last_cycle_index = self.sentence.cycle_index
 

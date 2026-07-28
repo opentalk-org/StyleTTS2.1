@@ -30,6 +30,7 @@ from .aligned_window import (
     apply_window_ranges,
     sample_window_ranges,
     seconds_to_latent_frames,
+    slice_windows,
 )
 
 
@@ -107,8 +108,7 @@ class ConditionalTrainingInput:
     target_style: Tensor
     style_view_latent: Tensor
     style_view_mask: Tensor
-    voice_view_latent: Tensor
-    voice_view_mask: Tensor
+    voice_view_embeddings: Tensor
     voice_group_ids: Tensor
     style_group_ids: Tensor
     style_positive_weights: Tensor
@@ -220,8 +220,47 @@ class ConditionalInputBuilder:
         acoustic_target = AcousticFeatures(target_f0, target_n)
         statistics_target = AcousticStatistics(f0_mean, f0_std, n_mean, n_std)
 
-        target_style = models.style_encoder(posterior.latent, posterior.mask)
-        target_voice = models.voice_encoder(posterior.latent, posterior.mask)
+        voice_mel, voice_mask = self.mel_extractor(
+            values.voice_views,
+            values.voice_view_lengths,
+        )
+        with torch.no_grad():
+            voice_posterior = models.audio_encoder(
+                voice_mel,
+                voice_mask,
+                self._generator(step, batch_index, "voice-views"),
+            )
+        voice_view_latent, voice_view_mask = random_embedding_crop(
+            voice_posterior.latent,
+            voice_posterior.mask,
+            self._generator(step, batch_index, "voice-view-crops"),
+        )
+        voice_view_embeddings = models.voice_encoder(
+            voice_view_latent,
+            voice_view_mask,
+        )
+        voice_condition = voice_view_embeddings.index_select(
+            0,
+            values.voice_condition_indices,
+        )
+        auxiliary_voice_views = values.voice_auxiliary_view_count
+        auxiliary_voice_labels = values.voice_group_ids[:auxiliary_voice_views]
+        auxiliary_voice_groups = tuple(dict.fromkeys(auxiliary_voice_labels))
+        voice_group_ids = torch.tensor(
+            tuple(
+                auxiliary_voice_groups.index(label)
+                for label in auxiliary_voice_labels
+            ),
+            dtype=torch.long,
+            device=self.device,
+        )
+
+        style_latent, style_mask = random_embedding_crop(
+            posterior.latent,
+            posterior.mask,
+            self._generator(step, batch_index, "target-style"),
+        )
+        target_style = models.style_encoder(style_latent, style_mask)
         ranges = sample_window_ranges(
             posterior.mask[:, 0].sum(dim=1),
             self._latent_frames(0.4),
@@ -259,6 +298,7 @@ class ConditionalInputBuilder:
         disabled = torch.zeros_like(sampled_keep.phoneme)
         sampled_keep = replace(
             sampled_keep,
+            style=disabled,
             pooled_phoneme=disabled,
             pre_text=disabled,
             post_text=disabled,
@@ -279,6 +319,7 @@ class ConditionalInputBuilder:
         language_channels = self.config.architecture.language.embedding_channels
         context = target_style.new_zeros(batch_size, context_channels)
         language = target_style.new_zeros(batch_size, language_channels)
+        style_condition = torch.zeros_like(target_style)
         duration_tokens = models.duration_phoneme_encoder(
             phoneme.tokens,
             phoneme.mask,
@@ -286,8 +327,8 @@ class ConditionalInputBuilder:
         duration_frames = duration_tokens.shape[2]
         duration_inputs = ConditionInputs(
             phoneme=duration_tokens,
-            style=target_style.unsqueeze(2).expand(-1, -1, duration_frames),
-            voice=target_voice.unsqueeze(2).expand(-1, -1, duration_frames),
+            style=style_condition.unsqueeze(2).expand(-1, -1, duration_frames),
+            voice=voice_condition.unsqueeze(2).expand(-1, -1, duration_frames),
             pooled_phoneme=phoneme.pooled.unsqueeze(2).expand(
                 -1, -1, duration_frames
             ),
@@ -302,8 +343,8 @@ class ConditionalInputBuilder:
         latent_frames = window.aligned_phonemes.shape[2]
         latent_inputs = ConditionInputs(
             phoneme=window.aligned_phonemes,
-            style=target_style.unsqueeze(2).expand(-1, -1, latent_frames),
-            voice=target_voice.unsqueeze(2).expand(-1, -1, latent_frames),
+            style=style_condition.unsqueeze(2).expand(-1, -1, latent_frames),
+            voice=voice_condition.unsqueeze(2).expand(-1, -1, latent_frames),
             pooled_phoneme=phoneme.pooled.unsqueeze(2).expand(
                 -1, -1, latent_frames
             ),
@@ -320,14 +361,8 @@ class ConditionalInputBuilder:
             phoneme.mask,
             self._generator(step, batch_index, "duration"),
         )
-        posterior_noise = (
-            (window.posterior.latent - window.posterior.mean)
-            * torch.exp(-window.posterior.log_scale)
-            * window.posterior.mask
-        ).detach()
         flow_sample = sample_flow_training_case(
             window.posterior.latent,
-            posterior_noise,
             window.posterior.mask,
             self.config.architecture.latent_flow.minimum_steps,
             self._generator(step, batch_index, "flow"),
@@ -354,28 +389,11 @@ class ConditionalInputBuilder:
                 style_mask,
                 self._generator(step, batch_index, "style-views"),
             )
-
-        voice_groups, voice_views, voice_channels, voice_samples = (
-            values.voice_views.shape
+        style_view_latent, style_view_mask = random_embedding_crop(
+            style_posterior.latent,
+            style_posterior.mask,
+            self._generator(step, batch_index, "style-view-crops"),
         )
-        flattened_voice = values.voice_views.reshape(
-            voice_groups * voice_views,
-            voice_channels,
-            voice_samples,
-        )
-        voice_lengths = values.voice_view_lengths.reshape(
-            voice_groups * voice_views
-        )
-        voice_mel, voice_mask = self.mel_extractor(
-            flattened_voice,
-            voice_lengths,
-        )
-        with torch.no_grad():
-            voice_posterior = models.audio_encoder(
-                voice_mel,
-                voice_mask,
-                self._generator(step, batch_index, "voice-views"),
-            )
 
         batch_statistics = conditional_batch_statistics(
             window,
@@ -405,14 +423,10 @@ class ConditionalInputBuilder:
             alignment_mask=posterior.mask,
             target_latent_mask=window.posterior.mask,
             target_style=target_style,
-            style_view_latent=style_posterior.latent,
-            style_view_mask=style_posterior.mask,
-            voice_view_latent=voice_posterior.latent,
-            voice_view_mask=voice_posterior.mask,
-            voice_group_ids=torch.arange(
-                voice_groups,
-                device=self.device,
-            ).repeat_interleave(voice_views),
+            style_view_latent=style_view_latent,
+            style_view_mask=style_view_mask,
+            voice_view_embeddings=voice_view_embeddings[:auxiliary_voice_views],
+            voice_group_ids=voice_group_ids,
             style_group_ids=torch.arange(
                 style_groups,
                 device=self.device,
@@ -455,6 +469,36 @@ def masked_statistics(values: Tensor, mask: Tensor) -> tuple[Tensor, Tensor]:
     mean = (values * numeric).sum(dim=1) / count
     variance = ((values - mean.unsqueeze(1)).square() * numeric).sum(dim=1) / count
     return mean, torch.sqrt(variance.clamp_min(1e-5))
+
+
+def random_embedding_crop(
+    latent: Tensor,
+    mask: Tensor,
+    generator: torch.Generator,
+) -> tuple[Tensor, Tensor]:
+    available = mask[:, 0].sum(dim=1)
+    ratios = 0.1 + 0.9 * torch.rand(
+        available.shape,
+        device=latent.device,
+        generator=generator,
+    )
+    lengths = (available * ratios).long().clamp_min(1)
+    start_limits = available - lengths
+    starts = (
+        torch.rand(
+            available.shape,
+            device=latent.device,
+            generator=generator,
+        )
+        * (start_limits + 1)
+    ).long()
+    return slice_windows(
+        latent,
+        starts,
+        lengths,
+        lengths,
+        left_pad=False,
+    )
 
 
 def keep_all_conditions(batch_size: int, device: torch.device) -> ConditionKeep:

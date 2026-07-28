@@ -31,6 +31,7 @@ from .data import (
     build_data_pipeline,
     repeat_validation_embedding_groups,
     select_validation_audio_ids,
+    select_validation_voice_reference_ids,
 )
 from .data.records import BeetleBatch
 from .data.sampling import derive_seed
@@ -184,9 +185,23 @@ class Trainer:
             self.config.validation.audio_file_ids,
             self.config.training.stage is not TrainingStage.POSTERIOR,
         )
-        validation_source = validation_loader.load_source(validation_ids)
+        validation_voice_ids = (
+            validation_ids
+            if self.config.training.stage is TrainingStage.POSTERIOR
+            else select_validation_voice_reference_ids(
+                index,
+                validation_ids,
+                self.config.runtime.seed,
+            )
+        )
+        validation_source_ids = tuple(
+            dict.fromkeys((*validation_ids, *validation_voice_ids))
+        )
+        validation_source = validation_loader.load_source(validation_source_ids)
         self.validation_recordings = validation_loader.collate(
             validation_source,
+            validation_ids,
+            validation_voice_ids,
             resources.phoneme_tokenizer,
             resources.text_tokenizer,
         )
@@ -517,10 +532,7 @@ class Trainer:
                 inputs.style_view_latent,
                 inputs.style_view_mask,
             )
-            voice_views = conditional_models.voice_encoder(
-                inputs.voice_view_latent,
-                inputs.voice_view_mask,
-            )
+            voice_views = inputs.voice_view_embeddings
             flow_prediction = conditional_models.latent_flow(
                 inputs.flow_sample.state,
                 inputs.flow_sample.time,
@@ -759,10 +771,7 @@ class Trainer:
                     inputs.style_view_latent,
                     inputs.style_view_mask,
                 )
-                voice_views = conditional_models.voice_encoder(
-                    inputs.voice_view_latent,
-                    inputs.voice_view_mask,
-                )
+                voice_views = inputs.voice_view_embeddings
                 flow_prediction = conditional_models.latent_flow(
                     inputs.flow_sample.state,
                     inputs.flow_sample.time,

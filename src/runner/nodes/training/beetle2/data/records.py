@@ -82,6 +82,8 @@ class PlannedBatch:
     examples: tuple[PlannedExample, ...]
     voice_groups: tuple[EmbeddingGroupPlan, ...]
     style_groups: tuple[EmbeddingGroupPlan, ...]
+    voice_condition_indices: tuple[int, ...]
+    voice_auxiliary_view_count: int
 
 @dataclass(frozen=True)
 class FetchedExample:
@@ -112,6 +114,8 @@ class FetchedBatch:
     examples: tuple[FetchedExample, ...]
     voice_groups: tuple[FetchedEmbeddingGroup, ...]
     style_groups: tuple[FetchedEmbeddingGroup, ...]
+    voice_condition_indices: tuple[int, ...]
+    voice_auxiliary_view_count: int
 
 
 @dataclass(frozen=True)
@@ -128,6 +132,8 @@ class BeetleBatch:
     voice_prompt_ids: Tensor
     style_views: Tensor
     voice_views: Tensor
+    voice_condition_indices: Tensor
+    voice_auxiliary_view_count: int
     waveform_lengths: Tensor
     frame_lengths: Tensor
     phoneme_lengths: Tensor

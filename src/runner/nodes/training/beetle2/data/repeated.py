@@ -57,9 +57,10 @@ def repeat_validation_embedding_groups(
     repeated = replace(
         batch,
         style_views=batch.style_views.repeat(2, 1, 1, 1),
-        voice_views=batch.voice_views.repeat(2, 1, 1, 1),
+        voice_views=batch.voice_views.repeat(2, 1, 1),
         style_view_lengths=batch.style_view_lengths.repeat(2, 1),
-        voice_view_lengths=batch.voice_view_lengths.repeat(2, 1),
+        voice_view_lengths=batch.voice_view_lengths.repeat(2),
+        voice_auxiliary_view_count=4,
         style_distances=batch.style_distances.repeat(2, 1),
         style_group_ids=(
             f"{batch.style_group_ids[0]}:0",
@@ -67,6 +68,8 @@ def repeat_validation_embedding_groups(
         ),
         voice_group_ids=(
             f"{batch.voice_group_ids[0]}:0",
+            f"{batch.voice_group_ids[0]}:0",
+            f"{batch.voice_group_ids[0]}:1",
             f"{batch.voice_group_ids[0]}:1",
         ),
     )
