@@ -133,50 +133,29 @@ class AcousticFeatures:
     f0: Tensor
     n: Tensor
 
-    def blend(
-        self,
-        predicted: "AcousticFeatures",
-        predicted_ratio: float,
-    ) -> "AcousticFeatures":
-        target_ratio = 1.0 - predicted_ratio
-        return AcousticFeatures(
-            self.f0 * target_ratio + predicted.f0 * predicted_ratio,
-            self.n * target_ratio + predicted.n * predicted_ratio,
-        )
+
+@dataclass(frozen=True)
+class LinearAcousticPrediction:
+    f0: Tensor
+    voiced_f0: Tensor
+    n: Tensor
+    voicing_logits: Tensor
 
 
 class FeatureLinear(nn.Module):
     def __init__(self, config: FeatureConfig) -> None:
         super().__init__()
         self.config = config
-        self.residual = nn.ModuleList(
-            weight_norm(
-                nn.Conv1d(
-                    config.latent_channels,
-                    config.latent_channels,
-                    kernel_size=3,
-                    padding=1,
-                )
-            )
-            for _ in range(config.residual_layer_count)
-        )
         self.projection = nn.Conv1d(config.latent_channels, 3, 1)
-        nn.init.zeros_(self.projection.weight[:2])
-        nn.init.zeros_(self.projection.bias[:2])
 
     def forward(
         self,
         latent: Tensor,
         latent_mask: Tensor,
         frame_mask: Tensor,
-    ) -> AcousticFeatures:
+    ) -> LinearAcousticPrediction:
         numeric_latent_mask = latent_mask.to(dtype=latent.dtype)
-        features = latent * numeric_latent_mask
-        for layer in self.residual:
-            features = (
-                features + layer(F.silu(features)) * numeric_latent_mask
-            ) * numeric_latent_mask
-        projected = self.projection(features) * numeric_latent_mask
+        projected = self.projection(latent * numeric_latent_mask)
         interpolated = F.interpolate(
             projected,
             scale_factor=self.config.upsample_rate,
@@ -184,11 +163,12 @@ class FeatureLinear(nn.Module):
             align_corners=False,
         )
         numeric_frame_mask = frame_mask[:, 0].to(dtype=latent.dtype)
-        f0_magnitude = F.softplus(interpolated[:, 0]) * self.config.f0_scale_hz
-        voicing = torch.sigmoid(interpolated[:, 1])
-        f0 = f0_magnitude * voicing * numeric_frame_mask
+        f0 = interpolated[:, 0].float() * self.config.f0_scale_hz
+        voicing_logits = interpolated[:, 1].float()
+        voicing = (voicing_logits > 0).to(dtype=f0.dtype)
+        voiced_f0 = f0.clamp_min(0) * voicing * numeric_frame_mask
         n = interpolated[:, 2] * numeric_frame_mask
-        return AcousticFeatures(f0, n)
+        return LinearAcousticPrediction(f0, voiced_f0, n, voicing_logits)
 
 
 class F0Extractor(nn.Module):

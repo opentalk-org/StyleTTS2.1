@@ -36,9 +36,9 @@ from .data.records import BeetleBatch
 from .data.sampling import derive_seed
 from .data.validation_records import ValidationRecording
 from .losses.acoustic import (
-    masked_f0_smooth_l1,
     masked_kl_standard_normal,
     masked_n_smooth_l1,
+    masked_pitch_loss,
 )
 from .losses.adversarial import discriminator_step_loss, generator_step_loss
 from .losses.conditional import (
@@ -352,7 +352,7 @@ class Trainer:
             )
             f0_ratio = self.loss_weight(self.config.training.f0_prediction)
             decoder_acoustic = AcousticFeatures(
-                target_f0 * (1 - f0_ratio) + predicted.f0 * f0_ratio,
+                target_f0 * (1 - f0_ratio) + predicted.voiced_f0 * f0_ratio,
                 target_n * (1 - f0_ratio) + predicted.n * f0_ratio,
             )
             smoothing_kernels = (0, 3, 7)
@@ -406,12 +406,14 @@ class Trainer:
                 posterior.log_scale,
                 posterior.mask,
             )
-            f0 = masked_f0_smooth_l1(
+            pitch = masked_pitch_loss(
                 predicted.f0,
+                predicted.voicing_logits,
                 target_f0,
                 decoded.mask,
                 acoustic_models.feature_linear.config.f0_scale_hz,
             )
+            f0 = pitch.total
             n = masked_n_smooth_l1(
                 predicted.n,
                 target_n,
@@ -459,6 +461,10 @@ class Trainer:
         return {
             "encoder_kl": encoder_kl,
             "f0": f0,
+            "f0_regression": pitch.regression,
+            "f0_voicing": pitch.voicing,
+            "f0_mae_hz": pitch.mae_hz,
+            "f0_voicing_accuracy": pitch.voicing_accuracy,
             "n": n,
             "posterior_reconstruction": reconstruction,
             "discriminator": discriminator,
@@ -645,18 +651,24 @@ class Trainer:
                 )
                 prediction = generated[0, :, :sample_count]
                 predicted_latent = posterior.latent[0]
-                predicted_f0 = features.f0[0]
+                predicted_f0 = features.voiced_f0[0]
                 metrics["encoder_kl"] = masked_kl_standard_normal(
                     posterior.mean,
                     posterior.log_scale,
                     posterior.mask,
                 )
-                metrics["f0"] = masked_f0_smooth_l1(
+                pitch = masked_pitch_loss(
                     features.f0,
+                    features.voicing_logits,
                     target_f0,
                     values.frame_mask,
                     acoustic_models.feature_linear.config.f0_scale_hz,
                 )
+                metrics["f0"] = pitch.total
+                metrics["f0_regression"] = pitch.regression
+                metrics["f0_voicing"] = pitch.voicing
+                metrics["f0_mae_hz"] = pitch.mae_hz
+                metrics["f0_voicing_accuracy"] = pitch.voicing_accuracy
                 metrics["n"] = masked_n_smooth_l1(
                     features.n,
                     target_n,
@@ -879,12 +891,18 @@ class Trainer:
                         posterior.log_scale,
                         posterior.mask,
                     )
-                    metrics["f0"] = masked_f0_smooth_l1(
+                    pitch = masked_pitch_loss(
                         posterior_acoustic.f0,
+                        posterior_acoustic.voicing_logits,
                         inputs.acoustic_target.f0,
                         values.frame_mask,
                         acoustic_models.feature_linear.config.f0_scale_hz,
                     )
+                    metrics["f0"] = pitch.total
+                    metrics["f0_regression"] = pitch.regression
+                    metrics["f0_voicing"] = pitch.voicing
+                    metrics["f0_mae_hz"] = pitch.mae_hz
+                    metrics["f0_voicing_accuracy"] = pitch.voicing_accuracy
                     metrics["n"] = masked_n_smooth_l1(
                         posterior_acoustic.n,
                         inputs.acoustic_target.n,
@@ -942,7 +960,7 @@ class Trainer:
                         acoustic_total + conditional_total
                     )
                 prediction = generated[0, :, :sample_count]
-                predicted_f0 = predicted_acoustic.f0[0]
+                predicted_f0 = predicted_acoustic.voiced_f0[0]
         scalars = {
             f"validation/{name}": (
                 float(value.detach().float().cpu())

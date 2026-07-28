@@ -23,7 +23,6 @@ architecture:
     latent_channels: 192
     upsample_rate: 2
     f0_scale_hz: 256.0
-    residual_layer_count: 2
   decoder:
     latent_channels: 192
     hidden_channels: 1024

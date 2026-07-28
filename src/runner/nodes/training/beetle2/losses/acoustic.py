@@ -39,6 +39,18 @@ class ReconstructionLoss:
     bands: tuple[FrequencyBandLoss, ...]
 
 
+@dataclass(frozen=True)
+class PitchLoss:
+    regression: Tensor
+    voicing: Tensor
+    mae_hz: Tensor
+    voicing_accuracy: Tensor
+
+    @property
+    def total(self) -> Tensor:
+        return self.regression + self.voicing
+
+
 def _expanded_mask(values: Tensor, mask: Tensor) -> Tensor:
     return torch.broadcast_to(mask.to(dtype=torch.bool), values.shape)
 
@@ -57,18 +69,40 @@ def masked_kl_standard_normal(mean: Tensor, log_scale: Tensor, mask: Tensor) -> 
     return _masked_mean(divergence.sum(dim=1, keepdim=True), mask)
 
 
-def masked_f0_smooth_l1(
-    predicted: Tensor,
+def masked_pitch_loss(
+    predicted_f0: Tensor,
+    voicing_logits: Tensor,
     target: Tensor,
     mask: Tensor,
     scale_hz: float,
-) -> Tensor:
-    values = F.smooth_l1_loss(
-        predicted / scale_hz,
+) -> PitchLoss:
+    valid = mask[:, 0].to(dtype=torch.bool)
+    voiced = valid & target.gt(0)
+    regression_values = F.smooth_l1_loss(
+        predicted_f0 / scale_hz,
         target / scale_hz,
         reduction="none",
     )
-    return _masked_mean(values, mask[:, 0])
+    voiced_count = voiced.sum().clamp_min(1)
+    regression = (
+        regression_values * voiced.to(dtype=regression_values.dtype)
+    ).sum() / voiced_count
+    voicing_values = F.binary_cross_entropy_with_logits(
+        voicing_logits,
+        voiced.to(dtype=voicing_logits.dtype),
+        reduction="none",
+    )
+    voicing = _masked_mean(voicing_values, valid)
+    mae_values = (predicted_f0 - target).abs()
+    mae_hz = (
+        mae_values * voiced.to(dtype=mae_values.dtype)
+    ).sum() / voiced_count
+    predicted_voicing = voicing_logits > 0
+    voicing_accuracy = _masked_mean(
+        predicted_voicing.eq(voiced).to(dtype=voicing_logits.dtype),
+        valid,
+    )
+    return PitchLoss(regression, voicing, mae_hz, voicing_accuracy)
 
 
 def masked_n_smooth_l1(
