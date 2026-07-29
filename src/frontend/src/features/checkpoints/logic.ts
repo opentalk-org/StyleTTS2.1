@@ -8,6 +8,7 @@ export const TYPE_TONE: Record<string, Tone> = {
   orpheus: "red",
   dia: "red",
   fish_speech: "red",
+  piper: "red",
   styletts2: "blue",
   asr: "emerald",
   f0: "amber",

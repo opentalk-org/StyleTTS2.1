@@ -1,6 +1,9 @@
-from shared.db.audio.annotations import (
+from shared.db.audio.speaker_annotations import (
     bulk_apply_speaker_assignments,
     bulk_update_audio_scores,
+)
+from shared.db.audio.annotations.crud import (
+    replace_audio_language as replace_audio_language,
 )
 from shared.db.audio.catalog import (
     audio_bucket_locations,

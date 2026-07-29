@@ -16,6 +16,7 @@ class TtsEngine(str, Enum):
     DIA = "dia"
     FISH_SPEECH = "fish_speech"
     RAON_OPENTTS = "raon_opentts"
+    PIPER = "piper"
 
 
 PRESET_VOICES: dict[TtsEngine, tuple[str, ...]] = {
@@ -53,12 +54,23 @@ class CloneReference:
 
 
 @dataclass(frozen=True)
+class PiperVoiceModel:
+    voice_id: str
+    checkpoint_id: str
+    language: str
+    locale: str
+    quality: str
+    sample_rate: int
+
+
+@dataclass(frozen=True)
 class Voice:
     """A resolved voice: either a preset id or a clone reference, for one engine."""
 
     engine: TtsEngine
     preset: str | None
     clone: CloneReference | None
+    piper: PiperVoiceModel | None = None
 
     def require_preset(self) -> str:
         if self.preset is None:
@@ -76,6 +88,22 @@ def preset_voice_payload(engine: TtsEngine, voice_id: str) -> dict[str, Any]:
     if voice_id not in valid:
         raise ValueError(f"{engine.value}_unknown_preset_voice:{voice_id}")
     return {"kind": "tts_voice", "engine": engine.value, "voice_id": voice_id}
+
+
+def piper_voice_payload(model: PiperVoiceModel) -> dict[str, Any]:
+    return {
+        "kind": "tts_voice",
+        "engine": TtsEngine.PIPER.value,
+        "voice_id": model.voice_id,
+        "piper": {
+            "voice_id": model.voice_id,
+            "checkpoint_id": model.checkpoint_id,
+            "language": model.language,
+            "locale": model.locale,
+            "quality": model.quality,
+            "sample_rate": model.sample_rate,
+        },
+    }
 
 
 def clone_voice_payload(engine: TtsEngine, reference: CloneReference) -> dict[str, Any]:
@@ -109,7 +137,20 @@ def parse_voice(payload: dict[str, Any], expected_engine: TtsEngine) -> Voice:
     clone = None
     if clone_raw is not None:
         clone = CloneReference(clone_raw["wav_base64"], int(clone_raw["sample_rate"]), clone_raw["transcript"])
-    return Voice(engine=engine, preset=payload.get("voice_id"), clone=clone)
+    piper_raw = payload.get("piper")
+    piper = None
+    if piper_raw is not None:
+        piper = PiperVoiceModel(
+            voice_id=piper_raw["voice_id"],
+            checkpoint_id=piper_raw["checkpoint_id"],
+            language=piper_raw["language"],
+            locale=piper_raw["locale"],
+            quality=piper_raw["quality"],
+            sample_rate=int(piper_raw["sample_rate"]),
+        )
+    if engine is TtsEngine.PIPER and piper is None:
+        raise ValueError("piper_voice_missing_model")
+    return Voice(engine=engine, preset=payload.get("voice_id"), clone=clone, piper=piper)
 
 
 def expand_voice_batch(payload: dict[str, Any], expected_engine: TtsEngine) -> tuple[list[Voice], int]:

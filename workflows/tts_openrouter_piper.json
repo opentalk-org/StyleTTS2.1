@@ -1,0 +1,93 @@
+{
+  "name": "TTS dataset — OpenRouter → multilingual Piper voice pool",
+  "hidden": false,
+  "data": {
+    "nodes": [
+      {
+        "id": "gen_texts",
+        "type": "OpenRouterGenerateTexts",
+        "x": 0,
+        "y": 0,
+        "params": {
+          "model": "openai/gpt-4o-mini",
+          "count": 64,
+          "language": "en",
+          "batch_size": 16,
+          "temperature": 1.0,
+          "seed": 0,
+          "length_mode": "gaussian",
+          "length_mean_words": 12.0,
+          "length_std_words": 5.0,
+          "length_min_words": 4,
+          "length_max_words": 24,
+          "keywords_per_text": 2
+        },
+        "runtime": {}
+      },
+      {
+        "id": "piper_voices",
+        "type": "PiperVoiceSelection",
+        "x": 0,
+        "y": 300,
+        "params": {
+          "mode": "explicit",
+          "voice_ids": ["en_US-amy-low"],
+          "languages": [],
+          "locales": [],
+          "qualities": [],
+          "count": 1,
+          "seed": 0,
+          "samples_per_voice": 1,
+          "download_missing": true
+        },
+        "runtime": {}
+      },
+      {
+        "id": "piper_synth",
+        "type": "PiperSynthesis",
+        "x": 360,
+        "y": 120,
+        "params": {
+          "output_name": "piper.wav",
+          "speaker_id": null,
+          "length_scale": 1.0,
+          "noise_scale": 0.667,
+          "noise_w_scale": 0.8,
+          "volume": 1.0
+        },
+        "runtime": {}
+      },
+      {
+        "id": "save_audio",
+        "type": "SaveAudioArtifact",
+        "x": 720,
+        "y": 120,
+        "params": {
+          "output_subdir": "tts_piper",
+          "extension": "wav"
+        },
+        "runtime": {}
+      }
+    ],
+    "edges": [
+      {
+        "source_node": "gen_texts",
+        "source_port": "text",
+        "target_node": "piper_synth",
+        "target_port": "text"
+      },
+      {
+        "source_node": "piper_voices",
+        "source_port": "voice",
+        "target_node": "piper_synth",
+        "target_port": "voice"
+      },
+      {
+        "source_node": "piper_synth",
+        "source_port": "audio",
+        "target_node": "save_audio",
+        "target_port": "audio"
+      }
+    ]
+  }
+}

@@ -11,6 +11,7 @@ import type { AudioFile } from "../../audio/api";
 import { useAudioFileQuery, useAudioFilesQuery } from "../../audio/query";
 import { useDatasetsQuery } from "../../datasets/query";
 import { useCheckpointsQuery } from "../../checkpoints/query";
+import { PiperVoicePickerField } from "./PiperVoicePickerField";
 
 const DATASET_FIELDS = new Set(["dataset_id", "source_dataset_id", "target_dataset_id"]);
 const AUDIO_MULTI_FIELDS = new Set(["audio_file_ids"]);
@@ -24,8 +25,11 @@ const CHECKPOINT_FIELDS: Record<string, string | undefined> = {
 
 export function buildWorkflowFieldOverrides(settings: JsonSchema): Record<string, FieldOverride> {
   const overrides: Record<string, FieldOverride> = {};
+  const piperCatalogUrl = settings["x-piper-catalog-url"];
   for (const name of Object.keys(settings.properties ?? {})) {
-    if (DATASET_FIELDS.has(name)) {
+    if (name === "voice_ids" && piperCatalogUrl) {
+      overrides[name] = ({ label, description, value, onChange }) => <PiperVoicePickerField label={label} description={description} value={value} onChange={onChange} catalogUrl={piperCatalogUrl} />;
+    } else if (DATASET_FIELDS.has(name)) {
       overrides[name] = ({ label, description, value, onChange }) => <DatasetPickerField label={label} description={description} value={value} onChange={onChange} />;
     } else if (AUDIO_MULTI_FIELDS.has(name)) {
       overrides[name] = ({ label, description, value, onChange }) => <AudioMultiPickerField label={label} description={description} value={value} onChange={onChange} />;

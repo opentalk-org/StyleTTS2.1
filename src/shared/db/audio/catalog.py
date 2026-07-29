@@ -15,6 +15,9 @@ from shared.db.common import many, one
 from shared.db.datasets.models import Dataset, dataset_audio_files
 
 
+AUDIO_LOCATION_QUERY_BATCH_SIZE = 50_000
+
+
 def audio_file_annotations(item: AudioFile) -> AudioAnnotations:
     return AudioAnnotations(
         speaker_id=item.speaker_id,
@@ -129,15 +132,20 @@ def audio_bucket_locations(
     session: Session,
     audio_file_ids: Sequence[uuid.UUID],
 ) -> list[AudioBucketLocation]:
-    statement = select(
-        AudioFile.id,
-        AudioFile.bucket_file_id,
-        AudioFile.byte_length,
-    ).where(AudioFile.id.in_(audio_file_ids))
-    rows = {
-        audio_id: (bucket_file_id, byte_length)
-        for audio_id, bucket_file_id, byte_length in session.execute(statement)
-    }
+    rows = {}
+    for start in range(0, len(audio_file_ids), AUDIO_LOCATION_QUERY_BATCH_SIZE):
+        batch = audio_file_ids[start : start + AUDIO_LOCATION_QUERY_BATCH_SIZE]
+        statement = select(
+            AudioFile.id,
+            AudioFile.bucket_file_id,
+            AudioFile.byte_length,
+        ).where(AudioFile.id.in_(batch))
+        rows.update(
+            {
+                audio_id: (bucket_file_id, byte_length)
+                for audio_id, bucket_file_id, byte_length in session.execute(statement)
+            }
+        )
     return [
         AudioBucketLocation(
             audio_file_id=audio_file_id,

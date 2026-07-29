@@ -5,6 +5,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
+from botocore.exceptions import ClientError
+
 from shared.db import database_session
 from shared.db.assets import crud as asset_crud
 from shared.db.assets.models import Checkpoint, ExtraFile
@@ -22,16 +24,21 @@ def ensure_checkpoint_bundle(spec: CheckpointSpec, *, logger: logging.Logger | N
     with database_session() as session:
         existing = _find_checkpoint(session, spec.key)
         if existing is not None:
-            path = asset_crud.get_checkpoint_path(session, existing.id)
-            if spec.is_valid(path):
-                log.info("catalog checkpoint cached key=%s name=%s (reusing existing)", spec.key, spec.name)
-                metadata = _checkpoint_metadata(spec, path, existing.metadata_)
-                updated = asset_crud.update_checkpoint(
-                    session,
-                    existing.id,
-                    CheckpointUpdate(name=spec.name, folder_path=None, type_=spec.type_.value, metadata=metadata),
-                )
-                return updated, True
+            try:
+                path = asset_crud.get_checkpoint_path(session, existing.id)
+            except ClientError as error:
+                if error.response["Error"]["Code"] != "NoSuchKey":
+                    raise
+            else:
+                if spec.is_valid(path):
+                    log.info("catalog checkpoint cached key=%s name=%s (reusing existing)", spec.key, spec.name)
+                    metadata = _checkpoint_metadata(spec, path, existing.metadata_)
+                    updated = asset_crud.update_checkpoint(
+                        session,
+                        existing.id,
+                        CheckpointUpdate(name=spec.name, folder_path=None, type_=spec.type_.value, metadata=metadata),
+                    )
+                    return updated, True
         log.info("catalog checkpoint download starting key=%s name=%s files=%s", spec.key, spec.name, len(spec.files))
         with TemporaryDirectory(prefix=f"runflow-catalog-{spec.key}-") as tmp:
             folder = Path(tmp)
@@ -143,4 +150,3 @@ def _find_extra_file(session, key: str) -> ExtraFile | None:
         if "catalog_key" in metadata and metadata["catalog_key"] == key:
             return extra_file
     return None
-

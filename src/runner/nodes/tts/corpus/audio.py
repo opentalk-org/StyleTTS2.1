@@ -1,0 +1,107 @@
+from uuid import NAMESPACE_URL, uuid5
+
+import numpy as np
+
+from runner.nodes.models import Audio, AudioSegment, stable_id
+from runner.nodes.tts.audio_out import wav_bytes_from_samples
+from runner.nodes.tts.corpus.models import CorpusJob, OtherCorpusJob
+from shared.audio_annotations import AudioAnnotations
+
+
+def corpus_audio(
+    job: CorpusJob,
+    samples: np.ndarray,
+    sample_rate: int,
+) -> Audio:
+    metadata = {
+        "tts_source_key": job.source_key,
+        "tts_dataset": job.dataset_name,
+        "engine": job.engine.value,
+        "voice": job.voice_id,
+        "speaker_id": job.speaker_id,
+        "language": job.language,
+        "text": job.text,
+        "stream": job.stream_id,
+        "sentence_index": job.sentence_index,
+        "sample_rate": sample_rate,
+    }
+    return _corpus_audio(job, samples, sample_rate, metadata)
+
+
+def other_corpus_audio(
+    job: OtherCorpusJob,
+    samples: np.ndarray,
+    sample_rate: int,
+) -> Audio:
+    metadata = {
+        "tts_source_key": job.source_key,
+        "tts_dataset": job.dataset_name,
+        "engine": job.engine.value,
+        "voice": job.voice_id,
+        "reference_audio_id": (
+            str(job.reference_audio_id)
+            if job.reference_audio_id is not None
+            else None
+        ),
+        "language": job.language,
+        "text": job.text,
+        "stream": job.stream_id,
+        "sentence_index": job.sentence_index,
+        "sample_rate": sample_rate,
+    }
+    return _corpus_audio(job, samples, sample_rate, metadata)
+
+
+def _corpus_audio(
+    job: CorpusJob | OtherCorpusJob,
+    samples: np.ndarray,
+    sample_rate: int,
+    metadata: dict[str, object],
+) -> Audio:
+    waveform = np.asarray(samples, dtype=np.float32).reshape(-1)
+    wav_bytes = wav_bytes_from_samples(waveform, sample_rate)
+    audio_id = stable_id("tts_corpus_audio", job.source_key)
+    audio_file_id = uuid5(NAMESPACE_URL, job.source_key)
+    duration = len(waveform) / float(sample_rate)
+    metadata["byte_length"] = len(wav_bytes)
+    return Audio(
+        audio_file_id=audio_file_id,
+        name=f"{job.stream_id}-{job.sentence_index:04d}.wav",
+        data=wav_bytes,
+        sample_rate=sample_rate,
+        channels=1,
+        start=0.0,
+        end=duration,
+        annotations=AudioAnnotations(
+            speaker_id=job.stream_id,
+            metadata=metadata,
+        ),
+        id=audio_id,
+        lineage_id=audio_id,
+        byte_length=len(wav_bytes),
+        segments=[
+            AudioSegment(
+                source_audio_id=audio_file_id,
+                name=f"{job.stream_id}-{job.sentence_index:04d}.wav",
+                start=0.0,
+                end=duration,
+                sample_rate=sample_rate,
+                channels=1,
+                text=job.text,
+                phon="",
+                id=stable_id("tts_corpus_segment", job.source_key),
+                lineage_id=audio_id,
+                segment_id=stable_id(
+                    "tts_corpus_segment",
+                    job.source_key,
+                ),
+                annotations=AudioAnnotations(
+                    speaker_id=job.stream_id,
+                    metadata={
+                        "language": job.language,
+                        "type_": "tts_transcript",
+                    },
+                ),
+            )
+        ],
+    )
