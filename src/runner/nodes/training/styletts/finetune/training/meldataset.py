@@ -23,6 +23,7 @@ SPECT_PARAMS = {
     "win_length": 1200,
     "hop_length": 300,
 }
+MIN_WAVE_SAMPLES = 24_600
 MEL_PARAMS = {
     "n_mels": 80,
 }
@@ -131,7 +132,10 @@ class Collater:
             wave = wave[:, 0].squeeze()
         if sr != 24000:
             wave = librosa.resample(wave, orig_sr=sr, target_sr=24000)
-        return np.concatenate([np.zeros([5000]), wave, np.zeros([5000])], axis=0)
+        padded = np.concatenate([np.zeros([5000]), wave, np.zeros([5000])], axis=0)
+        missing_samples = max(0, MIN_WAVE_SAMPLES - padded.shape[0])
+        left_padding = missing_samples // 2
+        return np.pad(padded, (left_padding, missing_samples - left_padding))
 
     def _load_mel(self, wave: np.ndarray) -> torch.Tensor:
         mel_tensor = preprocess(wave).squeeze()

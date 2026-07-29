@@ -150,9 +150,9 @@ def train(config_path: str, *, run: TrackerRun) -> None:
                    sr, 
                    model_params.slm.sr).to(device)
 
-    gl = MyDataParallel(gl)
-    dl = MyDataParallel(dl)
-    wl = MyDataParallel(wl)
+    gl = MyDataParallel(gl, device_ids=[0])
+    dl = MyDataParallel(dl, device_ids=[0])
+    wl = MyDataParallel(wl, device_ids=[0])
     
     sampler = DiffusionSampler(
         model.diffusion.diffusion,
@@ -211,7 +211,7 @@ def train(config_path: str, *, run: TrackerRun) -> None:
 
     for key in model:
         if key != "mpd" and key != "msd" and key != "wd":
-            model[key] = MyDataParallel(model[key])
+            model[key] = MyDataParallel(model[key], device_ids=[0])
 
     n_down = model.text_aligner.n_down
 
@@ -232,7 +232,7 @@ def train(config_path: str, *, run: TrackerRun) -> None:
         skip_update=slmadv_params.iter,
         sig=slmadv_params.sig,
     )
-    
+    skipped_steps = 0
     
     for epoch in range(start_epoch, epochs):
         check_cancel()
@@ -264,7 +264,7 @@ def train(config_path: str, *, run: TrackerRun) -> None:
                     ref_ss = model.style_encoder(ref_mels.unsqueeze(1))
                     ref_sp = model.predictor_encoder(ref_mels.unsqueeze(1))
                     ref = torch.cat([ref_ss, ref_sp], dim=1)
-                
+
             autocast_ctx = (
                 torch.autocast(device_type="cuda", dtype=autocast_dtype)
                 if autocast_enabled and autocast_dtype is not None
@@ -359,8 +359,6 @@ def train(config_path: str, *, run: TrackerRun) -> None:
                 p_en = torch.stack(p_en)
                 gt = torch.stack(gt).detach()
                 st = torch.stack(st).detach()
-                if gt.size(-1) < 80:
-                    raise ValueError(f"training crop is too short: {gt.size(-1)}")
 
                 s = model.style_encoder(gt.unsqueeze(1))
                 s_dur = model.predictor_encoder(gt.unsqueeze(1))
@@ -442,7 +440,6 @@ def train(config_path: str, *, run: TrackerRun) -> None:
                     loss_params.lambda_mono * loss_mono + \
                     loss_params.lambda_s2s * loss_s2s
             
-            running_loss += loss_mel.item()
             if not torch.isfinite(g_loss):
                 loss_terms = {
                     "loss_mel": _to_scalar_float(loss_mel),
@@ -461,9 +458,36 @@ def train(config_path: str, *, run: TrackerRun) -> None:
                 bad_terms = sorted(
                     term for term, value in loss_terms.items() if not np.isfinite(value)
                 )
-                raise FloatingPointError(
-                    f"non-finite generator loss: bad={bad_terms} values={loss_terms}"
+                skipped_steps += 1
+                iters += 1
+                logger.warning(
+                    "skipping non-finite generator step epoch=%s batch=%s global_step=%s "
+                    "skipped_steps=%s bad=%s values=%s",
+                    epoch + 1,
+                    i + 1,
+                    iters,
+                    skipped_steps,
+                    bad_terms,
+                    loss_terms,
                 )
+                mlflow_logger.log_train(
+                    epoch + 1,
+                    iters,
+                    {
+                        "epoch": epoch + 1,
+                        "step": i + 1,
+                        "step_skipped": 1,
+                        "skipped_steps": skipped_steps,
+                        "bad_loss_terms": len(bad_terms),
+                    },
+                    batches_per_epoch=max(1, len(train_dataloader)),
+                    batch_in_epoch=i + 1,
+                    schedule_epochs_total=int(epochs),
+                    schedule_diff_epoch=int(diff_epoch),
+                    schedule_joint_epoch=int(joint_epoch),
+                )
+                continue
+            running_loss += loss_mel.item()
             if use_grad_scaler:
                 scaler.scale(g_loss).backward()
                 optimizer.step('bert_encoder', scaler=scaler)
@@ -599,6 +623,8 @@ def train(config_path: str, *, run: TrackerRun) -> None:
                     "s_loss": s_loss,
                     "s2s_loss": loss_s2s,
                     "mono_loss": loss_mono,
+                    "step_skipped": 0,
+                    "skipped_steps": skipped_steps,
                 },
                 batches_per_epoch=max(1, len(train_dataloader)),
                 batch_in_epoch=i + 1,
@@ -695,8 +721,6 @@ def train(config_path: str, *, run: TrackerRun) -> None:
                     en = torch.stack(en)
                     p_en = torch.stack(p_en)
                     gt = torch.stack(gt).detach()
-                    if gt.size(-1) < 80:
-                        raise ValueError(f"validation crop is too short: {gt.size(-1)}")
                     with torch.no_grad():
                         autocast_ctx = (
                             torch.autocast(device_type="cuda", dtype=autocast_dtype)

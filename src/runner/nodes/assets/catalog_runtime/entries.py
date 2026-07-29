@@ -38,6 +38,7 @@ CATALOG_ENTRIES: tuple[CatalogEntry, ...] = (
     CatalogEntry(name="ASR · base aligner", file="epoch_00080.pth", group="Training assets", catalog_key=CatalogKey.STYLETTS2_UTILS, item="styletts2_utils_asr"),
     CatalogEntry(name="F0 · JDC", file="bst.t7", group="Training assets", catalog_key=CatalogKey.STYLETTS2_UTILS, item="styletts2_utils_f0"),
     CatalogEntry(name="PL-BERT · StyleTTS2 utils", file="step_1000000.t7", group="Training assets", catalog_key=CatalogKey.STYLETTS2_UTILS, item="styletts2_utils_plbert"),
+    CatalogEntry(name="OOD text · StyleTTS2 LibriTTS", file="OOD_texts.txt", group="Training assets", catalog_key=CatalogKey.STYLETTS2_UTILS, item="styletts2_libritts_ood"),
     CatalogEntry(name="Wav2Vec2 XLS-R 300M · MOS base", file="facebook/wav2vec2-xls-r-300m", group="Training assets", catalog_key=CatalogKey.MOS_MODELS, item="facebook/wav2vec2-xls-r-300m"),
     CatalogEntry(name="Whisper · tiny", file="tiny.pt", group="Transcription", catalog_key=CatalogKey.ASR_MODELS, item="whisper:tiny"),
     CatalogEntry(name="Whisper · tiny.en", file="tiny.en.pt", group="Transcription", catalog_key=CatalogKey.ASR_MODELS, item="whisper:tiny.en"),
