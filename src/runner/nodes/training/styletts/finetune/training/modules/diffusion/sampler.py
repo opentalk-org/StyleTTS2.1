@@ -30,6 +30,15 @@ class LogNormalDistribution(Distribution):
         return normal.exp()
 
 
+class UniformDistribution(Distribution):
+    def __call__(
+        self,
+        num_samples: int,
+        device: torch.device = torch.device("cpu"),
+    ) -> Tensor:
+        return torch.rand(num_samples, device=device)
+
+
 def pad_dims(x: Tensor, ndim: int) -> Tensor:
     return x.view(*x.shape, *((1,) * ndim))
 
