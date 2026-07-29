@@ -14,6 +14,8 @@ from runner.nodes.text.runtime.symbols import TextCleaner
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 
+from .pipeline import PrefetchedDataPipeline
+from .records import TrainingBatch
 np.random.seed(1)
 random.seed(1)
 
@@ -199,7 +201,16 @@ class Collater:
             ref_mels[bid, :, : ref_mel.size(1)] = ref_mel
             waves[bid] = wave
 
-        return waves, texts, input_lengths, ref_texts, ref_lengths, mels, output_lengths, ref_mels
+        return TrainingBatch(
+            waves=tuple(waves),
+            texts=texts,
+            input_lengths=input_lengths,
+            reference_texts=ref_texts,
+            reference_lengths=ref_lengths,
+            mels=mels,
+            mel_lengths=output_lengths,
+            reference_mels=ref_mels,
+        )
 
 
 def build_dataloader(
@@ -225,7 +236,7 @@ def build_dataloader(
         **dataset_config,
     )
     collate_fn = Collater(**collate_config)
-    return DataLoader(
+    loader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=(not validation),
@@ -234,3 +245,4 @@ def build_dataloader(
         collate_fn=collate_fn,
         pin_memory=(device != 'cpu'),
     )
+    return PrefetchedDataPipeline(loader)

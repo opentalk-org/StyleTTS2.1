@@ -5,6 +5,7 @@ from .utils import *
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from einops import rearrange, reduce, repeat
 from einops.layers.torch import Rearrange
 from einops_exts import rearrange_many

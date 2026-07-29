@@ -32,7 +32,20 @@ class ProsodyPredictor(nn.Module):
         self.N_proj = nn.Conv1d(d_hid // 2, 1, 1, 1, 0)
 
 
-    def forward(self, texts, style, text_lengths, alignment, m):
+    def forward(
+        self,
+        texts,
+        style,
+        text_lengths=None,
+        alignment=None,
+        m=None,
+        prosody_starts=None,
+        prosody_frames=None,
+        prosody_style=None,
+    ):
+        if text_lengths is None:
+            return self.F0Ntrain(texts, style)
+
         d = self.text_encoder(texts, style, text_lengths, m)
         
         batch_size = d.shape[0]
@@ -58,7 +71,14 @@ class ProsodyPredictor(nn.Module):
         
         en = (d.transpose(-1, -2) @ alignment)
 
-        return duration.squeeze(-1), en
+        if prosody_starts is None:
+            return duration.squeeze(-1), en
+        crops = torch.stack([
+            item[:, start : start + prosody_frames]
+            for item, start in zip(en, prosody_starts, strict=True)
+        ])
+        F0, N = self.F0Ntrain(crops, prosody_style)
+        return duration.squeeze(-1), en, F0, N
     
     def F0Ntrain(self, x, s):
         x, _ = self.shared(x.transpose(-1, -2))

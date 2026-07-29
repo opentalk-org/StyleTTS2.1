@@ -19,6 +19,7 @@ const TOGGLE_ROWS = [
   { key: "multispeaker", sub: "Per-speaker style encoder" },
   { key: "checkpoint_decoder_gradients", sub: "Uses less VRAM; reduces training speed." },
   { key: "checkpoint_discriminator_gradients", sub: "Uses less VRAM; reduces training speed." },
+  { key: "profiling_enabled", sub: "CUDA-synchronized timing and VRAM event logging." },
 ];
 
 export function StyleTtsForm({
@@ -133,18 +134,25 @@ export function StyleTtsForm({
           <SettingField schema={settingsSchema} values={values} name="learning_rate" onChange={updateTraining} />
           <SettingField schema={settingsSchema} values={values} name="numeric_precision" onChange={updateTraining} />
         </div>
+        <div className="h-3.5" />
+        <SettingField schema={settingsSchema} values={values} name="distributed_processes" onChange={updateTraining} />
       </FormSection>
 
-      <FormSection title="Schedule" tag="Epochs & sequence">
+      <FormSection title="Schedule" tag="Steps & sequence">
         <div className="grid grid-cols-3 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="epochs_base" onChange={updateTraining} />
-          <SettingField schema={settingsSchema} values={values} name="epochs_diffusion" onChange={updateTraining} />
-          <SettingField schema={settingsSchema} values={values} name="epochs_joint" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="base_steps" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="diffusion_steps" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="joint_steps" onChange={updateTraining} />
         </div>
         <div className="h-3.5" />
         <div className="grid grid-cols-3 gap-3.5">
+          <SettingField schema={settingsSchema} values={values} name="validation_interval_steps" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="checkpoint_interval_steps" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="log_interval_steps" onChange={updateTraining} />
+        </div>
+        <div className="h-3.5" />
+        <div className="grid grid-cols-2 gap-3.5">
           <SettingNumberInput schema={settingsSchema} values={values} name="max_sequence_seconds" hint={`≈ ${frames} frames @ 300 hop`} step={0.5} onChange={updateTraining} />
-          <SettingField schema={settingsSchema} values={values} name="save_interval_epochs" onChange={updateTraining} />
           <SettingField schema={settingsSchema} values={values} name="decoder" onChange={updateTraining} />
         </div>
       </FormSection>
