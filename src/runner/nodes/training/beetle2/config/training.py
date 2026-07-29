@@ -61,6 +61,25 @@ class LossWeights(StrictConfigModel):
     style_reencoding: ScheduledWeight
 
 
+class AlphaFlowConfig(StrictConfigModel):
+    flow_matching_ratio: float = Field(ge=0, le=1)
+    time_location: float
+    time_scale: float = Field(gt=0)
+    schedule_start_step: int = Field(ge=0)
+    schedule_end_step: int = Field(gt=0)
+    schedule_gamma: float = Field(gt=0)
+    clamp_value: float = Field(gt=0, lt=0.5)
+    adaptive_epsilon: float = Field(gt=0)
+    target_clip: float = Field(gt=0)
+    sampling_steps: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_schedule(self) -> "AlphaFlowConfig":
+        if self.schedule_end_step <= self.schedule_start_step:
+            raise ValueError("AlphaFlow schedule end must be after its start")
+        return self
+
+
 class TrainingConfig(StrictConfigModel):
     stage: TrainingStage
     batch_size: int = Field(gt=0)
@@ -73,6 +92,7 @@ class TrainingConfig(StrictConfigModel):
     f0_prediction: ScheduledWeight
     n_prediction: ScheduledWeight
     latent_flow_weight_decay: float = Field(ge=0)
+    alpha_flow: AlphaFlowConfig
     generator_optimizer: OptimizerConfig
     discriminator_optimizer: OptimizerConfig
     losses: LossWeights

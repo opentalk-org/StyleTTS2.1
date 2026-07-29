@@ -32,11 +32,11 @@ class LatentFlowModel(nn.Module):
             config.patch_size,
             stride=config.patch_size,
         )
-        self.time_embedding = ScalarEmbedding(
+        self.start_time_embedding = ScalarEmbedding(
             config.time_embedding_channels,
             config.hidden_channels,
         )
-        self.step_level_embedding = ScalarEmbedding(
+        self.end_time_embedding = ScalarEmbedding(
             config.time_embedding_channels,
             config.hidden_channels,
         )
@@ -58,8 +58,8 @@ class LatentFlowModel(nn.Module):
     def forward(
         self,
         state: Tensor,
-        time: Tensor,
-        step_level: Tensor,
+        start_time: Tensor,
+        end_time: Tensor,
         conditions: ProjectedConditions,
         mask: Tensor,
     ) -> Tensor:
@@ -71,14 +71,14 @@ class LatentFlowModel(nn.Module):
         token_mask = patch_mask(mask, self.config.patch_size)[:, 0]
         features = self.input_projection(padded_state).transpose(1, 2)
         condition = self.condition_projection(padded_condition).transpose(1, 2)
-        time_tokens = time[:, 0, :: self.config.patch_size]
-        step_level_tokens = step_level[:, 0, :: self.config.patch_size].to(
+        start_time_tokens = start_time[:, 0, :: self.config.patch_size]
+        end_time_tokens = end_time[:, 0, :: self.config.patch_size].to(
             dtype=state.dtype
         )
         condition = (
             condition
-            + self.time_embedding(time_tokens)
-            + self.step_level_embedding(step_level_tokens)
+            + self.start_time_embedding(start_time_tokens)
+            + self.end_time_embedding(end_time_tokens)
         )
         features = features + position_embedding(
             features.shape[1],
@@ -100,7 +100,7 @@ class LatentFlowModel(nn.Module):
         return output[..., :frame_count] * numeric_mask
 
     def _initialize_dit(self) -> None:
-        for embedding in (self.time_embedding, self.step_level_embedding):
+        for embedding in (self.start_time_embedding, self.end_time_embedding):
             nn.init.normal_(embedding.layers[0].weight, std=0.02)
             nn.init.normal_(embedding.layers[2].weight, std=0.02)
         for block in self.blocks:

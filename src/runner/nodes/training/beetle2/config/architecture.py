@@ -108,7 +108,6 @@ class GeneratorConfig(StrictConfigModel):
 
 class PhonemeConfig(StrictConfigModel):
     model_path: str = Field(min_length=1)
-    learning_rate: float = Field(gt=0)
     weight_decay: float = Field(ge=0)
     projection_channels: int = Field(gt=0)
     cnn_hidden_channels: int = Field(gt=0)
@@ -193,12 +192,9 @@ class LatentFlowConfig(StrictConfigModel):
     patch_size: int = Field(gt=0)
     attention_heads: int = Field(gt=0)
     mlp_ratio: float = Field(gt=0)
-    minimum_steps: int = Field(gt=1)
 
     @model_validator(mode="after")
     def validate_architecture(self) -> "LatentFlowConfig":
-        if self.minimum_steps & (self.minimum_steps - 1):
-            raise ValueError("minimum_steps must be a power of two")
         if self.hidden_channels % self.attention_heads:
             raise ValueError("latent-flow hidden channels must divide attention heads")
         if self.time_embedding_channels % 2:

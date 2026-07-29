@@ -10,7 +10,7 @@ from .embeddings import (
     style_statistics_loss,
     supervised_contrastive_loss,
 )
-from .flow import base_flow_loss
+from .flow import alpha_flow_loss
 
 
 @dataclass(frozen=True)
@@ -55,7 +55,10 @@ class ConditionalLossWeights:
 class ConditionalLossInput:
     duration_nll: Tensor
     phoneme_mask: Tensor
-    flow_velocity: Tensor
+    flow_target: Tensor
+    flow_alpha: float
+    flow_matching_count: int
+    flow_adaptive_epsilon: float
     latent_mask: Tensor
     ctc_logits: Tensor
     s2s_logits: Tensor
@@ -144,10 +147,13 @@ def compute_conditional_losses(
     )
     return ConditionalLossOutput(
         duration_flow=duration_flow_loss(inputs.duration_nll, inputs.phoneme_mask),
-        latent_flow=base_flow_loss(
+        latent_flow=alpha_flow_loss(
             outputs.flow_prediction,
-            inputs.flow_velocity,
+            inputs.flow_target,
             inputs.latent_mask,
+            inputs.flow_alpha,
+            inputs.flow_matching_count,
+            inputs.flow_adaptive_epsilon,
         ),
         shortcut=outputs.flow_prediction.new_zeros(()),
         align_s2s=alignment.s2s,

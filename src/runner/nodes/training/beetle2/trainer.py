@@ -2,6 +2,7 @@ import math
 import random
 import time
 from collections import defaultdict
+from functools import partial
 from pathlib import Path
 from typing import Protocol
 
@@ -10,9 +11,15 @@ import torch
 from accelerate import Accelerator
 from accelerate.utils import GradScalerKwargs, broadcast_object_list
 from torch import Tensor, nn
+from torch.autograd.functional import jvp
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from .checkpoints import CheckpointManager
-from .conditioning import ConditionalInputBuilder, DatabaseSpeakerIndex
+from .conditioning import (
+    ConditionalInputBuilder,
+    ConditionalTrainingInput,
+    DatabaseSpeakerIndex,
+)
 from .config import (
     BeetleConfig,
     OptimizerConfig,
@@ -50,6 +57,7 @@ from .losses.conditional import (
     compute_conditional_losses,
 )
 from .losses.composition import AcousticLossWeights
+from .losses.flow import flow_inner_product, flow_mse
 from .logger import logger
 from .mlflow_logging import MlflowLogger
 from .models.conditional import ConditionalModels
@@ -533,16 +541,20 @@ class Trainer:
                 inputs.style_view_mask,
             )
             voice_views = inputs.voice_view_embeddings
-            flow_prediction = conditional_models.latent_flow(
+            flow_prediction, flow_target = self.alpha_flow_tensors(inputs)
+            full_end_time = torch.ones_like(inputs.flow_sample.start_time)
+            full_end_time = full_end_time * inputs.latent_mask
+            full_prediction = conditional_models.latent_flow(
                 inputs.flow_sample.state,
-                inputs.flow_sample.time,
-                inputs.flow_sample.step_level,
+                inputs.flow_sample.start_time,
+                full_end_time,
                 inputs.conditions,
                 inputs.latent_mask,
             )
             generated_latent = (
                 inputs.flow_sample.state
-                + (1 - inputs.flow_sample.time) * flow_prediction
+                + (full_end_time - inputs.flow_sample.start_time)
+                * full_prediction
             ) * inputs.latent_mask
             generated_style = conditional_models.style_encoder(
                 generated_latent,
@@ -592,7 +604,10 @@ class Trainer:
             loss_inputs = ConditionalLossInput(
                 inputs.duration_nll,
                 inputs.phoneme_mask,
-                inputs.flow_sample.velocity,
+                flow_target,
+                inputs.flow_sample.alpha,
+                inputs.flow_sample.flow_matching_count,
+                self.config.training.alpha_flow.adaptive_epsilon,
                 inputs.latent_mask,
                 inputs.alignment.ctc_logits,
                 inputs.alignment.s2s_logits,
@@ -617,10 +632,93 @@ class Trainer:
             generator_total / self.config.training.accumulation_steps
         )
         metrics: dict[str, Tensor | float] = self.conditional_metrics(losses)
+        metrics["latent_flow_mse"] = flow_mse(
+            flow_prediction,
+            flow_target,
+            inputs.latent_mask,
+        )
+        metrics["trajectory_flow_matching"] = flow_mse(
+            flow_prediction,
+            inputs.flow_sample.velocity,
+            inputs.latent_mask,
+        )
+        metrics["trajectory_consistency"] = 2 * flow_inner_product(
+            inputs.flow_sample.velocity - flow_target,
+            flow_prediction,
+            inputs.latent_mask,
+        )
+        metrics["trajectory_sum"] = (
+            metrics["trajectory_flow_matching"]
+            + metrics["trajectory_consistency"]
+        )
+        metrics["alpha_flow_ratio"] = inputs.flow_sample.alpha
         for name, value in inputs.batch_statistics.named_values():
             metrics[f"conditioning/{name}"] = value
         metrics["generator_total"] = generator_total
         return metrics
+
+    def alpha_flow_tensors(
+        self,
+        inputs: ConditionalTrainingInput,
+    ) -> tuple[Tensor, Tensor]:
+        conditional_models = self.conditional_models
+        if conditional_models is None:
+            raise RuntimeError("conditional stage was not prepared")
+        model = conditional_models.latent_flow
+        sample = inputs.flow_sample
+        prediction = model(
+            sample.state,
+            sample.start_time,
+            sample.end_time,
+            inputs.conditions,
+            inputs.latent_mask,
+        )
+        target = sample.velocity.clone()
+        trajectory_start = sample.flow_matching_count
+        if trajectory_start == sample.state.shape[0]:
+            return prediction, target
+        trajectory_mask = inputs.latent_mask[trajectory_start:]
+        trajectory_velocity = sample.velocity[trajectory_start:]
+        clip = self.config.training.alpha_flow.target_clip
+        if sample.alpha == 1.0:
+            target[trajectory_start:] = trajectory_velocity.clamp(-clip, clip)
+            return prediction, target
+        trajectory_conditions = inputs.conditions.slice_from(trajectory_start)
+        if sample.alpha == 0.0:
+            state = sample.state[trajectory_start:]
+            start_time = sample.start_time[trajectory_start:]
+            end_time = sample.end_time[trajectory_start:]
+            with torch.no_grad(), sdpa_kernel(SDPBackend.MATH):
+                _, derivative = jvp(
+                    partial(
+                        model,
+                        conditions=trajectory_conditions,
+                        mask=trajectory_mask,
+                    ),
+                    (state, start_time, end_time),
+                    (
+                        trajectory_velocity,
+                        trajectory_mask.to(dtype=start_time.dtype),
+                        torch.zeros_like(end_time),
+                    ),
+                )
+            interval = end_time - start_time
+            target[trajectory_start:] = trajectory_velocity + interval * derivative
+            return prediction, target
+        with torch.no_grad():
+            future_velocity = model(
+                sample.intermediate_state[trajectory_start:],
+                sample.intermediate_time[trajectory_start:],
+                sample.end_time[trajectory_start:],
+                trajectory_conditions,
+                trajectory_mask,
+            )
+        discrete_target = (
+            sample.alpha * trajectory_velocity
+            + (1 - sample.alpha) * future_velocity
+        )
+        target[trajectory_start:] = discrete_target.clamp(-clip, clip)
+        return prediction, target
 
     def end_to_end_step(self, batch: BeetleBatch) -> dict[str, Tensor | float]:
         acoustic_metrics = self.posterior_step(batch)
@@ -785,16 +883,20 @@ class Trainer:
                     inputs.style_view_mask,
                 )
                 voice_views = inputs.voice_view_embeddings
-                flow_prediction = conditional_models.latent_flow(
+                flow_prediction, flow_target = self.alpha_flow_tensors(inputs)
+                full_end_time = torch.ones_like(inputs.flow_sample.start_time)
+                full_end_time = full_end_time * inputs.latent_mask
+                full_prediction = conditional_models.latent_flow(
                     inputs.flow_sample.state,
-                    inputs.flow_sample.time,
-                    inputs.flow_sample.step_level,
+                    inputs.flow_sample.start_time,
+                    full_end_time,
                     inputs.conditions,
                     inputs.latent_mask,
                 )
                 generated_training_latent = (
                     inputs.flow_sample.state
-                    + (1 - inputs.flow_sample.time) * flow_prediction
+                    + (full_end_time - inputs.flow_sample.start_time)
+                    * full_prediction
                 ) * inputs.latent_mask
                 generated_style = conditional_models.style_encoder(
                     generated_training_latent,
@@ -846,7 +948,10 @@ class Trainer:
                 loss_inputs = ConditionalLossInput(
                     inputs.duration_nll,
                     inputs.phoneme_mask,
-                    inputs.flow_sample.velocity,
+                    flow_target,
+                    inputs.flow_sample.alpha,
+                    inputs.flow_sample.flow_matching_count,
+                    self.config.training.alpha_flow.adaptive_epsilon,
                     inputs.latent_mask,
                     inputs.alignment.ctc_logits,
                     inputs.alignment.s2s_logits,
@@ -867,6 +972,26 @@ class Trainer:
                 )
                 losses = compute_conditional_losses(loss_inputs, outputs)
                 metrics.update(self.conditional_metrics(losses))
+                metrics["latent_flow_mse"] = flow_mse(
+                    flow_prediction,
+                    flow_target,
+                    inputs.latent_mask,
+                )
+                metrics["trajectory_flow_matching"] = flow_mse(
+                    flow_prediction,
+                    inputs.flow_sample.velocity,
+                    inputs.latent_mask,
+                )
+                metrics["trajectory_consistency"] = 2 * flow_inner_product(
+                    inputs.flow_sample.velocity - flow_target,
+                    flow_prediction,
+                    inputs.latent_mask,
+                )
+                metrics["trajectory_sum"] = (
+                    metrics["trajectory_flow_matching"]
+                    + metrics["trajectory_consistency"]
+                )
+                metrics["alpha_flow_ratio"] = inputs.flow_sample.alpha
                 conditional_total = losses.total(self.conditional_weights())
                 generation_noise = torch.randn(
                     inputs.flow_sample.noise.shape,
@@ -881,11 +1006,10 @@ class Trainer:
                     generation_noise,
                     inputs.conditions,
                     inputs.latent_mask,
-                    self.config.architecture.latent_flow.minimum_steps,
+                    self.config.training.alpha_flow.sampling_steps,
                 )
             target_latent = (
-                inputs.flow_sample.velocity
-                + (1 - 1e-5) * inputs.flow_sample.noise
+                inputs.flow_sample.velocity + inputs.flow_sample.noise
             )[0]
             predicted_latent = generated_latent[0]
             alignment = inputs.alignment.hard_alignment[0]
@@ -1209,11 +1333,7 @@ class Trainer:
                     else:
                         self.metric_sums[name] += value
                 self.metric_sums["optimizer/generator_learning_rate"] += generator_lr
-                self.metric_sums["optimizer/plbert_learning_rate"] += (
-                    self.config.architecture.phoneme.learning_rate
-                    * generator_lr
-                    / self.config.training.generator_optimizer.learning_rate
-                )
+                self.metric_sums["optimizer/plbert_learning_rate"] += generator_lr
                 self.metric_sums["optimizer/generator_gradient_norm"] += float(
                     generator_norm
                 )
@@ -1671,7 +1791,7 @@ class Trainer:
         learning_rate: float,
     ) -> None:
         for group in optimizer.param_groups:
-            group["lr"] = learning_rate * group["learning_rate_scale"]
+            group["lr"] = learning_rate
 
     def training_modules(self) -> tuple[nn.Module, ...]:
         modules: list[nn.Module] = []

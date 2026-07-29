@@ -36,6 +36,19 @@ class ProjectedConditions:
     post_audio: Tensor
     language: Tensor
 
+    def slice_from(self, start: int) -> "ProjectedConditions":
+        return ProjectedConditions(
+            phoneme=self.phoneme[start:],
+            style=self.style[start:],
+            voice=self.voice[start:],
+            pooled_phoneme=self.pooled_phoneme[start:],
+            pre_text=self.pre_text[start:],
+            post_text=self.post_text[start:],
+            pre_audio=self.pre_audio[start:],
+            post_audio=self.post_audio[start:],
+            language=self.language[start:],
+        )
+
     def combined(self) -> Tensor:
         return (
             self.phoneme

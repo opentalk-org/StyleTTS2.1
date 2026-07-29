@@ -122,7 +122,6 @@ class ConditionalTrainingInput:
     consistency_cosine_weight: float
     consistency_mse_weight: float
     align_blank_id: int
-    minimum_flow_steps: int
     batch_statistics: ConditionalBatchStatistics
 
 
@@ -385,7 +384,8 @@ class ConditionalInputBuilder:
         flow_sample = sample_flow_training_case(
             window.posterior.latent,
             window.posterior.mask,
-            self.config.architecture.latent_flow.minimum_steps,
+            self.config.training.alpha_flow,
+            step,
             self._generator(step, batch_index, "flow"),
         )
 
@@ -463,7 +463,6 @@ class ConditionalInputBuilder:
             consistency_cosine_weight=settings.consistency_cosine_weight,
             consistency_mse_weight=settings.consistency_mse_weight,
             align_blank_id=self.config.architecture.aligner.blank_id,
-            minimum_flow_steps=self.config.architecture.latent_flow.minimum_steps,
             batch_statistics=batch_statistics,
         )
 

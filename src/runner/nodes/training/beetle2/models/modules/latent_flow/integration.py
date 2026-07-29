@@ -1,5 +1,3 @@
-import math
-
 import torch
 from torch import Tensor, nn
 
@@ -16,30 +14,23 @@ def integrate_latent_flow(
     numeric_mask = mask.to(dtype=noise.dtype)
     state = noise * numeric_mask
     step_size = 1.0 / steps
-    step_level = torch.full_like(
-        mask,
-        math.log2(steps),
-        dtype=noise.dtype,
-    ) * numeric_mask
     for index in range(steps):
-        time = torch.full_like(mask, index * step_size, dtype=noise.dtype)
-        time = time * numeric_mask
-        first_velocity = model(state, time, step_level, conditions, mask)
-        predicted_state = (state + step_size * first_velocity) * numeric_mask
-        next_time = torch.full_like(
+        start_time = torch.full_like(
+            mask,
+            index * step_size,
+            dtype=noise.dtype,
+        ) * numeric_mask
+        end_time = torch.full_like(
             mask,
             (index + 1) * step_size,
             dtype=noise.dtype,
-        )
-        next_time = next_time * numeric_mask
-        second_velocity = model(
-            predicted_state,
-            next_time,
-            step_level,
+        ) * numeric_mask
+        mean_velocity = model(
+            state,
+            start_time,
+            end_time,
             conditions,
             mask,
         )
-        state = (
-            state + 0.5 * step_size * (first_velocity + second_velocity)
-        ) * numeric_mask
+        state = (state + step_size * mean_velocity) * numeric_mask
     return state

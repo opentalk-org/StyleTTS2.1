@@ -246,10 +246,7 @@ def build_optimizers(
             {
                 "params": plbert_parameters,
                 "weight_decay": config.architecture.phoneme.weight_decay,
-                "learning_rate_scale": (
-                    config.architecture.phoneme.learning_rate
-                    / settings.learning_rate
-                ),
+                "learning_rate_scale": 1.0,
             }
         )
     generator = torch.optim.AdamW(
