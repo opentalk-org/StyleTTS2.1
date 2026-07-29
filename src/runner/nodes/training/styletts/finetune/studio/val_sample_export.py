@@ -20,7 +20,6 @@ def export_finetune_val_wavs_for_studio(
     log_dir: str | Path,
     *,
     sample_rate: int,
-    epoch_1based: int,
     step: int,
     y_pred: torch.Tensor,
     y_gt: torch.Tensor,
@@ -28,13 +27,13 @@ def export_finetune_val_wavs_for_studio(
 ) -> list[dict[str, str]]:
     yp = _wav_batch_b_t(y_pred)
     yg = _wav_batch_b_t(y_gt)
-    base = Path(log_dir) / "samples" / f"e{int(epoch_1based):05d}_s{int(step)}"
+    base = Path(log_dir) / "samples" / f"step_{int(step):09d}"
     base.mkdir(parents=True, exist_ok=True)
     b = min(int(yp.shape[0]), int(yg.shape[0]), int(max_utts))
     out: list[dict[str, str]] = []
     for i in range(b):
-        rel_gt = f"samples/e{int(epoch_1based):05d}_s{int(step)}/{i}_gt.wav"
-        rel_pred = f"samples/e{int(epoch_1based):05d}_s{int(step)}/{i}_pred.wav"
+        rel_gt = f"samples/step_{int(step):09d}/{i}_gt.wav"
+        rel_pred = f"samples/step_{int(step):09d}/{i}_pred.wav"
         gt = yg[i].cpu().reshape(-1).clamp(-1.0, 1.0).numpy().astype(np.float64)
         pr = yp[i].cpu().reshape(-1).clamp(-1.0, 1.0).numpy().astype(np.float64)
         pcm_gt = (np.clip(gt, -1.0, 1.0) * 32767.0).astype(np.int16)

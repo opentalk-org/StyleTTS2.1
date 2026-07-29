@@ -4,6 +4,7 @@ import torch.nn as nn
 from torch.nn import Conv1d, Conv2d
 from torch.nn.utils import weight_norm, spectral_norm
 
+from ..profiling import profiling_fn
 from .utils import checkpoint_with_mixed_precision, get_padding
 
 LRELU_SLOPE = 0.1
@@ -94,9 +95,12 @@ class MultiResSpecDiscriminator(torch.nn.Module):
         y_d_gs = []
         fmap_rs = []
         fmap_gs = []
-        for i, d in enumerate(self.discriminators):
-            y_d_r, fmap_r = d(y)
-            y_d_g, fmap_g = d(y_hat)
+        for discriminator in self.discriminators:
+            with profiling_fn(f"stft_{discriminator.fft_size}"):
+                with profiling_fn("real"):
+                    y_d_r, fmap_r = discriminator(y)
+                with profiling_fn("generated"):
+                    y_d_g, fmap_g = discriminator(y_hat)
             y_d_rs.append(y_d_r)
             fmap_rs.append(fmap_r)
             y_d_gs.append(y_d_g)
@@ -171,9 +175,12 @@ class MultiPeriodDiscriminator(torch.nn.Module):
         y_d_gs = []
         fmap_rs = []
         fmap_gs = []
-        for i, d in enumerate(self.discriminators):
-            y_d_r, fmap_r = d(y)
-            y_d_g, fmap_g = d(y_hat)
+        for discriminator in self.discriminators:
+            with profiling_fn(f"period_{discriminator.period}"):
+                with profiling_fn("real"):
+                    y_d_r, fmap_r = discriminator(y)
+                with profiling_fn("generated"):
+                    y_d_g, fmap_g = discriminator(y_hat)
             y_d_rs.append(y_d_r)
             fmap_rs.append(fmap_r)
             y_d_gs.append(y_d_g)

@@ -42,13 +42,17 @@ def build_config(
     f0_path: Path | None,
     plbert_config: dict[str, Any],
     plbert_path: Path | None,
-    epochs: int,
+    total_steps: int,
     batch_size: int,
     learning_rate: float,
     max_len: int,
-    diff_epoch: int,
-    joint_epoch: int,
-    save_every_n_epochs: int,
+    diffusion_start_step: int,
+    joint_start_step: int,
+    validation_every_steps: int,
+    checkpoint_every_steps: int,
+    log_every_steps: int,
+    profiling_enabled: bool,
+    distributed_processes: int,
     load_optimizer: bool,
     generator_checkpointing: bool,
     discriminators_checkpointing: bool,
@@ -66,10 +70,14 @@ def build_config(
 ) -> dict[str, Any]:
     config = deepcopy(load_yaml(BASE_YAML))
     config["log_dir"] = str(log_dir.resolve())
-    config["epochs"] = int(epochs)
+    config["total_steps"] = int(total_steps)
     config["batch_size"] = int(batch_size)
     config["max_len"] = int(max_len)
-    config["save_freq"] = max(1, int(save_every_n_epochs))
+    config["validation_every_steps"] = int(validation_every_steps)
+    config["checkpoint_every_steps"] = int(checkpoint_every_steps)
+    config["log_every_steps"] = int(log_every_steps)
+    config["profiling_enabled"] = profiling_enabled
+    config["distributed_processes"] = int(distributed_processes)
     config["load_only_params"] = not load_optimizer
     config["data_params"] = {
         "train_data": str(Path(train_list).resolve()),
@@ -89,7 +97,7 @@ def build_config(
     config["PLBERT_config"] = plbert_config
     config["PLBERT_path"] = _path_str(plbert_path)
     _apply_optimizer(config, learning_rate)
-    _apply_stages(config, diff_epoch, joint_epoch)
+    _apply_stages(config, diffusion_start_step, joint_start_step)
     _apply_slm(config, slmadv_min_len, slmadv_max_len, slmadv_batch_samples, slmadv_scale)
     if architecture_path is not None:
         merge_architecture(architecture_path, config)
@@ -120,10 +128,14 @@ def _apply_optimizer(config: dict[str, Any], learning_rate: float) -> None:
     optimizer["ft_lr"] = float(learning_rate)
 
 
-def _apply_stages(config: dict[str, Any], diff_epoch: int, joint_epoch: int) -> None:
+def _apply_stages(
+    config: dict[str, Any],
+    diffusion_start_step: int,
+    joint_start_step: int,
+) -> None:
     losses = config["loss_params"]
-    losses["diff_epoch"] = int(diff_epoch)
-    losses["joint_epoch"] = int(joint_epoch)
+    losses["diffusion_start_step"] = int(diffusion_start_step)
+    losses["joint_start_step"] = int(joint_start_step)
 
 
 def _apply_slm(config: dict[str, Any], min_len: int, max_len: int, batch_samples: int, scale: float) -> None:

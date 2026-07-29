@@ -2,6 +2,8 @@ import math
 import torch
 from torch import nn
 import torch.nn.functional as F
+
+from ...profiling import profiling_fn
 from .layers import MFCC, Attention, LinearNorm, ConvNorm, ConvBlock
 
 
@@ -43,14 +45,26 @@ class ASRCNN(nn.Module):
         )
 
     def forward(self, x, src_key_padding_mask=None, text_input=None):
-        x = self.to_mfcc(x)
-        x = self.init_cnn(x)
-        x = self.cnns(x)
-        x = self.projection(x)
+        with profiling_fn("mfcc_projection"):
+            x = self.to_mfcc(x)
+        with profiling_fn("initial_convolution"):
+            x = self.init_cnn(x)
+        with profiling_fn("convolution_stack"):
+            for index, block in enumerate(self.cnns):
+                with profiling_fn(f"convolution_block_{index}"):
+                    x = block(x)
+        with profiling_fn("feature_projection"):
+            x = self.projection(x)
         x = x.transpose(1, 2)
-        ctc_logit = self.ctc_linear(x)
+        with profiling_fn("ctc_projection"):
+            ctc_logit = self.ctc_linear(x)
         if text_input is not None:
-            _, s2s_logit, s2s_attn = self.asr_s2s(x, src_key_padding_mask, text_input)
+            with profiling_fn("sequence_to_sequence"):
+                _, s2s_logit, s2s_attn = self.asr_s2s(
+                    x,
+                    src_key_padding_mask,
+                    text_input,
+                )
             return ctc_logit, s2s_logit, s2s_attn
         else:
             return ctc_logit
@@ -124,33 +138,40 @@ class ASRS2S(nn.Module):
         self.random_mask = 0.1
 
     def forward(self, memory, memory_mask, text_input):
-        self.initialize_decoder_states(memory, memory_mask)
-        random_mask = (torch.rand(text_input.shape) < self.random_mask).to(
-            text_input.device
-        )
-        _text_input = text_input.clone()
-        _text_input.masked_fill_(random_mask, self.unk_index)
-        decoder_inputs = self.embedding(_text_input).transpose(0, 1)
-        start_embedding = self.embedding(
-            torch.LongTensor([self.sos] * decoder_inputs.size(1)).to(
-                decoder_inputs.device
+        with profiling_fn("decoder_initialization"):
+            self.initialize_decoder_states(memory, memory_mask)
+        with profiling_fn("token_embedding"):
+            random_mask = (torch.rand(text_input.shape) < self.random_mask).to(
+                text_input.device
             )
-        )
-        decoder_inputs = torch.cat(
-            (start_embedding.unsqueeze(0), decoder_inputs), dim=0
-        )
+            _text_input = text_input.clone()
+            _text_input.masked_fill_(random_mask, self.unk_index)
+            decoder_inputs = self.embedding(_text_input).transpose(0, 1)
+            start_embedding = self.embedding(
+                torch.LongTensor([self.sos] * decoder_inputs.size(1)).to(
+                    decoder_inputs.device
+                )
+            )
+            decoder_inputs = torch.cat(
+                (start_embedding.unsqueeze(0), decoder_inputs),
+                dim=0,
+            )
 
         hidden_outputs, logit_outputs, alignments = [], [], []
-        while len(hidden_outputs) < decoder_inputs.size(0):
-            decoder_input = decoder_inputs[len(hidden_outputs)]
-            hidden, logit, attention_weights = self.decode(decoder_input)
-            hidden_outputs += [hidden]
-            logit_outputs += [logit]
-            alignments += [attention_weights]
+        with profiling_fn("autoregressive_decoder"):
+            while len(hidden_outputs) < decoder_inputs.size(0):
+                decoder_input = decoder_inputs[len(hidden_outputs)]
+                hidden, logit, attention_weights = self.decode(decoder_input)
+                hidden_outputs += [hidden]
+                logit_outputs += [logit]
+                alignments += [attention_weights]
 
-        hidden_outputs, logit_outputs, alignments = self.parse_decoder_outputs(
-            hidden_outputs, logit_outputs, alignments
-        )
+        with profiling_fn("decoder_output_stack"):
+            hidden_outputs, logit_outputs, alignments = self.parse_decoder_outputs(
+                hidden_outputs,
+                logit_outputs,
+                alignments,
+            )
 
         return hidden_outputs, logit_outputs, alignments
 
@@ -158,7 +179,8 @@ class ASRS2S(nn.Module):
 
         cell_input = torch.cat((decoder_input, self.attention_context), -1)
         self.decoder_hidden, self.decoder_cell = self.decoder_rnn(
-            cell_input, (self.decoder_hidden, self.decoder_cell)
+            cell_input,
+            (self.decoder_hidden, self.decoder_cell),
         )
 
         attention_weights_cat = torch.cat(
@@ -180,11 +202,13 @@ class ASRS2S(nn.Module):
         self.attention_weights_cum += self.attention_weights
 
         hidden_and_context = torch.cat(
-            (self.decoder_hidden, self.attention_context), -1
+            (self.decoder_hidden, self.attention_context),
+            -1,
         )
         hidden = self.project_to_hidden(hidden_and_context)
-
-        logit = self.project_to_n_symbols(F.dropout(hidden, 0.5, self.training))
+        logit = self.project_to_n_symbols(
+            F.dropout(hidden, 0.5, self.training)
+        )
 
         return hidden, logit, self.attention_weights
 

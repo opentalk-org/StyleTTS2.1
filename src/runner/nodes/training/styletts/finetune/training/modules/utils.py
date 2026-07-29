@@ -12,7 +12,11 @@ def get_padding(kernel_size, dilation=1):
 
 def checkpoint_with_mixed_precision(function, *args):
     if not torch.is_autocast_enabled("cuda"):
-        return torch.utils.checkpoint.checkpoint(function, *args, use_reentrant=True)
+        return torch.utils.checkpoint.checkpoint(
+            function,
+            *args,
+            use_reentrant=False,
+        )
     autocast_dtype = torch.get_autocast_dtype("cuda")
     def _wrapped(*inner_args):
         with torch.autocast(device_type="cuda", dtype=autocast_dtype):
@@ -21,5 +25,5 @@ def checkpoint_with_mixed_precision(function, *args):
     return torch.utils.checkpoint.checkpoint(
         _wrapped,
         *args,
-        use_reentrant=True,
+        use_reentrant=False,
     )

@@ -1,5 +1,8 @@
-save_freq: 1
-log_interval: 10
+validation_every_steps: 1000
+checkpoint_every_steps: 10000
+log_every_steps: 10
+profiling_enabled: false
+distributed_processes: 1
 device: cuda
 batch_size: 2
 max_len: 240
@@ -59,8 +62,8 @@ loss_params:
   lambda_ce: 20.0
   lambda_sty: 1.0
   lambda_diff: 1.0
-  diff_epoch: 10
-  joint_epoch: 50
+  diffusion_start_step: 100000
+  joint_start_step: 150000
 optimizer_params:
   lr: 0.0001
   bert_lr: 1.0e-5

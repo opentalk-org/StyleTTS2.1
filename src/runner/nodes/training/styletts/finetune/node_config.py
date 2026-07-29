@@ -67,13 +67,21 @@ def build_node_config(
         f0_path=asset_paths["f0_model"],
         plbert_config=_plbert_config(symbol_count),
         plbert_path=asset_paths["plbert"],
-        epochs=settings.epochs_base + settings.epochs_diffusion + settings.epochs_joint,
+        total_steps=(
+            settings.base_steps
+            + settings.diffusion_steps
+            + settings.joint_steps
+        ),
         batch_size=settings.batch_size,
         learning_rate=settings.learning_rate,
         max_len=int(settings.max_sequence_seconds * 30),
-        diff_epoch=settings.epochs_base,
-        joint_epoch=settings.epochs_base + settings.epochs_diffusion,
-        save_every_n_epochs=settings.save_interval_epochs,
+        diffusion_start_step=settings.base_steps,
+        joint_start_step=settings.base_steps + settings.diffusion_steps,
+        validation_every_steps=settings.validation_interval_steps,
+        checkpoint_every_steps=settings.checkpoint_interval_steps,
+        log_every_steps=settings.log_interval_steps,
+        profiling_enabled=settings.profiling_enabled,
+        distributed_processes=settings.distributed_processes,
         load_optimizer=settings.load_optimizer,
         generator_checkpointing=settings.checkpoint_decoder_gradients,
         discriminators_checkpointing=settings.checkpoint_discriminator_gradients,

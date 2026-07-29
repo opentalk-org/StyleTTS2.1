@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import time
 from typing import Any
 
 import yaml
@@ -20,6 +24,7 @@ from runner.nodes.datatypes import AssetBundlePort, CheckpointRefPort, TrainingM
 from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingManifest, TrainingResult, stable_id, typed_assets, typed_checkpoint
 from runner.nodes.training.common.manifest.cleanup import remove_run_dir
 from runner.nodes.training.common.mlflow_run import TrackerRun, start_mlflow_run
+from runflow.runtime.cancellation import check_cancel
 from runner.nodes.training.styletts.finetune.node_config import build_node_config
 from shared.db.assets import crud as asset_crud
 from shared.db.connection import database_session
@@ -43,11 +48,27 @@ class StyleTtsFinetuneSettings(StrictSettings):
     batch_size: int = Field(default=16, title="Batch size", ge=1, le=128)
     learning_rate: float = Field(default=1e-4, title="Learning rate", gt=0)
     numeric_precision: NumericPrecision = Field(default=NumericPrecision.BF16, title="Numeric precision")
-    epochs_base: int = Field(default=30, title="Epochs · base", ge=0)
-    epochs_diffusion: int = Field(default=15, title="Epochs · diffusion", ge=0)
-    epochs_joint: int = Field(default=5, title="Epochs · joint", ge=0)
+    base_steps: int = Field(default=100000, title="Base steps", ge=0)
+    diffusion_steps: int = Field(default=50000, title="Diffusion steps", ge=0)
+    joint_steps: int = Field(default=25000, title="Joint steps", ge=0)
+    validation_interval_steps: int = Field(
+        default=1000,
+        title="Validation interval",
+        ge=1,
+    )
+    checkpoint_interval_steps: int = Field(
+        default=10000,
+        title="Checkpoint interval",
+        ge=1,
+    )
+    log_interval_steps: int = Field(default=10, title="Log interval", ge=1)
+    distributed_processes: int = Field(
+        default=1,
+        title="Distributed processes",
+        ge=1,
+        le=8,
+    )
     max_sequence_seconds: float = Field(default=8.0, title="Max sequence (sec)", ge=1, le=30)
-    save_interval_epochs: int = Field(default=5, title="Save interval (epochs)", ge=1)
     load_optimizer: bool = Field(default=False, title="Load optimizer state")
     slmadv_min_len: int = Field(default=180, title="SLM min length", ge=1)
     slmadv_max_len: int = Field(default=200, title="SLM max length", ge=1)
@@ -57,13 +78,14 @@ class StyleTtsFinetuneSettings(StrictSettings):
     multispeaker: bool = Field(default=True, title="Multi-speaker mode")
     checkpoint_decoder_gradients: bool = Field(default=True, title="Checkpoint decoder gradients")
     checkpoint_discriminator_gradients: bool = Field(default=True, title="Checkpoint discriminator gradients")
+    profiling_enabled: bool = Field(default=False, title="Training profiler")
     config_output_dir: str = Field(default="", title="Config output folder")
     bucket_cache_budget_gb: float = Field(default=8.0, title="Bucket cache budget (GB)", gt=0, description="Max local disk the on-demand bucket cache may use when the manifest streams audio from buckets.")
 
 
 class StyleTtsFinetuneNode(Node):
     NODE_TYPE = "StyleTtsFinetune"
-    DESCRIPTION = "Finetune a StyleTTS2 voice model on your dataset, running the base, diffusion, and joint training stages and publishing a checkpoint per saved epoch. Consumes a training manifest, a base checkpoint to start from, and an asset bundle (ASR, F0, PL-BERT, and OOD text), and produces a training result pointing at the latest published epoch checkpoint. This is the main text-to-speech training step; tune epochs, batch size, precision, and decoder to trade quality against speed and memory."
+    DESCRIPTION = "Finetune a StyleTTS2 voice model with step-driven base, diffusion, and joint stages. Consumes a training manifest, base checkpoint, and pretrained assets; validates and publishes checkpoints at configured step intervals."
     CATEGORY = "Training"
     SETTINGS = StyleTtsFinetuneSettings
     INPUTS = {
@@ -91,7 +113,7 @@ class StyleTtsFinetuneNode(Node):
             config_path = _prepare_styletts_config(training_config, str(context.run_id))
             try:
                 _run_styletts_train(config_path)
-                result = _latest_epoch_result(str(context.run_id))
+                result = _latest_step_result(str(context.run_id))
             finally:
                 remove_run_dir(_manifest_run_dir(manifest))
             outputs.append({"training_result": result})
@@ -140,6 +162,16 @@ def _prepare_styletts_config(training_config: dict[str, Any], run_id: str) -> Pa
 def _run_styletts_train(config_path: Path) -> None:
     from runner.nodes.training.styletts.finetune.training.train_finetune import train
 
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    process_count = int(config["distributed_processes"])
+    if process_count > 1:
+        precision = {
+            "fp32": "no",
+            "fp16": "fp16",
+            "bf16": "bf16",
+        }[str(config["precision"])]
+        _run_distributed_training(config_path, process_count, precision)
+        return
     run = _make_mlflow_run(config_path)
     try:
         train(str(config_path), run=run)
@@ -149,6 +181,53 @@ def _run_styletts_train(config_path: Path) -> None:
         except Exception:
             logger.warning("failed to close MLflow run", exc_info=True)
         release_accelerator_memory()
+
+
+def _run_distributed_training(
+    config_path: Path,
+    process_count: int,
+    precision: str,
+) -> None:
+    command = [
+        sys.executable,
+        "-m",
+        "accelerate.commands.launch",
+        "--num_processes",
+        str(process_count),
+        "--num_machines",
+        "1",
+        "--mixed_precision",
+        precision,
+        "--dynamo_backend",
+        "no",
+        "--multi_gpu",
+        "-m",
+        "runner.nodes.training.styletts.finetune.training.distributed",
+        str(config_path),
+    ]
+    with tempfile.TemporaryFile(mode="w+") as output:
+        process = subprocess.Popen(
+            command,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        try:
+            while process.poll() is None:
+                check_cancel()
+                time.sleep(0.1)
+        except BaseException:
+            process.terminate()
+            process.wait(timeout=10)
+            raise
+        output.seek(0)
+        distributed_log = output.read()
+    if process.returncode:
+        raise RuntimeError(
+            f"distributed training exited with code {process.returncode}\n"
+            f"{distributed_log}"
+        )
+    logger.info("distributed training completed\n%s", distributed_log)
 
 
 def _make_mlflow_run(config_path: Path) -> TrackerRun:
@@ -162,7 +241,8 @@ def _make_mlflow_run(config_path: Path) -> TrackerRun:
     config = {
         "run_id": publish.get("run_id"),
         "finetune_job_id": publish.get("finetune_job_id"),
-        "epochs": styletts_yaml.get("epochs"),
+        "total_steps": styletts_yaml.get("total_steps"),
+        "distributed_processes": styletts_yaml.get("distributed_processes"),
         "batch_size": styletts_yaml.get("batch_size"),
         "max_len": styletts_yaml.get("max_len"),
         "precision": styletts_yaml.get("precision"),
@@ -172,15 +252,15 @@ def _make_mlflow_run(config_path: Path) -> TrackerRun:
     return start_mlflow_run(experiment="styletts2_finetune", name=run_name, config=config)
 
 
-def _latest_epoch_result(run_id: str) -> TrainingResult:
+def _latest_step_result(run_id: str) -> TrainingResult:
     with database_session() as session:
         checkpoints = [
             item
             for item in asset_crud.list_checkpoints(session)
-            if item.metadata_.get("source") == "finetune_epoch" and item.metadata_.get("finetune_job_id") == run_id
+            if item.metadata_.get("source") == "finetune_step" and item.metadata_.get("finetune_job_id") == run_id
         ]
         if not checkpoints:
-            raise RuntimeError("StyleTTS finetune did not publish any epoch checkpoints")
+            raise RuntimeError("StyleTTS finetune did not publish any step checkpoints")
         checkpoint = max(checkpoints, key=lambda item: item.updated_at if hasattr(item, "updated_at") else item.name)
         path = asset_crud.get_checkpoint_path(session, checkpoint.id)
     checkpoint_ref_id = stable_id("checkpoint", checkpoint.id, checkpoint.content_hash)

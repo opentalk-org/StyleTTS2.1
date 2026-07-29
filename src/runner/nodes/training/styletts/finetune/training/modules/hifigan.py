@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torch.nn import Conv1d, ConvTranspose1d
 from torch.nn.utils import remove_weight_norm, weight_norm
 
+from ..profiling import profiling_fn
 from .decoder_blocks import AdaINResBlock1, DecoderBackbone
 from .source_generator import SourceModuleHnNSF
 from .utils import checkpoint_with_mixed_precision, init_weights
@@ -74,19 +75,20 @@ class Generator(torch.nn.Module):
         dummy = self.dummy_tensor
 
         for i in range(self.num_upsamples):
-            if self.gradient_checkpointing:
-                x, x_source = checkpoint_with_mixed_precision(
-                    self._pre_upsample_noise, x, har_source, s, i, dummy
-                )
-            else:
-                x, x_source = self._pre_upsample_noise(x, har_source, s, i, dummy)
-            x = self.ups[i](x)
-            x = x + x_source
+            with profiling_fn(f"decoder_stage_{i}"):
+                if self.gradient_checkpointing:
+                    x, x_source = checkpoint_with_mixed_precision(
+                        self._pre_upsample_noise, x, har_source, s, i, dummy
+                    )
+                else:
+                    x, x_source = self._pre_upsample_noise(x, har_source, s, i, dummy)
+                x = self.ups[i](x)
+                x = x + x_source
 
-            if self.gradient_checkpointing:
-                x = checkpoint_with_mixed_precision(self._forward_res_block, x, s, i, dummy)
-            else:
-                x = self._forward_res_block(x, s, i, dummy)
+                if self.gradient_checkpointing:
+                    x = checkpoint_with_mixed_precision(self._forward_res_block, x, s, i, dummy)
+                else:
+                    x = self._forward_res_block(x, s, i, dummy)
 
         if self.gradient_checkpointing:
             return checkpoint_with_mixed_precision(self._output_forward, x, dummy)
