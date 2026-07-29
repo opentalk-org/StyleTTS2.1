@@ -234,6 +234,17 @@ class Trainer:
             self.batch_index = resume.batch_index
             pipeline_state = resume.pipeline
             resume_run_id = resume.mlflow_run_id
+        generator_groups = self.optimizers.generator.param_groups
+        generator_groups[0]["weight_decay"] = (
+            self.config.training.generator_optimizer.weight_decay
+        )
+        if self.model_bundle.conditional is not None:
+            generator_groups[1]["weight_decay"] = (
+                self.config.training.latent_flow_weight_decay
+            )
+            generator_groups[2]["weight_decay"] = (
+                self.config.architecture.phoneme.weight_decay
+            )
         self.model_bundle, self.optimizers = prepare_training(
             self.accelerator,
             self.model_bundle,
