@@ -103,7 +103,7 @@ class Generator(torch.nn.Module):
         with torch.no_grad():
             f0 = self.f0_upsamp(f0[:, None]).transpose(1, 2)
 
-            har_source, noi_source, uv = self.m_source(f0)
+            har_source = self.m_source(f0)
             har_source = har_source.transpose(1, 2).squeeze(1)
             har_spec, har_phase = self.stft.transform(har_source)
             har = torch.cat([har_spec, har_phase], dim=1)

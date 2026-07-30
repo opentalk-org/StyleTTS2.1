@@ -1,10 +1,16 @@
+from pathlib import Path
+
 import numpy as np
 import torch
 import torch.nn.functional as F
 
 from runflow.runtime.cancellation import check_cancel
 
-from ...studio.val_sample_export import export_finetune_val_wavs_for_studio
+from ...studio.val_sample_export import (
+    ValidationArtifactRenderer,
+    ValidationSample,
+    ValidationSampleArtifacts,
+)
 from ..config import TrainingConfig
 from ..data import TrainingBatch, ValidationResult
 from ..setup import TrainingRuntime
@@ -13,6 +19,7 @@ from ..utils import (
     mask_from_lens,
     maximum_path,
 )
+from ..utils import log_norm
 
 
 class Validator:
@@ -23,6 +30,10 @@ class Validator:
     ) -> None:
         self.config = config
         self.runtime = runtime
+        self.artifacts = ValidationArtifactRenderer(
+            Path(config.log_dir),
+            config.preprocess_params.sr,
+        )
 
     def run(
         self,
@@ -46,7 +57,7 @@ class Validator:
                 device=self.runtime.accelerator.device,
             ),
         }
-        samples: list[dict[str, str]] = []
+        samples: list[ValidationSampleArtifacts] = []
         count = 0
         with torch.no_grad():
             for batch in batches:
@@ -89,15 +100,17 @@ class Validator:
         batch: TrainingBatch,
         step: int,
         export_samples: bool,
-    ) -> tuple[dict[str, torch.Tensor], list[dict[str, str]]]:
+    ) -> tuple[dict[str, torch.Tensor], list[ValidationSampleArtifacts]]:
         modules = self.runtime.models.modules
         n_down = self.runtime.models.n_down
         with self.runtime.accelerator.autocast():
             mask = length_to_mask(
-                batch.mel_lengths // (2**n_down)
-            ).to(batch.mels.device)
-            text_mask = length_to_mask(batch.input_lengths).to(
-                batch.texts.device
+                batch.mel_lengths // (2**n_down),
+                batch.mels.device,
+            )
+            text_mask = length_to_mask(
+                batch.input_lengths,
+                batch.texts.device,
             )
             _, _, soft_alignment = modules.text_aligner(
                 batch.mels,
@@ -154,6 +167,7 @@ class Validator:
                 crops.mel.unsqueeze(1)
             )
             target_f0 = target_f0.squeeze(-1)
+            target_norm = log_norm(crops.mel.unsqueeze(1)).squeeze(1)
             reconstructed = modules.decoder(
                 crops.aligned_text,
                 predicted_f0,
@@ -173,12 +187,31 @@ class Validator:
             )
         samples = []
         if export_samples:
-            samples = export_finetune_val_wavs_for_studio(
-                self.config.log_dir,
-                sample_rate=self.config.preprocess_params.sr,
-                step=step,
-                y_pred=reconstructed,
-                y_gt=waveform,
+            sample_count = min(4, waveform.size(0))
+            validation_samples = [
+                ValidationSample(
+                    ground_truth=waveform[index],
+                    prediction=reconstructed[index],
+                    target_f0=target_f0[index],
+                    predicted_f0=predicted_f0[index],
+                    target_n=target_norm[index],
+                    predicted_n=predicted_norm[index],
+                    soft_attention=soft_alignment[
+                        index,
+                        : batch.input_lengths[index],
+                        : batch.mel_lengths[index] // (2**n_down),
+                    ],
+                    hard_attention=monotonic[
+                        index,
+                        : batch.input_lengths[index],
+                        : batch.mel_lengths[index] // (2**n_down),
+                    ],
+                )
+                for index in range(sample_count)
+            ]
+            samples = self.artifacts.render(
+                step,
+                validation_samples,
             )
         return {
             "mel_loss": mel_loss,

@@ -46,6 +46,7 @@ def build_config(
     batch_size: int,
     learning_rate: float,
     max_len: int,
+    max_audio_seconds: float,
     diffusion_start_step: int,
     joint_start_step: int,
     validation_every_steps: int,
@@ -73,6 +74,7 @@ def build_config(
     config["total_steps"] = int(total_steps)
     config["batch_size"] = int(batch_size)
     config["max_len"] = int(max_len)
+    config["max_audio_seconds"] = float(max_audio_seconds)
     config["validation_every_steps"] = int(validation_every_steps)
     config["checkpoint_every_steps"] = int(checkpoint_every_steps)
     config["log_every_steps"] = int(log_every_steps)

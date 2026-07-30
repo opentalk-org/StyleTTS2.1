@@ -45,7 +45,7 @@ class StyleTtsFinetuneSettings(StrictSettings):
     display_name: str = Field(default="styletts_finetune", title="Display name")
     output_checkpoint_dir: str = Field(default="", title="External output checkpoint folder")
     validation_samples: int = Field(default=32, title="Validation samples", ge=0, le=512)
-    batch_size: int = Field(default=16, title="Batch size", ge=1, le=128)
+    batch_size: int = Field(default=28, title="Batch size", ge=1, le=128)
     learning_rate: float = Field(default=1e-4, title="Learning rate", gt=0)
     numeric_precision: NumericPrecision = Field(default=NumericPrecision.BF16, title="Numeric precision")
     base_steps: int = Field(default=100000, title="Base steps", ge=0)
@@ -68,7 +68,18 @@ class StyleTtsFinetuneSettings(StrictSettings):
         ge=1,
         le=8,
     )
-    max_sequence_seconds: float = Field(default=8.0, title="Max sequence (sec)", ge=1, le=30)
+    max_audio_seconds: float = Field(
+        default=15.0,
+        title="Max audio duration (sec)",
+        ge=1,
+        le=30,
+    )
+    max_decoder_seconds: float = Field(
+        default=3.0,
+        title="Max decoder crop (sec)",
+        ge=1,
+        le=30,
+    )
     load_optimizer: bool = Field(default=False, title="Load optimizer state")
     slmadv_min_len: int = Field(default=180, title="SLM min length", ge=1)
     slmadv_max_len: int = Field(default=200, title="SLM max length", ge=1)

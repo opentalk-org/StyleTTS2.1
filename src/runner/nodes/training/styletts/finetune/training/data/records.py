@@ -4,6 +4,8 @@ import numpy as np
 import torch
 from torch import Tensor
 
+from ...studio.val_sample_export import ValidationSampleArtifacts
+
 
 @dataclass(frozen=True)
 class TrainingBatch:
@@ -17,12 +19,17 @@ class TrainingBatch:
     reference_mels: Tensor
 
     def to(self, device: torch.device) -> "TrainingBatch":
+        cpu_fields = {
+            "input_lengths",
+            "reference_lengths",
+            "mel_lengths",
+        }
         values = {}
         for field in fields(self):
             value = getattr(self, field.name)
             values[field.name] = (
                 value.to(device, non_blocking=True)
-                if isinstance(value, Tensor)
+                if isinstance(value, Tensor) and field.name not in cpu_fields
                 else value
             )
         return TrainingBatch(**values)
@@ -31,4 +38,4 @@ class TrainingBatch:
 @dataclass(frozen=True)
 class ValidationResult:
     metrics: dict[str, Tensor | float]
-    samples: list[dict[str, str]]
+    samples: list[ValidationSampleArtifacts]

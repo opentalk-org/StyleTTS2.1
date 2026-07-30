@@ -51,21 +51,20 @@ class ProsodyPredictor(nn.Module):
         batch_size = d.shape[0]
         text_size = d.shape[1]
         
-        input_lengths = text_lengths.cpu().numpy()
+        input_lengths = text_lengths.numpy()
         x = nn.utils.rnn.pack_padded_sequence(
             d, input_lengths, batch_first=True, enforce_sorted=False)
         
-        m = m.to(text_lengths.device).unsqueeze(1)
+        m = m.unsqueeze(1)
         
         self.lstm.flatten_parameters()
         x, _ = self.lstm(x)
         x, _ = nn.utils.rnn.pad_packed_sequence(
             x, batch_first=True)
         
-        x_pad = torch.zeros([x.shape[0], m.shape[-1], x.shape[-1]])
-
+        x_pad = x.new_zeros([x.shape[0], m.shape[-1], x.shape[-1]])
         x_pad[:, :x.shape[1], :] = x
-        x = x_pad.to(x.device)
+        x = x_pad
                 
         duration = self.duration_proj(nn.functional.dropout(x, 0.5, training=self.training))
         

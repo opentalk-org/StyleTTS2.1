@@ -1,8 +1,10 @@
 import logging
+import random
 import shutil
 import time
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from runflow.runtime.cancellation import check_cancel
@@ -15,6 +17,7 @@ from .mlflow_logging import MlflowLogger, start_run
 from .profiling import configure_profiling, profiling_fn
 from .runtime import Trainer, Validator
 from .setup import build_accelerator, build_training_runtime
+from .telemetry_metrics import TrainingTelemetry
 from .utils import get_data_path_list
 
 logger = logging.getLogger(__name__)
@@ -22,6 +25,10 @@ logger = logging.getLogger(__name__)
 
 def train(config_path: str, *, run: TrackerRun | None) -> None:
     config = load_training_config(config_path)
+    random.seed(1)
+    np.random.seed(1)
+    torch.manual_seed(1)
+    torch.cuda.manual_seed_all(1)
     configure_profiling(config.profiling_enabled)
     log_dir = Path(config.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -37,7 +44,10 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
         min_length=config.data_params.min_length,
         batch_size=config.batch_size,
         num_workers=0,
-        dataset_config={"symbols": config.symbols},
+        dataset_config={
+            "symbols": config.symbols,
+            "max_audio_seconds": config.max_audio_seconds,
+        },
         device=config.device,
         stream_cache=None,
     )
@@ -50,7 +60,10 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
         validation=True,
         num_workers=0,
         device=config.device,
-        dataset_config={"symbols": config.symbols},
+        dataset_config={
+            "symbols": config.symbols,
+            "max_audio_seconds": config.max_audio_seconds,
+        },
     )
     accelerator = build_accelerator(config)
     owns_run = run is None and accelerator.is_main_process
@@ -67,26 +80,40 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
     trainer = Trainer(config, runtime)
     validator = Validator(config, runtime)
     checkpoints = CheckpointPublisher(config, runtime)
-    training_started = time.monotonic()
+    timing = TrainingTelemetry.start(config.total_steps, trainer.step)
     logged_mel_loss = 0.0
     logged_steps = 0
     validation_loss = None
 
     while trainer.step < config.total_steps:
         trainer.set_training_mode()
-        for batch in train_batches:
-            check_cancel()
-            if trainer.step == config.total_steps:
+        batch_iterator = iter(train_batches)
+        while trainer.step < config.total_steps:
+            data_wait_started = time.monotonic()
+            try:
+                batch = next(batch_iterator)
+            except StopIteration:
                 break
+            timing.data_wait_seconds += time.monotonic() - data_wait_started
+            check_cancel()
+            compute_started = time.monotonic()
             with profiling_fn("train_step"):
                 step_metrics = trainer.train_step(batch)
+            timing.compute_seconds += time.monotonic() - compute_started
             trainer.step += 1
             step = trainer.step
+            timing.items_processed += (
+                batch.texts.shape[0] * accelerator.num_processes
+            )
             metrics = dict(step_metrics)
-            metrics["elapsed_seconds"] = time.monotonic() - training_started
+            metrics.update(timing.metrics(step))
             if accelerator.is_main_process:
                 assert telemetry is not None
+                reporting_started = time.monotonic()
                 telemetry.log_train(step, metrics)
+                timing.reporting_seconds += (
+                    time.monotonic() - reporting_started
+                )
             if not metrics["step_skipped"]:
                 logged_mel_loss += _scalar(metrics["mel_loss"])
                 logged_steps += 1
@@ -99,16 +126,16 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
                     step,
                     config.total_steps,
                     logged_mel_loss / max(1, logged_steps),
-                    time.monotonic() - training_started,
+                    time.monotonic() - timing.started_at,
                 )
                 logged_mel_loss = 0.0
                 logged_steps = 0
-
             validate = (
                 step % config.validation_every_steps == 0
                 or step == config.total_steps
             )
             if validate:
+                validation_started = time.monotonic()
                 with profiling_fn("validation"):
                     result = validator.run(validation_batches, step)
                 validation_loss = result.metrics["mel_loss"]
@@ -121,16 +148,23 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
                         config.log_dir,
                     )
                 trainer.set_training_mode()
+                timing.validation_seconds += (
+                    time.monotonic() - validation_started
+                )
 
             checkpoint = (
                 step % config.checkpoint_every_steps == 0
                 or step == config.total_steps
             )
             if checkpoint and accelerator.is_main_process:
+                checkpoint_started = time.monotonic()
                 checkpoints.publish(
                     step,
                     validation_loss,
                     trainer.running_std,
+                )
+                timing.checkpoint_seconds += (
+                    time.monotonic() - checkpoint_started
                 )
             if validate or checkpoint:
                 accelerator.wait_for_everyone()
