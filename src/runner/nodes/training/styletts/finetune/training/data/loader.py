@@ -1,4 +1,5 @@
 import io
+import logging
 import random
 from pathlib import Path
 from uuid import UUID
@@ -16,6 +17,9 @@ from shared.db.audio import crud as audio_crud
 
 from .pipeline import PrefetchedDataPipeline
 from .records import TrainingBatch
+
+logger = logging.getLogger(__name__)
+
 np.random.seed(1)
 random.seed(1)
 
@@ -46,6 +50,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         self,
         data_list,
         root_path,
+        max_audio_seconds,
         sr=24000,
         data_augmentation=False,
         validation=False,
@@ -55,7 +60,30 @@ class FilePathDataset(torch.utils.data.Dataset):
         stream_cache=None,
     ):
         _data_list = [l.strip().split('|') for l in data_list]
-        self.data_list = [data if len(data) == 3 else (*data, 0) for data in _data_list]
+        rows = [
+            data if len(data) == 3 else (*data, 0)
+            for data in _data_list
+        ]
+        audio_ids = [UUID(Path(row[0]).stem) for row in rows]
+        with database_session() as session:
+            audio_files = audio_crud.get_audio_files_bulk(session, audio_ids)
+        self.data_list = [
+            row
+            for row, audio_id in zip(rows, audio_ids, strict=True)
+            if audio_files[audio_id].duration <= max_audio_seconds
+        ]
+        skipped = len(rows) - len(self.data_list)
+        logger.info(
+            "audio duration filter max_audio_seconds=%s accepted=%s skipped=%s",
+            max_audio_seconds,
+            len(self.data_list),
+            skipped,
+        )
+        if not self.data_list:
+            raise ValueError(
+                "no audio remains after applying max_audio_seconds="
+                f"{max_audio_seconds}; skipped={skipped}"
+            )
         self.text_cleaner = TextCleaner(symbols)
         self.sr = sr
 
@@ -240,6 +268,7 @@ def build_dataloader(
         dataset,
         batch_size=batch_size,
         shuffle=(not validation),
+        generator=torch.Generator().manual_seed(1),
         num_workers=num_workers,
         drop_last=(not validation),
         collate_fn=collate_fn,

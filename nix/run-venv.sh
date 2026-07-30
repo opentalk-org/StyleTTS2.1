@@ -34,6 +34,7 @@ fi
 export RUNFLOW_PGBOUNCER_DATABASE_URL
 export PYTHONPATH="$project_root/src"
 export HF_HOME="${HF_HOME:-/workspace/.hf_home}"
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 if [ "$(id -u)" -ne 0 ]; then
   exec "$@"

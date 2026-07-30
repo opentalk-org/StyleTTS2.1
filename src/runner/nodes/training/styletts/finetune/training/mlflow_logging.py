@@ -8,6 +8,7 @@ from runner.nodes.training.common.mlflow_run import (
     start_mlflow_run,
 )
 
+from ..studio.val_sample_export import ValidationSampleArtifacts
 from .config import TrainingConfig
 
 
@@ -21,42 +22,44 @@ class MlflowLogger:
         step: int,
         metrics: dict[str, torch.Tensor | float],
     ) -> None:
+        tracked_metrics = {}
         for name, value in metrics.items():
             scalar = _scalar(value)
             if math.isfinite(scalar):
-                self.run.track(scalar, name=f"train/{name}", step=step)
-        progress = max(
+                metric_name = (
+                    name
+                    if name.startswith(("overhead/", "performance/"))
+                    else f"train/{name}"
+                )
+                tracked_metrics[metric_name] = scalar
+        tracked_metrics["job_progress"] = max(
             1.0,
             min(99.0, 1.0 + 98.0 * step / self.total_steps),
         )
-        self.run.track(progress, name="job_progress", step=step)
+        self.run.track_metrics(tracked_metrics, step=step)
 
     def log_validation(
         self,
         step: int,
         metrics: dict[str, torch.Tensor | float],
-        samples: list[dict[str, str]],
+        samples: list[ValidationSampleArtifacts],
         log_dir: str | Path,
     ) -> None:
+        tracked_metrics = {}
         for name, value in metrics.items():
             scalar = _scalar(value)
             if math.isfinite(scalar):
-                self.run.track(scalar, name=f"val/{name}", step=step)
-        self.run.track(
-            float(len(samples)),
-            name="val/sample_rows",
-            step=step,
-        )
+                tracked_metrics[f"val/{name}"] = scalar
+        tracked_metrics["val/sample_rows"] = float(len(samples))
+        self.run.track_metrics(tracked_metrics, step=step)
         base = Path(log_dir)
         for sample in samples:
-            path = base / sample["path"]
-            if path.is_file():
+            artifact_path = f"validation/step_{step:09d}/sample_{sample.index}"
+            for relative_path in sample.paths:
+                path = base / relative_path
                 self.run.log_artifact(
                     path,
-                    artifact_path=(
-                        f"validation/step_{step:09d}/"
-                        f"sample_{sample['index']}/{sample['role']}"
-                    ),
+                    artifact_path=artifact_path,
                 )
 
 
