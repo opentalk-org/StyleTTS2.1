@@ -79,6 +79,10 @@ def build_training_runtime(
     modules = _build_models(config, parameters, device)
     optimizer = _build_optimizer(config, modules)
     modules, optimizer = _load_base_checkpoint(config, modules, optimizer)
+    if not config.profiling_enabled:
+        modules.text_aligner.asr_s2s = torch.jit.script(
+            modules.text_aligner.asr_s2s
+        )
     modules, optimizer = _prepare_training(
         accelerator,
         modules,

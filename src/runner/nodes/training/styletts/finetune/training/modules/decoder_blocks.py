@@ -20,7 +20,8 @@ class AdaIN1d(nn.Module):
         h = self.fc(s)
         h = h.view(h.size(0), h.size(1), 1)
         gamma, beta = torch.chunk(h, chunks=2, dim=1)
-        return (1 + gamma) * self.norm(x) + beta
+        normalized = self.norm(x)
+        return normalized.mul_(1 + gamma).add_(beta)
 
 
 class AdaINResBlock1(nn.Module):
@@ -116,10 +117,10 @@ class AdaINResBlock1(nn.Module):
             self.convs1, self.convs2, self.adain1, self.adain2, self.alpha1, self.alpha2
         ):
             xt = n1(x, s)
-            xt = xt + (1 / a1) * (torch.sin(a1 * xt) ** 2)
+            xt = xt + torch.sin(a1 * xt).square() / a1
             xt = c1(xt)
             xt = n2(xt, s)
-            xt = xt + (1 / a2) * (torch.sin(a2 * xt) ** 2)
+            xt = xt + torch.sin(a2 * xt).square() / a2
             xt = c2(xt)
             x = xt + x
         return x
