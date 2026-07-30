@@ -1,6 +1,7 @@
 import argparse
 import json
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import TypedDict
@@ -26,7 +27,12 @@ class ProfileEvent(TypedDict):
 def parse_events(paths: list[Path]) -> list[ProfileEvent]:
     events: list[ProfileEvent] = []
     for path in paths:
-        for line in path.read_text(encoding="utf-8").splitlines():
+        content = (
+            sys.stdin.read()
+            if str(path) == "-"
+            else path.read_text(encoding="utf-8")
+        )
+        for line in content.splitlines():
             match = EVENT_PATTERN.search(line)
             if match is not None:
                 events.append(json.loads(match.group(1)))

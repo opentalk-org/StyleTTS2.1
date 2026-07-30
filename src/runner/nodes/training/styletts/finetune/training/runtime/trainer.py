@@ -1,5 +1,6 @@
 import logging
 import random
+from contextlib import nullcontext
 
 import numpy as np
 import torch
@@ -26,6 +27,15 @@ class Trainer:
         self.running_std: list[float] = []
         self.skipped_steps = 0
         self.step = 0
+        self.forward_streams = (
+            tuple(
+                torch.cuda.Stream(device=runtime.accelerator.device)
+                for _ in range(4)
+            )
+            if runtime.accelerator.device.type == "cuda"
+            and runtime.accelerator.num_processes == 1
+            else (None,) * 4
+        )
 
     def set_training_mode(self) -> None:
         self.runtime.models.set_training_mode()
@@ -45,20 +55,33 @@ class Trainer:
         losses = self.runtime.losses
         optimizer = self.runtime.optimizer
         loss_config = self.config.loss_params
+        diffusion_active = self.step >= loss_config.diffusion_start_step
+        joint_active = self.step >= loss_config.joint_start_step
+        discriminator_checkpointing = (
+            model_config.discriminators_checkpointing
+            and diffusion_active
+        )
+        discriminator_modules = (
+            *modules.mpd.discriminators,
+            *modules.msd.discriminators,
+        )
+        for discriminator_module in discriminator_modules:
+            discriminator_module.gradient_checkpointing = (
+                discriminator_checkpointing
+            )
 
         with torch.no_grad():
             with profiling_fn("forward.mask_preparation"):
                 mask = length_to_mask(
-                    batch.mel_lengths // (2**self.runtime.models.n_down)
-                ).to(batch.mels.device)
-                text_mask = length_to_mask(batch.input_lengths).to(
-                    batch.texts.device
+                    batch.mel_lengths // (2**self.runtime.models.n_down),
+                    batch.mels.device,
+                )
+                text_mask = length_to_mask(
+                    batch.input_lengths,
+                    batch.texts.device,
                 )
             style_reference = None
-            if (
-                model_config.multispeaker
-                and self.step >= loss_config.diffusion_start_step
-            ):
+            if model_config.multispeaker and diffusion_active:
                 with profiling_fn("forward.reference_style"):
                     reference_style = modules.style_encoder(
                         batch.reference_mels.unsqueeze(1)
@@ -72,12 +95,67 @@ class Trainer:
                     )
 
         with accelerator.autocast():
-            with profiling_fn("forward.text_alignment"):
-                _, alignment_predictions, soft_alignment = modules.text_aligner(
-                    batch.mels,
-                    mask,
-                    batch.texts,
-                )
+            acoustic_styles = []
+            default_stream = (
+                torch.cuda.current_stream(accelerator.device)
+                if self.forward_streams[0] is not None
+                else None
+            )
+            if default_stream is not None:
+                for stream in self.forward_streams:
+                    assert stream is not None
+                    stream.wait_stream(default_stream)
+            stream_contexts = tuple(
+                torch.cuda.stream(stream)
+                if stream is not None
+                else nullcontext()
+                for stream in self.forward_streams
+            )
+            with stream_contexts[0]:
+                with profiling_fn("forward.text_alignment"):
+                    _, alignment_predictions, soft_alignment = modules.text_aligner(
+                        batch.mels,
+                        mask,
+                        batch.texts,
+                    )
+            with stream_contexts[1]:
+                with profiling_fn("forward.text_encoder"):
+                    text_encoding = modules.text_encoder(
+                        batch.texts,
+                        batch.input_lengths,
+                        text_mask,
+                    )
+            with stream_contexts[2]:
+                with profiling_fn("forward.style_encoders"):
+                    duration_style = (
+                        modules.predictor_encoder.forward_masked(
+                            batch.mels.unsqueeze(1),
+                            batch.mel_lengths,
+                        )
+                    )
+                    if diffusion_active:
+                        for index, length in enumerate(batch.mel_lengths):
+                            mel = batch.mels[index, :, :length]
+                            acoustic_styles.append(
+                                modules.style_encoder(
+                                    mel.unsqueeze(0).unsqueeze(1)
+                                )
+                            )
+            with stream_contexts[3]:
+                with profiling_fn("forward.bert"):
+                    bert = modules.bert(
+                        batch.texts,
+                        attention_mask=(~text_mask).int(),
+                    )
+                    duration_encoding = modules.bert_encoder(bert).transpose(
+                        -1,
+                        -2,
+                    )
+            if default_stream is not None:
+                for stream in self.forward_streams:
+                    assert stream is not None
+                    default_stream.wait_stream(stream)
+
             with profiling_fn("forward.monotonic_alignment"):
                 soft_alignment = soft_alignment.transpose(-1, -2)
                 soft_alignment = soft_alignment[..., 1:].transpose(-1, -2)
@@ -90,12 +168,6 @@ class Trainer:
                     soft_alignment,
                     alignment_mask,
                 )
-            with profiling_fn("forward.text_encoder"):
-                text_encoding = modules.text_encoder(
-                    batch.texts,
-                    batch.input_lengths,
-                    text_mask,
-                )
             selected_alignment = (
                 soft_alignment
                 if bool(random.getrandbits(1))
@@ -103,38 +175,17 @@ class Trainer:
             )
             aligned_text = text_encoding @ selected_alignment
             duration_targets = monotonic_alignment.sum(axis=-1).detach()
-
-            duration_styles = []
-            acoustic_styles = []
-            with profiling_fn("forward.style_encoders"):
-                for index, length in enumerate(batch.mel_lengths):
-                    mel = batch.mels[index, :, :length]
-                    duration_styles.append(
-                        modules.predictor_encoder(
-                            mel.unsqueeze(0).unsqueeze(1)
-                        )
-                    )
-                    acoustic_styles.append(
-                        modules.style_encoder(
-                            mel.unsqueeze(0).unsqueeze(1)
-                        )
-                    )
-            duration_style = torch.stack(duration_styles).squeeze(1)
-            acoustic_style = torch.stack(acoustic_styles).squeeze(1)
-            style_target = torch.cat(
-                [acoustic_style, duration_style],
-                dim=-1,
-            ).detach()
-            with profiling_fn("forward.bert"):
-                bert = modules.bert(
-                    batch.texts,
-                    attention_mask=(~text_mask).int(),
-                )
-                duration_encoding = modules.bert_encoder(bert).transpose(-1, -2)
-
+            style_target = None
+            if diffusion_active:
+                acoustic_style = torch.stack(acoustic_styles).squeeze(1)
+                style_target = torch.cat(
+                    [acoustic_style, duration_style],
+                    dim=-1,
+                ).detach()
             style_loss: torch.Tensor | float = 0.0
             diffusion_loss: torch.Tensor | float = 0.0
-            if self.step >= loss_config.diffusion_start_step:
+            if diffusion_active:
+                assert style_target is not None
                 diffusion = diffusion_core.diffusion
                 if model_config.diffusion.dist.estimate_sigma_data:
                     diffusion.sigma_data = (
@@ -196,12 +247,15 @@ class Trainer:
                     samples = batch.waves[index][
                         start * 600 : (start + crop_frames) * 600
                     ]
-                    waveform_crops.append(
-                        torch.from_numpy(samples).to(batch.mels.device)
-                    )
+                    waveform_crops.append(samples)
                 aligned_crops = torch.stack(aligned_crops)
                 mel_crops = torch.stack(mel_crops).detach()
-                waveform = torch.stack(waveform_crops).float().detach().unsqueeze(1)
+                waveform = (
+                    torch.from_numpy(np.stack(waveform_crops))
+                    .to(batch.mels.device)
+                    .float()
+                    .unsqueeze(1)
+                )
             with profiling_fn("forward.crop_style_encoders"):
                 style = modules.style_encoder(mel_crops.unsqueeze(1))
                 crop_duration_style = modules.predictor_encoder(
@@ -214,13 +268,15 @@ class Trainer:
                     )
                     target_f0 = target_f0.squeeze(-1)
                     target_norm = log_norm(mel_crops.unsqueeze(1)).squeeze(1)
-                with profiling_fn("forward.decoder_reference"):
-                    reference_prediction = modules.decoder(
-                        aligned_crops,
-                        target_f0,
-                        target_norm,
-                        style,
-                    )
+                reference_prediction = None
+                if joint_active:
+                    with profiling_fn("forward.decoder_reference"):
+                        reference_prediction = modules.decoder(
+                            aligned_crops,
+                            target_f0,
+                            target_norm,
+                            style,
+                        )
             with profiling_fn("forward.predictor"):
                 (
                     duration_predictions,
@@ -250,34 +306,83 @@ class Trainer:
         optimizer.zero_grad()
         with profiling_fn("discriminator"):
             with accelerator.autocast():
-                with profiling_fn("forward"):
-                    discriminator_loss = losses.discriminator(
+                with profiling_fn("period.forward"):
+                    period_discriminator_loss = losses.discriminator(
                         waveform.detach(),
                         reconstructed.detach(),
-                    ).mean()
-            with profiling_fn("backward"):
-                accelerator.backward(discriminator_loss)
-            with profiling_fn("gradient_sync_and_step"):
-                for name in ("msd", "mpd"):
-                    synchronize_gradients(accelerator, modules, (name,))
-                    optimizer.step(name)
-                    modules[name].requires_grad_(False)
+                        losses.discriminator.mpd,
+                    )
+            with profiling_fn("period.backward"):
+                accelerator.backward(period_discriminator_loss)
+            with profiling_fn("period.gradient_sync_and_step"):
+                synchronize_gradients(accelerator, modules, ("mpd",))
+                optimizer.step("mpd")
+                modules.mpd.requires_grad_(False)
+            with accelerator.autocast():
+                with profiling_fn("scale.forward"):
+                    scale_discriminator_loss = losses.discriminator(
+                        waveform.detach(),
+                        reconstructed.detach(),
+                        losses.discriminator.msd,
+                    )
+            with profiling_fn("scale.backward"):
+                accelerator.backward(scale_discriminator_loss)
+            with profiling_fn("scale.gradient_sync_and_step"):
+                synchronize_gradients(accelerator, modules, ("msd",))
+                optimizer.step("msd")
+                modules.msd.requires_grad_(False)
+            discriminator_loss = (
+                period_discriminator_loss + scale_discriminator_loss
+            )
 
         optimizer.zero_grad()
         with profiling_fn("generator_losses"):
             with accelerator.autocast():
                 with profiling_fn("stft_loss"):
                     mel_loss = losses.stft(reconstructed, waveform)
-                with profiling_fn("adversarial_loss"):
-                    generator_loss = losses.generator(
+            reconstruction_gradient = torch.autograd.grad(
+                loss_config.lambda_mel * mel_loss,
+                reconstructed,
+            )[0]
+            with accelerator.autocast():
+                with profiling_fn("period_adversarial_loss"):
+                    period_generator_loss = losses.generator(
                         waveform,
                         reconstructed,
-                    ).mean()
+                        losses.generator.mpd,
+                    )
+            with profiling_fn("period_adversarial_gradient"):
+                period_gradient = torch.autograd.grad(
+                    loss_config.lambda_gen * period_generator_loss,
+                    reconstructed,
+                )[0]
+                reconstruction_gradient.add_(period_gradient)
+            with accelerator.autocast():
+                with profiling_fn("scale_adversarial_loss"):
+                    scale_generator_loss = losses.generator(
+                        waveform,
+                        reconstructed,
+                        losses.generator.msd,
+                    )
+            with profiling_fn("scale_adversarial_gradient"):
+                scale_gradient = torch.autograd.grad(
+                    loss_config.lambda_gen * scale_generator_loss,
+                    reconstructed,
+                )[0]
+                reconstruction_gradient.add_(scale_gradient)
+            generator_loss = period_generator_loss + scale_generator_loss
+            with accelerator.autocast():
                 with profiling_fn("wavlm_loss"):
                     wavlm_loss = losses.wavlm(
                         waveform.detach().squeeze(1),
                         reconstructed.squeeze(1),
                     ).mean()
+            with profiling_fn("wavlm_gradient"):
+                wavlm_gradient = torch.autograd.grad(
+                    loss_config.lambda_slm * wavlm_loss,
+                    reconstructed,
+                )[0]
+                reconstruction_gradient.add_(wavlm_gradient)
         with profiling_fn("generator_losses.duration_and_alignment"):
             duration_loss = torch.zeros((), device=batch.texts.device)
             cross_entropy_loss = torch.zeros((), device=batch.texts.device)
@@ -289,9 +394,13 @@ class Trainer:
             for prediction, target, length in items:
                 prediction = prediction[:length, :]
                 target = target[:length].long()
-                binary_target = torch.zeros_like(prediction)
-                for position in range(binary_target.shape[0]):
-                    binary_target[position, : target[position]] = 1
+                positions = torch.arange(
+                    prediction.shape[1],
+                    device=prediction.device,
+                )
+                binary_target = (
+                    positions.unsqueeze(0) < target.unsqueeze(1)
+                ).to(prediction.dtype)
                 predicted_duration = torch.sigmoid(prediction).sum(axis=1)
                 duration_loss += F.l1_loss(
                     predicted_duration[1 : length - 1],
@@ -320,37 +429,19 @@ class Trainer:
                 monotonic_alignment,
             ) * 10
         with profiling_fn("generator_losses.total"):
-            total_loss = (
-                loss_config.lambda_mel * mel_loss
-                + loss_config.lambda_F0 * f0_loss
+            remaining_loss = (
+                loss_config.lambda_F0 * f0_loss
                 + loss_config.lambda_ce * cross_entropy_loss
                 + loss_config.lambda_norm * norm_loss
                 + loss_config.lambda_dur * duration_loss
-                + loss_config.lambda_gen * generator_loss
-                + loss_config.lambda_slm * wavlm_loss
                 + loss_config.lambda_sty * style_loss
                 + loss_config.lambda_diff * diffusion_loss
                 + loss_config.lambda_mono * monotonic_loss
                 + loss_config.lambda_s2s * sequence_loss
             )
-        if not torch.isfinite(total_loss):
-            for name in ("msd", "mpd"):
-                modules[name].requires_grad_(True)
-            self.skipped_steps += 1
-            logger.warning(
-                "skipping non-finite generator step=%s skipped_steps=%s",
-                self.step,
-                self.skipped_steps,
-            )
-            return {
-                "step_skipped": 1.0,
-                "skipped_steps": float(self.skipped_steps),
-            }
-
-        with profiling_fn("generator_backward"):
-            accelerator.backward(total_loss)
-        for name in ("msd", "mpd"):
-            modules[name].requires_grad_(True)
+            remaining_loss = remaining_loss + (
+                reconstructed * reconstruction_gradient
+            ).sum()
         generator_modules = [
             "bert_encoder",
             "bert",
@@ -361,8 +452,27 @@ class Trainer:
             "text_encoder",
             "text_aligner",
         ]
-        if self.step >= loss_config.diffusion_start_step:
+        if diffusion_active:
             generator_modules.append("diffusion")
+        local_step_finite = bool(torch.isfinite(remaining_loss).item())
+        if local_step_finite:
+            with profiling_fn("generator_backward"):
+                accelerator.backward(remaining_loss)
+        else:
+            self.skipped_steps += 1
+            logger.warning(
+                "zeroing non-finite rank contribution step=%s rank=%s "
+                "skipped_steps=%s",
+                self.step,
+                accelerator.process_index,
+                self.skipped_steps,
+            )
+            for name in generator_modules:
+                for parameter in modules[name].parameters():
+                    if parameter.requires_grad:
+                        parameter.grad = torch.zeros_like(parameter)
+        for name in ("msd", "mpd"):
+            modules[name].requires_grad_(True)
         with profiling_fn("generator_gradient_sync"):
             synchronize_gradients(accelerator, modules, generator_modules)
         with profiling_fn("generator_optimizer_step"):
@@ -371,7 +481,9 @@ class Trainer:
 
         joint_discriminator: torch.Tensor | float = 0.0
         joint_generator: torch.Tensor | float = 0.0
-        if self.step >= loss_config.joint_start_step:
+        if joint_active:
+            assert reference_prediction is not None
+            assert style_target is not None
             use_individual = bool(np.random.rand() < 0.5)
             reference_texts = (
                 batch.texts if use_individual else batch.reference_texts
@@ -456,7 +568,7 @@ class Trainer:
             "gen_loss_slm": joint_generator,
             "s2s_loss": sequence_loss,
             "mono_loss": monotonic_loss,
-            "step_skipped": 0.0,
+            "step_skipped": float(not local_step_finite),
             "skipped_steps": float(self.skipped_steps),
         }
         return metrics

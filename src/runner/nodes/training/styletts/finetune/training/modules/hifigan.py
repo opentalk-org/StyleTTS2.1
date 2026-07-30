@@ -8,7 +8,6 @@ from torch.nn.utils import remove_weight_norm, weight_norm
 from ..profiling import profiling_fn
 from .decoder_blocks import AdaINResBlock1, DecoderBackbone
 from .source_generator import SourceModuleHnNSF
-from .triton_activations import snake
 from .utils import checkpoint_with_mixed_precision, init_weights
 
 LRELU_SLOPE = 0.1
@@ -109,7 +108,7 @@ class Generator(torch.nn.Module):
 
     def _pre_upsample_noise(self, x, har_source, s, i, dummy):
         with profiling_fn("input_activation"):
-            x = snake(x, self.alphas[i])
+            x = x + torch.sin(self.alphas[i] * x).square() / self.alphas[i]
         return x, self._noise_forward(har_source, s, i)
 
     def _noise_forward(self, har_source, s, i):
@@ -131,7 +130,7 @@ class Generator(torch.nn.Module):
         return xs / self.num_kernels
 
     def _output_forward(self, x, dummy):
-        x = snake(x, self.alphas[-1])
+        x = x + torch.sin(self.alphas[-1] * x).square() / self.alphas[-1]
         x = self.conv_post(x)
         return torch.tanh(x)
 

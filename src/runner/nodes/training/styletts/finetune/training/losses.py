@@ -68,16 +68,12 @@ def feature_loss(fmap_r, fmap_g):
 
 def discriminator_loss(disc_real_outputs, disc_generated_outputs):
     loss = 0
-    r_losses = []
-    g_losses = []
     for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
         r_loss = torch.mean((1-dr)**2)
         g_loss = torch.mean(dg**2)
         loss += (r_loss + g_loss)
-        r_losses.append(r_loss.item())
-        g_losses.append(g_loss.item())
 
-    return loss, r_losses, g_losses
+    return loss
 
 
 def generator_loss(disc_outputs):
@@ -108,6 +104,7 @@ def generator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
         loss += tau - F.relu(tau - L_rel)
     return loss
 
+
 class GeneratorLoss(torch.nn.Module):
 
     def __init__(self, mpd, msd):
@@ -115,20 +112,16 @@ class GeneratorLoss(torch.nn.Module):
         self.mpd = mpd
         self.msd = msd
         
-    def forward(self, y, y_hat):
-        y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = self.mpd(y, y_hat)
-        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(y, y_hat)
-        loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
-        loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
-        loss_gen_f, losses_gen_f = generator_loss(y_df_hat_g)
-        loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
+    def forward(self, y, y_hat, discriminator):
+        real_scores, generated_scores, real_maps, generated_maps = discriminator(
+            y,
+            y_hat,
+        )
+        feature = feature_loss(real_maps, generated_maps)
+        adversarial, _ = generator_loss(generated_scores)
+        relative = generator_TPRLS_loss(real_scores, generated_scores)
+        return (feature + adversarial + relative).mean()
 
-        loss_rel = generator_TPRLS_loss(y_df_hat_r, y_df_hat_g) + generator_TPRLS_loss(y_ds_hat_r, y_ds_hat_g)
-        
-        loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_rel
-        
-        return loss_gen_all.mean()
-    
 class DiscriminatorLoss(torch.nn.Module):
 
     def __init__(self, mpd, msd):
@@ -136,25 +129,30 @@ class DiscriminatorLoss(torch.nn.Module):
         self.mpd = mpd
         self.msd = msd
         
-    def forward(self, y, y_hat):
-        y_df_hat_r, y_df_hat_g, _, _ = self.mpd(y, y_hat)
-        loss_disc_f, losses_disc_f_r, losses_disc_f_g = discriminator_loss(y_df_hat_r, y_df_hat_g)
-        y_ds_hat_r, y_ds_hat_g, _, _ = self.msd(y, y_hat)
-        loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
-        
-        loss_rel = discriminator_TPRLS_loss(y_df_hat_r, y_df_hat_g) + discriminator_TPRLS_loss(y_ds_hat_r, y_ds_hat_g)
+    def forward(self, y, y_hat, discriminator):
+        real_scores, generated_scores, _, _ = discriminator(
+            y,
+            y_hat,
+            return_features=False,
+        )
+        adversarial = discriminator_loss(real_scores, generated_scores)
+        relative = discriminator_TPRLS_loss(real_scores, generated_scores)
+        return (adversarial + relative).mean()
 
-
-        d_loss = loss_disc_s + loss_disc_f + loss_rel
-        
-        return d_loss.mean()
    
     
 class WavLMLoss(torch.nn.Module):
 
-    def __init__(self, model, wd, model_sr, slm_sr=16000):
+    def __init__(
+        self,
+        model,
+        wd,
+        model_sr,
+        slm_sr=16000,
+    ):
         super(WavLMLoss, self).__init__()
         self.wavlm = AutoModel.from_pretrained(model)
+        self.wavlm.requires_grad_(False)
         self.wd = wd
         self.resample = torchaudio.transforms.Resample(model_sr, slm_sr)
      
@@ -173,7 +171,7 @@ class WavLMLoss(torch.nn.Module):
                 floss += torch.mean(torch.abs(er - eg))
         
         return floss.mean()
-    
+
     def generator(self, y_rec):
         with profiling_fn("wavlm.generator_embedding"):
             y_rec_16 = self.resample(y_rec)

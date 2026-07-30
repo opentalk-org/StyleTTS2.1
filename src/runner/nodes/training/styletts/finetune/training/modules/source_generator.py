@@ -20,7 +20,7 @@ class SineGenerator(torch.nn.Module):
         self.sample_rate = sample_rate
         self.voiced_threshold = voiced_threshold
         self.pulse = pulse
-        self.upsample_scale = upsample_scale
+        self.upsample_scale = float(upsample_scale)
 
     def _voiced(self, f0):
         return (f0 > self.voiced_threshold).type(torch.float32)
@@ -103,4 +103,4 @@ class SourceModuleHnNSF(torch.nn.Module):
             sine_waves, voiced, _ = self.l_sin_gen(f0)
         sine_merge = self.l_tanh(self.l_linear(sine_waves))
         noise = torch.randn_like(voiced) * self.sine_amp / 3
-        return sine_merge, noise, voiced
+        return sine_merge

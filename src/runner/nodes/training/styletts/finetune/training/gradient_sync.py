@@ -13,13 +13,18 @@ def synchronize_gradients(
     modules: dict[str, nn.Module],
     module_names: Iterable[str],
 ) -> None:
+    if accelerator.num_processes == 1:
+        return
     buckets: dict[tuple[torch.device, torch.dtype], list[torch.Tensor]] = {}
     bucket_bytes: dict[tuple[torch.device, torch.dtype], int] = {}
     for name in module_names:
         for parameter in modules[name].parameters():
             gradient = parameter.grad
             if gradient is None:
-                continue
+                if not parameter.requires_grad:
+                    continue
+                gradient = torch.zeros_like(parameter)
+                parameter.grad = gradient
             key = (gradient.device, gradient.dtype)
             size = gradient.numel() * gradient.element_size()
             bucket = buckets.setdefault(key, [])

@@ -4,7 +4,10 @@ import math
 from torch.nn import functional as F
 from torch.nn.utils import weight_norm, spectral_norm
 from runner.nodes.training.styletts.finetune.training.modules.normalizations import LayerNorm, AdaLayerNorm
-from runner.nodes.training.styletts.finetune.training.modules.blocks import ResBlk
+from runner.nodes.training.styletts.finetune.training.modules.blocks import (
+    ResBlk,
+    mask_time,
+)
 
 class TextEncoder(nn.Module):
     def __init__(self, channels, kernel_size, depth, n_symbols, actv=nn.LeakyReLU(0.2)):
@@ -25,7 +28,7 @@ class TextEncoder(nn.Module):
     def forward(self, x, input_lengths, m):
         x = self.embedding(x)
         x = x.transpose(1, 2)
-        m = m.to(input_lengths.device).unsqueeze(1)
+        m = m.unsqueeze(1)
         x.masked_fill_(m, 0.0)
         
         for c in self.cnn:
@@ -34,7 +37,7 @@ class TextEncoder(nn.Module):
             
         x = x.transpose(1, 2)
 
-        input_lengths = input_lengths.cpu().numpy()
+        input_lengths = input_lengths.numpy()
         x = nn.utils.rnn.pack_padded_sequence(
             x, input_lengths, batch_first=True, enforce_sorted=False)
 
@@ -44,10 +47,9 @@ class TextEncoder(nn.Module):
             x, batch_first=True)
                 
         x = x.transpose(-1, -2)
-        x_pad = torch.zeros([x.shape[0], x.shape[1], m.shape[-1]])
-
+        x_pad = x.new_zeros([x.shape[0], x.shape[1], m.shape[-1]])
         x_pad[:, :, :x.shape[-1]] = x
-        x = x_pad.to(x.device)
+        x = x_pad
         
         x.masked_fill_(m, 0.0)
         
@@ -94,6 +96,23 @@ class StyleEncoder(nn.Module):
     
         return s
 
+    def forward_masked(self, x, lengths):
+        lengths = lengths.to(x.device)
+        hidden = self.shared[0](mask_time(x, lengths))
+        hidden = mask_time(hidden, lengths)
+        for index in range(1, 5):
+            hidden, lengths = self.shared[index].forward_masked(
+                hidden,
+                lengths,
+            )
+        hidden = self.shared[5](hidden)
+        hidden = self.shared[6](hidden)
+        lengths = lengths - 4
+        hidden = mask_time(hidden, lengths)
+        hidden = hidden.sum(dim=(2, 3)) / lengths.unsqueeze(1)
+        hidden = self.shared[8](hidden)
+        return self.unshared(hidden)
+
 class DurationEncoder(nn.Module):
 
     def __init__(self, sty_dim, d_model, nlayers, dropout=0.1):
@@ -114,7 +133,7 @@ class DurationEncoder(nn.Module):
         self.sty_dim = sty_dim
 
     def forward(self, x, style, text_lengths, m):
-        masks = m.to(text_lengths.device)
+        masks = m
         
         x = x.permute(2, 0, 1)
         s = style.expand(x.shape[0], x.shape[1], -1)
@@ -122,7 +141,7 @@ class DurationEncoder(nn.Module):
         x.masked_fill_(masks.unsqueeze(-1).transpose(0, 1), 0.0)
                 
         x = x.transpose(0, 1)
-        input_lengths = text_lengths.cpu().numpy()
+        input_lengths = text_lengths.numpy()
         x = x.transpose(-1, -2)
         
         for block in self.lstms:
@@ -141,10 +160,9 @@ class DurationEncoder(nn.Module):
                 x = F.dropout(x, p=self.dropout, training=self.training)
                 x = x.transpose(-1, -2)
                 
-                x_pad = torch.zeros([x.shape[0], x.shape[1], m.shape[-1]])
-
+                x_pad = x.new_zeros([x.shape[0], x.shape[1], m.shape[-1]])
                 x_pad[:, :, :x.shape[-1]] = x
-                x = x_pad.to(x.device)
+                x = x_pad
         
         return x.transpose(-1, -2)
     

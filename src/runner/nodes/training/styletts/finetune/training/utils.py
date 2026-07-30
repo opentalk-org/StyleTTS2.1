@@ -4,11 +4,17 @@ import numpy as np
 import torch
 from munch import Munch
 
+from .modules.triton_alignment import maximum_path as maximum_path_cuda
+
 def maximum_path(neg_cent, mask):
   """ Cython optimized version.
   neg_cent: [b, t_t, t_s]
   mask: [b, t_t, t_s]
   """
+  if neg_cent.is_cuda:
+    text_lengths = mask.sum(1)[:, 0].to(torch.int32)
+    mel_lengths = mask.sum(2)[:, 0].to(torch.int32)
+    return maximum_path_cuda(neg_cent, text_lengths, mel_lengths)
   device = neg_cent.device
   dtype = neg_cent.dtype
   neg_cent =  np.ascontiguousarray(neg_cent.data.float().cpu().numpy().astype(np.float32))
@@ -32,10 +38,14 @@ def get_data_path_list(train_path=None, val_path=None):
 
     return train_list, val_list
 
-def length_to_mask(lengths):
-    mask = torch.arange(lengths.max()).unsqueeze(0).expand(lengths.shape[0], -1).type_as(lengths)
-    mask = torch.gt(mask+1, lengths.unsqueeze(1))
-    return mask
+def length_to_mask(lengths, device):
+    device_lengths = lengths.to(device, non_blocking=True)
+    positions = torch.arange(
+        int(lengths.max()),
+        device=device,
+        dtype=lengths.dtype,
+    )
+    return positions.unsqueeze(0) + 1 > device_lengths.unsqueeze(1)
 
 def log_norm(x, mean=-4, std=4, dim=2):
     """
