@@ -58,7 +58,6 @@ class ConditionalLossInput:
     flow_target: Tensor
     flow_alpha: float
     flow_matching_count: int
-    flow_adaptive_epsilon: float
     latent_mask: Tensor
     ctc_logits: Tensor
     s2s_logits: Tensor
@@ -153,7 +152,6 @@ def compute_conditional_losses(
             inputs.latent_mask,
             inputs.flow_alpha,
             inputs.flow_matching_count,
-            inputs.flow_adaptive_epsilon,
         ),
         shortcut=outputs.flow_prediction.new_zeros(()),
         align_s2s=alignment.s2s,

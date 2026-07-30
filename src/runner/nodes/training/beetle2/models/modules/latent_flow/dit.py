@@ -59,6 +59,7 @@ class DiTBlock(nn.Module):
     def __init__(self, channels: int, heads: int, mlp_ratio: float) -> None:
         super().__init__()
         mlp_channels = int(channels * mlp_ratio)
+        self.condition_input = nn.Linear(channels * 2, channels)
         self.attention_norm = nn.LayerNorm(
             channels,
             elementwise_affine=False,
@@ -82,6 +83,9 @@ class DiTBlock(nn.Module):
 
     def forward(self, features: Tensor, condition: Tensor, mask: Tensor) -> Tensor:
         numeric_mask = mask.unsqueeze(-1).to(dtype=features.dtype)
+        features = self.condition_input(
+            torch.cat((features, condition), dim=-1)
+        ) * numeric_mask
         values = self.modulation(condition).chunk(6, dim=-1)
         attention_input = modulate(self.attention_norm(features), values[0], values[1])
         features = features + values[2] * self.attention(attention_input, mask)

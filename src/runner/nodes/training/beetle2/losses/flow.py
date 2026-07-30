@@ -8,16 +8,12 @@ def alpha_flow_loss(
     mask: Tensor,
     alpha: float,
     flow_matching_count: int,
-    adaptive_epsilon: float,
 ) -> Tensor:
     per_item = flow_mse_per_item(prediction, target, mask)
     trajectory_weight = 1.0 if alpha == 0.0 else alpha
     objective_weight = torch.full_like(per_item, trajectory_weight)
     objective_weight[:flow_matching_count] = 1.0
-    adaptive_weight = objective_weight / (
-        per_item.detach() + adaptive_epsilon
-    )
-    return (adaptive_weight * per_item).mean()
+    return (objective_weight * per_item).mean()
 
 
 def flow_mse(

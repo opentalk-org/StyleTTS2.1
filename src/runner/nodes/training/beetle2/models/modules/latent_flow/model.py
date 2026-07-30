@@ -53,7 +53,7 @@ class LatentFlowModel(nn.Module):
             config.patch_size * config.latent_channels,
         )
         self.apply(_initialize_projection)
-        self._initialize_dit()
+        self._initialize_time_embeddings()
 
     def forward(
         self,
@@ -67,16 +67,22 @@ class LatentFlowModel(nn.Module):
         padding = (-frame_count) % self.config.patch_size
         numeric_mask = mask.to(dtype=state.dtype)
         padded_state = F.pad(state * numeric_mask, (0, padding))
-        padded_condition = F.pad(conditions.combined() * numeric_mask, (0, padding))
+        padded_condition = F.pad(
+            conditions.concatenated() * numeric_mask,
+            (0, padding),
+        )
         token_mask = patch_mask(mask, self.config.patch_size)[:, 0]
-        features = self.input_projection(padded_state).transpose(1, 2)
-        condition = self.condition_projection(padded_condition).transpose(1, 2)
+        latent_features = self.input_projection(padded_state).transpose(1, 2)
+        condition_features = self.condition_projection(
+            padded_condition
+        ).transpose(1, 2)
+        features = latent_features
         start_time_tokens = start_time[:, 0, :: self.config.patch_size]
         end_time_tokens = end_time[:, 0, :: self.config.patch_size].to(
             dtype=state.dtype
         )
         condition = (
-            condition
+            condition_features
             + self.start_time_embedding(start_time_tokens)
             + self.end_time_embedding(end_time_tokens)
         )
@@ -99,17 +105,10 @@ class LatentFlowModel(nn.Module):
         output = output.permute(0, 3, 1, 2).reshape(state.shape[0], state.shape[1], -1)
         return output[..., :frame_count] * numeric_mask
 
-    def _initialize_dit(self) -> None:
+    def _initialize_time_embeddings(self) -> None:
         for embedding in (self.start_time_embedding, self.end_time_embedding):
             nn.init.normal_(embedding.layers[0].weight, std=0.02)
             nn.init.normal_(embedding.layers[2].weight, std=0.02)
-        for block in self.blocks:
-            nn.init.zeros_(block.modulation[-1].weight)
-            nn.init.zeros_(block.modulation[-1].bias)
-        nn.init.zeros_(self.final.modulation[-1].weight)
-        nn.init.zeros_(self.final.modulation[-1].bias)
-        nn.init.zeros_(self.final.output.weight)
-        nn.init.zeros_(self.final.output.bias)
 
 
 def _initialize_projection(module: nn.Module) -> None:
