@@ -64,6 +64,10 @@ class PlBertEncoder(nn.Module):
     def output_channels(self) -> int:
         return int(self.encoder.config.hidden_size)
 
+    @property
+    def maximum_positions(self) -> int:
+        return int(self.encoder.config.max_position_embeddings)
+
     def _load_checkpoint(self, path: Path) -> None:
         state: dict[str, Tensor] = {}
         with safe_open(path, framework="pt", device="cpu") as checkpoint:

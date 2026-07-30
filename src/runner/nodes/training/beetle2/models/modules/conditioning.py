@@ -49,19 +49,6 @@ class ProjectedConditions:
             language=self.language[start:],
         )
 
-    def combined(self) -> Tensor:
-        return (
-            self.phoneme
-            + self.style
-            + self.voice
-            + self.pooled_phoneme
-            + self.pre_text
-            + self.post_text
-            + self.pre_audio
-            + self.post_audio
-            + self.language
-        )
-
     def concatenated(self) -> Tensor:
         return torch.cat(
             (

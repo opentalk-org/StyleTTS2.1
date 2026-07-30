@@ -63,13 +63,11 @@ class LossWeights(StrictConfigModel):
 
 class AlphaFlowConfig(StrictConfigModel):
     flow_matching_ratio: float = Field(ge=0, le=1)
-    time_location: float
-    time_scale: float = Field(gt=0)
+    zero_time_ratio: float = Field(ge=0, le=1)
     schedule_start_step: int = Field(ge=0)
     schedule_end_step: int = Field(gt=0)
     schedule_gamma: float = Field(gt=0)
     clamp_value: float = Field(gt=0, lt=0.5)
-    adaptive_epsilon: float = Field(gt=0)
     target_clip: float = Field(gt=0)
     sampling_steps: int = Field(gt=0)
 
@@ -77,6 +75,10 @@ class AlphaFlowConfig(StrictConfigModel):
     def validate_schedule(self) -> "AlphaFlowConfig":
         if self.schedule_end_step <= self.schedule_start_step:
             raise ValueError("AlphaFlow schedule end must be after its start")
+        if self.zero_time_ratio > self.flow_matching_ratio:
+            raise ValueError(
+                "zero_time_ratio must not exceed flow_matching_ratio"
+            )
         return self
 
 

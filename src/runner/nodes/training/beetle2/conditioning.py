@@ -382,7 +382,7 @@ class ConditionalInputBuilder:
             self._generator(step, batch_index, "duration"),
         )
         flow_sample = sample_flow_training_case(
-            window.posterior.latent,
+            window.posterior.mean,
             window.posterior.mask,
             self.config.training.alpha_flow,
             step,

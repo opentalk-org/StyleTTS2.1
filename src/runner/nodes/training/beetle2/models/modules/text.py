@@ -53,7 +53,19 @@ class PhonemeCnnEncoder(nn.Module):
 
 
 class LatentPhonemeEncoder(PhonemeCnnEncoder):
-    """Projects phoneme tokens for latent generation."""
+    """Preserves explicit phoneme positions in latent conditioning."""
+
+    def __init__(self, config: PhonemeConfig, maximum_positions: int) -> None:
+        super().__init__(config)
+        self.position_embedding = nn.Embedding(
+            maximum_positions,
+            config.projection_channels,
+        )
+
+    def forward(self, tokens: Tensor, mask: Tensor) -> Tensor:
+        positions = torch.arange(tokens.shape[2], device=tokens.device)
+        positioned = tokens + self.position_embedding(positions).transpose(0, 1)
+        return super().forward(positioned, mask)
 
 
 class DurationPhonemeEncoder(PhonemeCnnEncoder):

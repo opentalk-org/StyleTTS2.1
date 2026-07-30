@@ -166,7 +166,10 @@ def build_conditional_models(
             dependencies.plbert.output_channels,
             architecture.phoneme.projection_channels,
         ),
-        latent_phoneme_encoder=LatentPhonemeEncoder(architecture.phoneme),
+        latent_phoneme_encoder=LatentPhonemeEncoder(
+            architecture.phoneme,
+            dependencies.plbert.maximum_positions,
+        ),
         duration_phoneme_encoder=DurationPhonemeEncoder(architecture.phoneme),
         context_phoneme_encoder=ContextPhonemeEncoder(
             architecture.phoneme.projection_channels,
