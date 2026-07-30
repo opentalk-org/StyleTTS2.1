@@ -26,7 +26,7 @@ export function Select({
           "w-full appearance-none rounded-md pr-8 pl-3 font-semibold text-txt outline-none cursor-pointer transition-colors",
           mini
             ? "h-9 bg-panel border border-line text-[12.5px] focus:border-blue-500"
-            : "h-10 bg-panel-2 border-2 border-transparent text-[13.5px] focus:border-blue-500",
+            : "h-10 bg-panel border-2 border-line text-[13.5px] focus:border-blue-500",
         )}
       >
         {options.map((o) => (

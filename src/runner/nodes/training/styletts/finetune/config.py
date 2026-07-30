@@ -6,6 +6,8 @@ from typing import Any
 
 import yaml
 
+from .stages import TrainingStageSpec
+
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 BASE_YAML = DATA_DIR / "base.yaml"
@@ -47,8 +49,7 @@ def build_config(
     learning_rate: float,
     max_len: int,
     max_audio_seconds: float,
-    diffusion_start_step: int,
-    joint_start_step: int,
+    training_stages: list[TrainingStageSpec],
     validation_every_steps: int,
     checkpoint_every_steps: int,
     log_every_steps: int,
@@ -99,7 +100,10 @@ def build_config(
     config["PLBERT_config"] = plbert_config
     config["PLBERT_path"] = _path_str(plbert_path)
     _apply_optimizer(config, learning_rate)
-    _apply_stages(config, diffusion_start_step, joint_start_step)
+    config["training_stages"] = [
+        stage.model_dump(mode="json")
+        for stage in training_stages
+    ]
     _apply_slm(config, slmadv_min_len, slmadv_max_len, slmadv_batch_samples, slmadv_scale)
     if architecture_path is not None:
         merge_architecture(architecture_path, config)
@@ -128,16 +132,6 @@ def _apply_optimizer(config: dict[str, Any], learning_rate: float) -> None:
     optimizer["lr"] = float(learning_rate)
     optimizer["bert_lr"] = max(1e-6, float(learning_rate) * 0.1)
     optimizer["ft_lr"] = float(learning_rate)
-
-
-def _apply_stages(
-    config: dict[str, Any],
-    diffusion_start_step: int,
-    joint_start_step: int,
-) -> None:
-    losses = config["loss_params"]
-    losses["diffusion_start_step"] = int(diffusion_start_step)
-    losses["joint_start_step"] = int(joint_start_step)
 
 
 def _apply_slm(config: dict[str, Any], min_len: int, max_len: int, batch_samples: int, scale: float) -> None:

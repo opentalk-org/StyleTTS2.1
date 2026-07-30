@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 
 PAD_SYMBOL = "$"
+START_SYMBOL = "<start/>"
+END_SYMBOL = "<end/>"
 PUNCTUATION_SYMBOLS = ';:,.!?¡¿—…"«»“” '
 LETTER_SYMBOLS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 IPA_SYMBOLS = (
@@ -10,7 +12,13 @@ IPA_SYMBOLS = (
     "ɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
 )
 
-DEFAULT_STYLETTS_SYMBOLS = [PAD_SYMBOL] + list(PUNCTUATION_SYMBOLS) + list(LETTER_SYMBOLS) + list(IPA_SYMBOLS)
+DEFAULT_STYLETTS_SYMBOLS = (
+    [PAD_SYMBOL]
+    + list(PUNCTUATION_SYMBOLS)
+    + list(LETTER_SYMBOLS)
+    + list(IPA_SYMBOLS)
+    + [START_SYMBOL, END_SYMBOL]
+)
 DEFAULT_STYLETTS_SYMBOL_INDEX = {symbol: index for index, symbol in enumerate(DEFAULT_STYLETTS_SYMBOLS)}
 logger = logging.getLogger(__name__)
 

@@ -11,7 +11,7 @@ import torch
 import torchaudio
 from torch.utils.data import DataLoader
 
-from runner.nodes.text.runtime.symbols import TextCleaner
+from runner.nodes.text.runtime.symbols import END_SYMBOL, START_SYMBOL, TextCleaner
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 
@@ -51,6 +51,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         data_list,
         root_path,
         max_audio_seconds,
+        max_text_tokens,
         sr=24000,
         data_augmentation=False,
         validation=False,
@@ -67,24 +68,30 @@ class FilePathDataset(torch.utils.data.Dataset):
         audio_ids = [UUID(Path(row[0]).stem) for row in rows]
         with database_session() as session:
             audio_files = audio_crud.get_audio_files_bulk(session, audio_ids)
+        self.text_cleaner = TextCleaner(symbols)
+        self.start_token_id = self.text_cleaner.symbol_index[START_SYMBOL]
+        self.end_token_id = self.text_cleaner.symbol_index[END_SYMBOL]
         self.data_list = [
             row
             for row, audio_id in zip(rows, audio_ids, strict=True)
             if audio_files[audio_id].duration <= max_audio_seconds
+            and len(self._text_to_tensor(row[1])) <= max_text_tokens
         ]
         skipped = len(rows) - len(self.data_list)
         logger.info(
-            "audio duration filter max_audio_seconds=%s accepted=%s skipped=%s",
+            "training data filter max_audio_seconds=%s max_text_tokens=%s "
+            "accepted=%s skipped=%s",
             max_audio_seconds,
+            max_text_tokens,
             len(self.data_list),
             skipped,
         )
         if not self.data_list:
             raise ValueError(
                 "no audio remains after applying max_audio_seconds="
-                f"{max_audio_seconds}; skipped={skipped}"
+                f"{max_audio_seconds} and max_text_tokens={max_text_tokens}; "
+                f"skipped={skipped}"
             )
-        self.text_cleaner = TextCleaner(symbols)
         self.sr = sr
 
         self.rows_by_speaker: dict[int, list[list[str]]] = {}
@@ -118,8 +125,8 @@ class FilePathDataset(torch.utils.data.Dataset):
 
     def _text_to_tensor(self, text: str) -> torch.LongTensor:
         tokens = self.text_cleaner(text)
-        tokens.insert(0, 0)
-        tokens.append(0)
+        tokens.insert(0, self.start_token_id)
+        tokens.append(self.end_token_id)
         return torch.LongTensor(tokens)
 
     def _resolve_row(self, idx):

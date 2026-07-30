@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from safetensors import safe_open
+
 from runner.nodes.assets.checkpoints import is_scratch_checkpoint
 from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingManifest
 from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
@@ -42,7 +44,7 @@ def build_node_config(
     symbol_count = len(symbol_list)
     symbols = symbol_list
     scratch = is_scratch_checkpoint(base_checkpoint)
-    asset_paths, ood_paths = _training_asset_paths(pretrained_assets)
+    asset_paths, ood_paths, asset_metadata = _training_asset_paths(pretrained_assets)
     if scratch:
         _require_scratch_assets(asset_paths)
         pretrained_model = None
@@ -65,19 +67,18 @@ def build_node_config(
         asr_config=_asr_config(symbol_count),
         asr_path=asset_paths["asr_bundle"],
         f0_path=asset_paths["f0_model"],
-        plbert_config=_plbert_config(symbol_count),
-        plbert_path=asset_paths["plbert"],
-        total_steps=(
-            settings.base_steps
-            + settings.diffusion_steps
-            + settings.joint_steps
+        plbert_config=_plbert_config(
+            symbol_list,
+            asset_paths["plbert"],
+            asset_metadata["plbert"],
         ),
+        plbert_path=asset_paths["plbert"],
+        total_steps=sum(stage.steps for stage in settings.training_stages),
         batch_size=settings.batch_size,
         learning_rate=settings.learning_rate,
         max_len=int(settings.max_decoder_seconds * 80),
         max_audio_seconds=settings.max_audio_seconds,
-        diffusion_start_step=settings.base_steps,
-        joint_start_step=settings.base_steps + settings.diffusion_steps,
+        training_stages=settings.training_stages,
         validation_every_steps=settings.validation_interval_steps,
         checkpoint_every_steps=settings.checkpoint_interval_steps,
         log_every_steps=settings.log_interval_steps,
@@ -136,18 +137,23 @@ def _studio_publish(
     }
 
 
-def _training_asset_paths(ref: AssetBundleRef | None) -> tuple[dict[str, Path | None], list[Path]]:
+def _training_asset_paths(
+    ref: AssetBundleRef | None,
+) -> tuple[dict[str, Path | None], list[Path], dict[str, dict[str, Any]]]:
     paths: dict[str, Path | None] = {"asr_bundle": None, "f0_model": None, "plbert": None}
     ood_paths: list[Path] = []
+    metadata: dict[str, dict[str, Any]] = {"plbert": {}}
     if ref is None:
-        return paths, ood_paths
+        return paths, ood_paths, metadata
     for asset in ref.metadata["assets"]:
         role = str(asset["role"])
         if role == "ood_text_set":
             ood_paths.append(Path(str(asset["path"])))
         elif role in paths and paths[role] is None:
             paths[role] = Path(str(asset["path"]))
-    return paths, ood_paths
+            if role == "plbert":
+                metadata["plbert"] = dict(asset["metadata"])
+    return paths, ood_paths, metadata
 
 
 def _ood_text_path(ood_paths: list[Path], output_dir: Path) -> Path:
@@ -167,9 +173,23 @@ def _asr_config(symbol_count: int) -> dict[str, Any]:
     return config
 
 
-def _plbert_config(symbol_count: int) -> dict[str, Any]:
+def _plbert_config(
+    symbols: list[str],
+    path: Path | None,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
     config = styletts_config.load_yaml(styletts_config.PLBERT_YAML)
-    config["model_params"]["vocab_size"] = int(symbol_count)
+    config["model_params"]["vocab_size"] = len(symbols)
+    if path is not None and path.suffix == ".safetensors":
+        with safe_open(path, framework="pt", device="cpu") as checkpoint:
+            positions = checkpoint.get_slice(
+                "encoder._orig_mod.embeddings.position_embeddings.weight"
+            ).get_shape()[0]
+        config["model_params"]["max_position_embeddings"] = int(positions)
+        config["input_symbols"] = symbols
+        config["artifact_symbols"] = metadata["phoneme_symbols"]
+        config["language_id"] = metadata["languages"].index("en") + 1
+        config["modality_id"] = 0
     return config
 
 

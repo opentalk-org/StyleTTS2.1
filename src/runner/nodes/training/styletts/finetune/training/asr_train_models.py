@@ -57,6 +57,7 @@ def load_ASR_models(weights_path: str, config_path: str, *, target_n_token: int)
             state,
             _ASR_N_TOKEN_DIM0_KEYS,
             error_scope="ASR",
+            appended_source_index=0,
         )
         model.load_state_dict(merged, strict=True)
     model.train()

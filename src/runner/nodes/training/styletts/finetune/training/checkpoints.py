@@ -22,7 +22,7 @@ class CheckpointPublisher:
         validation_loss,
         running_std: list[float],
     ) -> None:
-        payload = self.config.model_dump(mode="python")
+        payload = self.config.model_dump(mode="json")
         if (
             self.runtime.models.parameters.diffusion.dist.estimate_sigma_data
             and running_std

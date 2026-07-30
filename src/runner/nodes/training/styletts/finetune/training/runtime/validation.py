@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -11,6 +10,7 @@ from ...studio.val_sample_export import (
     ValidationSample,
     ValidationSampleArtifacts,
 )
+from ...stages import TrainingStageSpec, stage_for_step
 from ..config import TrainingConfig
 from ..data import TrainingBatch, ValidationResult
 from ..setup import TrainingRuntime
@@ -19,7 +19,11 @@ from ..utils import (
     mask_from_lens,
     maximum_path,
 )
-from ..utils import log_norm
+from .validation_batch import (
+    ValidationBatch,
+    acoustic_losses,
+)
+from .validation_synthesis import synthesize_validation
 
 
 class Validator:
@@ -59,6 +63,7 @@ class Validator:
         }
         samples: list[ValidationSampleArtifacts] = []
         count = 0
+        stage = stage_for_step(self.config.training_stages, step - 1)
         with torch.no_grad():
             for batch in batches:
                 check_cancel()
@@ -66,6 +71,7 @@ class Validator:
                 values, exported = self._validate_batch(
                     batch,
                     step,
+                    stage,
                     export_samples=not samples,
                 )
                 for name, value in values.items():
@@ -74,20 +80,8 @@ class Validator:
                 count += 1
         if count == 0:
             raise ValueError("validation loader produced no batches")
-        count_tensor = torch.tensor(
-            float(count),
-            device=self.runtime.accelerator.device,
-        )
-        total_count = self.runtime.accelerator.reduce(
-            count_tensor,
-            reduction="sum",
-        )
         reduced = {
-            name: self.runtime.accelerator.reduce(
-                value,
-                reduction="sum",
-            )
-            / total_count
+            name: value / count
             for name, value in totals.items()
         }
         return ValidationResult(
@@ -99,6 +93,7 @@ class Validator:
         self,
         batch: TrainingBatch,
         step: int,
+        stage: TrainingStageSpec,
         export_samples: bool,
     ) -> tuple[dict[str, torch.Tensor], list[ValidationSampleArtifacts]]:
         modules = self.runtime.models.modules
@@ -132,54 +127,63 @@ class Validator:
             )
             aligned_text = text_encoding @ monotonic
             duration_targets = monotonic.sum(axis=-1).detach()
-            styles = []
+            duration_styles = []
+            acoustic_styles = []
             for index, length in enumerate(batch.mel_lengths):
                 mel = batch.mels[index, :, :length]
-                styles.append(
+                duration_styles.append(
                     modules.predictor_encoder(
                         mel.unsqueeze(0).unsqueeze(1)
                     )
                 )
-            duration_style = torch.stack(styles).squeeze(1)
+                acoustic_styles.append(
+                    modules.style_encoder(mel.unsqueeze(0).unsqueeze(1))
+                )
+            duration_style = torch.stack(duration_styles).squeeze(1)
+            style = torch.stack(acoustic_styles).squeeze(1)
             bert = modules.bert(
                 batch.texts,
                 attention_mask=(~text_mask).int(),
             )
             duration_encoding = modules.bert_encoder(bert).transpose(-1, -2)
-            crops = self._crop(batch, aligned_text)
+            validation_batch = self._full_batch(batch, aligned_text)
             (
+                reconstructed,
                 duration_predictions,
-                prosody,
                 predicted_f0,
                 predicted_norm,
-            ) = modules.predictor(
+                target_f0,
+                target_norm,
+                decode_alignment,
+                decode_lengths,
+            ) = synthesize_validation(
+                self.runtime,
+                batch,
+                stage,
+                validation_batch,
+                text_encoding,
                 duration_encoding,
-                duration_style,
-                batch.input_lengths,
-                monotonic,
+                bert,
                 text_mask,
-                crops.starts,
-                crops.frames,
-                modules.predictor_encoder(crops.mel.unsqueeze(1)),
-            )
-            style = modules.style_encoder(crops.mel.unsqueeze(1))
-            target_f0, _, _ = modules.pitch_extractor(
-                crops.mel.unsqueeze(1)
-            )
-            target_f0 = target_f0.squeeze(-1)
-            target_norm = log_norm(crops.mel.unsqueeze(1)).squeeze(1)
-            reconstructed = modules.decoder(
-                crops.aligned_text,
-                predicted_f0,
-                predicted_norm,
+                monotonic,
+                duration_style,
                 style,
             )
-            waveform = crops.waveform.unsqueeze(1)
-            mel_loss = self.runtime.losses.stft(
-                reconstructed.squeeze(1),
-                waveform.squeeze(1),
-            ).mean()
-            f0_loss = F.l1_loss(target_f0, predicted_f0) / 10
+            waveform = validation_batch.waveform.unsqueeze(1)
+            prediction_sample_lengths = [
+                min(length * 600, reconstructed.size(-1))
+                for length in decode_lengths
+            ]
+            mel_loss, f0_loss = acoustic_losses(
+                self.runtime.losses.stft,
+                reconstructed,
+                waveform,
+                predicted_f0,
+                target_f0,
+                decode_lengths,
+                validation_batch.sample_lengths,
+                prediction_sample_lengths,
+            )
             duration_loss = self._duration_loss(
                 duration_predictions,
                 duration_targets,
@@ -190,21 +194,41 @@ class Validator:
             sample_count = min(4, waveform.size(0))
             validation_samples = [
                 ValidationSample(
-                    ground_truth=waveform[index],
-                    prediction=reconstructed[index],
-                    target_f0=target_f0[index],
-                    predicted_f0=predicted_f0[index],
-                    target_n=target_norm[index],
-                    predicted_n=predicted_norm[index],
+                    ground_truth=waveform[
+                        index,
+                        :,
+                        : prediction_sample_lengths[index],
+                    ],
+                    prediction=reconstructed[
+                        index,
+                        :,
+                        : validation_batch.sample_lengths[index],
+                    ],
+                    target_f0=target_f0[
+                        index,
+                        : decode_lengths[index],
+                    ],
+                    predicted_f0=predicted_f0[
+                        index,
+                        : decode_lengths[index],
+                    ],
+                    target_n=target_norm[
+                        index,
+                        : decode_lengths[index],
+                    ],
+                    predicted_n=predicted_norm[
+                        index,
+                        : decode_lengths[index],
+                    ],
                     soft_attention=soft_alignment[
                         index,
                         : batch.input_lengths[index],
                         : batch.mel_lengths[index] // (2**n_down),
                     ],
-                    hard_attention=monotonic[
+                    hard_attention=decode_alignment[
                         index,
                         : batch.input_lengths[index],
-                        : batch.mel_lengths[index] // (2**n_down),
+                        : decode_lengths[index],
                     ],
                 )
                 for index in range(sample_count)
@@ -220,29 +244,29 @@ class Validator:
         }, samples
 
     @staticmethod
-    def _crop(
+    def _full_batch(
         batch: TrainingBatch,
         aligned_text: torch.Tensor,
-    ) -> "_ValidationCrops":
-        length = int(batch.mel_lengths.min().item() / 2 - 1)
-        aligned, starts, mels, waveforms = [], [], [], []
-        for index, mel_frames in enumerate(batch.mel_lengths):
-            half_frames = int(mel_frames.item() / 2)
-            start = int(np.random.randint(0, half_frames - length))
-            starts.append(start)
-            aligned.append(aligned_text[index, :, start : start + length])
-            mels.append(batch.mels[index, :, start * 2 : (start + length) * 2])
-            waveforms.append(
-                torch.from_numpy(
-                    batch.waves[index][start * 600 : (start + length) * 600]
-                ).to(batch.mels.device)
-            )
-        return _ValidationCrops(
-            torch.stack(aligned),
-            starts,
-            length,
-            torch.stack(mels).detach(),
-            torch.stack(waveforms).float().detach(),
+    ) -> ValidationBatch:
+        lengths = [int(length.item() // 2) for length in batch.mel_lengths]
+        sample_lengths = [
+            min(length * 600, batch.waves[index].shape[0])
+            for index, length in enumerate(lengths)
+        ]
+        frames = max(lengths)
+        waveform = batch.mels.new_zeros((len(lengths), frames * 600))
+        for index, samples in enumerate(sample_lengths):
+            waveform[index, :samples] = torch.from_numpy(
+                batch.waves[index][:samples]
+            ).to(batch.mels.device)
+        return ValidationBatch(
+            aligned_text[:, :, :frames],
+            [0] * len(lengths),
+            frames,
+            batch.mels[:, :, : frames * 2].detach(),
+            waveform.detach(),
+            lengths,
+            sample_lengths,
         )
 
     @staticmethod
@@ -261,18 +285,3 @@ class Validator:
                 target[1 : length - 1],
             )
         return loss / predictions.size(0)
-
-class _ValidationCrops:
-    def __init__(
-        self,
-        aligned_text: torch.Tensor,
-        starts: list[int],
-        frames: int,
-        mel: torch.Tensor,
-        waveform: torch.Tensor,
-    ) -> None:
-        self.aligned_text = aligned_text
-        self.starts = starts
-        self.frames = frames
-        self.mel = mel
-        self.waveform = waveform

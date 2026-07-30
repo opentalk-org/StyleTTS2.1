@@ -47,6 +47,9 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
         dataset_config={
             "symbols": config.symbols,
             "max_audio_seconds": config.max_audio_seconds,
+            "max_text_tokens": config.PLBERT_config["model_params"][
+                "max_position_embeddings"
+            ],
         },
         device=config.device,
         stream_cache=None,
@@ -63,6 +66,9 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
         dataset_config={
             "symbols": config.symbols,
             "max_audio_seconds": config.max_audio_seconds,
+            "max_text_tokens": config.PLBERT_config["model_params"][
+                "max_position_embeddings"
+            ],
         },
     )
     accelerator = build_accelerator(config)
@@ -75,7 +81,6 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
         else None
     )
     train_batches = train_batches.prepare(accelerator)
-    validation_batches = validation_batches.prepare(accelerator)
     runtime = build_training_runtime(config, accelerator)
     trainer = Trainer(config, runtime)
     validator = Validator(config, runtime)
@@ -136,18 +141,19 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
             )
             if validate:
                 validation_started = time.monotonic()
-                with profiling_fn("validation"):
-                    result = validator.run(validation_batches, step)
-                validation_loss = result.metrics["mel_loss"]
                 if accelerator.is_main_process:
                     assert telemetry is not None
+                    with profiling_fn("validation"):
+                        result = validator.run(validation_batches, step)
+                    validation_loss = result.metrics["mel_loss"]
                     telemetry.log_validation(
                         step,
                         result.metrics,
                         result.samples,
                         config.log_dir,
                     )
-                trainer.set_training_mode()
+                    if trainer.step < config.total_steps:
+                        trainer.set_training_mode()
                 timing.validation_seconds += (
                     time.monotonic() - validation_started
                 )

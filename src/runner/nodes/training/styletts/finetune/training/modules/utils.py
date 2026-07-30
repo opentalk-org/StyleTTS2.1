@@ -15,7 +15,7 @@ def checkpoint_with_mixed_precision(function, *args):
         return torch.utils.checkpoint.checkpoint(
             function,
             *args,
-            use_reentrant=True,
+            use_reentrant=False,
         )
     autocast_dtype = torch.get_autocast_dtype("cuda")
     def _wrapped(*inner_args):
@@ -25,5 +25,5 @@ def checkpoint_with_mixed_precision(function, *args):
     return torch.utils.checkpoint.checkpoint(
         _wrapped,
         *args,
-        use_reentrant=True,
+        use_reentrant=False,
     )
