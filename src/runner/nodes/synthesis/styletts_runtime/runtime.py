@@ -47,12 +47,19 @@ def load_synthesis_runtime(payload: dict[str, Any]) -> StyleTtsSynthesisRuntime:
     with training_import_context():
         sampler_module = importlib.import_module("modules.diffusion.sampler")
         loading_module = importlib.import_module("loading")
+        plbert_module = importlib.import_module("modules.plbert")
         text_aligner = loading_module.load_ASR_models(payload["asr_path"], payload["asr_config"])
         pitch_extractor = loading_module.load_F0_models(payload["f0_path"])
-        plbert = loading_module.load_plbert(payload["plbert_path"], payload["plbert_config"])
+        plbert = plbert_module.load_plbert(payload["plbert_path"], payload["plbert_config"])
         model = loading_module.build_model(model_params, text_aligner, pitch_extractor, plbert)
         try:
-            model, _ = loading_module.load_checkpoint(model, None, str(weights_path), load_only_params=True)
+            model, _ = loading_module.load_checkpoint(
+                model,
+                None,
+                str(weights_path),
+                load_only_params=True,
+                ignore_modules=[],
+            )
         except Exception as exc:
             raise ValueError("finetune_test_weights_incompatible") from exc
         _prepare_model(model, device)
@@ -116,7 +123,9 @@ def _synthesize_wave(
 ) -> Any:
     torch = importlib.import_module("torch")
     with torch.no_grad():
-        input_lengths = torch.LongTensor([tok.shape[-1]]).to(runtime.device)
+        # the text encoders feed input_lengths straight into pack_padded_sequence,
+        # which needs them on CPU (the training batch keeps them there too)
+        input_lengths = torch.LongTensor([tok.shape[-1]])
         text_mask = length_to_mask(input_lengths).to(runtime.device)
         t_en = runtime.model.text_encoder(tok, input_lengths, text_mask)
         bert_dur = runtime.model.bert(tok, attention_mask=(~text_mask).int())

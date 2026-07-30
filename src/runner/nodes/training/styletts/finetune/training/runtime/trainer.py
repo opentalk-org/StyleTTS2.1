@@ -12,6 +12,13 @@ from ..gradient_sync import synchronize_gradients
 from ..profiling import profiling_fn, set_profiling_step
 from ..setup import TrainingRuntime
 from ..utils import length_to_mask, log_norm, mask_from_lens, maximum_path
+from ...stages import (
+    ProsodySource,
+    ReconstructionTarget,
+    TrainableModule,
+    TrainingLoss,
+    stage_for_step,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +45,13 @@ class Trainer:
         )
 
     def set_training_mode(self) -> None:
-        self.runtime.models.set_training_mode()
+        stage = stage_for_step(self.config.training_stages, self.step)
+        training_modules = {
+            module.value for module in stage.trainable_modules
+        }
+        if stage.train_discriminators:
+            training_modules.update(("msd", "mpd"))
+        self.runtime.models.set_training_mode(training_modules)
 
     def train_step(
         self,
@@ -54,9 +67,29 @@ class Trainer:
         model_config = self.runtime.models.parameters
         losses = self.runtime.losses
         optimizer = self.runtime.optimizer
-        loss_config = self.config.loss_params
-        diffusion_active = self.step >= loss_config.diffusion_start_step
-        joint_active = self.step >= loss_config.joint_start_step
+        stage = stage_for_step(self.config.training_stages, self.step)
+        enabled_losses = set(stage.enabled_losses)
+        loss_weights = stage.loss_weights.model_copy(
+            update={
+                loss.value: 0.0
+                for loss in TrainingLoss
+                if loss not in enabled_losses
+            }
+        )
+        trainable_modules = {
+            module.value for module in stage.trainable_modules
+        }
+        diffusion_active = TrainingLoss.DIFFUSION in enabled_losses
+        joint_active = TrainingLoss.SLM_ADVERSARIAL in enabled_losses
+        predicted_prosody = stage.prosody_source is ProsodySource.PREDICTED
+        teacher_target = (
+            stage.reconstruction_target
+            is ReconstructionTarget.TEACHER_RECONSTRUCTION
+        )
+        for name, module in modules.items():
+            module.requires_grad_(name in trainable_modules)
+        modules.mpd.requires_grad_(stage.train_discriminators)
+        modules.msd.requires_grad_(stage.train_discriminators)
         discriminator_checkpointing = (
             model_config.discriminators_checkpointing
             and diffusion_active
@@ -261,15 +294,22 @@ class Trainer:
                 crop_duration_style = modules.predictor_encoder(
                     mel_crops.unsqueeze(1)
             )
-            with torch.no_grad():
+            pitch_context = (
+                nullcontext()
+                if TrainableModule.PITCH_EXTRACTOR
+                in stage.trainable_modules
+                else torch.no_grad()
+            )
+            with pitch_context:
                 with profiling_fn("forward.pitch_and_norm_targets"):
                     target_f0, _, _ = modules.pitch_extractor(
                         mel_crops.unsqueeze(1)
                     )
                     target_f0 = target_f0.squeeze(-1)
                     target_norm = log_norm(mel_crops.unsqueeze(1)).squeeze(1)
+            with torch.no_grad():
                 reference_prediction = None
-                if joint_active:
+                if teacher_target or joint_active:
                     with profiling_fn("forward.decoder_reference"):
                         reference_prediction = modules.decoder(
                             aligned_crops,
@@ -294,46 +334,58 @@ class Trainer:
                     crop_duration_style,
                 )
             with profiling_fn("forward.decoder"):
+                decoder_f0 = predicted_f0 if predicted_prosody else target_f0
+                decoder_norm = (
+                    predicted_norm if predicted_prosody else target_norm
+                )
                 reconstructed = modules.decoder(
                     aligned_crops,
-                    predicted_f0,
-                    predicted_norm,
+                    decoder_f0,
+                    decoder_norm,
                     style,
                 )
             f0_loss = F.smooth_l1_loss(target_f0, predicted_f0) / 10
             norm_loss = F.smooth_l1_loss(target_norm, predicted_norm)
+            if teacher_target:
+                assert reference_prediction is not None
+                waveform = reference_prediction.detach()
 
-        optimizer.zero_grad()
-        with profiling_fn("discriminator"):
-            with accelerator.autocast():
-                with profiling_fn("period.forward"):
-                    period_discriminator_loss = losses.discriminator(
-                        waveform.detach(),
-                        reconstructed.detach(),
-                        losses.discriminator.mpd,
-                    )
-            with profiling_fn("period.backward"):
-                accelerator.backward(period_discriminator_loss)
-            with profiling_fn("period.gradient_sync_and_step"):
-                synchronize_gradients(accelerator, modules, ("mpd",))
-                optimizer.step("mpd")
-                modules.mpd.requires_grad_(False)
-            with accelerator.autocast():
-                with profiling_fn("scale.forward"):
-                    scale_discriminator_loss = losses.discriminator(
-                        waveform.detach(),
-                        reconstructed.detach(),
-                        losses.discriminator.msd,
-                    )
-            with profiling_fn("scale.backward"):
-                accelerator.backward(scale_discriminator_loss)
-            with profiling_fn("scale.gradient_sync_and_step"):
-                synchronize_gradients(accelerator, modules, ("msd",))
-                optimizer.step("msd")
-                modules.msd.requires_grad_(False)
-            discriminator_loss = (
-                period_discriminator_loss + scale_discriminator_loss
-            )
+        discriminator_loss: torch.Tensor | float = 0.0
+        if stage.train_discriminators:
+            optimizer.zero_grad()
+            with profiling_fn("discriminator"):
+                with accelerator.autocast():
+                    with profiling_fn("period.forward"):
+                        period_discriminator_loss = losses.discriminator(
+                            waveform.detach(),
+                            reconstructed.detach(),
+                            losses.discriminator.mpd,
+                        )
+                with profiling_fn("period.backward"):
+                    accelerator.backward(period_discriminator_loss)
+                with profiling_fn("period.gradient_sync_and_step"):
+                    synchronize_gradients(accelerator, modules, ("mpd",))
+                    optimizer.step("mpd")
+                    modules.mpd.requires_grad_(False)
+                with accelerator.autocast():
+                    with profiling_fn("scale.forward"):
+                        scale_discriminator_loss = losses.discriminator(
+                            waveform.detach(),
+                            reconstructed.detach(),
+                            losses.discriminator.msd,
+                        )
+                with profiling_fn("scale.backward"):
+                    accelerator.backward(scale_discriminator_loss)
+                with profiling_fn("scale.gradient_sync_and_step"):
+                    synchronize_gradients(accelerator, modules, ("msd",))
+                    optimizer.step("msd")
+                    modules.msd.requires_grad_(False)
+                discriminator_loss = (
+                    period_discriminator_loss + scale_discriminator_loss
+                )
+        else:
+            modules.mpd.requires_grad_(False)
+            modules.msd.requires_grad_(False)
 
         optimizer.zero_grad()
         with profiling_fn("generator_losses"):
@@ -341,48 +393,54 @@ class Trainer:
                 with profiling_fn("stft_loss"):
                     mel_loss = losses.stft(reconstructed, waveform)
             reconstruction_gradient = torch.autograd.grad(
-                loss_config.lambda_mel * mel_loss,
+                loss_weights.mel * mel_loss,
                 reconstructed,
             )[0]
-            with accelerator.autocast():
-                with profiling_fn("period_adversarial_loss"):
-                    period_generator_loss = losses.generator(
-                        waveform,
+            generator_loss: torch.Tensor | float = 0.0
+            if TrainingLoss.ADVERSARIAL in enabled_losses:
+                with accelerator.autocast():
+                    with profiling_fn("period_adversarial_loss"):
+                        period_generator_loss = losses.generator(
+                            waveform,
+                            reconstructed,
+                            losses.generator.mpd,
+                        )
+                with profiling_fn("period_adversarial_gradient"):
+                    period_gradient = torch.autograd.grad(
+                        loss_weights.adversarial * period_generator_loss,
                         reconstructed,
-                        losses.generator.mpd,
-                    )
-            with profiling_fn("period_adversarial_gradient"):
-                period_gradient = torch.autograd.grad(
-                    loss_config.lambda_gen * period_generator_loss,
-                    reconstructed,
-                )[0]
-                reconstruction_gradient.add_(period_gradient)
-            with accelerator.autocast():
-                with profiling_fn("scale_adversarial_loss"):
-                    scale_generator_loss = losses.generator(
-                        waveform,
+                    )[0]
+                    reconstruction_gradient.add_(period_gradient)
+                with accelerator.autocast():
+                    with profiling_fn("scale_adversarial_loss"):
+                        scale_generator_loss = losses.generator(
+                            waveform,
+                            reconstructed,
+                            losses.generator.msd,
+                        )
+                with profiling_fn("scale_adversarial_gradient"):
+                    scale_gradient = torch.autograd.grad(
+                        loss_weights.adversarial * scale_generator_loss,
                         reconstructed,
-                        losses.generator.msd,
-                    )
-            with profiling_fn("scale_adversarial_gradient"):
-                scale_gradient = torch.autograd.grad(
-                    loss_config.lambda_gen * scale_generator_loss,
-                    reconstructed,
-                )[0]
-                reconstruction_gradient.add_(scale_gradient)
-            generator_loss = period_generator_loss + scale_generator_loss
-            with accelerator.autocast():
-                with profiling_fn("wavlm_loss"):
-                    wavlm_loss = losses.wavlm(
-                        waveform.detach().squeeze(1),
-                        reconstructed.squeeze(1),
-                    ).mean()
-            with profiling_fn("wavlm_gradient"):
-                wavlm_gradient = torch.autograd.grad(
-                    loss_config.lambda_slm * wavlm_loss,
-                    reconstructed,
-                )[0]
-                reconstruction_gradient.add_(wavlm_gradient)
+                    )[0]
+                    reconstruction_gradient.add_(scale_gradient)
+                generator_loss = (
+                    period_generator_loss + scale_generator_loss
+                )
+            wavlm_loss: torch.Tensor | float = 0.0
+            if TrainingLoss.WAVLM in enabled_losses:
+                with accelerator.autocast():
+                    with profiling_fn("wavlm_loss"):
+                        wavlm_loss = losses.wavlm(
+                            waveform.detach().squeeze(1),
+                            reconstructed.squeeze(1),
+                        ).mean()
+                with profiling_fn("wavlm_gradient"):
+                    wavlm_gradient = torch.autograd.grad(
+                        loss_weights.wavlm * wavlm_loss,
+                        reconstructed,
+                    )[0]
+                    reconstruction_gradient.add_(wavlm_gradient)
         with profiling_fn("generator_losses.duration_and_alignment"):
             duration_loss = torch.zeros((), device=batch.texts.device)
             cross_entropy_loss = torch.zeros((), device=batch.texts.device)
@@ -430,30 +488,19 @@ class Trainer:
             ) * 10
         with profiling_fn("generator_losses.total"):
             remaining_loss = (
-                loss_config.lambda_F0 * f0_loss
-                + loss_config.lambda_ce * cross_entropy_loss
-                + loss_config.lambda_norm * norm_loss
-                + loss_config.lambda_dur * duration_loss
-                + loss_config.lambda_sty * style_loss
-                + loss_config.lambda_diff * diffusion_loss
-                + loss_config.lambda_mono * monotonic_loss
-                + loss_config.lambda_s2s * sequence_loss
+                (reconstructed * reconstruction_gradient).sum()
+                + loss_weights.f0 * f0_loss
+                + loss_weights.norm * norm_loss
+                + loss_weights.duration * duration_loss
+                + loss_weights.duration_ce * cross_entropy_loss
+                + loss_weights.style * style_loss
+                + loss_weights.diffusion * diffusion_loss
+                + loss_weights.monotonic_alignment * monotonic_loss
+                + loss_weights.sequence_alignment * sequence_loss
             )
-            remaining_loss = remaining_loss + (
-                reconstructed * reconstruction_gradient
-            ).sum()
         generator_modules = [
-            "bert_encoder",
-            "bert",
-            "predictor",
-            "predictor_encoder",
-            "style_encoder",
-            "decoder",
-            "text_encoder",
-            "text_aligner",
+            module.value for module in stage.trainable_modules
         ]
-        if diffusion_active:
-            generator_modules.append("diffusion")
         local_step_finite = bool(torch.isfinite(remaining_loss).item())
         if local_step_finite:
             with profiling_fn("generator_backward"):
@@ -472,7 +519,7 @@ class Trainer:
                     if parameter.requires_grad:
                         parameter.grad = torch.zeros_like(parameter)
         for name in ("msd", "mpd"):
-            modules[name].requires_grad_(True)
+            modules[name].requires_grad_(stage.train_discriminators)
         with profiling_fn("generator_gradient_sync"):
             synchronize_gradients(accelerator, modules, generator_modules)
         with profiling_fn("generator_optimizer_step"):
@@ -512,7 +559,9 @@ class Trainer:
                 joint_discriminator, joint_generator, _ = joint_output
                 optimizer.zero_grad()
                 with profiling_fn("joint.generator_backward"):
-                    accelerator.backward(joint_generator)
+                    accelerator.backward(
+                        loss_weights.slm_adversarial * joint_generator
+                    )
                 with profiling_fn("joint.gradient_processing"):
                     squared_norms = {}
                     for name, module in modules.items():
@@ -536,7 +585,16 @@ class Trainer:
                     for parameter in scaled_parameters:
                         if parameter.grad is not None:
                             parameter.grad *= self.config.slmadv_params.scale
-                joint_modules = ("bert_encoder", "bert", "predictor", "diffusion")
+                joint_modules = tuple(
+                    name
+                    for name in (
+                        "bert_encoder",
+                        "bert",
+                        "predictor",
+                        "diffusion",
+                    )
+                    if name in trainable_modules
+                )
                 with profiling_fn("joint.gradient_sync"):
                     synchronize_gradients(accelerator, modules, joint_modules)
                 with profiling_fn("joint.optimizer_step"):
@@ -546,7 +604,8 @@ class Trainer:
                     optimizer.zero_grad()
                     with profiling_fn("joint.discriminator_backward"):
                         accelerator.backward(
-                            joint_discriminator,
+                            loss_weights.slm_adversarial
+                            * joint_discriminator,
                             retain_graph=True,
                         )
                     with profiling_fn("joint.discriminator_sync_and_step"):

@@ -208,9 +208,7 @@ class DecoderBackbone(nn.Module):
     def _prepare_inputs(self, f0_curve, n):
         if not self.training:
             return f0_curve, n
-        f0_down = [0, 3, 7][random.randint(0, 2)]
         n_down = [0, 3, 7, 15][random.randint(0, 3)]
-        f0_curve = self._smooth_signal(f0_curve, f0_down)
         n = self._smooth_signal(n, n_down)
         return f0_curve, n
 

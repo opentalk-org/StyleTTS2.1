@@ -36,18 +36,10 @@ class ModelBundle:
     parameters: Munch
     n_down: int
 
-    def set_training_mode(self) -> None:
+    def set_training_mode(self, training_modules: set[str]) -> None:
         for module in self.modules.values():
             module.eval()
-        for name in (
-            "text_aligner",
-            "text_encoder",
-            "predictor",
-            "bert_encoder",
-            "bert",
-            "msd",
-            "mpd",
-        ):
+        for name in training_modules:
             self.modules[name].train()
 
 

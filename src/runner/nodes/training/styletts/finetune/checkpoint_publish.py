@@ -64,7 +64,7 @@ def publish_finetune_step_bundle_from_training_config(
     logger.info("finetune_publish saved weights job_id=%s step=%s bytes=%s", job_id, step, target.stat().st_size)
 
     with open(dest / "config.yml", "w") as outfile:
-        yaml.dump(config, outfile, default_flow_style=True)
+        yaml.safe_dump(config, outfile, sort_keys=False, allow_unicode=True)
 
     with database_session() as session:
         checkpoint = asset_crud.create_checkpoint(

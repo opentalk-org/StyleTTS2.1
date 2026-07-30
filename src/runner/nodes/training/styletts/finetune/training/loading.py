@@ -55,6 +55,7 @@ def _merge_checkpoint_state_with_dim0_resize(module_name, model_module, ckpt_sd)
         ckpt_sd,
         _CHECKPOINT_DIM0_RESIZE_KEYS_BY_MODULE[module_name],
         error_scope=module_name,
+        appended_source_index=0,
     )
 
 def _maybe_normalize_module_prefix(model_module, state_dict):
@@ -78,8 +79,9 @@ def _maybe_normalize_module_prefix(model_module, state_dict):
 
 def load_F0_models(path):
     F0_model = JDCNet(num_class=1, seq_len=192)
-    params = torch.load(path, map_location='cpu', weights_only=False)['net']
-    F0_model.load_state_dict(params)
+    if path is not None:
+        params = torch.load(path, map_location='cpu', weights_only=False)['net']
+        F0_model.load_state_dict(params)
     F0_model.train()
     return F0_model
 
@@ -93,12 +95,16 @@ def _load_asr_config(path_or_dict):
 
 def load_ASR_models(ASR_MODEL_PATH, ASR_MODEL_CONFIG):
     asr_model = ASRCNN(**_load_asr_config(ASR_MODEL_CONFIG))
+    if ASR_MODEL_PATH is None:
+        asr_model.train()
+        return asr_model
     params = torch.load(ASR_MODEL_PATH, map_location='cpu', weights_only=False)['model']
     adapted = merge_state_dict_with_dim0_resize(
         asr_model,
         params,
         _ASR_N_TOKEN_DIM0_KEYS,
         error_scope="ASR",
+        appended_source_index=0,
     )
     asr_model.load_state_dict(adapted)
     asr_model.train()

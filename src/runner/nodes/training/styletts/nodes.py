@@ -4,7 +4,6 @@ from enum import Enum
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 import time
 from typing import Any
 
@@ -26,6 +25,10 @@ from runner.nodes.training.common.manifest.cleanup import remove_run_dir
 from runner.nodes.training.common.mlflow_run import TrackerRun, start_mlflow_run
 from runflow.runtime.cancellation import check_cancel
 from runner.nodes.training.styletts.finetune.node_config import build_node_config
+from runner.nodes.training.styletts.finetune.stages import (
+    TrainingStageSpec,
+    default_training_stages,
+)
 from shared.db.assets import crud as asset_crud
 from shared.db.connection import database_session
 
@@ -48,9 +51,11 @@ class StyleTtsFinetuneSettings(StrictSettings):
     batch_size: int = Field(default=28, title="Batch size", ge=1, le=128)
     learning_rate: float = Field(default=1e-4, title="Learning rate", gt=0)
     numeric_precision: NumericPrecision = Field(default=NumericPrecision.BF16, title="Numeric precision")
-    base_steps: int = Field(default=100000, title="Base steps", ge=0)
-    diffusion_steps: int = Field(default=50000, title="Diffusion steps", ge=0)
-    joint_steps: int = Field(default=25000, title="Joint steps", ge=0)
+    training_stages: list[TrainingStageSpec] = Field(
+        default_factory=default_training_stages,
+        title="Training stages",
+        min_length=1,
+    )
     validation_interval_steps: int = Field(
         default=1000,
         title="Validation interval",
@@ -72,7 +77,7 @@ class StyleTtsFinetuneSettings(StrictSettings):
         default=15.0,
         title="Max audio duration (sec)",
         ge=1,
-        le=30,
+        le=60,
     )
     max_decoder_seconds: float = Field(
         default=3.0,
@@ -216,7 +221,8 @@ def _run_distributed_training(
         "runner.nodes.training.styletts.finetune.training.distributed",
         str(config_path),
     ]
-    with tempfile.TemporaryFile(mode="w+") as output:
+    distributed_log_path = config_path.parent / "distributed.log"
+    with distributed_log_path.open(mode="w+") as output:
         process = subprocess.Popen(
             command,
             stdout=output,

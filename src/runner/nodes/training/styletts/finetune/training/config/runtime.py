@@ -4,6 +4,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from ...stages import TrainingStageSpec
+
 
 class StrictConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -30,22 +32,6 @@ class SpectrogramConfig(StrictConfigModel):
 class PreprocessConfig(StrictConfigModel):
     sr: int = Field(gt=0)
     spect_params: SpectrogramConfig
-
-
-class LossConfig(StrictConfigModel):
-    lambda_mel: float
-    lambda_gen: float
-    lambda_slm: float
-    lambda_mono: float
-    lambda_s2s: float
-    lambda_F0: float
-    lambda_norm: float
-    lambda_dur: float
-    lambda_ce: float
-    lambda_sty: float
-    lambda_diff: float
-    diffusion_start_step: int = Field(ge=0)
-    joint_start_step: int = Field(ge=0)
 
 
 class OptimizerConfig(StrictConfigModel):
@@ -88,21 +74,19 @@ class TrainingConfig(StrictConfigModel):
     model_params: dict[str, Any]
     data_params: DataConfig
     preprocess_params: PreprocessConfig
-    loss_params: LossConfig
     optimizer_params: OptimizerConfig
     slmadv_params: SlmAdversarialConfig
     studio_publish: dict[str, Any]
     symbols: list[str]
+    training_stages: list[TrainingStageSpec] = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_schedule(self) -> "TrainingConfig":
-        losses = self.loss_params
-        if losses.diffusion_start_step > losses.joint_start_step:
+        scheduled_steps = sum(stage.steps for stage in self.training_stages)
+        if scheduled_steps != self.total_steps:
             raise ValueError(
-                "diffusion_start_step must not exceed joint_start_step"
+                "training stage steps must sum to total_steps"
             )
-        if losses.joint_start_step > self.total_steps:
-            raise ValueError("joint_start_step must not exceed total_steps")
         return self
 
 
