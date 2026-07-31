@@ -94,6 +94,9 @@ def _run_asr_training(settings: AsrTrainingSettings, inputs: dict[str, Any], run
 
 
 def _symbols(value: dict[str, Any]) -> list[str]:
+    symbol_list = value.get("symbol_list") if isinstance(value, dict) else None
+    if isinstance(symbol_list, list):
+        return [str(part) for part in symbol_list]
     symbols = value["symbols"] if "symbols" in value else value
     if isinstance(symbols, str):
         return [part for part in symbols.split(" ") if part]

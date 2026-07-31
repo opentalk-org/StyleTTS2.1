@@ -53,6 +53,7 @@ class SlmAdversarialConfig(StrictConfigModel):
 class TrainingConfig(StrictConfigModel):
     log_dir: str
     total_steps: int = Field(gt=0)
+    seed: int = Field(ge=0)
     validation_every_steps: int = Field(gt=0)
     checkpoint_every_steps: int = Field(gt=0)
     log_every_steps: int = Field(gt=0)

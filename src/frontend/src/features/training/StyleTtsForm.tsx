@@ -6,7 +6,7 @@ import { useCheckpointsQuery } from "../checkpoints/query";
 import { useDatasetsQuery } from "../datasets/query";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
 
-import { AlphabetEditor } from "./AlphabetEditor";
+import { AlphabetEditor, parseAlphabetSymbols } from "./AlphabetEditor";
 import { AssetSlot } from "./AssetSlot";
 import { FormSection } from "./FormSection";
 import { FormSelect } from "./FormSelect";
@@ -125,7 +125,7 @@ export function StyleTtsForm({
           createAlphabet.mutate({
             name,
             type_: "phoneme_alphabet",
-            metadata: { preset: "custom", symbols: Array.from(symbols.replace(/[\n\t]/g, "")) },
+            metadata: { preset: "custom", symbols: parseAlphabetSymbols(symbols) },
           })
         }
       />

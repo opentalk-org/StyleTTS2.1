@@ -3,16 +3,31 @@ import torch
 import math
 from torch.nn import functional as F
 from torch.nn.utils import weight_norm, spectral_norm
-from runner.nodes.training.styletts.finetune.training.modules.normalizations import LayerNorm, AdaLayerNorm
+from runner.nodes.training.styletts.finetune.training.modules.normalizations import (
+    AdaLayerNorm,
+    LayerNorm,
+)
 from runner.nodes.training.styletts.finetune.training.modules.blocks import (
     ResBlk,
     mask_time,
 )
 
+
 class TextEncoder(nn.Module):
-    def __init__(self, channels, kernel_size, depth, n_symbols, actv=nn.LeakyReLU(0.2)):
+    def __init__(
+        self,
+        channels,
+        kernel_size,
+        depth,
+        n_symbols,
+        bert_channels,
+        actv=nn.LeakyReLU(0.2),
+    ):
         super().__init__()
         self.embedding = nn.Embedding(n_symbols, channels)
+        self.bert_linear = nn.Linear(bert_channels, channels)
+        nn.init.zeros_(self.bert_linear.weight)
+        nn.init.zeros_(self.bert_linear.bias)
 
         padding = (kernel_size - 1) // 2
         self.cnn = nn.ModuleList()
@@ -25,49 +40,32 @@ class TextEncoder(nn.Module):
             ))
         self.lstm = nn.LSTM(channels, channels//2, 1, batch_first=True, bidirectional=True)
 
-    def forward(self, x, input_lengths, m):
+    def forward(self, x, input_lengths, m, bert):
         x = self.embedding(x)
         x = x.transpose(1, 2)
         m = m.unsqueeze(1)
         x.masked_fill_(m, 0.0)
-        
-        for c in self.cnn:
-            x = c(x)
-            x.masked_fill_(m, 0.0)
-            
-        x = x.transpose(1, 2)
 
+        for convolution in self.cnn:
+            x = convolution(x)
+            x.masked_fill_(m, 0.0)
+
+        x = x.transpose(1, 2)
         input_lengths = input_lengths.numpy()
         x = nn.utils.rnn.pack_padded_sequence(
-            x, input_lengths, batch_first=True, enforce_sorted=False)
-
+            x, input_lengths, batch_first=True, enforce_sorted=False
+        )
         self.lstm.flatten_parameters()
         x, _ = self.lstm(x)
-        x, _ = nn.utils.rnn.pad_packed_sequence(
-            x, batch_first=True)
-                
+        x, _ = nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
+
         x = x.transpose(-1, -2)
-        x_pad = x.new_zeros([x.shape[0], x.shape[1], m.shape[-1]])
-        x_pad[:, :, :x.shape[-1]] = x
-        x = x_pad
-        
-        x.masked_fill_(m, 0.0)
-        
-        return x
+        padded = x.new_zeros([x.shape[0], x.shape[1], m.shape[-1]])
+        padded[:, :, :x.shape[-1]] = x
+        # bert_features = self.bert_linear(bert).transpose(-1, -2)
+        # return (padded + bert_features).masked_fill(m, 0.0)
+        return padded.masked_fill(m, 0.0)
 
-    def inference(self, x):
-        x = self.embedding(x)
-        x = x.transpose(1, 2)
-        x = self.cnn(x)
-        x = x.transpose(1, 2)
-        self.lstm.flatten_parameters()
-        x, _ = self.lstm(x)
-        return x
-    
-    def length_to_mask(self, lengths):
-        mask = torch.arange(lengths.max()).unsqueeze(0).expand(lengths.shape[0], -1).type_as(lengths)
-        mask = torch.gt(mask+1, lengths.unsqueeze(1))
-        return mask
 
 class StyleEncoder(nn.Module):
     def __init__(self, dim_in=48, style_dim=48, max_conv_dim=384):

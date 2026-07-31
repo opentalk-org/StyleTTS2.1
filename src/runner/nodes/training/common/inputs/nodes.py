@@ -11,7 +11,10 @@ from runflow.policies import ResourcePolicy
 from runner.nodes.assets.checkpoints import SCRATCH_CHECKPOINT_ID, resolve_checkpoint_ref, scratch_checkpoint_ref
 from runner.nodes.assets.training_assets import resolve_training_asset_bundle
 from runner.nodes.datatypes import AssetBundlePort, CheckpointRefPort, JsonPort
-from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
+from runner.nodes.text.runtime.symbols import (
+    DEFAULT_STYLETTS_SYMBOLS,
+    MODEL_BERT_STYLETTS_SYMBOLS,
+)
 from shared.db import database_session
 from shared.db.common import one
 from shared.db.datasets.models import Dataset
@@ -21,18 +24,23 @@ class AlphabetPreset(str, Enum):
     IPA = "ipa"
     ARPABET = "arpabet"
     IPA_MULTI = "ipa-multi"
+    MODEL_BERT_STYLETTS2 = "model-bert-styletts2"
     CUSTOM = "custom"
 
 
-# A space-separated string cannot represent the alphabet's literal space symbol.
 DEFAULT_STYLETTS_ALPHABET = [str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS]
-DEFAULT_ALPHABET = "".join(DEFAULT_STYLETTS_ALPHABET)
+DEFAULT_ALPHABET = " ".join(
+    "␠" if symbol == " " else symbol
+    for symbol in DEFAULT_STYLETTS_ALPHABET
+)
 
 
 def _alphabet_symbol_list(preset: "AlphabetPreset", symbols: str) -> list[str]:
     if preset in (AlphabetPreset.IPA, AlphabetPreset.IPA_MULTI):
         return list(DEFAULT_STYLETTS_ALPHABET)
-    parsed = list(symbols)
+    if preset is AlphabetPreset.MODEL_BERT_STYLETTS2:
+        return list(MODEL_BERT_STYLETTS_SYMBOLS)
+    parsed = [" " if symbol == "␠" else symbol for symbol in symbols.split()]
     return parsed or list(DEFAULT_STYLETTS_ALPHABET)
 
 
@@ -201,4 +209,3 @@ class ListDatasetAudioIdsNode(Node):
                     }
                 })
         return outputs
-

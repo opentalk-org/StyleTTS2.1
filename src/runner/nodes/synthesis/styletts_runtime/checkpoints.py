@@ -51,22 +51,22 @@ def latest_weight(root: Path) -> Path:
     return max(weights, key=lambda path: path.stat().st_mtime)
 
 
-def resolve_symbols(metadata: dict[str, Any]) -> str:
+def resolve_symbols(metadata: dict[str, Any]) -> list[str]:
     from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
 
     raw = metadata.get("symbols")
     if isinstance(raw, list) and raw:
-        symbols = "".join(str(item) for item in raw)
-        if symbols:
-            return symbols
+        return [str(item) for item in raw]
     if isinstance(raw, str) and raw:
-        return raw
-    return "".join(str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS)
+        return list(raw)
+    return [str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS]
 
 
-def resolve_asr_payload(checkpoint_id: UUID | None, target_symbols: str) -> tuple[dict[str, Any], str | None]:
+def resolve_asr_payload(checkpoint_id: UUID | None, target_symbols: list[str]) -> tuple[dict[str, Any], str | None]:
     if checkpoint_id is None:
-        return _load_yaml(DATA_DIR / "asr.yml"), None
+        config = _load_yaml(DATA_DIR / "asr.yml")
+        config["model_params"]["n_token"] = len(target_symbols)
+        return config, None
     bundle = resolve_slot_checkpoint(checkpoint_id, "asr_bundle")
     config_path, weights_path = asr_bundle_config_and_weights(bundle.root)
     config = _load_yaml(config_path)
@@ -83,9 +83,11 @@ def resolve_f0_path(checkpoint_id: UUID | None, inner_filename: str) -> str | No
     return str(f0_weight_path_in_slot_dir(bundle.root, inner).resolve())
 
 
-def resolve_plbert_payload(checkpoint_id: UUID | None, target_symbols: str) -> tuple[dict[str, Any], str | None]:
+def resolve_plbert_payload(checkpoint_id: UUID | None, target_symbols: list[str]) -> tuple[dict[str, Any], str | None]:
     if checkpoint_id is None:
-        return _load_yaml(DATA_DIR / "plbert.yml"), None
+        config = _load_yaml(DATA_DIR / "plbert.yml")
+        config["model_params"]["vocab_size"] = len(target_symbols)
+        return config, None
     bundle = resolve_slot_checkpoint(checkpoint_id, "plbert")
     if not plbert_bundle_dir_valid(bundle.root):
         raise ValueError("plbert_dir_invalid")

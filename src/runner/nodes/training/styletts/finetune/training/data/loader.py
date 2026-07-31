@@ -260,6 +260,7 @@ def build_dataloader(
     collate_config={},
     dataset_config={},
     stream_cache=None,
+    seed=1,
 ):
     dataset = FilePathDataset(
         path_list,
@@ -275,7 +276,7 @@ def build_dataloader(
         dataset,
         batch_size=batch_size,
         shuffle=(not validation),
-        generator=torch.Generator().manual_seed(1),
+        generator=torch.Generator().manual_seed(seed),
         num_workers=num_workers,
         drop_last=(not validation),
         collate_fn=collate_fn,

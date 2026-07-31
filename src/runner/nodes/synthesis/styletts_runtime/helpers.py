@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from runner.nodes.text.runtime.symbols import TextCleaner
+from runner.nodes.text.runtime.symbols import END_SYMBOL, START_SYMBOL, TextCleaner
 
 
 MEL_MEAN = -4.0
@@ -66,7 +66,8 @@ def tokenize_ipa(ipa: str, symbols_list: list[str], device: Any) -> Any:
     torch = importlib.import_module("torch")
     text_cleaner = TextCleaner(symbols_list)
     tokens = text_cleaner(ipa)
-    tokens.insert(0, 0)
+    tokens.insert(0, text_cleaner.symbol_index[START_SYMBOL])
+    tokens.append(text_cleaner.symbol_index[END_SYMBOL])
     return torch.LongTensor(tokens).to(device).unsqueeze(0)
 
 

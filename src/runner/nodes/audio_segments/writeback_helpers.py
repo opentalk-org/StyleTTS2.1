@@ -17,6 +17,14 @@ def segment_group_from_audio(audio: Audio) -> SegmentGroup:
 def audio_segment_from_dict(ref: AudioRecordRef, segment: dict[str, Any]) -> AudioSegment:
     segment_id = str(segment["id"])
     annotations = AudioAnnotations.model_validate(segment["annotations"])
+    annotations = annotations.model_copy(
+        update={
+            "metadata": {
+                **annotations.metadata,
+                "type_": str(segment["type_"]),
+            }
+        }
+    )
     return AudioSegment(
         source_audio_id=ref.audio_file_id,
         name=ref.name,
