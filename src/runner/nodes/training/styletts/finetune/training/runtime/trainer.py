@@ -51,6 +51,8 @@ class Trainer:
         }
         if stage.train_discriminators:
             training_modules.update(("msd", "mpd"))
+        if TrainingLoss.SLM_ADVERSARIAL in stage.enabled_losses:
+            training_modules.add("wd")
         self.runtime.models.set_training_mode(training_modules)
 
     def train_step(
@@ -90,6 +92,7 @@ class Trainer:
             module.requires_grad_(name in trainable_modules)
         modules.mpd.requires_grad_(stage.train_discriminators)
         modules.msd.requires_grad_(stage.train_discriminators)
+        modules.wd.requires_grad_(joint_active)
         discriminator_checkpointing = (
             model_config.discriminators_checkpointing
             and diffusion_active
@@ -151,13 +154,6 @@ class Trainer:
                         mask,
                         batch.texts,
                     )
-            with stream_contexts[1]:
-                with profiling_fn("forward.text_encoder"):
-                    text_encoding = modules.text_encoder(
-                        batch.texts,
-                        batch.input_lengths,
-                        text_mask,
-                    )
             with stream_contexts[2]:
                 with profiling_fn("forward.style_encoders"):
                     duration_style = (
@@ -174,11 +170,15 @@ class Trainer:
                                     mel.unsqueeze(0).unsqueeze(1)
                                 )
                             )
-            with stream_contexts[3]:
+            with stream_contexts[1]:
                 with profiling_fn("forward.bert"):
                     bert = modules.bert(
                         batch.texts,
                         attention_mask=(~text_mask).int(),
+                    )
+                    text_encoding = modules.text_encoder(bert).transpose(
+                        -1,
+                        -2,
                     )
                     duration_encoding = modules.bert_encoder(bert).transpose(
                         -1,
