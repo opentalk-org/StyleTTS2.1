@@ -3,8 +3,7 @@ import { Card } from "@/shared/ui/Card";
 import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../workflows/logic";
 import { useStartGraphMutation } from "../workflows/query";
 import type { WorkflowGraph, WorkflowNode, WorkflowSchema } from "../workflows/types";
-
-const BASE_SYMBOLS = 178;
+import { parseAlphabetSymbols } from "./AlphabetEditor";
 
 type ValidationRow = { ok: boolean; label: string };
 
@@ -22,7 +21,7 @@ export function QueueCard({
   const alphabet = graph?.nodes.find((node) => node.type === "PhonemeAlphabet");
   const assets = graph?.nodes.find((node) => node.type === "SelectTrainingAssets");
   const alphabetSymbols = String(alphabet?.params.symbols ?? "");
-  const alphabetValid = !alphabet || Array.from(alphabetSymbols.replace(/[\n\t]/g, "")).length === BASE_SYMBOLS;
+  const alphabetValid = !alphabet || parseAlphabetSymbols(alphabetSymbols).length > 0;
 
   const rows: ValidationRow[] = [
     { ok: Boolean(training?.params.display_name), label: "Display name set" },

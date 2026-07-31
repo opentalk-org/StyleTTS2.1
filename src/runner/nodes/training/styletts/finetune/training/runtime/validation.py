@@ -120,12 +120,6 @@ class Validator:
                 batch.mel_lengths // (2**n_down),
             )
             monotonic = maximum_path(soft_alignment, alignment_mask)
-            text_encoding = modules.text_encoder(
-                batch.texts,
-                batch.input_lengths,
-                text_mask,
-            )
-            aligned_text = text_encoding @ monotonic
             duration_targets = monotonic.sum(axis=-1).detach()
             duration_styles = []
             acoustic_styles = []
@@ -145,6 +139,13 @@ class Validator:
                 batch.texts,
                 attention_mask=(~text_mask).int(),
             )
+            text_encoding = modules.text_encoder(
+                batch.texts,
+                batch.input_lengths,
+                text_mask,
+                bert,
+            )
+            aligned_text = text_encoding @ monotonic
             duration_encoding = modules.bert_encoder(bert).transpose(-1, -2)
             validation_batch = self._full_batch(batch, aligned_text)
             (

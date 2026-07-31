@@ -1,10 +1,19 @@
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, status
 
-from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
+from runner.nodes.text.runtime.symbols import (
+    DEFAULT_STYLETTS_SYMBOLS,
+    MODEL_BERT_STYLETTS_SYMBOLS,
+)
 from shared.db import database_session
 from shared.db.assets import crud as asset_crud
-from shared.db.assets.schemas import ConfigCreate, ConfigRead, ExtraFileCreate, FileAssetRead
+from shared.db.assets.schemas import (
+    ConfigCreate,
+    ConfigRead,
+    ConfigUpdate,
+    ExtraFileCreate,
+    FileAssetRead,
+)
 
 
 router = APIRouter(prefix="/assets")
@@ -84,14 +93,43 @@ def _config_type(type_: str | None) -> str | None:
 
 
 def _ensure_default_phoneme_alphabets(session) -> None:
-    existing = [item for item in asset_crud.list_configs(session, "phoneme_alphabet") if item.metadata_.get("builtin")]
-    if existing:
-        return
-    asset_crud.create_config(
-        session,
-        ConfigCreate(
-            name="StyleTTS2 IPA",
-            type_="phoneme_alphabet",
-            metadata={"builtin": True, "preset": "ipa", "symbols": [str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS]},
+    existing = {
+        str(item.metadata_["preset"]): item
+        for item in asset_crud.list_configs(session, "phoneme_alphabet")
+        if item.metadata_.get("builtin") and "preset" in item.metadata_
+    }
+    presets = (
+        ("ipa", "StyleTTS2 IPA", DEFAULT_STYLETTS_SYMBOLS),
+        (
+            "model-bert-styletts2",
+            "Model BERT + StyleTTS2 extras",
+            MODEL_BERT_STYLETTS_SYMBOLS,
         ),
     )
+    for preset, name, symbols in presets:
+        metadata = {
+            "builtin": True,
+            "preset": preset,
+            "symbols": [str(symbol) for symbol in symbols],
+        }
+        if preset in existing:
+            item = existing[preset]
+            if item.name != name or item.metadata_ != metadata:
+                asset_crud.update_config(
+                    session,
+                    item.id,
+                    ConfigUpdate(
+                        name=name,
+                        type_="phoneme_alphabet",
+                        metadata=metadata,
+                    ),
+                )
+        else:
+            asset_crud.create_config(
+                session,
+                ConfigCreate(
+                    name=name,
+                    type_="phoneme_alphabet",
+                    metadata=metadata,
+                ),
+            )

@@ -88,7 +88,12 @@ class SLMAdversarialLoss(torch.nn.Module):
 
         with profiling_fn("text_encoding"):
             with torch.no_grad():
-                t_en = self.model.text_encoder(ref_text, ref_lengths, text_mask)
+                t_en = self.model.text_encoder(
+                    ref_text,
+                    ref_lengths,
+                    text_mask,
+                    bert_dur,
+                )
 
         s2s_attn = torch.zeros(len(ref_lengths), int(ref_lengths.max()), max_len).to(ref_text.device)
         for bib in range(len(output_lengths)):

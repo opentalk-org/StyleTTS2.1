@@ -8,7 +8,10 @@ from runner.nodes.training.styletts.finetune.training.modules.diffusion.diffusio
 from runner.nodes.training.styletts.finetune.training.modules.diffusion.modules import StyleTransformer1d, Transformer1d
 from runner.nodes.training.styletts.finetune.training.modules.diffusion.sampler import KDiffusion, LogNormalDistribution
 from runner.nodes.training.styletts.finetune.training.modules.discriminators import MultiPeriodDiscriminator, MultiResSpecDiscriminator, WavLMDiscriminator
-from runner.nodes.training.styletts.finetune.training.modules.encoders import TextEncoder, StyleEncoder
+from runner.nodes.training.styletts.finetune.training.modules.encoders import (
+    StyleEncoder,
+    TextEncoder,
+)
 from runner.nodes.training.styletts.finetune.training.modules.hifigan import Decoder as HifiganDecoder
 from runner.nodes.training.styletts.finetune.training.modules.istftnet import Decoder as IstftnetDecoder
 from runner.nodes.training.styletts.finetune.training.modules.jdc import JDCNet
@@ -133,8 +136,13 @@ def build_model(args, text_aligner, pitch_extractor, bert):
                 upsample_kernel_sizes=args.decoder.upsample_kernel_sizes,
                 gradient_checkpointing=generator_checkpointing) 
         
-    text_encoder = TextEncoder(channels=args.hidden_dim, kernel_size=5, depth=args.n_layer, n_symbols=args.n_token)
-    
+    text_encoder = TextEncoder(
+        channels=args.hidden_dim,
+        kernel_size=5,
+        depth=args.n_layer,
+        n_symbols=args.n_token,
+        bert_channels=bert.config.hidden_size,
+    )
     predictor = ProsodyPredictor(style_dim=args.style_dim, d_hid=args.hidden_dim, nlayers=args.n_layer, max_dur=args.max_dur, dropout=args.dropout)
     
     style_encoder = StyleEncoder(dim_in=args.dim_in, style_dim=args.style_dim, max_conv_dim=args.hidden_dim)
@@ -204,6 +212,10 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
         missing_keys = [
             item for item in load_result.missing_keys
             if not item.endswith("dummy_tensor")
+            and not (
+                key == "text_encoder"
+                and item.startswith("bert_linear.")
+            )
         ]
         unexpected_keys = [
             item for item in load_result.unexpected_keys

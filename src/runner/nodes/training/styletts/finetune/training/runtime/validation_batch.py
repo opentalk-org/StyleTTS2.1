@@ -69,6 +69,7 @@ def predicted_alignment(
         durations.size(1),
         device=durations.device,
     )
+    input_lengths = input_lengths.to(durations.device)
     durations = durations * (
         token_positions.unsqueeze(0) < input_lengths.unsqueeze(1)
     )

@@ -4,7 +4,7 @@ import { useCheckpointsQuery } from "../checkpoints/query";
 import { useDatasetsQuery } from "../datasets/query";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
 
-import { AlphabetEditor } from "./AlphabetEditor";
+import { AlphabetEditor, parseAlphabetSymbols } from "./AlphabetEditor";
 import { FormSection } from "./FormSection";
 import { FormSelect } from "./FormSelect";
 import { checkpointOptions, checkpointSymbolCount, datasetOptions, trainingNode, type TrainingWorkflowSpec, updateNodeParams, updateTrainingParams } from "./logic";
@@ -97,7 +97,7 @@ export function SmallModelForm({
             createAlphabet.mutate({
               name,
               type_: "phoneme_alphabet",
-              metadata: { preset: "custom", symbols: symbols.trim().split(/\s+/).filter(Boolean) },
+              metadata: { preset: "custom", symbols: parseAlphabetSymbols(symbols) },
             })
           }
         />

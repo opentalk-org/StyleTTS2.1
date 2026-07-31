@@ -25,10 +25,10 @@ logger = logging.getLogger(__name__)
 
 def train(config_path: str, *, run: TrackerRun | None) -> None:
     config = load_training_config(config_path)
-    random.seed(1)
-    np.random.seed(1)
-    torch.manual_seed(1)
-    torch.cuda.manual_seed_all(1)
+    random.seed(config.seed)
+    np.random.seed(config.seed)
+    torch.manual_seed(config.seed)
+    torch.cuda.manual_seed_all(config.seed)
     configure_profiling(config.profiling_enabled)
     log_dir = Path(config.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -52,6 +52,7 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
             ],
         },
         device=config.device,
+        seed=config.seed,
         stream_cache=None,
     )
     validation_batches = build_dataloader(
@@ -63,6 +64,7 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
         validation=True,
         num_workers=0,
         device=config.device,
+        seed=config.seed,
         dataset_config={
             "symbols": config.symbols,
             "max_audio_seconds": config.max_audio_seconds,

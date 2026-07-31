@@ -176,9 +176,11 @@ class Trainer:
                         batch.texts,
                         attention_mask=(~text_mask).int(),
                     )
-                    text_encoding = modules.text_encoder(bert).transpose(
-                        -1,
-                        -2,
+                    text_encoding = modules.text_encoder(
+                        batch.texts,
+                        batch.input_lengths,
+                        text_mask,
+                        bert,
                     )
                     duration_encoding = modules.bert_encoder(bert).transpose(
                         -1,

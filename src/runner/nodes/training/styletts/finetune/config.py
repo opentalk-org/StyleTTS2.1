@@ -45,6 +45,7 @@ def build_config(
     plbert_config: dict[str, Any],
     plbert_path: Path | None,
     total_steps: int,
+    seed: int,
     batch_size: int,
     learning_rate: float,
     max_len: int,
@@ -73,6 +74,7 @@ def build_config(
     config = deepcopy(load_yaml(BASE_YAML))
     config["log_dir"] = str(log_dir.resolve())
     config["total_steps"] = int(total_steps)
+    config["seed"] = int(seed)
     config["batch_size"] = int(batch_size)
     config["max_len"] = int(max_len)
     config["max_audio_seconds"] = float(max_audio_seconds)

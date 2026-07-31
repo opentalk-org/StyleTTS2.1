@@ -40,5 +40,10 @@ def apply_detected_resources(resources: dict[str, float]) -> dict[str, float]:
     updated = dict(resources)
     detected = detect_vram_gb()
     if detected is not None:
-        updated["vram_gb"] = max(float(updated["vram_gb"]), detected)
+        configured = (
+            float(updated["vram_gb"])
+            if "vram_gb" in updated
+            else 0.0
+        )
+        updated["vram_gb"] = max(configured, detected)
     return updated

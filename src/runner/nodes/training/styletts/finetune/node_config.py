@@ -13,22 +13,22 @@ from runner.nodes.training.styletts.finetune import layout as styletts_layout
 
 
 def resolve_symbol_list(alphabet: list[str] | None) -> list[str]:
-    """Return the symbol table used to index the text embedding.
-
-    StyleTTS2 (LJSpeech / LibriTTS / Vokan) is trained with the canonical
-    178-entry single-character IPA symbol set, and the pretrained text-encoder /
-    text-aligner embeddings have exactly that many rows. A finetune must reuse
-    that table so the pretrained embeddings stay aligned. We only honour a
-    provided alphabet if it is a genuine single-character table of the same size;
-    anything else (e.g. the legacy multi-character token list) falls back to the
-    canonical set instead of silently resizing embeddings."""
+    """Keep pretrained rows stable and allow explicitly appended tokens."""
     canonical = [str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS]
     if not alphabet:
         return canonical
     symbols = [str(symbol) for symbol in alphabet]
-    if len(symbols) == len(canonical) and all(len(symbol) == 1 for symbol in symbols):
-        return symbols
-    return canonical
+    if symbols[:len(canonical)] != canonical:
+        raise ValueError(
+            "StyleTTS finetune alphabet must retain the canonical symbol prefix; "
+            "append custom tokens after <end/>"
+        )
+    appended = symbols[len(canonical):]
+    if len(set(appended)) != len(appended) or any(
+        symbol in canonical for symbol in appended
+    ):
+        raise ValueError("StyleTTS finetune appended alphabet contains duplicate tokens")
+    return symbols
 
 
 def build_node_config(
@@ -74,6 +74,7 @@ def build_node_config(
         ),
         plbert_path=asset_paths["plbert"],
         total_steps=sum(stage.steps for stage in settings.training_stages),
+        seed=settings.seed,
         batch_size=settings.batch_size,
         learning_rate=settings.learning_rate,
         max_len=int(settings.max_decoder_seconds * 80),
