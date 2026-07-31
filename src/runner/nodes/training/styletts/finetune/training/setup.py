@@ -27,7 +27,8 @@ class ModelBundle:
     def set_training_mode(self, training_modules: set[str]) -> None:
         for module in self.modules.values():
             module.eval()
-        for name in training_modules:
+        eval_mode_optimizers = {"style_encoder", "predictor_encoder"}
+        for name in training_modules - eval_mode_optimizers:
             self.modules[name].train()
 
 
