@@ -19,7 +19,9 @@ def audio_segment_from_dict(ref: AudioRecordRef, segment: dict[str, Any]) -> Aud
     annotations = AudioAnnotations.model_validate(segment["annotations"])
     annotations = annotations.model_copy(
         update={
+            "speaker_id": annotations.speaker_id or ref.speaker_id,
             "metadata": {
+                **ref.metadata,
                 **annotations.metadata,
                 "type_": str(segment["type_"]),
             }
