@@ -39,8 +39,7 @@ def audio_file_selection(value: dict[str, Any]) -> AudioFileSelection:
 
 
 def phoneme_alphabet_symbols(value: dict) -> list[str]:
-    # Prefer an explicit symbol_list: the canonical StyleTTS2 alphabet contains a
-    # literal space symbol, so a space-joined string cannot round-trip it.
+
     symbol_list = value.get("symbol_list") if isinstance(value, dict) else None
     if isinstance(symbol_list, list) and symbol_list:
         return [str(part) for part in symbol_list]
