@@ -240,9 +240,6 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
                 continue
             raise ValueError(f"checkpoint is missing unchanged module {key}")
         normalized_params = _maybe_normalize_module_prefix(model[key], params[source_key])
-        if key == "decoder":
-            _load_converted_decoder(model[key], normalized_params)
-            continue
         adapted_params = _merge_checkpoint_state_with_dim0_resize(key, model[key], normalized_params)
         if key == "factorization":
             current_keys = model[key].state_dict().keys()
@@ -286,59 +283,3 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
         optimizer.load_state_dict(state["optimizer"])
 
     return model, optimizer
-
-
-def _load_converted_decoder(module: nn.Module, checkpoint: dict[str, torch.Tensor]) -> None:
-    current = module.state_dict()
-    compatible = {
-        name: value
-        for name, value in checkpoint.items()
-        if name in current and current[name].shape == value.shape
-    }
-    compatible.update(_converted_decoder_fixed_affines(current, checkpoint))
-    result = module.load_state_dict(compatible, strict=False)
-    adapter_keys = [name for name in result.missing_keys if "feature_linear" in name]
-    structural_keys = [name for name in result.missing_keys if name not in adapter_keys]
-    logger.info(
-        "converted decoder loaded=%s new_adapters=%s structural_init=%s incompatible_old=%s",
-        len(compatible),
-        len(adapter_keys),
-        len(structural_keys),
-        len(checkpoint) - len(compatible),
-    )
-
-
-def _converted_decoder_fixed_affines(
-    current: dict[str, torch.Tensor],
-    checkpoint: dict[str, torch.Tensor],
-) -> dict[str, torch.Tensor]:
-    """Preserve the pretrained AdaIN output at a zero style vector.
-
-    The local decoder deliberately has no adaptive normalization.  Its fixed
-    InstanceNorm affine is initialized from the bias of each old AdaIN linear
-    layer: ``weight = 1 + gamma_bias`` and ``bias = beta_bias``.  The old
-    style-dependent weights remain excluded and are replaced by the requested
-    per-frame additive adapters.
-    """
-    converted: dict[str, torch.Tensor] = {}
-    for source_name, source_bias in checkpoint.items():
-        if not source_name.endswith(".fc.bias"):
-            continue
-        target_prefix = source_name.removesuffix(".fc.bias")
-        target_prefix = target_prefix.replace(".adain1.", ".norm1.")
-        target_prefix = target_prefix.replace(".adain2.", ".norm2.")
-        weight_name = f"{target_prefix}.weight"
-        bias_name = f"{target_prefix}.bias"
-        if weight_name not in current or bias_name not in current:
-            continue
-        gamma, beta = source_bias.chunk(2)
-        if gamma.shape != current[weight_name].shape or beta.shape != current[bias_name].shape:
-            raise ValueError(
-                f"cannot convert decoder affine {source_name}: "
-                f"checkpoint={tuple(source_bias.shape)}, "
-                f"target_weight={tuple(current[weight_name].shape)}, "
-                f"target_bias={tuple(current[bias_name].shape)}"
-            )
-        converted[weight_name] = 1 + gamma
-        converted[bias_name] = beta
-    return converted

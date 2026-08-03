@@ -11,6 +11,8 @@ from ...studio.val_sample_export import ValidationSampleArtifacts
 class TrainingBatch:
     waves: tuple[np.ndarray, ...]
     speaker_ids: Tensor
+    language_ids: Tensor
+    modality_ids: Tensor
     texts: Tensor
     input_lengths: Tensor
     reference_texts: Tensor

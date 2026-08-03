@@ -16,7 +16,3 @@ VOICE_LOSSES = {
 
 def requires_voice(enabled: set[TrainingLoss]) -> bool:
     return bool(enabled & VOICE_LOSSES)
-
-
-def requires_generated_style(enabled: set[TrainingLoss]) -> bool:
-    return TrainingLoss.STYLE in enabled

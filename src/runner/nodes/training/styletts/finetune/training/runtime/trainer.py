@@ -11,7 +11,7 @@ from ..setup import TrainingRuntime
 from ...stages import StyleSource, TrainingLoss, stage_for_step
 from .adversarial_training import discriminator_step, prosody_generator_loss
 from .factorization_training import nuisance_losses
-from .stage_requirements import requires_generated_style, requires_voice
+from .stage_requirements import requires_voice
 from .training_forward import ForwardOutput, model_forward
 from .validation_batch import styletts_zs_reconstruction_loss
 from .rvq_health import check_rvq_health
@@ -162,11 +162,6 @@ class Trainer:
             losses["rvq"] = output.rvq_loss
         if TrainingLoss.ALPHA_FLOW in enabled:
             losses["alpha_flow"] = output.alpha_flow_loss
-        if TrainingLoss.STYLE in enabled:
-            losses["style"] = F.l1_loss(
-                output.style_prediction,
-                output.style_target.detach(),
-            )
         if TrainingLoss.ADVERSARIAL in enabled:
             period, period_feature, period_generator, period_relative = (
                 self.runtime.losses.generator.components(
@@ -268,17 +263,11 @@ class Trainer:
         style_diagnostics = {
             TrainingLoss.ALPHA_FLOW,
             TrainingLoss.RVQ,
-            TrainingLoss.STYLE,
             TrainingLoss.STYLE_NUISANCE,
             TrainingLoss.XCOV,
         }
         if enabled & style_diagnostics:
             metrics["style_batch_std"] = style_batch_std
-        if requires_generated_style(enabled):
-            metrics["generated_style_batch_std"] = output.style_prediction.std(
-                0,
-                unbiased=False,
-            ).mean()
         if enabled & {
             TrainingLoss.STYLE_NUISANCE,
             TrainingLoss.XCOV,

@@ -139,6 +139,8 @@ class Validator:
             bert = modules.bert(
                 batch.texts,
                 attention_mask=(~text_mask).int(),
+                language_ids=batch.language_ids,
+                modality_ids=batch.modality_ids,
             )
             text_encoding = modules.text_encoder(
                 batch.texts,

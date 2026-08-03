@@ -25,7 +25,6 @@ model_params:
   style_dim: 128
   language_dim: 32
   language_count: 2
-  language_id: 1
   dropout: 0.2
   decoder:
     type: hifigan

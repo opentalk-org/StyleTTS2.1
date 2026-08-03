@@ -83,13 +83,6 @@ def synthesize_validation(
             batch.reference_mels.unsqueeze(1).float(),
             batch.reference_mel_lengths,
         )
-    language_ids = torch.full(
-        (batch.texts.size(0),),
-        runtime.models.parameters.language_id,
-        dtype=torch.long,
-        device=device,
-    )
-    language = modules.language_embedding(language_ids)
     source_lengths = [int(value.item()) for value in batch.mel_lengths]
     full_lengths = [value * 2 for value in decode_lengths]
     resized_f0 = resize_prosody(target_f0, source_lengths, full_lengths)
@@ -105,8 +98,6 @@ def synthesize_validation(
         decoder_f0,
         decoder_energy,
         decoder_voice,
-        language,
-        frame_mask,
     )
     return (
         reconstructed,

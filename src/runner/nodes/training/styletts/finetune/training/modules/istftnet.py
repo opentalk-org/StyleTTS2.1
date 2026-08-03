@@ -7,7 +7,7 @@ from torch.nn import Conv1d, ConvTranspose1d
 from torch.nn.utils import remove_weight_norm, weight_norm
 
 from ..profiling import profiling_fn
-from .zs.local_decoder import AdditiveGeneratorBlock, LocalDecoderBackbone
+from .decoder_blocks import AdaINResBlock1, DecoderBackbone
 from .source_generator import SourceModuleHnNSF
 from .utils import checkpoint_with_mixed_precision, init_weights
 
@@ -56,7 +56,7 @@ class Generator(torch.nn.Module):
         self.num_kernels = len(resblock_kernel_sizes)
         self.num_upsamples = len(upsample_rates)
         self.gradient_checkpointing = gradient_checkpointing
-        resblock = AdditiveGeneratorBlock
+        resblock = AdaINResBlock1
 
         self.m_source = SourceModuleHnNSF(
                     sampling_rate=24000,
@@ -99,7 +99,7 @@ class Generator(torch.nn.Module):
         self.dummy_tensor = nn.Parameter(torch.zeros(1), requires_grad=True)
         
         
-    def forward(self, x, features, f0):
+    def forward(self, x, s, f0):
         with torch.no_grad():
             f0 = self.f0_upsamp(f0[:, None]).transpose(1, 2)
 
@@ -113,10 +113,10 @@ class Generator(torch.nn.Module):
             with profiling_fn(f"decoder_stage_{i}"):
                 if self.gradient_checkpointing:
                     x, x_source = checkpoint_with_mixed_precision(
-                        self._pre_upsample_noise, x, har, features, i, dummy
+                        self._pre_upsample_noise, x, har, s, i, dummy
                     )
                 else:
-                    x, x_source = self._pre_upsample_noise(x, har, features, i, dummy)
+                    x, x_source = self._pre_upsample_noise(x, har, s, i, dummy)
 
                 x = self.ups[i](x)
                 if i == self.num_upsamples - 1:
@@ -124,24 +124,24 @@ class Generator(torch.nn.Module):
 
                 x = x + x_source
                 if self.gradient_checkpointing:
-                    x = checkpoint_with_mixed_precision(self._forward_res_block, x, features, i, dummy)
+                    x = checkpoint_with_mixed_precision(self._forward_res_block, x, s, i, dummy)
                 else:
-                    x = self._forward_res_block(x, features, i, dummy)
+                    x = self._forward_res_block(x, s, i, dummy)
 
         if self.gradient_checkpointing:
             return checkpoint_with_mixed_precision(self._output_forward, x, dummy)
         return self._output_forward(x, dummy)
 
-    def _pre_upsample_noise(self, x, har, features, i, dummy):
+    def _pre_upsample_noise(self, x, har, s, i, dummy):
         x = F.leaky_relu(x, LRELU_SLOPE)
         x_source = self.noise_convs[i](har)
-        x_source = self.noise_res[i](x_source, features)
+        x_source = self.noise_res[i](x_source, s)
         return x, x_source
 
-    def _forward_res_block(self, x, features, i, dummy):
+    def _forward_res_block(self, x, s, i, dummy):
         xs = None
         for j in range(self.num_kernels):
-            res_out = self.resblocks[i * self.num_kernels + j](x, features)
+            res_out = self.resblocks[i * self.num_kernels + j](x, s)
             if xs is None:
                 xs = res_out
             else:
@@ -183,7 +183,7 @@ class Generator(torch.nn.Module):
         remove_weight_norm(self.conv_post)
 
         
-class Decoder(LocalDecoderBackbone):
+class Decoder(DecoderBackbone):
     def __init__(self, dim_in=512, F0_channel=512, style_dim=64, dim_out=80, 
                 resblock_kernel_sizes = [3,7,11],
                 upsample_rates = [10, 6],
@@ -192,16 +192,14 @@ class Decoder(LocalDecoderBackbone):
                 upsample_kernel_sizes=[20, 12], 
                 gen_istft_n_fft=20, gen_istft_hop_size=5,
                 gradient_checkpointing=False):
-        super().__init__(content_dim=dim_in)
-        self.generator = Generator(self.feature_dim, resblock_kernel_sizes, upsample_rates,
+        super().__init__(dim_in=dim_in, style_dim=style_dim)
+        self.generator = Generator(style_dim, resblock_kernel_sizes, upsample_rates,
                                    upsample_initial_channel, resblock_dilation_sizes, 
                                    upsample_kernel_sizes, gen_istft_n_fft, gen_istft_hop_size, gradient_checkpointing)
         
-    def forward(self, asr, F0_curve, N, voice, language, frame_mask=None):
-        x, F0_curve, features = super().forward(
-            asr, F0_curve, N, voice, language, frame_mask
-        )
-        x = self.generator(x, features, F0_curve)
+    def forward(self, asr, F0_curve, N, s):
+        x, F0_curve = super().forward(asr, F0_curve, N, s)
+        x = self.generator(x, s, F0_curve)
         return x
     
     

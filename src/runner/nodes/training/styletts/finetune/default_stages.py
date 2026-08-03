@@ -41,7 +41,6 @@ def _loss_weights() -> TrainingLossWeights:
         rvq=1,
         sequence_alignment=1,
         slm_adversarial=1,
-        style=1,
         wavlm=1,
         style_nuisance=0.1,
         voice_metric=1,
@@ -53,12 +52,13 @@ def _loss_weights() -> TrainingLossWeights:
 
 def build_default_training_stages() -> list[TrainingStageSpec]:
     weights = _loss_weights()
-    reconstruction_weights = weights.model_copy(update={"mel": 1})
     acoustic_modules = [
         TrainableModule.TEXT_ENCODER,
         TrainableModule.VOICE_ENCODER,
         TrainableModule.DECODER,
-        TrainableModule.LANGUAGE_EMBEDDING,
+        TrainableModule.TEXT_ALIGNER,
+        TrainableModule.PITCH_EXTRACTOR,
+        TrainableModule.FACTORIZATION,
     ]
     prosody_modules = [
         TrainableModule.DURATION_PREDICTOR,
@@ -66,7 +66,6 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         TrainableModule.PROSODY_PREDICTOR,
         TrainableModule.QUANTIZER,
         TrainableModule.POSITION_EMBEDDING,
-        TrainableModule.VOICE_ENCODER,
         TrainableModule.FACTORIZATION,
     ]
     prosody_losses = [
@@ -76,9 +75,6 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         TrainingLoss.DURATION_CE,
         TrainingLoss.PROSODY_ADVERSARIAL,
         TrainingLoss.RVQ,
-        TrainingLoss.VOICE_PAIR,
-        TrainingLoss.VOICE_METRIC,
-        TrainingLoss.VOICE_NUISANCE,
         TrainingLoss.STYLE_NUISANCE,
         TrainingLoss.XCOV,
     ]
@@ -88,26 +84,11 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
     )
     return [
         TrainingStageSpec(
-            name="train_test.py · reconstruction",
+            name="train_test.py · acoustic training",
             steps=100_000,
             style_source=StyleSource.CONTINUOUS,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=acoustic_modules,
-            enabled_losses=[TrainingLoss.MEL],
-            loss_weights=reconstruction_weights,
-            validation=_validation(False, False),
-            train_discriminators=False,
-        ),
-        TrainingStageSpec(
-            name="train_test.py · adversarial refinement",
-            steps=50_000,
-            style_source=StyleSource.CONTINUOUS,
-            prosody_source=ProsodySource.GROUND_TRUTH,
-            trainable_modules=[
-                *acoustic_modules,
-                TrainableModule.TEXT_ALIGNER,
-                TrainableModule.PITCH_EXTRACTOR,
-            ],
             enabled_losses=[
                 TrainingLoss.MEL,
                 TrainingLoss.SEQUENCE_ALIGNMENT,
@@ -115,6 +96,9 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
                 TrainingLoss.ADVERSARIAL,
                 TrainingLoss.WAVLM,
                 TrainingLoss.SLM_ADVERSARIAL,
+                TrainingLoss.VOICE_PAIR,
+                TrainingLoss.VOICE_METRIC,
+                TrainingLoss.VOICE_NUISANCE,
             ],
             validation=_validation(False, False),
             train_discriminators=True,
