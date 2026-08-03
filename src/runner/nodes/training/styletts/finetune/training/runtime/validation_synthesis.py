@@ -35,40 +35,57 @@ def synthesize_validation(
 ]:
     modules = runtime.models.modules
     device = batch.mels.device
-    conditioning = prosody_inputs(
-        modules.position_embedding,
-        monotonic,
-        target_f0,
-        target_energy,
-    )
-    with torch.autocast(device_type=device.type, enabled=False):
-        continuous = modules.prosody_encoder(
-            conditioning.float(),
-            batch.mel_lengths.to(device) // 2,
-        )
-        style = continuous
-        if stage.style_source is StyleSource.QUANTIZED:
-            style, _, _, _ = modules.quantizer(continuous)
-    if stage.validation.alpha_flow:
-        style = modules.alpha_flow.sample(
-            bert,
-            conditioning,
-            batch.input_lengths,
-            noise=alpha_flow_noise,
-        )
-    duration_predictions = modules.duration_predictor(
-        duration_encoding,
-        style,
-        batch.input_lengths,
-        duration_encoding.size(-1),
-    )
     decode_alignment = monotonic
     decode_lengths = [int(value.item() // 2) for value in batch.mel_lengths]
-    if stage.validation.duration_source is ValidationDurationSource.PREDICTED:
-        decode_alignment, decode_lengths = predicted_alignment(
-            duration_predictions,
-            batch.input_lengths,
+    duration_predictions = batch.mels.new_zeros(
+        (batch.texts.size(0), batch.texts.size(1), 1)
+    )
+    predicted_f0 = target_f0.new_zeros(target_f0.shape)
+    predicted_energy = target_energy.new_zeros(target_energy.shape)
+    validates_predictions = (
+        stage.validation.alpha_flow
+        or stage.validation.f0_source is ProsodySource.PREDICTED
+        or stage.validation.norm_source is ProsodySource.PREDICTED
+        or (
+            stage.validation.duration_source
+            is ValidationDurationSource.PREDICTED
         )
+    )
+    if validates_predictions:
+        conditioning = prosody_inputs(
+            modules.position_embedding,
+            monotonic,
+            target_f0,
+            target_energy,
+        )
+        with torch.autocast(device_type=device.type, enabled=False):
+            style = modules.prosody_encoder(
+                conditioning.float(),
+                batch.mel_lengths.to(device) // 2,
+            )
+            if stage.style_source is StyleSource.QUANTIZED:
+                style, _, _, _ = modules.quantizer(style)
+        if stage.validation.alpha_flow:
+            style = modules.alpha_flow.sample(
+                bert,
+                conditioning,
+                batch.input_lengths,
+                noise=alpha_flow_noise,
+            )
+        duration_predictions = modules.duration_predictor(
+            duration_encoding,
+            style,
+            batch.input_lengths,
+            duration_encoding.size(-1),
+        )
+        if (
+            stage.validation.duration_source
+            is ValidationDurationSource.PREDICTED
+        ):
+            decode_alignment, decode_lengths = predicted_alignment(
+                duration_predictions,
+                batch.input_lengths,
+            )
     prompt_frames = int(batch.mel_lengths.min().item() / 2 - 1)
     prompt_mels = batch.mels[..., : prompt_frames * 2]
     with torch.autocast(device_type=device.type, enabled=False):
@@ -79,22 +96,34 @@ def synthesize_validation(
             text_encoding.size(-1),
         )
     aligned_text = decoder_text @ decode_alignment
-    aligned_duration = duration_encoding @ decode_alignment
-    half_lengths = torch.tensor(decode_lengths, device=device)
-    predicted_f0, predicted_energy = modules.prosody_predictor(
-        aligned_duration,
-        style,
-        half_lengths,
-        decode_alignment.size(-1),
-    )
+    if validates_predictions:
+        aligned_duration = duration_encoding @ decode_alignment
+        half_lengths = torch.tensor(decode_lengths, device=device)
+        predicted_f0, predicted_energy = modules.prosody_predictor(
+            aligned_duration,
+            style,
+            half_lengths,
+            decode_alignment.size(-1),
+        )
     source_lengths = [int(value.item()) for value in batch.mel_lengths]
     full_lengths = [value * 2 for value in decode_lengths]
     resized_f0 = resize_prosody(target_f0, source_lengths, full_lengths)
     resized_energy = resize_prosody(target_energy, source_lengths, full_lengths)
-    decoder_f0 = predicted_f0 if stage.validation.f0_source is ProsodySource.PREDICTED else resized_f0
-    decoder_energy = predicted_energy if stage.validation.norm_source is ProsodySource.PREDICTED else resized_energy
+    decoder_f0 = (
+        predicted_f0
+        if stage.validation.f0_source is ProsodySource.PREDICTED
+        else resized_f0
+    )
+    decoder_energy = (
+        predicted_energy
+        if stage.validation.norm_source is ProsodySource.PREDICTED
+        else resized_energy
+    )
     positions = torch.arange(max(full_lengths), device=device)
-    frame_mask = positions[None, :] < torch.tensor(full_lengths, device=device)[:, None]
+    frame_mask = positions[None, :] < torch.tensor(
+        full_lengths,
+        device=device,
+    )[:, None]
     predicted_f0 = predicted_f0 * frame_mask
     predicted_energy = predicted_energy * frame_mask
     reconstructed = modules.decoder(

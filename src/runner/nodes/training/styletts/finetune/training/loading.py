@@ -192,7 +192,6 @@ def build_model(args, text_aligner, pitch_extractor, bert):
         style_scale=args.alpha_flow.get("style_scale", 1.0),
         transition_start=args.alpha_flow.transition_start,
         transition_end=args.alpha_flow.transition_end,
-        equal_time_ratio=args.alpha_flow.equal_time_ratio,
         temperature=args.alpha_flow.temperature,
         conditional_dropout=args.alpha_flow.conditional_dropout,
     )

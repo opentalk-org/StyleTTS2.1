@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Conv1d
 from torch.nn.utils import remove_weight_norm, weight_norm
+from torchaudio.models import Conformer
 
 from .utils import get_padding, init_weights
 
@@ -100,10 +101,10 @@ class AdaINResBlock1(nn.Module):
         self.convs2.apply(init_weights)
 
         self.adain1 = nn.ModuleList(
-            [AdaIN1d(style_dim, channels), AdaIN1d(style_dim, channels), AdaIN1d(style_dim, channels)]
+            [AdaIN1d(style_dim, channels) for _ in range(3)]
         )
         self.adain2 = nn.ModuleList(
-            [AdaIN1d(style_dim, channels), AdaIN1d(style_dim, channels), AdaIN1d(style_dim, channels)]
+            [AdaIN1d(style_dim, channels) for _ in range(3)]
         )
         self.alpha1 = nn.ParameterList(
             [nn.Parameter(torch.ones(1, channels, 1)) for _ in range(len(self.convs1))]
@@ -133,7 +134,15 @@ class AdaINResBlock1(nn.Module):
 
 
 class AdainResBlk1d(nn.Module):
-    def __init__(self, dim_in, dim_out, style_dim=64, actv=nn.LeakyReLU(0.2), upsample="none", dropout_p=0.0):
+    def __init__(
+        self,
+        dim_in,
+        dim_out,
+        style_dim=64,
+        actv=nn.LeakyReLU(0.2),
+        upsample="none",
+        dropout_p=0.0,
+    ):
         super().__init__()
         self.actv = actv
         self.upsample_type = upsample
@@ -162,7 +171,9 @@ class AdainResBlk1d(nn.Module):
         self.norm1 = AdaIN1d(style_dim, dim_in)
         self.norm2 = AdaIN1d(style_dim, dim_out)
         if self.learned_sc:
-            self.conv1x1 = weight_norm(nn.Conv1d(dim_in, dim_out, 1, 1, 0, bias=False))
+            self.conv1x1 = weight_norm(
+                nn.Conv1d(dim_in, dim_out, 1, 1, 0, bias=False)
+            )
 
     def _shortcut(self, x):
         x = self.upsample(x)
@@ -190,25 +201,54 @@ class DecoderBackbone(nn.Module):
     def __init__(self, dim_in=512, style_dim=64):
         super().__init__()
         self.decode = nn.ModuleList()
-        self.encode = AdainResBlk1d(dim_in + 2, 1024, style_dim)
+        self.conformer = Conformer(
+            input_dim=dim_in + 2,
+            num_heads=2,
+            ffn_dim=dim_in * 2,
+            num_layers=1,
+            depthwise_conv_kernel_size=7,
+            use_group_norm=True,
+        )
+        self.encode = AdainResBlk1d(dim_in + 4, 1024, style_dim)
         self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
         self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
         self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
-        self.decode.append(AdainResBlk1d(1024 + 2 + 64, 512, style_dim, upsample=True))
-        self.F0_conv = weight_norm(nn.Conv1d(1, 1, kernel_size=3, stride=2, groups=1, padding=1))
-        self.N_conv = weight_norm(nn.Conv1d(1, 1, kernel_size=3, stride=2, groups=1, padding=1))
-        self.asr_res = nn.Sequential(weight_norm(nn.Conv1d(512, 64, kernel_size=1)))
+        self.decode.append(
+            AdainResBlk1d(1024 + 2 + 64, 512, style_dim, upsample=True)
+        )
+        self.F0_conv = weight_norm(
+            nn.Conv1d(1, 1, kernel_size=3, stride=2, groups=1, padding=1)
+        )
+        self.N_conv = weight_norm(
+            nn.Conv1d(1, 1, kernel_size=3, stride=2, groups=1, padding=1)
+        )
+        self.asr_res = nn.Sequential(
+            weight_norm(nn.Conv1d(512, 64, kernel_size=1))
+        )
 
     def _smooth_signal(self, signal, kernel_size):
         if not kernel_size:
             return signal
-        kernel = torch.ones(1, 1, kernel_size, device=signal.device, dtype=signal.dtype)
-        return F.conv1d(signal.unsqueeze(1), kernel, padding=kernel_size // 2).squeeze(1) / kernel_size
+        kernel = torch.ones(
+            1,
+            1,
+            kernel_size,
+            device=signal.device,
+            dtype=signal.dtype,
+        )
+        smoothed = F.conv1d(
+            signal.unsqueeze(1),
+            kernel,
+            padding=kernel_size // 2,
+        )
+        return smoothed.squeeze(1) / kernel_size
 
     def _prepare_inputs(self, f0_curve, n):
         if not self.training:
             return f0_curve, n
+        f0_down = [0, 3, 7][random.randint(0, 2)]
         n_down = [0, 3, 7, 15][random.randint(0, 3)]
+        f0_curve = self._smooth_signal(f0_curve, f0_down)
         n = self._smooth_signal(n, n_down)
         return f0_curve, n
 
@@ -217,6 +257,14 @@ class DecoderBackbone(nn.Module):
         f0 = self.F0_conv(f0_curve.unsqueeze(1))
         n_proj = self.N_conv(n.unsqueeze(1))
         x = torch.cat([asr, f0, n_proj], axis=1)
+        lengths = torch.full(
+            (x.size(0),),
+            x.size(-1),
+            device=x.device,
+            dtype=torch.long,
+        )
+        x, _ = self.conformer(x.transpose(-1, -2), lengths)
+        x = torch.cat([x.transpose(-1, -2), f0, n_proj], axis=1)
         x = self.encode(x, s)
         asr_res = self.asr_res(asr)
         res = True

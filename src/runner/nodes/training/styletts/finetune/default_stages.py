@@ -81,23 +81,8 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
     )
     return [
         TrainingStageSpec(
-            name="train_test.py · mel reconstruction warmup",
-            steps=100_000,
-            style_source=StyleSource.CONTINUOUS,
-            prosody_source=ProsodySource.GROUND_TRUTH,
-            trainable_modules=[
-                TrainableModule.TEXT_ENCODER,
-                TrainableModule.VOICE_ENCODER,
-                TrainableModule.DECODER,
-            ],
-            enabled_losses=[TrainingLoss.MEL],
-            loss_weights=weights.model_copy(update={"mel": 1}),
-            validation=_validation(False, False),
-            train_discriminators=False,
-        ),
-        TrainingStageSpec(
             name="train_test.py · acoustic training",
-            steps=100_000,
+            steps=2_000,
             style_source=StyleSource.CONTINUOUS,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=acoustic_modules,
@@ -121,7 +106,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         ),
         TrainingStageSpec(
             name="small_rec.py · prosody/RVQ and factorization",
-            steps=100_000,
+            steps=2_000,
             style_source=StyleSource.QUANTIZED,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=prosody_modules,
@@ -131,7 +116,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         ),
         TrainingStageSpec(
             name="v_diffusion.py · AlphaFlow",
-            steps=50_000,
+            steps=2_000,
             style_source=StyleSource.QUANTIZED,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=[TrainableModule.ALPHA_FLOW],

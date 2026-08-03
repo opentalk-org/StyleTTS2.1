@@ -34,7 +34,6 @@ class TrainableModule(str, Enum):
     DECODER = "decoder"
     DURATION_PREDICTOR = "duration_predictor"
     FACTORIZATION = "factorization"
-    PITCH_EXTRACTOR = "pitch_extractor"
     POSITION_EMBEDDING = "position_embedding"
     PROSODY_ENCODER = "prosody_encoder"
     PROSODY_PREDICTOR = "prosody_predictor"
@@ -93,7 +92,7 @@ class TrainingStageSpec(BaseModel):
     steps: int = Field(gt=0)
     batch_size: int = Field(default=28, ge=1, le=128)
     max_audio_seconds: float = Field(default=15.0, ge=1, le=60)
-    max_decoder_seconds: float = Field(default=3.0, ge=1, le=30)
+    max_decoder_seconds: float = Field(default=3.5, ge=1, le=30)
     style_source: StyleSource = StyleSource.QUANTIZED
     prosody_source: ProsodySource
     trainable_modules: list[TrainableModule]

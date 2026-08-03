@@ -137,7 +137,6 @@ def _apply_model_overrides(
         {
             "transition_start": 1000,
             "transition_end": 4000,
-            "equal_time_ratio": 0.5,
             "temperature": 25.0,
             "conditional_dropout": 0.1,
         },

@@ -134,20 +134,35 @@ class Validator:
                 batch.input_lengths,
                 batch.mel_lengths // (2**n_down),
             )
+            soft_alignment = soft_alignment.masked_fill(
+                ~alignment_mask.bool(),
+                0.0,
+            )
             monotonic = maximum_path(soft_alignment, alignment_mask)
             duration_targets = monotonic.sum(axis=-1).detach()
-            bert = modules.bert(
-                batch.texts,
-                attention_mask=(~text_mask).int(),
-                language_ids=batch.language_ids,
-                modality_ids=batch.modality_ids,
-            )
             text_encoding = modules.text_encoder(
                 batch.texts,
                 batch.input_lengths,
                 text_mask,
             )
-            duration_encoding = modules.bert_encoder(bert).transpose(-1, -2)
+            validate_predictions = _validates_predictions(stage)
+            bert = batch.mels.new_zeros(
+                (batch.texts.size(0), batch.texts.size(1), 1)
+            )
+            duration_encoding = batch.mels.new_zeros(
+                (batch.texts.size(0), 1, batch.texts.size(1))
+            )
+            if validate_predictions:
+                bert = modules.bert(
+                    batch.texts,
+                    attention_mask=(~text_mask).int(),
+                    language_ids=batch.language_ids,
+                    modality_ids=batch.modality_ids,
+                )
+                duration_encoding = modules.bert_encoder(bert).transpose(
+                    -1,
+                    -2,
+                )
             waveform, target_sample_lengths = self._waveform_targets(batch)
             target_f0, _, _ = modules.pitch_extractor(
                 batch.mels.unsqueeze(1),
@@ -199,7 +214,6 @@ class Validator:
                 prediction_sample_lengths,
             )
             metrics = {"mel_loss": mel_loss}
-            validate_predictions = _validates_predictions(stage)
             if validate_predictions:
                 full_lengths = [length * 2 for length in decode_lengths]
                 f0_loss = styletts_zs_reconstruction_loss(
