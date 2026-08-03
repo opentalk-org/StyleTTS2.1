@@ -59,12 +59,23 @@ class FilePathDataset(torch.utils.data.Dataset):
         min_length=50,
         symbols=None,
         stream_cache=None,
+        plbert_languages=None,
+        plbert_modality_id=0,
     ):
         _data_list = [l.strip().split('|') for l in data_list]
         rows = [data if len(data) == 3 else (*data, 0) for data in _data_list]
         audio_ids = [UUID(Path(row[0]).stem) for row in rows]
         with database_session() as session:
             audio_files = audio_crud.get_audio_files_bulk(session, audio_ids)
+        self.language_ids = {
+            language.lower(): index + 1
+            for index, language in enumerate(plbert_languages or ())
+        }
+        self.audio_language_ids = {
+            audio_id: self._resolve_language_id(audio_files[audio_id].language)
+            for audio_id in audio_ids
+        }
+        self.modality_id = int(plbert_modality_id)
         self.text_cleaner = TextCleaner(symbols)
         self.start_token_id = self.text_cleaner.symbol_index[START_SYMBOL]
         self.end_token_id = self.text_cleaner.symbol_index[END_SYMBOL]
@@ -113,7 +124,30 @@ class FilePathDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         speaker_id, audio_id, text, ref_audio_id, ref_text, ref_label = self._resolve_row(idx)
-        return speaker_id, audio_id, text, ref_audio_id, ref_text, ref_label
+        return (
+            speaker_id,
+            self.audio_language_ids[audio_id],
+            self.modality_id,
+            audio_id,
+            text,
+            ref_audio_id,
+            ref_text,
+            ref_label,
+        )
+
+    def _resolve_language_id(self, language: str | None) -> int:
+        if not self.language_ids:
+            return 0
+        if language is None:
+            raise ValueError("training audio is missing its language")
+        normalized = language.strip().lower().replace("_", "-")
+        candidates = (normalized, normalized.split("-", 1)[0])
+        for candidate in candidates:
+            if candidate in self.language_ids:
+                return self.language_ids[candidate]
+        raise ValueError(
+            f"training audio language {language!r} is unsupported by PLBERT"
+        )
 
     def _reference_data(self, speaker_id: int, audio_id: UUID) -> list[str]:
         candidates = [
@@ -194,8 +228,8 @@ class Collater:
 
     def __call__(self, batch):
         batch_size = len(batch)
-        audio_ids = [row[1] for row in batch]
-        ref_audio_ids = [row[3] for row in batch]
+        audio_ids = [row[3] for row in batch]
+        ref_audio_ids = [row[5] for row in batch]
         requested_ids = list(dict.fromkeys(audio_ids + ref_audio_ids))
 
         with database_session() as session:
@@ -206,10 +240,12 @@ class Collater:
         max_ref_mel_length = max(
             cache[audio_id][1].size(1) for audio_id in ref_audio_ids
         )
-        max_text_length = max(row[2].size(0) for row in batch)
-        max_rtext_length = max(row[4].size(0) for row in batch)
+        max_text_length = max(row[4].size(0) for row in batch)
+        max_rtext_length = max(row[6].size(0) for row in batch)
 
         labels = torch.zeros((batch_size)).long()
+        language_ids = torch.zeros((batch_size)).long()
+        modality_ids = torch.zeros((batch_size)).long()
         mels = torch.zeros((batch_size, 80, max_mel_length)).float()
         texts = torch.zeros((batch_size, max_text_length)).long()
         ref_texts = torch.zeros((batch_size, max_rtext_length)).long()
@@ -220,13 +256,24 @@ class Collater:
         ref_mel_lengths = torch.zeros(batch_size).long()
         waves = [None for _ in range(batch_size)]
 
-        for bid, (label, audio_id, text, ref_audio_id, ref_text, ref_label) in enumerate(batch):
+        for bid, (
+            label,
+            language_id,
+            modality_id,
+            audio_id,
+            text,
+            ref_audio_id,
+            ref_text,
+            ref_label,
+        ) in enumerate(batch):
             wave, mel = cache[audio_id]
             _, ref_mel = cache[ref_audio_id]
             mel_size = mel.size(1)
             text_size = text.size(0)
             rtext_size = ref_text.size(0)
             labels[bid] = label
+            language_ids[bid] = language_id
+            modality_ids[bid] = modality_id
             mels[bid, :, :mel_size] = mel
             texts[bid, :text_size] = text
             ref_texts[bid, :rtext_size] = ref_text
@@ -240,6 +287,8 @@ class Collater:
         return TrainingBatch(
             waves=tuple(waves),
             speaker_ids=labels,
+            language_ids=language_ids,
+            modality_ids=modality_ids,
             texts=texts,
             input_lengths=input_lengths,
             reference_texts=ref_texts,

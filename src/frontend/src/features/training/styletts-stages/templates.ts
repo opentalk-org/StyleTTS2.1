@@ -40,7 +40,6 @@ export const TRAINING_LOSSES = [
   "rvq",
   "sequence_alignment",
   "slm_adversarial",
-  "style",
   "wavlm",
   "style_nuisance",
   "voice_metric",
@@ -81,7 +80,6 @@ export const DEFAULT_LOSS_WEIGHTS: TrainingLossWeights = {
   rvq: 1,
   sequence_alignment: 1,
   slm_adversarial: 1,
-  style: 1,
   wavlm: 1,
   style_nuisance: 0.1,
   voice_metric: 1,
@@ -107,7 +105,9 @@ const ACOUSTIC_MODULES: TrainableModule[] = [
   "text_encoder",
   "voice_encoder",
   "decoder",
-  "language_embedding",
+  "text_aligner",
+  "pitch_extractor",
+  "factorization",
 ];
 const PROSODY_MODULES: TrainableModule[] = [
   "duration_predictor",
@@ -115,7 +115,6 @@ const PROSODY_MODULES: TrainableModule[] = [
   "prosody_predictor",
   "quantizer",
   "position_embedding",
-  "voice_encoder",
   "factorization",
 ];
 const PROSODY_LOSSES: TrainingLoss[] = [
@@ -125,16 +124,13 @@ const PROSODY_LOSSES: TrainingLoss[] = [
   "duration_ce",
   "prosody_adversarial",
   "rvq",
-  "voice_pair",
-  "voice_metric",
-  "voice_nuisance",
   "style_nuisance",
   "xcov",
 ];
 
 export const STAGE_TEMPLATES: TrainingStageSpec[] = [
   {
-    name: "train_test.py · reconstruction",
+    name: "train_test.py · acoustic training",
     steps: 100_000,
     batch_size: 28,
     max_audio_seconds: 15,
@@ -142,20 +138,6 @@ export const STAGE_TEMPLATES: TrainingStageSpec[] = [
     style_source: "continuous",
     prosody_source: "ground_truth",
     trainable_modules: ACOUSTIC_MODULES,
-    enabled_losses: ["mel"],
-    loss_weights: { ...DEFAULT_LOSS_WEIGHTS, mel: 1 },
-    train_discriminators: false,
-    validation: { ...DEFAULT_VALIDATION },
-  },
-  {
-    name: "train_test.py · adversarial refinement",
-    steps: 50_000,
-    batch_size: 28,
-    max_audio_seconds: 15,
-    max_decoder_seconds: 3,
-    style_source: "continuous",
-    prosody_source: "ground_truth",
-    trainable_modules: [...ACOUSTIC_MODULES, "text_aligner", "pitch_extractor"],
     enabled_losses: [
       "mel",
       "sequence_alignment",
@@ -163,6 +145,9 @@ export const STAGE_TEMPLATES: TrainingStageSpec[] = [
       "adversarial",
       "wavlm",
       "slm_adversarial",
+      "voice_pair",
+      "voice_metric",
+      "voice_nuisance",
     ],
     loss_weights: { ...DEFAULT_LOSS_WEIGHTS },
     train_discriminators: true,
@@ -199,10 +184,10 @@ export const STAGE_TEMPLATES: TrainingStageSpec[] = [
 ];
 
 export const STAGE_PRESETS = [
-  { label: "train_test.py", indexes: [0, 1] },
-  { label: "small_rec.py", indexes: [2] },
-  { label: "v_diffusion.py → AlphaFlow", indexes: [3] },
-  { label: "Full StyleTTS-ZS", indexes: [0, 1, 2, 3] },
+  { label: "train_test.py", indexes: [0] },
+  { label: "small_rec.py", indexes: [1] },
+  { label: "v_diffusion.py → AlphaFlow", indexes: [2] },
+  { label: "Full StyleTTS-ZS", indexes: [0, 1, 2] },
 ] as const;
 
 export function cloneStage(stage: TrainingStageSpec): TrainingStageSpec {

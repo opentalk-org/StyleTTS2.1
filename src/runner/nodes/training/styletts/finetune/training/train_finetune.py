@@ -68,6 +68,8 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
                 "max_text_tokens": config.PLBERT_config["model_params"][
                     "max_position_embeddings"
                 ],
+                "plbert_languages": config.PLBERT_config.get("languages"),
+                "plbert_modality_id": config.PLBERT_config.get("modality_id", 0),
             }
             train_batches = build_dataloader(
                 train_list,

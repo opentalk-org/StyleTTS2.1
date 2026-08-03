@@ -19,13 +19,13 @@ _PHONEME_EXTENSIONS = {
 
 
 class CustomAlbert(AlbertModel):
-    def forward(self, *args, **kwargs):
+    def forward(self, *args, language_ids=None, modality_ids=None, **kwargs):
         outputs = super().forward(*args, **kwargs)
         return outputs.last_hidden_state
 
 
 class CustomBert(BertModel):
-    def forward(self, *args, **kwargs):
+    def forward(self, *args, language_ids=None, modality_ids=None, **kwargs):
         outputs = super().forward(*args, **kwargs)
         return outputs.last_hidden_state
 
@@ -37,8 +37,6 @@ class MultilingualPlBert(nn.Module):
         language_embeddings: nn.Embedding,
         modality_embeddings: nn.Embedding,
         token_id_map: Tensor,
-        language_id: int,
-        modality_id: int,
     ) -> None:
         super().__init__()
         self.encoder = encoder
@@ -46,13 +44,25 @@ class MultilingualPlBert(nn.Module):
         self.language_embeddings = language_embeddings
         self.modality_embeddings = modality_embeddings
         self.register_buffer("token_id_map", token_id_map, persistent=True)
-        self.language_id = language_id
-        self.modality_id = modality_id
 
-    def forward(self, input_ids: Tensor, attention_mask: Tensor) -> Tensor:
+    def forward(
+        self,
+        input_ids: Tensor,
+        attention_mask: Tensor,
+        language_ids: Tensor,
+        modality_ids: Tensor,
+    ) -> Tensor:
         artifact_ids = self.token_id_map[input_ids]
-        language_ids = torch.full_like(artifact_ids, self.language_id)
-        modality_ids = torch.full_like(artifact_ids, self.modality_id)
+        language_ids = _expand_condition_ids(
+            language_ids,
+            artifact_ids,
+            "language",
+        )
+        modality_ids = _expand_condition_ids(
+            modality_ids,
+            artifact_ids,
+            "modality",
+        )
         embeddings = self.encoder.embeddings.word_embeddings(artifact_ids)
         embeddings = embeddings + self.language_embeddings(language_ids)
         embeddings = embeddings + self.modality_embeddings(modality_ids)
@@ -174,6 +184,22 @@ def _load_multilingual_plbert(path: Path, config: dict) -> MultilingualPlBert:
         language_embeddings,
         modality_embeddings,
         torch.tensor(token_ids, dtype=torch.long),
-        int(config["language_id"]),
-        int(config["modality_id"]),
     )
+
+
+def _expand_condition_ids(
+    condition_ids: Tensor,
+    input_ids: Tensor,
+    name: str,
+) -> Tensor:
+    if condition_ids.ndim == 1:
+        if condition_ids.shape[0] != input_ids.shape[0]:
+            raise ValueError(
+                f"PLBERT {name} batch does not match input batch"
+            )
+        return condition_ids.unsqueeze(1).expand_as(input_ids)
+    if condition_ids.shape != input_ids.shape:
+        raise ValueError(
+            f"PLBERT {name} IDs must be per sample or per token"
+        )
+    return condition_ids

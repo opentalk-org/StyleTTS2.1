@@ -15,7 +15,6 @@ def nuisance_losses(
 ) -> tuple[Tensor, Tensor]:
     factorization = runtime.models.modules.factorization
     parameters = runtime.models.parameters
-    language_ids = torch.full_like(batch.speaker_ids, parameters.language_id)
     content_bag = _phoneme_bag(
         batch.texts,
         batch.input_lengths,
@@ -25,7 +24,7 @@ def nuisance_losses(
         output.voice,
         output.style_target,
         batch.speaker_ids,
-        language_ids,
+        batch.language_ids,
         content_bag,
         reversal_strength,
     )

@@ -14,7 +14,7 @@ from ...stages import (
 )
 from .training_crops import crop_training_batch
 from .rvq_initialization import initialize_rvq_codebooks
-from .stage_requirements import requires_generated_style, requires_voice
+from .stage_requirements import requires_voice
 from .prosody_sampling import prosody_inputs, sample_author_prosody_input
 @dataclass
 class ForwardOutput:
@@ -32,7 +32,6 @@ class ForwardOutput:
     predicted_f0: Tensor
     predicted_energy: Tensor
     style_target: Tensor
-    style_prediction: Tensor
     rvq_loss: Tensor
     alpha_flow_loss: Tensor
     voice: Tensor
@@ -60,7 +59,12 @@ def model_forward(
     )
     monotonic = maximum_path(soft_alignment, alignment_mask)
     duration_targets = monotonic.sum(-1).detach()
-    bert = modules.bert(batch.texts, attention_mask=(~text_mask).int())
+    bert = modules.bert(
+        batch.texts,
+        attention_mask=(~text_mask).int(),
+        language_ids=batch.language_ids,
+        modality_ids=batch.modality_ids,
+    )
     text_encoding = modules.text_encoder(
         batch.texts,
         batch.input_lengths,
@@ -115,7 +119,6 @@ def model_forward(
             style_target = continuous_style
             rvq_loss = continuous_style.new_zeros(())
     alpha_loss = style_target.new_zeros(())
-    style_prediction = style_target
     if TrainingLoss.ALPHA_FLOW in enabled:
         alpha_loss = modules.alpha_flow(
             style_target.detach(),
@@ -123,12 +126,6 @@ def model_forward(
             style_inputs,
             batch.input_lengths,
             alpha_flow_step,
-        )
-    if requires_generated_style(enabled):
-        style_prediction = modules.alpha_flow.sample(
-            bert,
-            style_inputs,
-            batch.input_lengths,
         )
     duration_predictions = modules.duration_predictor(
         duration_encoding,
@@ -195,13 +192,6 @@ def model_forward(
             )
             voice = F.normalize(encoded_voice, dim=-1)
             reference_voice = F.normalize(decoder_reference_voice, dim=-1)
-    language_ids = torch.full(
-        (batch.texts.size(0),),
-        runtime.models.parameters.language_id,
-        dtype=torch.long,
-        device=device,
-    )
-    language = modules.language_embedding(language_ids)
     if stage.prosody_source is ProsodySource.PREDICTED:
         decoder_f0 = predicted_f0_crop
         decoder_energy = predicted_energy_crop
@@ -214,7 +204,6 @@ def model_forward(
             decoder_f0,
             decoder_energy,
             decoder_reference_voice,
-            language,
         )
     return ForwardOutput(
         alignment_predictions,
@@ -231,7 +220,6 @@ def model_forward(
         predicted_f0_masked,
         predicted_energy_masked,
         style_target,
-        style_prediction,
         rvq_loss,
         alpha_loss,
         voice,

@@ -186,7 +186,7 @@ def _plbert_config(
         config["model_params"]["max_position_embeddings"] = int(positions)
         config["input_symbols"] = symbols
         config["artifact_symbols"] = metadata["phoneme_symbols"]
-        config["language_id"] = metadata["languages"].index("en") + 1
+        config["languages"] = metadata["languages"]
         config["modality_id"] = 0
     return config
 
