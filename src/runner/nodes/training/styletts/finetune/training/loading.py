@@ -1,12 +1,12 @@
+import logging
+from pathlib import Path
+
 import torch
 import torch.nn as nn
 import yaml
 from munch import Munch
 
 from runner.nodes.training.styletts.finetune.training.modules.asr.models import ASRCNN
-from runner.nodes.training.styletts.finetune.training.modules.diffusion.diffusion import AudioDiffusionConditional
-from runner.nodes.training.styletts.finetune.training.modules.diffusion.modules import StyleTransformer1d, Transformer1d
-from runner.nodes.training.styletts.finetune.training.modules.diffusion.sampler import KDiffusion, LogNormalDistribution
 from runner.nodes.training.styletts.finetune.training.modules.discriminators import MultiPeriodDiscriminator, MultiResSpecDiscriminator, WavLMDiscriminator
 from runner.nodes.training.styletts.finetune.training.modules.encoders import (
     StyleEncoder,
@@ -15,7 +15,15 @@ from runner.nodes.training.styletts.finetune.training.modules.encoders import (
 from runner.nodes.training.styletts.finetune.training.modules.hifigan import Decoder as HifiganDecoder
 from runner.nodes.training.styletts.finetune.training.modules.istftnet import Decoder as IstftnetDecoder
 from runner.nodes.training.styletts.finetune.training.modules.jdc import JDCNet
-from runner.nodes.training.styletts.finetune.training.modules.predictors import ProsodyPredictor
+from runner.nodes.training.styletts.finetune.training.modules.zs.alpha_flow import AlphaFlow
+from runner.nodes.training.styletts.finetune.training.modules.zs.factorization import FactorizationHeads
+from runner.nodes.training.styletts.finetune.training.modules.zs.zs_prosody import (
+    DurationPredictor,
+    ProsodyDiscriminator,
+    ProsodyPredictor,
+    ResidualVectorQuantize,
+    TVStyleEncoder,
+)
 from runner.nodes.training.styletts.finetune.training.state_dict_resize import merge_state_dict_with_dim0_resize
 
 _ASR_N_TOKEN_DIM0_KEYS = frozenset({
@@ -48,6 +56,20 @@ _CHECKPOINT_DIM0_RESIZE_KEYS_BY_MODULE = {
         "module.asr_s2s.project_to_n_symbols.bias",
     }),
 }
+
+logger = logging.getLogger(__name__)
+_FACTORIZED_MODULES = frozenset({
+    "alpha_flow",
+    "duration_predictor",
+    "factorization",
+    "language_embedding",
+    "position_embedding",
+    "prosody_encoder",
+    "prosody_discriminator",
+    "prosody_predictor",
+    "quantizer",
+    "duration_discriminator",
+})
 
 
 def _merge_checkpoint_state_with_dim0_resize(module_name, model_module, ckpt_sd):
@@ -143,51 +165,52 @@ def build_model(args, text_aligner, pitch_extractor, bert):
         n_symbols=args.n_token,
         bert_channels=bert.config.hidden_size,
     )
-    predictor = ProsodyPredictor(style_dim=args.style_dim, d_hid=args.hidden_dim, nlayers=args.n_layer, max_dur=args.max_dur, dropout=args.dropout)
-    
-    style_encoder = StyleEncoder(dim_in=args.dim_in, style_dim=args.style_dim, max_conv_dim=args.hidden_dim)
-    predictor_encoder = StyleEncoder(dim_in=args.dim_in, style_dim=args.style_dim, max_conv_dim=args.hidden_dim)
-        
-    if args.multispeaker:
-        transformer = StyleTransformer1d(channels=args.style_dim*2, 
-                                    context_embedding_features=bert.config.hidden_size,
-                                    context_features=args.style_dim*2, 
-                                    **args.diffusion.transformer)
-    else:
-        transformer = Transformer1d(channels=args.style_dim*2, 
-                                    context_embedding_features=bert.config.hidden_size,
-                                    **args.diffusion.transformer)
-    
-    diffusion = AudioDiffusionConditional(
-        in_channels=1,
-        embedding_max_length=bert.config.max_position_embeddings,
-        embedding_features=bert.config.hidden_size,
-        embedding_mask_proba=args.diffusion.embedding_mask_proba,
-        channels=args.style_dim*2,
-        context_features=args.style_dim*2,
+    voice_encoder = StyleEncoder(
+        dim_in=args.dim_in,
+        style_dim=args.style_dim,
+        max_conv_dim=args.hidden_dim,
     )
-    
-    diffusion.diffusion = KDiffusion(
-        net=diffusion.unet,
-        sigma_distribution=LogNormalDistribution(mean = args.diffusion.dist.mean, std = args.diffusion.dist.std),
-        sigma_data=args.diffusion.dist.sigma_data,
-        dynamic_threshold=0.0 
+    prosody_encoder = TVStyleEncoder(mel_dim=514)
+    duration_predictor = DurationPredictor(max_dur=50)
+    prosody_predictor = ProsodyPredictor()
+    quantizer = ResidualVectorQuantize(
+        input_dim=512,
+        n_codebooks=9,
+        codebook_size=1024,
+        codebook_dim=8,
     )
-    diffusion.diffusion.net = transformer
-    diffusion.unet = transformer
+    alpha_flow = AlphaFlow(
+        text_dim=bert.config.hidden_size,
+        style_scale=args.alpha_flow.get("style_scale", 1.0),
+        transition_start=args.alpha_flow.transition_start,
+        transition_end=args.alpha_flow.transition_end,
+        equal_time_ratio=args.alpha_flow.equal_time_ratio,
+        temperature=args.alpha_flow.temperature,
+        conditional_dropout=args.alpha_flow.conditional_dropout,
+    )
 
     
     nets = Munch(
             bert=bert,
             bert_encoder=nn.Linear(bert.config.hidden_size, args.hidden_dim),
 
-            predictor=predictor,
+            duration_predictor=duration_predictor,
+            prosody_predictor=prosody_predictor,
+            prosody_discriminator=ProsodyDiscriminator(mel_dim=514),
+            duration_discriminator=ProsodyDiscriminator(mel_dim=513),
             decoder=decoder,
             text_encoder=text_encoder,
-
-            predictor_encoder=predictor_encoder,
-            style_encoder=style_encoder,
-            diffusion=diffusion,
+            position_embedding=nn.Embedding(512, 512),
+            prosody_encoder=prosody_encoder,
+            quantizer=quantizer,
+            voice_encoder=voice_encoder,
+            alpha_flow=alpha_flow,
+            factorization=FactorizationHeads(
+                language_count=args.language_count,
+                content_dim=args.n_token,
+                voice_dim=args.style_dim,
+            ),
+            language_embedding=nn.Embedding(args.language_count, args.language_dim),
 
             text_aligner = text_aligner,
             pitch_extractor=pitch_extractor,
@@ -206,15 +229,43 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
     for key in model:
         if key in ignore_modules:
             continue
-        normalized_params = _maybe_normalize_module_prefix(model[key], params[key])
+        source_key = (
+            "style_encoder"
+            if key == "voice_encoder" and "voice_encoder" not in params
+            else key
+        )
+        if source_key not in params:
+            if key in _FACTORIZED_MODULES:
+                logger.info("initialized factorized module=%s parameters=%s", key, len(model[key].state_dict()))
+                continue
+            raise ValueError(f"checkpoint is missing unchanged module {key}")
+        normalized_params = _maybe_normalize_module_prefix(model[key], params[source_key])
+        if key == "decoder":
+            _load_converted_decoder(model[key], normalized_params)
+            continue
         adapted_params = _merge_checkpoint_state_with_dim0_resize(key, model[key], normalized_params)
+        if key == "factorization":
+            current_keys = model[key].state_dict().keys()
+            adapted_params = {
+                name: value
+                for name, value in adapted_params.items()
+                if name in current_keys
+            }
         load_result = model[key].load_state_dict(adapted_params, strict=False)
         missing_keys = [
             item for item in load_result.missing_keys
             if not item.endswith("dummy_tensor")
             and not (
+                key == "quantizer"
+                and item == "_codebooks_initialized"
+            )
+            and not (
                 key == "text_encoder"
                 and item.startswith("bert_linear.")
+            )
+            and not (
+                key == "alpha_flow"
+                and item in {"style_scale", "style_scale_updates"}
             )
         ]
         unexpected_keys = [
@@ -226,6 +277,8 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
                 f"checkpoint module {key} does not match: "
                 f"missing={missing_keys}, unexpected={unexpected_keys}"
             )
+        if key == "quantizer" and "_codebooks_initialized" in load_result.missing_keys:
+            model[key]._codebooks_initialized.fill_(True)
     for module in model.values():
         module.eval()
 
@@ -233,3 +286,59 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
         optimizer.load_state_dict(state["optimizer"])
 
     return model, optimizer
+
+
+def _load_converted_decoder(module: nn.Module, checkpoint: dict[str, torch.Tensor]) -> None:
+    current = module.state_dict()
+    compatible = {
+        name: value
+        for name, value in checkpoint.items()
+        if name in current and current[name].shape == value.shape
+    }
+    compatible.update(_converted_decoder_fixed_affines(current, checkpoint))
+    result = module.load_state_dict(compatible, strict=False)
+    adapter_keys = [name for name in result.missing_keys if "feature_linear" in name]
+    structural_keys = [name for name in result.missing_keys if name not in adapter_keys]
+    logger.info(
+        "converted decoder loaded=%s new_adapters=%s structural_init=%s incompatible_old=%s",
+        len(compatible),
+        len(adapter_keys),
+        len(structural_keys),
+        len(checkpoint) - len(compatible),
+    )
+
+
+def _converted_decoder_fixed_affines(
+    current: dict[str, torch.Tensor],
+    checkpoint: dict[str, torch.Tensor],
+) -> dict[str, torch.Tensor]:
+    """Preserve the pretrained AdaIN output at a zero style vector.
+
+    The local decoder deliberately has no adaptive normalization.  Its fixed
+    InstanceNorm affine is initialized from the bias of each old AdaIN linear
+    layer: ``weight = 1 + gamma_bias`` and ``bias = beta_bias``.  The old
+    style-dependent weights remain excluded and are replaced by the requested
+    per-frame additive adapters.
+    """
+    converted: dict[str, torch.Tensor] = {}
+    for source_name, source_bias in checkpoint.items():
+        if not source_name.endswith(".fc.bias"):
+            continue
+        target_prefix = source_name.removesuffix(".fc.bias")
+        target_prefix = target_prefix.replace(".adain1.", ".norm1.")
+        target_prefix = target_prefix.replace(".adain2.", ".norm2.")
+        weight_name = f"{target_prefix}.weight"
+        bias_name = f"{target_prefix}.bias"
+        if weight_name not in current or bias_name not in current:
+            continue
+        gamma, beta = source_bias.chunk(2)
+        if gamma.shape != current[weight_name].shape or beta.shape != current[bias_name].shape:
+            raise ValueError(
+                f"cannot convert decoder affine {source_name}: "
+                f"checkpoint={tuple(source_bias.shape)}, "
+                f"target_weight={tuple(current[weight_name].shape)}, "
+                f"target_bias={tuple(current[bias_name].shape)}"
+            )
+        converted[weight_name] = 1 + gamma
+        converted[bias_name] = beta
+    return converted

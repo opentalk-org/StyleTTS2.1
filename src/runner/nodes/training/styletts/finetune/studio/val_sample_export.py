@@ -14,9 +14,9 @@ class ValidationSample:
     ground_truth: Tensor
     prediction: Tensor
     target_f0: Tensor
-    predicted_f0: Tensor
+    predicted_f0: Tensor | None
     target_n: Tensor
-    predicted_n: Tensor
+    predicted_n: Tensor | None
     soft_attention: Tensor
     hard_attention: Tensor
 
@@ -24,6 +24,7 @@ class ValidationSample:
 @dataclass(frozen=True)
 class ValidationSampleArtifacts:
     index: int
+    mode: str
     paths: tuple[Path, ...]
 
 
@@ -46,13 +47,19 @@ class ValidationArtifactRenderer:
         self,
         step: int,
         samples: list[ValidationSample],
+        mode: str = "teacher_forced_timing",
     ) -> list[ValidationSampleArtifacts]:
         artifacts = []
         for index, sample in enumerate(samples):
-            relative = Path("samples", f"step_{step:09d}", f"sample_{index}")
+            relative = Path(
+                "samples",
+                f"step_{step:09d}",
+                mode,
+                f"sample_{index}",
+            )
             directory = self.output_path / relative
             directory.mkdir(parents=True, exist_ok=True)
-            paths = (
+            paths = [
                 self._wave(directory / "gt.wav", sample.ground_truth),
                 self._wave(directory / "pred.wav", sample.prediction),
                 self._lines(
@@ -95,10 +102,11 @@ class ValidationArtifactRenderer:
                     torch.angle(self._stft(sample.prediction)),
                     "STFT phase",
                 ),
-            )
+            ]
             artifacts.append(
                 ValidationSampleArtifacts(
                     index=index,
+                    mode=mode,
                     paths=tuple(path.relative_to(self.output_path) for path in paths),
                 )
             )
@@ -129,13 +137,17 @@ class ValidationArtifactRenderer:
     def _lines(
         path: Path,
         target: Tensor,
-        prediction: Tensor,
+        prediction: Tensor | None,
         title: str,
     ) -> Path:
         figure = Figure(figsize=(10, 5), layout="constrained")
         axis = figure.subplots()
-        axis.plot(target.detach().float().cpu().flatten().numpy(), label="ground truth")
-        axis.plot(prediction.detach().float().cpu().flatten().numpy(), label="prediction")
+        axis.plot(target.detach().float().cpu().flatten().numpy(), label="target")
+        if prediction is not None:
+            axis.plot(
+                prediction.detach().float().cpu().flatten().numpy(),
+                label="prediction",
+            )
         axis.set_title(title)
         axis.legend()
         figure.savefig(path, dpi=120)

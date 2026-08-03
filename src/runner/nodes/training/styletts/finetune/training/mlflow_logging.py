@@ -54,7 +54,9 @@ class MlflowLogger:
         self.run.track_metrics(tracked_metrics, step=step)
         base = Path(log_dir)
         for sample in samples:
-            artifact_path = f"validation/step_{step:09d}/sample_{sample.index}"
+            artifact_path = (
+                f"validation/step_{step:09d}/{sample.mode}/sample_{sample.index}"
+            )
             for relative_path in sample.paths:
                 path = base / relative_path
                 self.run.log_artifact(
@@ -77,7 +79,15 @@ def start_run(config: TrainingConfig) -> TrackerRun:
             "run_id": publish["run_id"],
             "finetune_job_id": publish["finetune_job_id"],
             "total_steps": config.total_steps,
-            "batch_size": config.batch_size,
+            "stage_batch_sizes": ",".join(
+                str(stage.batch_size) for stage in config.training_stages
+            ),
+            "stage_max_audio_seconds": ",".join(
+                str(stage.max_audio_seconds) for stage in config.training_stages
+            ),
+            "stage_max_decoder_seconds": ",".join(
+                str(stage.max_decoder_seconds) for stage in config.training_stages
+            ),
             "precision": config.precision,
             "distributed_processes": config.distributed_processes,
         },

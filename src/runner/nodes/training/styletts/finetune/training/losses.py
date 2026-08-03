@@ -112,15 +112,24 @@ class GeneratorLoss(torch.nn.Module):
         self.mpd = mpd
         self.msd = msd
         
-    def forward(self, y, y_hat, discriminator):
+    def components(self, y, y_hat, discriminator):
         real_scores, generated_scores, real_maps, generated_maps = discriminator(
-            y,
-            y_hat,
+            y.float(),
+            y_hat.float(),
         )
         feature = feature_loss(real_maps, generated_maps)
         adversarial, _ = generator_loss(generated_scores)
         relative = generator_TPRLS_loss(real_scores, generated_scores)
-        return (feature + adversarial + relative).mean()
+        return (
+            (feature + adversarial + relative).mean(),
+            feature.mean(),
+            adversarial.mean(),
+            relative.mean(),
+        )
+
+    def forward(self, y, y_hat, discriminator):
+        total, _, _, _ = self.components(y, y_hat, discriminator)
+        return total
 
 class DiscriminatorLoss(torch.nn.Module):
 
@@ -131,8 +140,8 @@ class DiscriminatorLoss(torch.nn.Module):
         
     def forward(self, y, y_hat, discriminator):
         real_scores, generated_scores, _, _ = discriminator(
-            y,
-            y_hat,
+            y.float(),
+            y_hat.float(),
             return_features=False,
         )
         adversarial = discriminator_loss(real_scores, generated_scores)
@@ -159,10 +168,10 @@ class WavLMLoss(torch.nn.Module):
     def forward(self, wav, y_rec):
         with torch.no_grad():
             with profiling_fn("wavlm.reference_embedding"):
-                wav_16 = self.resample(wav)
+                wav_16 = self.resample(wav.float())
                 wav_embeddings = self.wavlm(input_values=wav_16, output_hidden_states=True).hidden_states
         with profiling_fn("wavlm.generated_embedding"):
-            y_rec_16 = self.resample(y_rec)
+            y_rec_16 = self.resample(y_rec.float())
             y_rec_embeddings = self.wavlm(input_values=y_rec_16, output_hidden_states=True).hidden_states
 
         with profiling_fn("wavlm.feature_loss"):
@@ -174,7 +183,7 @@ class WavLMLoss(torch.nn.Module):
 
     def generator(self, y_rec):
         with profiling_fn("wavlm.generator_embedding"):
-            y_rec_16 = self.resample(y_rec)
+            y_rec_16 = self.resample(y_rec.float())
             y_rec_embeddings = self.wavlm(input_values=y_rec_16, output_hidden_states=True).hidden_states
             y_rec_embeddings = torch.stack(y_rec_embeddings, dim=1).transpose(-1, -2).flatten(start_dim=1, end_dim=2)
         with profiling_fn("wavlm.generator_discriminator"):
@@ -186,9 +195,9 @@ class WavLMLoss(torch.nn.Module):
     def discriminator(self, wav, y_rec):
         with torch.no_grad():
             with profiling_fn("wavlm.discriminator_embeddings"):
-                wav_16 = self.resample(wav)
+                wav_16 = self.resample(wav.float())
                 wav_embeddings = self.wavlm(input_values=wav_16, output_hidden_states=True).hidden_states
-                y_rec_16 = self.resample(y_rec)
+                y_rec_16 = self.resample(y_rec.float())
                 y_rec_embeddings = self.wavlm(input_values=y_rec_16, output_hidden_states=True).hidden_states
 
                 y_embeddings = torch.stack(wav_embeddings, dim=1).transpose(-1, -2).flatten(start_dim=1, end_dim=2)
@@ -210,7 +219,7 @@ class WavLMLoss(torch.nn.Module):
     def discriminator_forward(self, wav):
         with torch.no_grad():
             with profiling_fn("wavlm.discriminator_forward_embedding"):
-                wav_16 = self.resample(wav)
+                wav_16 = self.resample(wav.float())
                 wav_embeddings = self.wavlm(input_values=wav_16, output_hidden_states=True).hidden_states
                 y_embeddings = torch.stack(wav_embeddings, dim=1).transpose(-1, -2).flatten(start_dim=1, end_dim=2)
 

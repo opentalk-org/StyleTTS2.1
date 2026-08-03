@@ -46,10 +46,7 @@ def build_config(
     plbert_path: Path | None,
     total_steps: int,
     seed: int,
-    batch_size: int,
     learning_rate: float,
-    max_len: int,
-    max_audio_seconds: float,
     training_stages: list[TrainingStageSpec],
     validation_every_steps: int,
     checkpoint_every_steps: int,
@@ -75,9 +72,6 @@ def build_config(
     config["log_dir"] = str(log_dir.resolve())
     config["total_steps"] = int(total_steps)
     config["seed"] = int(seed)
-    config["batch_size"] = int(batch_size)
-    config["max_len"] = int(max_len)
-    config["max_audio_seconds"] = float(max_audio_seconds)
     config["validation_every_steps"] = int(validation_every_steps)
     config["checkpoint_every_steps"] = int(checkpoint_every_steps)
     config["log_every_steps"] = int(log_every_steps)
@@ -110,6 +104,9 @@ def build_config(
     if architecture_path is not None:
         merge_architecture(architecture_path, config)
     _apply_model_overrides(config, multispeaker, decoder_type, generator_checkpointing, discriminators_checkpointing, symbol_count)
+    language_id = int(plbert_config.get("language_id", 1))
+    config["model_params"]["language_id"] = language_id
+    config["model_params"]["language_count"] = max(2, language_id + 1)
     if precision not in ("fp16", "bf16", "fp32"):
         raise ValueError("precision must be fp16, bf16, or fp32")
     config["precision"] = precision
@@ -162,3 +159,14 @@ def _apply_model_overrides(
     params["decoder"]["gradient_checkpointing"] = bool(generator_checkpointing)
     params["discriminators_checkpointing"] = bool(discriminators_checkpointing)
     params["n_token"] = int(symbol_count)
+    params["language_dim"] = 32
+    params.setdefault(
+        "alpha_flow",
+        {
+            "transition_start": 1000,
+            "transition_end": 4000,
+            "equal_time_ratio": 0.5,
+            "temperature": 25.0,
+            "conditional_dropout": 0.1,
+        },
+    )

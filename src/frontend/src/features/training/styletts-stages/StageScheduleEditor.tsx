@@ -142,7 +142,58 @@ function StageEditor({
           />
         </Field>
       </div>
+      <div className="mb-4 grid gap-3 md:grid-cols-3">
+        <Field label="Batch size">
+          <NumberInput
+            value={stage.batch_size}
+            min={1}
+            max={128}
+            step={1}
+            onChange={(batch_size) => onChange({ ...stage, batch_size })}
+          />
+        </Field>
+        <Field label="Max audio duration (sec)">
+          <NumberInput
+            value={stage.max_audio_seconds}
+            min={1}
+            max={60}
+            step={0.5}
+            onChange={(max_audio_seconds) => onChange({
+              ...stage,
+              max_audio_seconds,
+            })}
+          />
+        </Field>
+        <Field
+          label="Decoder crop (sec)"
+          hint={`≈ ${Math.round(stage.max_decoder_seconds * 80)} frames`}
+        >
+          <NumberInput
+            value={stage.max_decoder_seconds}
+            min={1}
+            max={30}
+            step={0.5}
+            onChange={(max_decoder_seconds) => onChange({
+              ...stage,
+              max_decoder_seconds,
+            })}
+          />
+        </Field>
+      </div>
       <div className="grid gap-3 md:grid-cols-3">
+        <Field label="Style source">
+          <Select
+            value={stage.style_source}
+            options={[
+              { value: "continuous", label: "Continuous" },
+              { value: "quantized", label: "StyleTTS-ZS RVQ" },
+            ]}
+            onChange={(style_source) => onChange({
+              ...stage,
+              style_source: style_source as TrainingStageSpec["style_source"],
+            })}
+          />
+        </Field>
         <Field label="Prosody source">
           <Select
             value={stage.prosody_source}
@@ -153,19 +204,6 @@ function StageEditor({
             onChange={(prosody_source) => onChange({
               ...stage,
               prosody_source: prosody_source as TrainingStageSpec["prosody_source"],
-            })}
-          />
-        </Field>
-        <Field label="Reconstruction target">
-          <Select
-            value={stage.reconstruction_target}
-            options={[
-              { value: "real_audio", label: "Real recording" },
-              { value: "teacher_reconstruction", label: "Teacher reconstruction" },
-            ]}
-            onChange={(reconstruction_target) => onChange({
-              ...stage,
-              reconstruction_target: reconstruction_target as TrainingStageSpec["reconstruction_target"],
             })}
           />
         </Field>

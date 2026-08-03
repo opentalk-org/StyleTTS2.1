@@ -56,11 +56,11 @@ export function ValidationSettingsEditor({
             })}
           />
         </Field>
-        <Field label="Diffusion style">
+        <Field label="AlphaFlow style">
           <div className="flex h-10 items-center">
             <Toggle
-              checked={value.diffusion}
-              onChange={(diffusion) => onChange({ ...value, diffusion })}
+              checked={value.alpha_flow}
+              onChange={(alpha_flow) => onChange({ ...value, alpha_flow })}
             />
           </div>
         </Field>

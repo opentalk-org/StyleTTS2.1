@@ -19,12 +19,11 @@ from .losses import (
     MultiResolutionSTFTLoss,
     WavLMLoss,
 )
-from .modules.diffusion.sampler import (
-    ADPM2Sampler,
-    DiffusionSampler,
-    KarrasSchedule,
-)
 from .modules.plbert import load_plbert
+from .modules.zs.prosody_adversarial import (
+    ProsodyDiscriminatorLoss,
+    ProsodyGeneratorLoss,
+)
 from .modules.slmadv import SLMAdversarialLoss
 from .optimizers import MultiOptimizer, build_optimizer
 from .utils import recursive_munch
@@ -39,8 +38,7 @@ class ModelBundle:
     def set_training_mode(self, training_modules: set[str]) -> None:
         for module in self.modules.values():
             module.eval()
-        eval_mode_optimizers = {"style_encoder", "predictor_encoder"}
-        for name in training_modules - eval_mode_optimizers:
+        for name in training_modules:
             self.modules[name].train()
 
 
@@ -51,6 +49,10 @@ class LossBundle:
     wavlm: nn.Module
     stft: nn.Module
     slm_adversarial: SLMAdversarialLoss
+    prosody_generator: nn.Module
+    prosody_discriminator: nn.Module
+    duration_generator: nn.Module
+    duration_discriminator: nn.Module
 
 
 @dataclass
@@ -59,7 +61,6 @@ class TrainingRuntime:
     models: ModelBundle
     losses: LossBundle
     optimizer: MultiOptimizer
-    diffusion_sampler: DiffusionSampler
 
 
 def build_training_runtime(
@@ -80,17 +81,6 @@ def build_training_runtime(
         accelerator,
         modules,
         optimizer,
-    )
-    diffusion = accelerator.unwrap_model(modules.diffusion).diffusion
-    sampler = DiffusionSampler(
-        diffusion,
-        sampler=ADPM2Sampler(),
-        sigma_schedule=KarrasSchedule(
-            sigma_min=0.0001,
-            sigma_max=3.0,
-            rho=9.0,
-        ),
-        clamp=False,
     )
     generator = GeneratorLoss(
         accelerator.unwrap_model(modules.mpd),
@@ -117,8 +107,11 @@ def build_training_runtime(
             config,
             model_bundle,
             wavlm,
-            sampler,
         ),
+        ProsodyGeneratorLoss(modules.prosody_discriminator).to(device),
+        ProsodyDiscriminatorLoss(modules.prosody_discriminator).to(device),
+        ProsodyGeneratorLoss(modules.duration_discriminator).to(device),
+        ProsodyDiscriminatorLoss(modules.duration_discriminator).to(device),
     )
     torch.cuda.empty_cache()
     return TrainingRuntime(
@@ -126,9 +119,7 @@ def build_training_runtime(
         model_bundle,
         losses,
         optimizer,
-        sampler,
     )
-
 
 def build_accelerator(config: TrainingConfig) -> Accelerator:
     precision = {
@@ -180,7 +171,7 @@ def _build_optimizer(
     schedules = {name: schedule.copy() for name in modules}
     schedules["bert"]["max_lr"] = settings.bert_lr * 2
     schedules["decoder"]["max_lr"] = settings.ft_lr * 2
-    schedules["style_encoder"]["max_lr"] = settings.ft_lr * 2
+    schedules["voice_encoder"]["max_lr"] = settings.ft_lr * 2
     optimizer = build_optimizer(
         {name: module.parameters() for name, module in modules.items()},
         scheduler_params_dict=schedules,
@@ -202,7 +193,7 @@ def _configure_optimizer_groups(
             min_lr=0,
             weight_decay=0.01,
         )
-    for name in ("decoder", "style_encoder"):
+    for name in ("decoder", "voice_encoder"):
         for group in optimizer.optimizers[name].param_groups:
             group.update(
                 betas=(0.0, 0.99),
@@ -241,13 +232,12 @@ def _build_slm_loss(
     config: TrainingConfig,
     models: ModelBundle,
     wavlm: nn.Module,
-    sampler: DiffusionSampler,
 ) -> SLMAdversarialLoss:
     settings = config.slmadv_params
     return SLMAdversarialLoss(
         models.modules,
         wavlm,
-        sampler,
+        None,
         settings.min_len,
         settings.max_len,
         settings.batch_max_samples,
