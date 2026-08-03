@@ -59,30 +59,28 @@ export type TrainingStageSpec = {
   style_source: StyleSource;
   prosody_source: ProsodySource;
   trainable_modules: TrainableModule[];
-  enabled_losses: TrainingLoss[];
   loss_weights: TrainingLossWeights;
-  train_discriminators: boolean;
   validation: ValidationStageSpec;
 };
 
 export const DEFAULT_LOSS_WEIGHTS: TrainingLossWeights = {
-  alpha_flow: 1,
-  adversarial: 1,
-  duration: 1,
-  duration_ce: 20,
-  f0: 1,
-  mel: 5,
-  monotonic_alignment: 1,
-  norm: 1,
-  prosody_adversarial: 1,
-  rvq: 1,
-  sequence_alignment: 1,
-  slm_adversarial: 1,
-  speaker_feature: 5,
-  speaker_similarity: 5,
-  wavlm: 1,
-  style_nuisance: 0.1,
-  xcov: 0.01,
+  alpha_flow: 0,
+  adversarial: 0,
+  duration: 0,
+  duration_ce: 0,
+  f0: 0,
+  mel: 0,
+  monotonic_alignment: 0,
+  norm: 0,
+  prosody_adversarial: 0,
+  rvq: 0,
+  sequence_alignment: 0,
+  slm_adversarial: 0,
+  speaker_feature: 0,
+  speaker_similarity: 0,
+  wavlm: 0,
+  style_nuisance: 0,
+  xcov: 0,
 };
 
 export const DEFAULT_VALIDATION: ValidationStageSpec = {
@@ -112,17 +110,6 @@ const PROSODY_MODULES: TrainableModule[] = [
   "position_embedding",
   "factorization",
 ];
-const PROSODY_LOSSES: TrainingLoss[] = [
-  "f0",
-  "norm",
-  "duration",
-  "duration_ce",
-  "prosody_adversarial",
-  "rvq",
-  "style_nuisance",
-  "xcov",
-];
-
 export const STAGE_TEMPLATES: TrainingStageSpec[] = [
   {
     name: "train_test.py · acoustic training",
@@ -133,18 +120,17 @@ export const STAGE_TEMPLATES: TrainingStageSpec[] = [
     style_source: "continuous",
     prosody_source: "ground_truth",
     trainable_modules: ACOUSTIC_MODULES,
-    enabled_losses: [
-      "mel",
-      "sequence_alignment",
-      "monotonic_alignment",
-      "adversarial",
-      "wavlm",
-      "slm_adversarial",
-      "speaker_feature",
-      "speaker_similarity",
-    ],
-    loss_weights: { ...DEFAULT_LOSS_WEIGHTS },
-    train_discriminators: true,
+    loss_weights: {
+      ...DEFAULT_LOSS_WEIGHTS,
+      mel: 5,
+      sequence_alignment: 1,
+      monotonic_alignment: 1,
+      adversarial: 1,
+      wavlm: 1,
+      slm_adversarial: 1,
+      speaker_feature: 5,
+      speaker_similarity: 5,
+    },
     validation: { ...DEFAULT_VALIDATION },
   },
   {
@@ -156,9 +142,17 @@ export const STAGE_TEMPLATES: TrainingStageSpec[] = [
     style_source: "quantized",
     prosody_source: "ground_truth",
     trainable_modules: PROSODY_MODULES,
-    enabled_losses: PROSODY_LOSSES,
-    loss_weights: { ...DEFAULT_LOSS_WEIGHTS },
-    train_discriminators: false,
+    loss_weights: {
+      ...DEFAULT_LOSS_WEIGHTS,
+      f0: 1,
+      norm: 1,
+      duration: 1,
+      duration_ce: 20,
+      prosody_adversarial: 1,
+      rvq: 1,
+      style_nuisance: 0.1,
+      xcov: 0.01,
+    },
     validation: { ...PREDICTED_PROSODY_VALIDATION },
   },
   {
@@ -170,9 +164,7 @@ export const STAGE_TEMPLATES: TrainingStageSpec[] = [
     style_source: "quantized",
     prosody_source: "ground_truth",
     trainable_modules: ["alpha_flow"],
-    enabled_losses: ["alpha_flow"],
-    loss_weights: { ...DEFAULT_LOSS_WEIGHTS },
-    train_discriminators: false,
+    loss_weights: { ...DEFAULT_LOSS_WEIGHTS, alpha_flow: 1 },
     validation: { ...PREDICTED_PROSODY_VALIDATION, alpha_flow: true },
   },
 ];

@@ -1,6 +1,5 @@
 import { Button } from "@/shared/ui/Button";
 import { NumberInput } from "@/shared/ui/form/NumberInput";
-import { Toggle } from "@/shared/ui/form/Toggle";
 import { Field } from "@/shared/ui/form/Field";
 import { Select } from "@/shared/ui/Select";
 
@@ -11,9 +10,7 @@ import {
   STAGE_PRESETS,
   STAGE_TEMPLATES,
   TRAINABLE_MODULES,
-  TRAINING_LOSSES,
   type TrainableModule,
-  type TrainingLoss,
   type TrainingStageSpec,
 } from "./templates";
 
@@ -180,7 +177,7 @@ function StageEditor({
           />
         </Field>
       </div>
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2">
         <Field label="Style source">
           <Select
             value={stage.style_source}
@@ -207,21 +204,6 @@ function StageEditor({
             })}
           />
         </Field>
-        <Field label="Train discriminators">
-          <div className="flex h-10 items-center">
-            <Toggle
-              checked={stage.train_discriminators}
-              onChange={(train_discriminators) => onChange({
-                ...stage,
-                train_discriminators,
-                enabled_losses: toggleRequiredAdversarial(
-                  stage.enabled_losses,
-                  train_discriminators,
-                ),
-              })}
-            />
-          </div>
-        </Field>
       </div>
       <ValidationSettingsEditor
         value={stage.validation}
@@ -233,16 +215,6 @@ function StageEditor({
         selected={stage.trainable_modules}
         onChange={(trainable_modules) => onChange({ ...stage, trainable_modules })}
       />
-      <ChoiceGrid
-        title="Enabled losses"
-        choices={TRAINING_LOSSES}
-        selected={stage.enabled_losses}
-        onChange={(enabled_losses) => onChange({
-          ...stage,
-          enabled_losses,
-          train_discriminators: enabled_losses.includes("adversarial"),
-        })}
-      />
       <LossWeightsEditor
         weights={stage.loss_weights}
         onChange={(loss_weights) => onChange({ ...stage, loss_weights })}
@@ -251,7 +223,7 @@ function StageEditor({
   );
 }
 
-function ChoiceGrid<T extends TrainableModule | TrainingLoss>({
+function ChoiceGrid<T extends TrainableModule>({
   title,
   choices,
   selected,
@@ -283,14 +255,4 @@ function ChoiceGrid<T extends TrainableModule | TrainingLoss>({
       </div>
     </div>
   );
-}
-
-function toggleRequiredAdversarial(
-  losses: TrainingLoss[],
-  enabled: boolean,
-): TrainingLoss[] {
-  if (enabled && !losses.includes("adversarial")) {
-    return [...losses, "adversarial"];
-  }
-  return enabled ? losses : losses.filter((loss) => loss !== "adversarial");
 }
