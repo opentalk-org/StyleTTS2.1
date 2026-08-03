@@ -3,7 +3,6 @@ import torchaudio
 from torch import Tensor, nn
 from transformers import (
     AutoModel,
-    Wav2Vec2FeatureExtractor,
     WavLMForXVector,
 )
 
@@ -32,9 +31,10 @@ class SpeakerFeatures(nn.Module):
     def __init__(self, sample_rate: int) -> None:
         super().__init__()
         self.resample = torchaudio.transforms.Resample(sample_rate, 16_000)
-        self.model = WavLMForXVector.from_pretrained(SPEAKER_MODEL)
-        self.feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
-            SPEAKER_MODEL
+        self.model = (
+            WavLMForXVector.from_pretrained(SPEAKER_MODEL)
+            .requires_grad_(False)
+            .eval()
         )
 
     def forward(self, waveform: Tensor) -> tuple[Tensor, Tensor]:
@@ -42,12 +42,9 @@ class SpeakerFeatures(nn.Module):
         if waveform.size(1) > 1:
             waveform = waveform.mean(dim=1, keepdim=True)
         waveform = self.resample(waveform.squeeze(1))
-        inputs = self.feature_extractor(
-            waveform.detach().cpu().numpy(),
-            sampling_rate=16_000,
-            padding=True,
-            return_tensors="pt",
-        )
-        inputs = {key: value.to(waveform.device) for key, value in inputs.items()}
-        embedding = self.model(**inputs).embeddings
-        return inputs["input_values"], embedding
+        input_values = waveform.float()
+        input_values = (input_values - input_values.mean(-1, keepdim=True)) / (
+            input_values.var(-1, keepdim=True, unbiased=False) + 1e-7
+        ).sqrt()
+        embedding = self.model(input_values=input_values).embeddings
+        return input_values, embedding
