@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.nn import Conv1d, ConvTranspose1d
 from torch.nn.utils import remove_weight_norm, weight_norm
 
@@ -12,9 +11,6 @@ from .utils import checkpoint_with_mixed_precision, init_weights
 
 LRELU_SLOPE = 0.1
 
-
-def padDiff(x):
-    return F.pad(F.pad(x, (0,0,-1,1), 'constant', 0) - x, (0,0,0,-1), 'constant', 0)
 
 class Generator(torch.nn.Module):
     def __init__(self, style_dim, resblock_kernel_sizes, upsample_rates, upsample_initial_channel, resblock_dilation_sizes, upsample_kernel_sizes, gradient_checkpointing=False):

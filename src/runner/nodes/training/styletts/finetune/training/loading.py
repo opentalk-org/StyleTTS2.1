@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -8,10 +7,7 @@ from munch import Munch
 
 from runner.nodes.training.styletts.finetune.training.modules.asr.models import ASRCNN
 from runner.nodes.training.styletts.finetune.training.modules.discriminators import MultiPeriodDiscriminator, MultiResSpecDiscriminator, WavLMDiscriminator
-from runner.nodes.training.styletts.finetune.training.modules.encoders import (
-    StyleEncoder,
-    TextEncoder,
-)
+from runner.nodes.training.styletts.finetune.training.modules.encoders import TextEncoder
 from runner.nodes.training.styletts.finetune.training.modules.hifigan import Decoder as HifiganDecoder
 from runner.nodes.training.styletts.finetune.training.modules.istftnet import Decoder as IstftnetDecoder
 from runner.nodes.training.styletts.finetune.training.modules.jdc import JDCNet
@@ -24,6 +20,7 @@ from runner.nodes.training.styletts.finetune.training.modules.zs.zs_prosody impo
     ResidualVectorQuantize,
     TVStyleEncoder,
 )
+from runner.nodes.training.styletts.finetune.training.modules.zs.voice import VoiceEncoder
 from runner.nodes.training.styletts.finetune.training.state_dict_resize import merge_state_dict_with_dim0_resize
 
 _ASR_N_TOKEN_DIM0_KEYS = frozenset({
@@ -62,7 +59,6 @@ _FACTORIZED_MODULES = frozenset({
     "alpha_flow",
     "duration_predictor",
     "factorization",
-    "language_embedding",
     "position_embedding",
     "prosody_encoder",
     "prosody_discriminator",
@@ -100,6 +96,19 @@ def _maybe_normalize_module_prefix(model_module, state_dict):
         (f"module.{key}" if not key.startswith("module.") else key): value
         for key, value in state_dict.items()
     }
+
+
+def _voice_checkpoint_source(params):
+    for candidate in ("voice_encoder", "style_encoder"):
+        if candidate not in params:
+            continue
+        names = {
+            name[7:] if name.startswith("module.") else name
+            for name in params[candidate]
+        }
+        if "mel_proj.weight" in names:
+            return candidate
+    return None
 
 
 def load_F0_models(path):
@@ -163,12 +172,11 @@ def build_model(args, text_aligner, pitch_extractor, bert):
         kernel_size=5,
         depth=args.n_layer,
         n_symbols=args.n_token,
-        bert_channels=bert.config.hidden_size,
     )
-    voice_encoder = StyleEncoder(
-        dim_in=args.dim_in,
-        style_dim=args.style_dim,
-        max_conv_dim=args.hidden_dim,
+    voice_encoder = VoiceEncoder(
+        mel_dim=args.n_mels,
+        text_dim=args.hidden_dim,
+        voice_dim=args.style_dim,
     )
     prosody_encoder = TVStyleEncoder(mel_dim=514)
     duration_predictor = DurationPredictor(max_dur=50)
@@ -210,8 +218,6 @@ def build_model(args, text_aligner, pitch_extractor, bert):
                 content_dim=args.n_token,
                 voice_dim=args.style_dim,
             ),
-            language_embedding=nn.Embedding(args.language_count, args.language_dim),
-
             text_aligner = text_aligner,
             pitch_extractor=pitch_extractor,
 
@@ -226,14 +232,17 @@ def build_model(args, text_aligner, pitch_extractor, bert):
 def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
     state = torch.load(path, map_location="cpu", weights_only=False)
     params = state["net"]
+    reinitialized = set()
     for key in model:
         if key in ignore_modules:
             continue
-        source_key = (
-            "style_encoder"
-            if key == "voice_encoder" and "voice_encoder" not in params
-            else key
-        )
+        source_key = _voice_checkpoint_source(params) if key == "voice_encoder" else key
+        if key == "voice_encoder" and source_key is None:
+            logger.info(
+                "initialized StyleTTS-ZS voice encoder; checkpoint has no compatible weights"
+            )
+            reinitialized.add(key)
+            continue
         if source_key not in params:
             if key in _FACTORIZED_MODULES:
                 logger.info("initialized factorized module=%s parameters=%s", key, len(model[key].state_dict()))
@@ -257,10 +266,6 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
                 and item == "_codebooks_initialized"
             )
             and not (
-                key == "text_encoder"
-                and item.startswith("bert_linear.")
-            )
-            and not (
                 key == "alpha_flow"
                 and item in {"style_scale", "style_scale_updates"}
             )
@@ -280,6 +285,10 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
         module.eval()
 
     if not load_only_params:
-        optimizer.load_state_dict(state["optimizer"])
+        optimizer_state = [
+            item for item in state["optimizer"]
+            if item[0] not in reinitialized
+        ]
+        optimizer.load_state_dict(optimizer_state)
 
     return model, optimizer

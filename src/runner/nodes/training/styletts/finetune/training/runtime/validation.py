@@ -146,11 +146,13 @@ class Validator:
                 batch.texts,
                 batch.input_lengths,
                 text_mask,
-                bert,
             )
             duration_encoding = modules.bert_encoder(bert).transpose(-1, -2)
             waveform, target_sample_lengths = self._waveform_targets(batch)
-            target_f0, _, _ = modules.pitch_extractor(batch.mels.unsqueeze(1))
+            target_f0, _, _ = modules.pitch_extractor(
+                batch.mels.unsqueeze(1),
+                batch.mel_lengths,
+            )
             target_f0 = target_f0.squeeze(-1)
             target_norm = log_norm(batch.mels.unsqueeze(1)).squeeze(1)
             full_mask = length_to_mask(batch.mel_lengths, batch.mels.device)

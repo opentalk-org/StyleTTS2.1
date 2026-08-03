@@ -15,19 +15,13 @@ class TrainingBatch:
     modality_ids: Tensor
     texts: Tensor
     input_lengths: Tensor
-    reference_texts: Tensor
-    reference_lengths: Tensor
     mels: Tensor
     mel_lengths: Tensor
-    reference_mels: Tensor
-    reference_mel_lengths: Tensor
 
     def to(self, device: torch.device) -> "TrainingBatch":
         cpu_fields = {
             "input_lengths",
-            "reference_lengths",
             "mel_lengths",
-            "reference_mel_lengths",
         }
         values = {}
         for field in fields(self):

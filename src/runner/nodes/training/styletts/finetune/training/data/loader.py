@@ -1,6 +1,5 @@
 import io
 import logging
-import random
 from pathlib import Path
 from uuid import UUID
 
@@ -21,7 +20,6 @@ from .records import TrainingBatch
 logger = logging.getLogger(__name__)
 
 np.random.seed(1)
-random.seed(1)
 
 
 SPECT_PARAMS = {
@@ -49,16 +47,9 @@ class FilePathDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         data_list,
-        root_path,
         max_audio_seconds,
         max_text_tokens,
-        sr=24000,
-        data_augmentation=False,
-        validation=False,
-        OOD_data="Data/OOD_texts.txt",
-        min_length=50,
         symbols=None,
-        stream_cache=None,
         plbert_languages=None,
         plbert_modality_id=0,
     ):
@@ -99,40 +90,19 @@ class FilePathDataset(torch.utils.data.Dataset):
                 "no audio remains after applying max_audio_seconds="
                 f"{max_audio_seconds} and max_text_tokens={max_text_tokens}; "
                 f"skipped={skipped}"
-            )
-        self.sr = sr
-        self.validation = validation
-
-        self.rows_by_speaker: dict[int, list[list[str]]] = {}
-        for row in self.data_list:
-            self.rows_by_speaker.setdefault(int(row[2]), []).append(row)
-
-        self.min_mel_length = 192
-        self.max_mel_length = 192
-        self.data_augmentation = data_augmentation and (not validation)
-        self.min_length = min_length
-
-        with open(OOD_data, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        idx = 1 if '.wav' in lines[0].split('|')[0] else 0
-        self.ptexts = [line.split('|')[idx] for line in lines]
-
-        self.root_path = root_path
-
+        )
     def __len__(self):
         return len(self.data_list)
 
     def __getitem__(self, idx):
-        speaker_id, audio_id, text, ref_audio_id, ref_text, ref_label = self._resolve_row(idx)
+        data_path, text, speaker_id_text = self.data_list[idx]
+        audio_id = self._audio_id(data_path)
         return (
-            speaker_id,
+            int(speaker_id_text),
             self.audio_language_ids[audio_id],
             self.modality_id,
             audio_id,
-            text,
-            ref_audio_id,
-            ref_text,
-            ref_label,
+            self._text_to_tensor(text),
         )
 
     def _resolve_language_id(self, language: str | None) -> int:
@@ -149,20 +119,6 @@ class FilePathDataset(torch.utils.data.Dataset):
             f"training audio language {language!r} is unsupported by PLBERT"
         )
 
-    def _reference_data(self, speaker_id: int, audio_id: UUID) -> list[str]:
-        candidates = [
-            row
-            for row in self.rows_by_speaker[speaker_id]
-            if self._audio_id(row[0]) != audio_id
-        ]
-        if not candidates:
-            if self.validation:
-                return self.rows_by_speaker[speaker_id][0]
-            raise ValueError(
-                f"training speaker {speaker_id} needs at least two non-overlapping utterances"
-            )
-        return random.choice(candidates)
-
     def _audio_id(self, wave_path: str) -> UUID:
         return UUID(Path(wave_path).stem)
 
@@ -172,35 +128,8 @@ class FilePathDataset(torch.utils.data.Dataset):
         tokens.append(self.end_token_id)
         return torch.LongTensor(tokens)
 
-    def _resolve_row(self, idx):
-        data_path, text, speaker_id_text = self.data_list[idx]
-        speaker_id = int(speaker_id_text)
-        audio_id = self._audio_id(data_path)
-        reference_row = self._reference_data(speaker_id, audio_id)
-        ref_audio_id = self._audio_id(reference_row[0])
-        ref_label = int(reference_row[2])
-        return (
-            speaker_id,
-            audio_id,
-            self._text_to_tensor(text),
-            ref_audio_id,
-            self._text_to_tensor(reference_row[1]),
-            ref_label,
-        )
-
 
 class Collater:
-    """
-    Args:
-      adaptive_batch_size (bool): if true, decrease batch size when long data comes.
-    """
-
-    def __init__(self, return_wave=False):
-        self.text_pad_index = 0
-        self.min_mel_length = 192
-        self.max_mel_length = 192
-        self.return_wave = return_wave
-
     def _read_wave(self, wave_bytes: bytes) -> np.ndarray:
         with io.BytesIO(wave_bytes) as source:
             wave, sr = sf.read(source)
@@ -229,31 +158,24 @@ class Collater:
     def __call__(self, batch):
         batch_size = len(batch)
         audio_ids = [row[3] for row in batch]
-        ref_audio_ids = [row[5] for row in batch]
-        requested_ids = list(dict.fromkeys(audio_ids + ref_audio_ids))
 
         with database_session() as session:
-            audio_bytes = audio_crud.bulk_read_audio_files(session, requested_ids)
+            audio_bytes = audio_crud.bulk_read_audio_files(
+                session,
+                list(dict.fromkeys(audio_ids)),
+            )
         cache = self._load_batch_audio(audio_bytes)
 
         max_mel_length = max(cache[audio_id][1].size(1) for audio_id in audio_ids)
-        max_ref_mel_length = max(
-            cache[audio_id][1].size(1) for audio_id in ref_audio_ids
-        )
         max_text_length = max(row[4].size(0) for row in batch)
-        max_rtext_length = max(row[6].size(0) for row in batch)
 
         labels = torch.zeros((batch_size)).long()
         language_ids = torch.zeros((batch_size)).long()
         modality_ids = torch.zeros((batch_size)).long()
         mels = torch.zeros((batch_size, 80, max_mel_length)).float()
         texts = torch.zeros((batch_size, max_text_length)).long()
-        ref_texts = torch.zeros((batch_size, max_rtext_length)).long()
         input_lengths = torch.zeros(batch_size).long()
-        ref_lengths = torch.zeros(batch_size).long()
         output_lengths = torch.zeros(batch_size).long()
-        ref_mels = torch.zeros((batch_size, 80, max_ref_mel_length)).float()
-        ref_mel_lengths = torch.zeros(batch_size).long()
         waves = [None for _ in range(batch_size)]
 
         for bid, (
@@ -262,26 +184,17 @@ class Collater:
             modality_id,
             audio_id,
             text,
-            ref_audio_id,
-            ref_text,
-            ref_label,
         ) in enumerate(batch):
             wave, mel = cache[audio_id]
-            _, ref_mel = cache[ref_audio_id]
             mel_size = mel.size(1)
             text_size = text.size(0)
-            rtext_size = ref_text.size(0)
             labels[bid] = label
             language_ids[bid] = language_id
             modality_ids[bid] = modality_id
             mels[bid, :, :mel_size] = mel
             texts[bid, :text_size] = text
-            ref_texts[bid, :rtext_size] = ref_text
             input_lengths[bid] = text_size
-            ref_lengths[bid] = rtext_size
             output_lengths[bid] = mel_size
-            ref_mels[bid, :, : ref_mel.size(1)] = ref_mel
-            ref_mel_lengths[bid] = ref_mel.size(1)
             waves[bid] = wave
 
         return TrainingBatch(
@@ -291,39 +204,25 @@ class Collater:
             modality_ids=modality_ids,
             texts=texts,
             input_lengths=input_lengths,
-            reference_texts=ref_texts,
-            reference_lengths=ref_lengths,
             mels=mels,
             mel_lengths=output_lengths,
-            reference_mels=ref_mels,
-            reference_mel_lengths=ref_mel_lengths,
         )
 
 
 def build_dataloader(
     path_list,
-    root_path,
     validation=False,
-    OOD_data="Data/OOD_texts.txt",
-    min_length=50,
     batch_size=4,
     num_workers=1,
     device='cpu',
-    collate_config={},
     dataset_config={},
-    stream_cache=None,
     seed=1,
 ):
     dataset = FilePathDataset(
         path_list,
-        root_path,
-        OOD_data=OOD_data,
-        min_length=min_length,
-        validation=validation,
-        stream_cache=stream_cache,
         **dataset_config,
     )
-    collate_fn = Collater(**collate_config)
+    collate_fn = Collater()
     loader = DataLoader(
         dataset,
         batch_size=batch_size,

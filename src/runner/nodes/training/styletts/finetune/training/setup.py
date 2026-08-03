@@ -24,7 +24,6 @@ from .modules.zs.prosody_adversarial import (
     ProsodyDiscriminatorLoss,
     ProsodyGeneratorLoss,
 )
-from .modules.slmadv import SLMAdversarialLoss
 from .optimizers import MultiOptimizer, build_optimizer
 from .speaker_verification import load_speaker_verification_loss
 from .utils import recursive_munch
@@ -50,7 +49,6 @@ class LossBundle:
     wavlm: nn.Module
     speaker_verification: nn.Module
     stft: nn.Module
-    slm_adversarial: SLMAdversarialLoss
     prosody_generator: nn.Module
     prosody_discriminator: nn.Module
     duration_generator: nn.Module
@@ -109,11 +107,6 @@ def build_training_runtime(
             device,
         ),
         MultiResolutionSTFTLoss().to(device),
-        _build_slm_loss(
-            config,
-            model_bundle,
-            wavlm,
-        ),
         ProsodyGeneratorLoss(modules.prosody_discriminator).to(device),
         ProsodyDiscriminatorLoss(modules.prosody_discriminator).to(device),
         ProsodyGeneratorLoss(modules.duration_discriminator).to(device),
@@ -231,24 +224,6 @@ def _load_base_checkpoint(
         config.pretrained_model,
         load_only_params=config.load_only_params,
         ignore_modules=ignored,
-    )
-
-
-def _build_slm_loss(
-    config: TrainingConfig,
-    models: ModelBundle,
-    wavlm: nn.Module,
-) -> SLMAdversarialLoss:
-    settings = config.slmadv_params
-    return SLMAdversarialLoss(
-        models.modules,
-        wavlm,
-        None,
-        settings.min_len,
-        settings.max_len,
-        settings.batch_max_samples,
-        skip_update=settings.iter,
-        sig=settings.sig,
     )
 
 

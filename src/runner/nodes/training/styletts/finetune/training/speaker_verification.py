@@ -34,7 +34,10 @@ class SpeakerVerificationLoss(nn.Module):
 
     def _encode(self, waveform: Tensor) -> tuple[tuple[Tensor, ...], Tensor]:
         self.capture.reset()
-        embedding = self.model(self.resample(waveform.float()))
+        with torch.autocast(device_type=waveform.device.type, enabled=False):
+            waveform = self.resample(waveform.float())
+            fbank = self.model.compute_fbank(waveform)
+        embedding = self.model.resnet(fbank)[1]
         return tuple(self.capture.features), embedding
 
     def forward(self, real: Tensor, generated: Tensor) -> tuple[Tensor, Tensor]:

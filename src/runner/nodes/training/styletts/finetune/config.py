@@ -32,12 +32,6 @@ def build_config(
     log_dir: Path,
     train_list: str,
     validation_list: str,
-    root_path: str,
-    stream_from_buckets: bool,
-    stream_plan_path: str,
-    cache_dir: str,
-    bucket_cache_budget_bytes: int,
-    ood_texts: str,
     pretrained_model: Path | None,
     asr_config: dict[str, Any],
     asr_path: Path | None,
@@ -57,10 +51,6 @@ def build_config(
     generator_checkpointing: bool,
     discriminators_checkpointing: bool,
     precision: str,
-    slmadv_min_len: int,
-    slmadv_max_len: int,
-    slmadv_batch_samples: int,
-    slmadv_scale: float,
     architecture_path: Path | None,
     multispeaker: bool | None,
     decoder_type: str | None,
@@ -81,13 +71,6 @@ def build_config(
     config["data_params"] = {
         "train_data": str(Path(train_list).resolve()),
         "val_data": str(Path(validation_list).resolve()),
-        "root_path": root_path,
-        "OOD_data": str(Path(ood_texts).resolve()),
-        "min_length": 50,
-        "stream_from_buckets": bool(stream_from_buckets),
-        "stream_plan_path": stream_plan_path,
-        "cache_dir": cache_dir,
-        "bucket_cache_budget_bytes": int(bucket_cache_budget_bytes),
     }
     config["pretrained_model"] = _path_str(pretrained_model)
     config["ASR_config"] = asr_config
@@ -100,7 +83,6 @@ def build_config(
         stage.model_dump(mode="json")
         for stage in training_stages
     ]
-    _apply_slm(config, slmadv_min_len, slmadv_max_len, slmadv_batch_samples, slmadv_scale)
     if architecture_path is not None:
         merge_architecture(architecture_path, config)
     _apply_model_overrides(config, multispeaker, decoder_type, generator_checkpointing, discriminators_checkpointing, symbol_count)
@@ -132,14 +114,6 @@ def _apply_optimizer(config: dict[str, Any], learning_rate: float) -> None:
     optimizer["ft_lr"] = float(learning_rate)
 
 
-def _apply_slm(config: dict[str, Any], min_len: int, max_len: int, batch_samples: int, scale: float) -> None:
-    slm = config["slmadv_params"]
-    slm["min_len"] = int(min_len)
-    slm["max_len"] = int(max_len)
-    slm["batch_max_samples"] = int(batch_samples)
-    slm["scale"] = float(scale)
-
-
 def _apply_model_overrides(
     config: dict[str, Any],
     multispeaker: bool | None,
@@ -158,7 +132,6 @@ def _apply_model_overrides(
     params["decoder"]["gradient_checkpointing"] = bool(generator_checkpointing)
     params["discriminators_checkpointing"] = bool(discriminators_checkpointing)
     params["n_token"] = int(symbol_count)
-    params["language_dim"] = 32
     params.setdefault(
         "alpha_flow",
         {

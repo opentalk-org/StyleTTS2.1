@@ -44,7 +44,7 @@ def build_node_config(
     symbol_count = len(symbol_list)
     symbols = symbol_list
     scratch = is_scratch_checkpoint(base_checkpoint)
-    asset_paths, ood_paths, asset_metadata = _training_asset_paths(pretrained_assets)
+    asset_paths, asset_metadata = _training_asset_paths(pretrained_assets)
     if scratch:
         _require_scratch_assets(asset_paths)
         pretrained_model = None
@@ -57,12 +57,6 @@ def build_node_config(
         log_dir=output_dir / "run",
         train_list=str(manifest.metadata["train_manifest_path"]),
         validation_list=str(manifest.metadata["validation_manifest_path"]),
-        root_path=str(manifest.metadata["root_path"]),
-        stream_from_buckets=bool(manifest.metadata.get("stream_from_buckets", False)),
-        stream_plan_path=str(manifest.metadata.get("stream_plan_path", "")),
-        cache_dir=str(manifest.metadata.get("cache_dir", "")),
-        bucket_cache_budget_bytes=int(settings.bucket_cache_budget_gb * 1024 * 1024 * 1024),
-        ood_texts=str(_ood_text_path(ood_paths, output_dir)),
         pretrained_model=pretrained_model,
         asr_config=_asr_config(symbol_count),
         asr_path=asset_paths["asr_bundle"],
@@ -86,10 +80,6 @@ def build_node_config(
         generator_checkpointing=settings.checkpoint_decoder_gradients,
         discriminators_checkpointing=settings.checkpoint_discriminator_gradients,
         precision=settings.numeric_precision.value,
-        slmadv_min_len=settings.slmadv_min_len,
-        slmadv_max_len=settings.slmadv_max_len,
-        slmadv_batch_samples=settings.slmadv_batch_samples,
-        slmadv_scale=settings.slm_scale,
         architecture_path=architecture_path,
         multispeaker=settings.multispeaker,
         decoder_type=settings.decoder.value,
@@ -137,32 +127,18 @@ def _studio_publish(
 
 def _training_asset_paths(
     ref: AssetBundleRef | None,
-) -> tuple[dict[str, Path | None], list[Path], dict[str, dict[str, Any]]]:
+) -> tuple[dict[str, Path | None], dict[str, dict[str, Any]]]:
     paths: dict[str, Path | None] = {"asr_bundle": None, "f0_model": None, "plbert": None}
-    ood_paths: list[Path] = []
     metadata: dict[str, dict[str, Any]] = {"plbert": {}}
     if ref is None:
-        return paths, ood_paths, metadata
+        return paths, metadata
     for asset in ref.metadata["assets"]:
         role = str(asset["role"])
-        if role == "ood_text_set":
-            ood_paths.append(Path(str(asset["path"])))
-        elif role in paths and paths[role] is None:
+        if role in paths and paths[role] is None:
             paths[role] = Path(str(asset["path"]))
             if role == "plbert":
                 metadata["plbert"] = dict(asset["metadata"])
-    return paths, ood_paths, metadata
-
-
-def _ood_text_path(ood_paths: list[Path], output_dir: Path) -> Path:
-    existing = [path for path in ood_paths if path.is_file()]
-    if not existing:
-        raise ValueError("StyleTTS finetune config requires an OOD text file path")
-    if len(existing) == 1:
-        return existing[0]
-    combined = output_dir / "ood_texts.txt"
-    combined.write_text("\n".join(path.read_text(encoding="utf-8").strip() for path in existing), encoding="utf-8")
-    return combined
+    return paths, metadata
 
 
 def _asr_config(symbol_count: int) -> dict[str, Any]:

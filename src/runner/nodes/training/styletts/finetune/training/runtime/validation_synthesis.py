@@ -69,7 +69,16 @@ def synthesize_validation(
             duration_predictions,
             batch.input_lengths,
         )
-    aligned_text = text_encoding @ decode_alignment
+    prompt_frames = int(batch.mel_lengths.min().item() / 2 - 1)
+    prompt_mels = batch.mels[..., : prompt_frames * 2]
+    with torch.autocast(device_type=device.type, enabled=False):
+        decoder_voice, decoder_text = modules.voice_encoder(
+            prompt_mels.float(),
+            text_encoding.float(),
+            batch.input_lengths,
+            text_encoding.size(-1),
+        )
+    aligned_text = decoder_text @ decode_alignment
     aligned_duration = duration_encoding @ decode_alignment
     half_lengths = torch.tensor(decode_lengths, device=device)
     predicted_f0, predicted_energy = modules.prosody_predictor(
@@ -78,11 +87,6 @@ def synthesize_validation(
         half_lengths,
         decode_alignment.size(-1),
     )
-    with torch.autocast(device_type=device.type, enabled=False):
-        decoder_voice = modules.voice_encoder.forward_masked(
-            batch.reference_mels.unsqueeze(1).float(),
-            batch.reference_mel_lengths,
-        )
     source_lengths = [int(value.item()) for value in batch.mel_lengths]
     full_lengths = [value * 2 for value in decode_lengths]
     resized_f0 = resize_prosody(target_f0, source_lengths, full_lengths)

@@ -83,7 +83,7 @@ class JDCNet(nn.Module):
         
         return self.pool_block[2](poolblock_out)
         
-    def forward(self, x):
+    def forward(self, x, input_lengths):
         seq_len = x.shape[-1]
         x = x.float().transpose(-1, -2)
         
@@ -100,7 +100,18 @@ class JDCNet(nn.Module):
         poolblock_out = self.pool_block[2](poolblock_out)
         
         classifier_out = poolblock_out.permute(0, 2, 1, 3).contiguous().view((-1, seq_len, 512))
+        classifier_out = nn.utils.rnn.pack_padded_sequence(
+            classifier_out,
+            input_lengths,
+            batch_first=True,
+            enforce_sorted=False,
+        )
+        self.bilstm_classifier.flatten_parameters()
         classifier_out, _ = self.bilstm_classifier(classifier_out)
+        classifier_out, _ = nn.utils.rnn.pad_packed_sequence(
+            classifier_out,
+            batch_first=True,
+        )
 
         classifier_out = classifier_out.contiguous().view((-1, 512))
         classifier_out = self.classifier(classifier_out)

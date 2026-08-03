@@ -73,21 +73,14 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
             }
             train_batches = build_dataloader(
                 train_list,
-                config.data_params.root_path,
-                OOD_data=config.data_params.OOD_data,
-                min_length=config.data_params.min_length,
                 batch_size=stage.batch_size,
                 num_workers=0,
                 dataset_config=dataset_config,
                 device=config.device,
                 seed=config.seed,
-                stream_cache=None,
             ).prepare(accelerator)
             validation_batches = build_dataloader(
                 validation_list,
-                config.data_params.root_path,
-                OOD_data=config.data_params.OOD_data,
-                min_length=config.data_params.min_length,
                 batch_size=stage.batch_size,
                 validation=True,
                 num_workers=0,
@@ -178,7 +171,6 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
                 checkpoints.publish(
                     step,
                     validation_loss,
-                    trainer.running_std,
                 )
                 timing.checkpoint_seconds += (
                     time.monotonic() - checkpoint_started

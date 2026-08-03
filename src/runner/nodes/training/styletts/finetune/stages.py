@@ -34,7 +34,6 @@ class TrainableModule(str, Enum):
     DECODER = "decoder"
     DURATION_PREDICTOR = "duration_predictor"
     FACTORIZATION = "factorization"
-    LANGUAGE_EMBEDDING = "language_embedding"
     PITCH_EXTRACTOR = "pitch_extractor"
     POSITION_EMBEDDING = "position_embedding"
     PROSODY_ENCODER = "prosody_encoder"

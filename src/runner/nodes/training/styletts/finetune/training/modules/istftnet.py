@@ -45,10 +45,6 @@ class TorchSTFT(torch.nn.Module):
         return reconstruction
 
 
-def padDiff(x):
-    return F.pad(F.pad(x, (0,0,-1,1), 'constant', 0) - x, (0,0,0,-1), 'constant', 0)
-
-    
 class Generator(torch.nn.Module):
     def __init__(self, style_dim, resblock_kernel_sizes, upsample_rates, upsample_initial_channel, resblock_dilation_sizes, upsample_kernel_sizes, gen_istft_n_fft, gen_istft_hop_size, gradient_checkpointing=False):
         super(Generator, self).__init__()

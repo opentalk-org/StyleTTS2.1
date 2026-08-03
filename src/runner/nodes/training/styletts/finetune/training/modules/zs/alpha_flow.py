@@ -21,13 +21,9 @@ class AlphaFlow(nn.Module):
         conditional_dropout: float = 0.1,
     ) -> None:
         super().__init__()
-        if style_scale <= 0:
-            raise ValueError("style_scale must be positive")
+
         self.denoiser = StyleDiffuser(text_dim=text_dim)
-        # The author diffusion notebook normalizes each training target batch
-        # by its standard deviation, records those factors, and multiplies
-        # samples by their mean.  Persist that running mean in the checkpoint;
-        # validation and inference must never inspect their unknown GT target.
+
         self.register_buffer("style_scale", torch.tensor(float(style_scale)))
         self.register_buffer("style_scale_updates", torch.tensor(0, dtype=torch.long))
         self.register_buffer("last_raw_mse", torch.tensor(float("nan")), persistent=False)

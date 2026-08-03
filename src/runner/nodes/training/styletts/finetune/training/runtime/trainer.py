@@ -8,13 +8,12 @@ from ..data import TrainingBatch
 from ..gradient_sync import synchronize_gradients
 from ..profiling import set_profiling_step
 from ..setup import TrainingRuntime
-from ...stages import StyleSource, TrainingLoss, stage_for_step
+from ...stages import TrainingLoss, stage_for_step
 from .adversarial_training import discriminator_step, prosody_generator_loss
 from .factorization_training import style_nuisance_loss
 from .stage_requirements import requires_voice
 from .training_forward import ForwardOutput, model_forward
 from .validation_batch import styletts_zs_reconstruction_loss
-from .rvq_health import check_rvq_health
 
 
 logger = logging.getLogger(__name__)
@@ -29,7 +28,6 @@ class Trainer:
             if TrainingLoss.ALPHA_FLOW in training_stage.enabled_losses:
                 break
             self.alpha_flow_start += training_stage.steps
-        self.running_std: list[float] = []
         self.skipped_steps = 0
         self.step = 0
 
@@ -83,15 +81,12 @@ class Trainer:
         )
         for name in trainable:
             optimizer.zero_grad(name)
-        losses = self._generator_losses(output, batch, enabled)
+        with accelerator.autocast():
+            losses = self._generator_losses(output, batch, enabled)
         style_batch_std = output.style_target.mean(-1).std(
             0,
             unbiased=False,
         ).mean()
-        if stage.style_source is StyleSource.QUANTIZED:
-            check_rvq_health(self.running_std, style_batch_std)
-        else:
-            self.running_std.clear()
         total = self._weighted_total(losses, stage.loss_weights, enabled)
         finite = bool(torch.isfinite(total).item())
         if finite:
@@ -178,15 +173,15 @@ class Trainer:
             losses["feature_matching"] = period_feature + scale_feature
             losses["generator_adversarial"] = period_generator + scale_generator
             losses["relative_adversarial"] = period_relative + scale_relative
-        if TrainingLoss.WAVLM in enabled:
-            losses["wavlm"] = self.runtime.losses.wavlm(
+        if enabled & {TrainingLoss.WAVLM, TrainingLoss.SLM_ADVERSARIAL}:
+            slm_adversarial, wavlm = self.runtime.losses.wavlm.generator(
                 output.waveform.detach().squeeze(1),
                 output.reconstructed.squeeze(1),
-            ).mean()
-        if TrainingLoss.SLM_ADVERSARIAL in enabled:
-            losses["slm_adversarial"] = self.runtime.losses.wavlm.generator(
-                output.reconstructed.squeeze(1),
+                feature_matching=TrainingLoss.WAVLM in enabled,
+                adversarial=TrainingLoss.SLM_ADVERSARIAL in enabled,
             )
+            losses["wavlm"] = wavlm
+            losses["slm_adversarial"] = slm_adversarial
         if enabled & {
             TrainingLoss.SPEAKER_FEATURE,
             TrainingLoss.SPEAKER_SIMILARITY,
