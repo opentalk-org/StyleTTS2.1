@@ -165,32 +165,36 @@ class WavLMLoss(torch.nn.Module):
         self.wd = wd
         self.resample = torchaudio.transforms.Resample(model_sr, slm_sr)
 
-    def forward(self, wav, y_rec):
-        with torch.no_grad():
-            with profiling_fn("wavlm.reference_embedding"):
-                wav_16 = self.resample(wav.float())
-                wav_embeddings = self.wavlm(input_values=wav_16, output_hidden_states=True).hidden_states
-        with profiling_fn("wavlm.generated_embedding"):
-            y_rec_16 = self.resample(y_rec.float())
-            y_rec_embeddings = self.wavlm(input_values=y_rec_16, output_hidden_states=True).hidden_states
-
-        with profiling_fn("wavlm.feature_loss"):
-            floss = 0
-            for er, eg in zip(wav_embeddings, y_rec_embeddings):
-                floss += torch.mean(torch.abs(er - eg))
-        
-        return floss.mean()
-
-    def generator(self, y_rec):
+    def generator(self, wav, y_rec, feature_matching=True, adversarial=True):
+        wav_embeddings = None
+        if feature_matching:
+            with torch.no_grad():
+                with profiling_fn("wavlm.target_embedding"):
+                    wav_16 = self.resample(wav.float())
+                    wav_embeddings = self.wavlm(
+                        input_values=wav_16,
+                        output_hidden_states=True,
+                    ).hidden_states
         with profiling_fn("wavlm.generator_embedding"):
             y_rec_16 = self.resample(y_rec.float())
             y_rec_embeddings = self.wavlm(input_values=y_rec_16, output_hidden_states=True).hidden_states
-            y_rec_embeddings = torch.stack(y_rec_embeddings, dim=1).transpose(-1, -2).flatten(start_dim=1, end_dim=2)
-        with profiling_fn("wavlm.generator_discriminator"):
-            y_df_hat_g = self.wd(y_rec_embeddings)
-        loss_gen = torch.mean((1-y_df_hat_g)**2)
-        
-        return loss_gen
+
+        feature_loss = y_rec.new_zeros(())
+        if wav_embeddings is not None:
+            with profiling_fn("wavlm.feature_loss"):
+                feature_loss = sum(
+                    torch.mean(torch.abs(real - generated))
+                    for real, generated in zip(wav_embeddings, y_rec_embeddings)
+                ).mean()
+
+        adversarial_loss = y_rec.new_zeros(())
+        if adversarial:
+            with profiling_fn("wavlm.generator_discriminator"):
+                embeddings = torch.stack(y_rec_embeddings, dim=1)
+                embeddings = embeddings.transpose(-1, -2).flatten(1, 2)
+                adversarial_loss = torch.mean((1 - self.wd(embeddings)) ** 2)
+
+        return adversarial_loss, feature_loss
     
     def discriminator(self, wav, y_rec):
         with torch.no_grad():

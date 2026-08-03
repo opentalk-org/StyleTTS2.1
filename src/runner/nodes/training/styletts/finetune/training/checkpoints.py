@@ -18,7 +18,6 @@ class CheckpointPublisher:
         self,
         step: int,
         validation_loss,
-        running_std: list[float],
     ) -> None:
         payload = self.config.model_dump(mode="json")
         state = {

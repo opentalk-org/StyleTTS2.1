@@ -38,3 +38,19 @@ def crop_training_batch(
     ]
     waveform = torch.from_numpy(np.stack(waves)).to(batch.mels.device).float().unsqueeze(1)
     return (aligned, *cropped, waveform)
+
+
+def sample_voice_prompts(batch: TrainingBatch) -> Tensor:
+    prompt_frames = int(batch.mel_lengths.min().item() / 2 - 1)
+    prompt_starts = [
+        int(np.random.randint(0, int(length.item() / 2) - prompt_frames))
+        for length in batch.mel_lengths
+    ]
+    prompt_slices = [
+        slice(start * 2, (start + prompt_frames) * 2)
+        for start in prompt_starts
+    ]
+    prompt_mels = torch.stack(
+        [batch.mels[index, :, item] for index, item in enumerate(prompt_slices)]
+    ).detach()
+    return prompt_mels

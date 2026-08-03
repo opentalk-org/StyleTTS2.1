@@ -12,10 +12,14 @@ from ...stages import (
     TrainingLoss,
     TrainingStageSpec,
 )
-from .training_crops import crop_training_batch
+from .training_crops import crop_training_batch, sample_voice_prompts
 from .rvq_initialization import initialize_rvq_codebooks
 from .stage_requirements import requires_voice
-from .prosody_sampling import prosody_inputs, sample_author_prosody_input
+from .prosody_sampling import (
+    prosody_inputs,
+    sample_alpha_flow_features,
+    sample_target_prosody_input,
+)
 @dataclass
 class ForwardOutput:
     alignment_predictions: Tensor
@@ -35,7 +39,6 @@ class ForwardOutput:
     rvq_loss: Tensor
     alpha_flow_loss: Tensor
     voice: Tensor
-    reference_voice: Tensor
     reconstructed: Tensor
     waveform: Tensor
 def model_forward(
@@ -69,14 +72,37 @@ def model_forward(
         batch.texts,
         batch.input_lengths,
         text_mask,
-        bert,
     )
-    duration_encoding = modules.bert_encoder(bert).transpose(-1, -2)
+    duration_required = bool(
+        enabled
+        & {
+            TrainingLoss.DURATION,
+            TrainingLoss.DURATION_CE,
+            TrainingLoss.PROSODY_ADVERSARIAL,
+        }
+    )
+    prosody_required = (
+        stage.prosody_source is ProsodySource.PREDICTED
+        or bool(
+            enabled
+            & {
+                TrainingLoss.F0,
+                TrainingLoss.NORM,
+                TrainingLoss.PROSODY_ADVERSARIAL,
+            }
+        )
+    )
     if TrainableModule.PITCH_EXTRACTOR in stage.trainable_modules:
-        raw_f0, _, _ = modules.pitch_extractor(batch.mels.unsqueeze(1))
+        raw_f0, _, _ = modules.pitch_extractor(
+            batch.mels.unsqueeze(1),
+            batch.mel_lengths,
+        )
     else:
         with torch.no_grad():
-            raw_f0, _, _ = modules.pitch_extractor(batch.mels.unsqueeze(1))
+            raw_f0, _, _ = modules.pitch_extractor(
+                batch.mels.unsqueeze(1),
+                batch.mel_lengths,
+            )
     raw_f0 = raw_f0.squeeze(-1)
     with torch.no_grad():
         raw_energy = log_norm(batch.mels.unsqueeze(1)).squeeze(1)
@@ -95,8 +121,7 @@ def model_forward(
         TrainingLoss.RVQ in enabled
         and TrainableModule.PROSODY_ENCODER in stage.trainable_modules
     ):
-        encoder_inputs, encoder_lengths = sample_author_prosody_input(
-            runtime,
+        encoder_inputs, encoder_lengths = sample_target_prosody_input(
             batch,
             style_inputs,
         )
@@ -120,26 +145,43 @@ def model_forward(
             rvq_loss = continuous_style.new_zeros(())
     alpha_loss = style_target.new_zeros(())
     if TrainingLoss.ALPHA_FLOW in enabled:
+        alpha_features = sample_alpha_flow_features(
+            batch,
+            text_encoding,
+            soft_alignment,
+            monotonic,
+            raw_f0,
+            raw_energy,
+        )
         alpha_loss = modules.alpha_flow(
             style_target.detach(),
             bert,
-            style_inputs,
+            alpha_features,
             batch.input_lengths,
             alpha_flow_step,
         )
-    duration_predictions = modules.duration_predictor(
-        duration_encoding,
-        style_target,
-        batch.input_lengths,
-        duration_encoding.size(-1),
+    duration_predictions = style_target.new_zeros(
+        (*duration_targets.shape, 1)
     )
-    aligned_duration = duration_encoding @ monotonic
-    predicted_f0, predicted_energy = modules.prosody_predictor(
-        aligned_duration,
-        style_target,
-        batch.mel_lengths.to(device) // 2,
-        monotonic.size(-1),
-    )
+    predicted_f0 = raw_f0.new_zeros(raw_f0.shape)
+    predicted_energy = raw_energy.new_zeros(raw_energy.shape)
+    if duration_required or prosody_required:
+        duration_encoding = modules.bert_encoder(bert).transpose(-1, -2)
+        if duration_required:
+            duration_predictions = modules.duration_predictor(
+                duration_encoding,
+                style_target,
+                batch.input_lengths,
+                duration_encoding.size(-1),
+            )
+        if prosody_required:
+            aligned_duration = duration_encoding @ monotonic
+            predicted_f0, predicted_energy = modules.prosody_predictor(
+                aligned_duration,
+                style_target,
+                batch.mel_lengths.to(device) // 2,
+                monotonic.size(-1),
+            )
     full_mask = length_to_mask(batch.mel_lengths.to(device), device)
     predicted_f0_masked = predicted_f0.masked_fill(full_mask, 0.0)
     predicted_energy_masked = predicted_energy.masked_fill(full_mask, 0.0)
@@ -159,7 +201,21 @@ def model_forward(
         int(batch.mel_lengths.min().item() / 2 - 1),
         max_decoder_frames // 2,
     )
-    aligned_text = text_encoding @ monotonic
+    voice_dim = runtime.models.parameters.style_dim
+    voice = batch.mels.new_zeros((batch.texts.size(0), voice_dim))
+    decoder_voice = voice
+    decoder_text = text_encoding
+    if requires_voice(enabled):
+        prompt_mels = sample_voice_prompts(batch)
+        with torch.autocast(device_type=device.type, enabled=False):
+            decoder_voice, decoder_text = modules.voice_encoder(
+                prompt_mels.float(),
+                text_encoding.float(),
+                batch.input_lengths,
+                text_encoding.size(-1),
+            )
+            voice = F.normalize(decoder_voice, dim=-1)
+    aligned_text = decoder_text @ monotonic
     crops = crop_training_batch(
         batch,
         aligned_text,
@@ -177,21 +233,6 @@ def model_forward(
         predicted_energy_crop,
         waveform,
     ) = crops
-    voice_dim = runtime.models.parameters.style_dim
-    voice = batch.mels.new_zeros((batch.texts.size(0), voice_dim))
-    reference_voice = voice
-    decoder_reference_voice = reference_voice
-    if requires_voice(enabled):
-        with torch.autocast(device_type=device.type, enabled=False):
-            encoded_voice = modules.voice_encoder.forward_masked(
-                batch.mels.unsqueeze(1).float(), batch.mel_lengths,
-            )
-            decoder_reference_voice = modules.voice_encoder.forward_masked(
-                batch.reference_mels.unsqueeze(1).float(),
-                batch.reference_mel_lengths,
-            )
-            voice = F.normalize(encoded_voice, dim=-1)
-            reference_voice = F.normalize(decoder_reference_voice, dim=-1)
     if stage.prosody_source is ProsodySource.PREDICTED:
         decoder_f0 = predicted_f0_crop
         decoder_energy = predicted_energy_crop
@@ -203,7 +244,7 @@ def model_forward(
             aligned_crop,
             decoder_f0,
             decoder_energy,
-            decoder_reference_voice,
+            decoder_voice,
         )
     return ForwardOutput(
         alignment_predictions,
@@ -223,7 +264,6 @@ def model_forward(
         rvq_loss,
         alpha_loss,
         voice,
-        reference_voice,
         reconstructed,
         waveform,
     )

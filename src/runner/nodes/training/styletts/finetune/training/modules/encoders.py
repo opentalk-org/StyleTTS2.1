@@ -1,15 +1,7 @@
 from torch import nn
-import torch
-import math
-from torch.nn import functional as F
-from torch.nn.utils import weight_norm, spectral_norm
+from torch.nn.utils import weight_norm
 from runner.nodes.training.styletts.finetune.training.modules.normalizations import (
-    AdaLayerNorm,
     LayerNorm,
-)
-from runner.nodes.training.styletts.finetune.training.modules.blocks import (
-    ResBlk,
-    mask_time,
 )
 
 
@@ -20,15 +12,10 @@ class TextEncoder(nn.Module):
         kernel_size,
         depth,
         n_symbols,
-        bert_channels,
         actv=nn.LeakyReLU(0.2),
     ):
         super().__init__()
         self.embedding = nn.Embedding(n_symbols, channels)
-        self.bert_linear = nn.Linear(bert_channels, channels)
-        nn.init.zeros_(self.bert_linear.weight)
-        nn.init.zeros_(self.bert_linear.bias)
-
         padding = (kernel_size - 1) // 2
         self.cnn = nn.ModuleList()
         for _ in range(depth):
@@ -40,7 +27,7 @@ class TextEncoder(nn.Module):
             ))
         self.lstm = nn.LSTM(channels, channels//2, 1, batch_first=True, bidirectional=True)
 
-    def forward(self, x, input_lengths, m, bert):
+    def forward(self, x, input_lengths, m):
         x = self.embedding(x)
         x = x.transpose(1, 2)
         m = m.unsqueeze(1)
@@ -62,117 +49,4 @@ class TextEncoder(nn.Module):
         x = x.transpose(-1, -2)
         padded = x.new_zeros([x.shape[0], x.shape[1], m.shape[-1]])
         padded[:, :, :x.shape[-1]] = x
-        # bert_features = self.bert_linear(bert).transpose(-1, -2)
-        # return (padded + bert_features).masked_fill(m, 0.0)
         return padded.masked_fill(m, 0.0)
-
-
-class StyleEncoder(nn.Module):
-    def __init__(self, dim_in=48, style_dim=48, max_conv_dim=384):
-        super().__init__()
-        blocks = []
-        blocks += [spectral_norm(nn.Conv2d(1, dim_in, 3, 1, 1))]
-
-        repeat_num = 4
-        for _ in range(repeat_num):
-            dim_out = min(dim_in*2, max_conv_dim)
-            blocks += [ResBlk(dim_in, dim_out, downsample='half')]
-            dim_in = dim_out
-
-        blocks += [nn.LeakyReLU(0.2)]
-        blocks += [spectral_norm(nn.Conv2d(dim_out, dim_out, 5, 1, 0))]
-        blocks += [nn.AdaptiveAvgPool2d(1)]
-        blocks += [nn.LeakyReLU(0.2)]
-        self.shared = nn.Sequential(*blocks)
-
-        self.unshared = nn.Linear(dim_out, style_dim)
-
-    def forward(self, x):
-        h = self.shared(x)
-        h = h.view(h.size(0), -1)
-        s = self.unshared(h)
-    
-        return s
-
-    def forward_masked(self, x, lengths):
-        lengths = lengths.to(x.device)
-        hidden = self.shared[0](mask_time(x, lengths))
-        hidden = mask_time(hidden, lengths)
-        for index in range(1, 5):
-            hidden, lengths = self.shared[index].forward_masked(
-                hidden,
-                lengths,
-            )
-        hidden = self.shared[5](hidden)
-        hidden = self.shared[6](hidden)
-        lengths = lengths - 4
-        hidden = mask_time(hidden, lengths)
-        hidden = hidden.sum(dim=(2, 3)) / lengths.unsqueeze(1)
-        hidden = self.shared[8](hidden)
-        return self.unshared(hidden)
-
-class DurationEncoder(nn.Module):
-
-    def __init__(self, sty_dim, d_model, nlayers, dropout=0.1):
-        super().__init__()
-        self.lstms = nn.ModuleList()
-        for _ in range(nlayers):
-            self.lstms.append(nn.LSTM(d_model + sty_dim, 
-                                 d_model // 2, 
-                                 num_layers=1, 
-                                 batch_first=True, 
-                                 bidirectional=True, 
-                                 dropout=dropout))
-            self.lstms.append(AdaLayerNorm(sty_dim, d_model))
-        
-        
-        self.dropout = dropout
-        self.d_model = d_model
-        self.sty_dim = sty_dim
-
-    def forward(self, x, style, text_lengths, m):
-        masks = m
-        
-        x = x.permute(2, 0, 1)
-        s = style.expand(x.shape[0], x.shape[1], -1)
-        x = torch.cat([x, s], axis=-1)
-        x.masked_fill_(masks.unsqueeze(-1).transpose(0, 1), 0.0)
-                
-        x = x.transpose(0, 1)
-        input_lengths = text_lengths.numpy()
-        x = x.transpose(-1, -2)
-        
-        for block in self.lstms:
-            if isinstance(block, AdaLayerNorm):
-                x = block(x.transpose(-1, -2), style).transpose(-1, -2)
-                x = torch.cat([x, s.permute(1, -1, 0)], axis=1)
-                x.masked_fill_(masks.unsqueeze(-1).transpose(-1, -2), 0.0)
-            else:
-                x = x.transpose(-1, -2)
-                x = nn.utils.rnn.pack_padded_sequence(
-                    x, input_lengths, batch_first=True, enforce_sorted=False)
-                block.flatten_parameters()
-                x, _ = block(x)
-                x, _ = nn.utils.rnn.pad_packed_sequence(
-                    x, batch_first=True)
-                x = F.dropout(x, p=self.dropout, training=self.training)
-                x = x.transpose(-1, -2)
-                
-                x_pad = x.new_zeros([x.shape[0], x.shape[1], m.shape[-1]])
-                x_pad[:, :, :x.shape[-1]] = x
-                x = x_pad
-        
-        return x.transpose(-1, -2)
-    
-    def inference(self, x, style):
-        x = self.embedding(x.transpose(-1, -2)) * math.sqrt(self.d_model)
-        style = style.expand(x.shape[0], x.shape[1], -1)
-        x = torch.cat([x, style], axis=-1)
-        src = self.pos_encoder(x)
-        output = self.transformer_encoder(src).transpose(0, 1)
-        return output
-    
-    def length_to_mask(self, lengths):
-        mask = torch.arange(lengths.max()).unsqueeze(0).expand(lengths.shape[0], -1).type_as(lengths)
-        mask = torch.gt(mask+1, lengths.unsqueeze(1))
-        return mask

@@ -74,17 +74,12 @@ class StyleTtsFinetuneSettings(StrictSettings):
         le=8,
     )
     load_optimizer: bool = Field(default=False, title="Load optimizer state")
-    slmadv_min_len: int = Field(default=180, title="SLM min length", ge=1)
-    slmadv_max_len: int = Field(default=200, title="SLM max length", ge=1)
-    slmadv_batch_samples: int = Field(default=0, title="SLM batch samples", ge=0)
     decoder: DecoderBackend = Field(default=DecoderBackend.HIFIGAN, title="Decoder")
-    slm_scale: float = Field(default=0.01, title="Scale", ge=0)
     multispeaker: bool = Field(default=True, title="Multi-speaker mode")
     checkpoint_decoder_gradients: bool = Field(default=True, title="Checkpoint decoder gradients")
     checkpoint_discriminator_gradients: bool = Field(default=True, title="Checkpoint discriminator gradients")
     profiling_enabled: bool = Field(default=False, title="Training profiler")
     config_output_dir: str = Field(default="", title="Config output folder")
-    bucket_cache_budget_gb: float = Field(default=8.0, title="Bucket cache budget (GB)", gt=0, description="Max local disk the on-demand bucket cache may use when the manifest streams audio from buckets.")
 
 
 class StyleTtsFinetuneNode(Node):

@@ -6,8 +6,6 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from ..data import TrainingBatch
-from ..setup import TrainingRuntime
-from ..utils import length_to_mask, log_norm, mask_from_lens, maximum_path
 
 
 def prosody_inputs(
@@ -24,53 +22,45 @@ def prosody_inputs(
     return torch.cat((position_features, half_energy, half_f0), dim=1)
 
 
-def sample_author_prosody_input(
-    runtime: TrainingRuntime,
+def sample_alpha_flow_features(
+    batch: TrainingBatch,
+    text_encoding: Tensor,
+    soft_alignment: Tensor,
+    monotonic_alignment: Tensor,
+    f0: Tensor,
+    energy: Tensor,
+) -> Tensor:
+    alignment = (
+        soft_alignment
+        if bool(random.getrandbits(1))
+        else monotonic_alignment
+    )
+    aligned_text = text_encoding @ alignment
+    features = torch.cat(
+        (
+            aligned_text,
+            F.avg_pool1d(energy.unsqueeze(1), 2),
+            F.avg_pool1d(f0.unsqueeze(1), 2),
+        ),
+        dim=1,
+    )
+    cropped, _ = _random_crops(
+        features,
+        batch.mel_lengths.to(features.device) // 2,
+    )
+    return cropped
+
+
+def sample_target_prosody_input(
     batch: TrainingBatch,
     current: Tensor,
 ) -> tuple[Tensor, Tensor]:
-    """Reproduce the masked/cropped encoder inputs used by small_rec.py."""
+    """Sample masked or cropped prosody solely from the target utterance."""
     current_lengths = batch.mel_lengths.to(current.device) // 2
     if bool(random.getrandbits(1)):
         return _random_mask_batch(current, current_lengths), current_lengths
 
-    current_crops, current_crop_lengths = _random_crops(current, current_lengths)
-    if random.random() < 0.9:
-        return current_crops, current_crop_lengths
-
-    reference, reference_lengths = _reference_inputs(runtime, batch)
-    return _random_crops(reference, reference_lengths)
-
-
-@torch.no_grad()
-def _reference_inputs(
-    runtime: TrainingRuntime,
-    batch: TrainingBatch,
-) -> tuple[Tensor, Tensor]:
-    modules = runtime.models.modules
-    device = batch.mels.device
-    lengths = batch.reference_mel_lengths.to(device)
-    input_lengths = batch.reference_lengths.to(device)
-    down_lengths = lengths // (2**runtime.models.n_down)
-    mask = length_to_mask(down_lengths, device)
-    _, _, alignment = modules.text_aligner(
-        batch.reference_mels,
-        mask,
-        batch.reference_texts,
-    )
-    alignment = alignment.transpose(-1, -2)[..., 1:].transpose(-1, -2)
-    alignment_mask = mask_from_lens(alignment, input_lengths, down_lengths)
-    monotonic = maximum_path(alignment, alignment_mask)
-    f0, _, _ = modules.pitch_extractor(batch.reference_mels.unsqueeze(1))
-    f0 = f0.squeeze(-1)
-    energy = log_norm(batch.reference_mels.unsqueeze(1)).squeeze(1)
-    full_mask = length_to_mask(lengths, device)
-    f0.masked_fill_(full_mask, 0.0)
-    energy.masked_fill_(full_mask, 0.0)
-    return (
-        prosody_inputs(modules.position_embedding, monotonic, f0, energy),
-        lengths // 2,
-    )
+    return _random_crops(current, current_lengths)
 
 
 def _random_crops(values: Tensor, lengths: Tensor) -> tuple[Tensor, Tensor]:

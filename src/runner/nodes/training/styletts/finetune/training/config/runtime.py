@@ -14,13 +14,6 @@ class StrictConfigModel(BaseModel):
 class DataConfig(StrictConfigModel):
     train_data: str
     val_data: str
-    root_path: str
-    OOD_data: str
-    min_length: int = Field(gt=0)
-    stream_from_buckets: bool
-    stream_plan_path: str
-    cache_dir: str
-    bucket_cache_budget_bytes: int = Field(ge=0)
 
 
 class SpectrogramConfig(StrictConfigModel):
@@ -40,16 +33,6 @@ class OptimizerConfig(StrictConfigModel):
     ft_lr: float = Field(gt=0)
 
 
-class SlmAdversarialConfig(StrictConfigModel):
-    min_len: int = Field(gt=0)
-    max_len: int = Field(gt=0)
-    batch_max_samples: int = Field(ge=0)
-    iter: int = Field(gt=0)
-    thresh: float = Field(gt=0)
-    scale: float = Field(gt=0)
-    sig: float = Field(gt=0)
-
-
 class TrainingConfig(StrictConfigModel):
     log_dir: str
     total_steps: int = Field(gt=0)
@@ -60,7 +43,6 @@ class TrainingConfig(StrictConfigModel):
     profiling_enabled: bool
     distributed_processes: int = Field(gt=0)
     device: str
-    second_stage_load_pretrained: bool
     load_only_params: bool
     precision: Literal["fp16", "bf16", "fp32"]
     pretrained_model: str | None
@@ -73,7 +55,6 @@ class TrainingConfig(StrictConfigModel):
     data_params: DataConfig
     preprocess_params: PreprocessConfig
     optimizer_params: OptimizerConfig
-    slmadv_params: SlmAdversarialConfig
     studio_publish: dict[str, Any]
     symbols: list[str]
     training_stages: list[TrainingStageSpec] = Field(min_length=1)
