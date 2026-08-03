@@ -38,9 +38,6 @@ class VoiceEncoder(nn.Module):
             use_group_norm=True,
         )
         self.out = nn.Linear(text_dim, voice_dim)
-        with torch.no_grad():
-            self.out.weight.mul_(0.1)
-            self.out.bias.mul_(0.1)
 
     def forward(
         self,

@@ -6,7 +6,11 @@ import yaml
 from munch import Munch
 
 from runner.nodes.training.styletts.finetune.training.modules.asr.models import ASRCNN
-from runner.nodes.training.styletts.finetune.training.modules.discriminators import MultiPeriodDiscriminator, MultiResSpecDiscriminator
+from runner.nodes.training.styletts.finetune.training.modules.discriminators import (
+    MultiPeriodDiscriminator,
+    MultiResSpecDiscriminator,
+    WavLMDiscriminator,
+)
 from runner.nodes.training.styletts.finetune.training.modules.encoders import TextEncoder
 from runner.nodes.training.styletts.finetune.training.modules.hifigan import Decoder as HifiganDecoder
 from runner.nodes.training.styletts.finetune.training.modules.istftnet import Decoder as IstftnetDecoder
@@ -189,7 +193,11 @@ def build_model(args, text_aligner, pitch_extractor, bert):
         text_dim=args.hidden_dim,
         voice_dim=args.style_dim,
     )
-    wd = ProsodyDiscriminator(mel_dim=args.slm.hidden * args.slm.nlayers)
+    wd = WavLMDiscriminator(
+        slm_hidden=args.slm.hidden,
+        slm_layers=args.slm.nlayers,
+        initial_channel=args.slm.initial_channel,
+    )
     mpd = MultiPeriodDiscriminator(
         gradient_checkpointing=discriminators_checkpointing,
     )

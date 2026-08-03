@@ -3,7 +3,11 @@ import torch
 def init_weights(m, mean=0.0, std=0.01):
     classname = m.__class__.__name__
     if classname.find("Conv") != -1:
-        m.weight.data.normal_(mean, std)
+        if hasattr(m, "weight_v"):
+            m.weight_v.data.normal_(mean, std)
+            m.weight_g.data.copy_(torch.norm_except_dim(m.weight_v.data, 2, 0))
+        else:
+            m.weight.data.normal_(mean, std)
 
 
 def get_padding(kernel_size, dilation=1):

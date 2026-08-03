@@ -292,7 +292,10 @@ class Trainer:
                     dim=1,
                 )
 
-            crop_frames = int(batch.mel_lengths.min().item() / 2 - 1)
+            crop_frames = min(
+                int(batch.mel_lengths.min().item() / 2 - 1),
+                150,
+            )
             voice_dim = runtime.models.parameters.style_dim
             voice = batch.mels.new_zeros((batch.texts.size(0), voice_dim))
             decoder_voice = voice
