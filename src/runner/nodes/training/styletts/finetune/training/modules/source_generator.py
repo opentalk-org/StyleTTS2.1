@@ -2,12 +2,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-
-def _phase_difference(values):
-    shifted = F.pad(values, (0, 0, -1, 1), "constant", 0) - values
-    return F.pad(shifted, (0, 0, 0, -1), "constant", 0)
-
-
 class SineGenerator(torch.nn.Module):
     def __init__(
         self,
@@ -26,6 +20,7 @@ class SineGenerator(torch.nn.Module):
         self.sample_rate = sample_rate
         self.voiced_threshold = voiced_threshold
         self.pulse = pulse
+        self.upsample_scale = upsample_scale
 
     def _voiced(self, f0):
         return (f0 > self.voiced_threshold).type(torch.float32)
@@ -41,12 +36,18 @@ class SineGenerator(torch.nn.Module):
         phase_steps[:, 0, :] += initial_phase
 
         if not self.pulse:
-            wrapped_phase = torch.cumsum(phase_steps, dim=1) % 1
-            crossings = _phase_difference(wrapped_phase) < 0
-            phase_shift = torch.zeros_like(phase_steps)
-            phase_shift[:, 1:, :] = crossings * -1.0
-            phase = torch.cumsum(phase_steps + phase_shift, dim=1)
-            return torch.sin(phase * 2 * np.pi)
+            phase_steps = F.interpolate(
+                phase_steps.transpose(1, 2),
+                scale_factor=1 / self.upsample_scale,
+                mode="linear",
+            ).transpose(1, 2)
+            phase = torch.cumsum(phase_steps, dim=1) * 2 * np.pi
+            phase = F.interpolate(
+                phase.transpose(1, 2) * self.upsample_scale,
+                scale_factor=self.upsample_scale,
+                mode="linear",
+            ).transpose(1, 2)
+            return torch.sin(phase)
 
         voiced = self._voiced(f0_values)
         next_voiced = torch.roll(voiced, shifts=-1, dims=1)

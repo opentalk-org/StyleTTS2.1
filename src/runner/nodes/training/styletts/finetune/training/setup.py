@@ -39,7 +39,7 @@ class LossBundle:
 @dataclass
 class FeatureBundle:
     wavlm: WavLMFeatures
-    speaker: SpeakerFeatures
+    speaker: SpeakerFeatures | None
 
 
 @dataclass
@@ -76,16 +76,24 @@ def build_training_runtime(
         accelerator.unwrap_model(modules.text_aligner).n_down,
     )
     losses = LossBundle(MultiResolutionSTFTLoss().to(device))
-    features = FeatureBundle(
-        WavLMFeatures(
-            parameters.slm.model,
-            config.preprocess_params.sr,
-            parameters.slm.sr,
-        ),
-        SpeakerFeatures(config.preprocess_params.sr),
+    wavlm = WavLMFeatures(
+        parameters.slm.model,
+        config.preprocess_params.sr,
+        parameters.slm.sr,
     )
-    features.wavlm.to(device)
-    features.speaker.to(device)
+    speaker_required = any(
+        stage.loss_weights.speaker_feature > 0
+        or stage.loss_weights.speaker_similarity > 0
+        for stage in config.training_stages
+    )
+    speaker = (
+        SpeakerFeatures(config.preprocess_params.sr)
+        if speaker_required
+        else None
+    )
+    features = FeatureBundle(wavlm.to(device), speaker)
+    if speaker is not None:
+        speaker.to(device)
     torch.cuda.empty_cache()
     return TrainingRuntime(
         accelerator,
@@ -125,8 +133,7 @@ def _build_models(
 ) -> Munch:
     aligner = load_ASR_models(config.ASR_path, config.ASR_config)
     pitch = load_F0_models(config.F0_path)
-    with torch.random.fork_rng(devices=[]):
-        plbert = load_plbert(config.PLBERT_path, config.PLBERT_config)
+    plbert = load_plbert(config.PLBERT_path, config.PLBERT_config)
     modules = build_model(parameters, aligner, pitch, plbert)
     for module in modules.values():
         module.to(device)

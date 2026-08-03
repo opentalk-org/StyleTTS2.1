@@ -9,12 +9,6 @@ from .utils import checkpoint_with_mixed_precision, get_padding
 
 LRELU_SLOPE = 0.1
 
-
-def preprocess_discriminator_input(y):
-    y = y - y.mean(dim=-1, keepdim=True)
-    return 0.8 * y / (y.abs().amax(dim=-1, keepdim=True) + 1e-9)
-
-
 def stft(x, fft_size, hop_size, win_length, window):
     x_stft = torch.stft(x, fft_size, hop_size, win_length, window,
             return_complex=True)
@@ -103,8 +97,6 @@ class MultiResSpecDiscriminator(torch.nn.Module):
             ])
 
     def forward(self, y, y_hat, return_features=True):
-        y = preprocess_discriminator_input(y)
-        y_hat = preprocess_discriminator_input(y_hat)
         y_d_rs = []
         y_d_gs = []
         fmap_rs = []
@@ -201,8 +193,6 @@ class MultiPeriodDiscriminator(torch.nn.Module):
         ])
 
     def forward(self, y, y_hat, return_features=True):
-        y = preprocess_discriminator_input(y)
-        y_hat = preprocess_discriminator_input(y_hat)
         y_d_rs = []
         y_d_gs = []
         fmap_rs = []

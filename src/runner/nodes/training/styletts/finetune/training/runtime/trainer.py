@@ -32,10 +32,12 @@ from ...stages import (
 )
 from .batch_ops import (
     crop_training_batch,
+    prosody_inputs,
     sample_alpha_flow_features,
     sample_target_prosody_input,
     sample_voice_prompts,
 )
+from .gradient_norms import gradient_norm_metrics
 
 
 logger = logging.getLogger(__name__)
@@ -64,18 +66,20 @@ class Trainer:
         if weights.slm_adversarial > 0:
             training_modules.add("wd")
         if weights.mel > 0:
-            training_modules.add("pitch_extractor")
+            training_modules.update(("pitch_extractor", "text_aligner"))
         self.runtime.models.set_training_mode(training_modules)
 
     def train_step(self, batch: TrainingBatch) -> dict[str, torch.Tensor | float]:
         set_profiling_step(self.step)
-        batch = batch.to(self.runtime.accelerator.device)
-        modules = self.runtime.models.modules
-        accelerator = self.runtime.accelerator
-        optimizer = self.runtime.optimizer
+        runtime = self.runtime
+        accelerator = runtime.accelerator
+        modules = runtime.models.modules
+        optimizer = runtime.optimizer
+        batch = batch.to(accelerator.device)
         stage = stage_for_step(self.config.training_stages, self.step)
         weights = stage.loss_weights
         trainable = tuple(module.value for module in stage.trainable_modules)
+
         for name, module in modules.items():
             module.requires_grad_(name in trainable)
         waveform_adversarial = weights.adversarial > 0
@@ -84,14 +88,23 @@ class Trainer:
         prosody_adversarial = weights.prosody_adversarial > 0
         modules.prosody_discriminator.requires_grad_(prosody_adversarial)
         modules.duration_discriminator.requires_grad_(prosody_adversarial)
-        modules.wd.requires_grad_(weights.slm_adversarial > 0)
+        slm_adversarial = weights.slm_adversarial > 0
+        modules.wd.requires_grad_(slm_adversarial)
+        gradient_metrics: dict[str, torch.Tensor | float] = {}
+        voice_required = (
+            waveform_adversarial
+            or weights.mel > 0
+            or slm_adversarial
+            or weights.speaker_feature > 0
+            or weights.speaker_similarity > 0
+            or weights.style_nuisance > 0
+            or weights.wavlm > 0
+            or weights.xcov > 0
+        )
+
         with accelerator.autocast():
             alpha_flow_step = max(0, self.step - self.alpha_flow_start)
-            max_decoder_frames = int(stage.max_decoder_seconds * 80)
-            runtime = self.runtime
-            modules = runtime.models.modules
             device = batch.mels.device
-            weights = stage.loss_weights
             mask = length_to_mask(
                 batch.mel_lengths // (2**runtime.models.n_down),
                 device,
@@ -122,13 +135,13 @@ class Trainer:
             duration_required = (
                 weights.duration > 0
                 or weights.duration_ce > 0
-                or weights.prosody_adversarial > 0
+                or prosody_adversarial
             )
             prosody_required = (
                 stage.prosody_source is ProsodySource.PREDICTED
                 or weights.f0 > 0
                 or weights.norm > 0
-                or weights.prosody_adversarial > 0
+                or prosody_adversarial
             )
             style_required = (
                 weights.alpha_flow > 0
@@ -136,7 +149,7 @@ class Trainer:
                 or weights.duration_ce > 0
                 or weights.f0 > 0
                 or weights.norm > 0
-                or weights.prosody_adversarial > 0
+                or prosody_adversarial
                 or weights.rvq > 0
                 or weights.style_nuisance > 0
                 or weights.xcov > 0
@@ -169,24 +182,12 @@ class Trainer:
             target_f0 = target_f0.masked_fill(full_mask, 0.0)
             target_energy.masked_fill_(full_mask, 0.0)
 
-            def build_prosody_inputs(
-                alignment: Tensor,
-                f0: Tensor,
-                energy: Tensor,
-            ) -> Tensor:
-                positions = torch.arange(alignment.size(1), device=alignment.device)
-                positions = positions.unsqueeze(0).expand(alignment.size(0), -1)
-                position_features = modules.position_embedding(positions).transpose(1, 2)
-                position_features = position_features @ alignment
-                half_f0 = F.avg_pool1d(f0.unsqueeze(1), 2)
-                half_energy = F.avg_pool1d(energy.unsqueeze(1), 2)
-                return torch.cat((position_features, half_energy, half_f0), dim=1)
-
             style_inputs = batch.mels.new_zeros(
                 (batch.mels.size(0), 514, monotonic.size(-1))
             )
             if style_required:
-                style_inputs = build_prosody_inputs(
+                style_inputs = prosody_inputs(
+                    modules.position_embedding,
                     monotonic,
                     target_f0,
                     target_energy,
@@ -266,8 +267,9 @@ class Trainer:
             duration_shape = (batch.texts.size(0), 513, monotonic.size(1))
             duration_real = batch.mels.new_zeros(duration_shape)
             duration_fake = batch.mels.new_zeros(duration_shape)
-            if weights.prosody_adversarial > 0:
-                prosody_fake = build_prosody_inputs(
+            if prosody_adversarial:
+                prosody_fake = prosody_inputs(
+                    modules.position_embedding,
                     monotonic,
                     predicted_f0,
                     predicted_energy,
@@ -290,27 +292,12 @@ class Trainer:
                     dim=1,
                 )
 
-            global_mel_lengths = runtime.accelerator.gather(
-                batch.mel_lengths.to(device)
-            )
-            crop_frames = min(
-                int(global_mel_lengths.min().item() / 2 - 1),
-                max_decoder_frames // 2,
-            )
+            crop_frames = int(batch.mel_lengths.min().item() / 2 - 1)
             voice_dim = runtime.models.parameters.style_dim
             voice = batch.mels.new_zeros((batch.texts.size(0), voice_dim))
             decoder_voice = voice
             decoder_text = text_encoding
-            if (
-                weights.adversarial > 0
-                or weights.mel > 0
-                or weights.slm_adversarial > 0
-                or weights.speaker_feature > 0
-                or weights.speaker_similarity > 0
-                or weights.style_nuisance > 0
-                or weights.wavlm > 0
-                or weights.xcov > 0
-            ):
+            if voice_required:
                 prompt_mels = sample_voice_prompts(batch)
                 with torch.autocast(device_type=device.type, enabled=False):
                     decoder_voice, decoder_text = modules.voice_encoder(
@@ -319,7 +306,7 @@ class Trainer:
                         batch.input_lengths,
                         text_encoding.size(-1),
                     )
-                    if random.random() < 0.2:
+                    if random.random() < stage.voice_conditioning_dropout:
                         with torch.no_grad():
                             null_voice, null_text = modules.voice_encoder(
                                 torch.zeros_like(prompt_mels).float(),
@@ -404,6 +391,9 @@ class Trainer:
                     )
                 accelerator.backward(loss)
                 synchronize_gradients(accelerator, modules, (name,))
+                gradient_metrics.update(
+                    gradient_norm_metrics(accelerator, modules, (name,))
+                )
                 optimizer.step(name)
                 discriminator.requires_grad_(False)
                 discriminator_loss = discriminator_loss + loss.detach()
@@ -446,11 +436,14 @@ class Trainer:
                 )
                 accelerator.backward(loss)
                 synchronize_gradients(accelerator, modules, (name,))
+                gradient_metrics.update(
+                    gradient_norm_metrics(accelerator, modules, (name,))
+                )
                 optimizer.step(name)
                 modules[name].requires_grad_(False)
                 prosody_discriminator_total += loss.detach()
 
-        if weights.slm_adversarial > 0:
+        if slm_adversarial:
             optimizer.zero_grad("wd")
             with accelerator.autocast():
                 with torch.no_grad():
@@ -474,6 +467,9 @@ class Trainer:
                 )
             accelerator.backward(slm_discriminator_loss)
             synchronize_gradients(accelerator, modules, ("wd",))
+            gradient_metrics.update(
+                gradient_norm_metrics(accelerator, modules, ("wd",))
+            )
             optimizer.step("wd")
             modules.wd.requires_grad_(False)
             slm_discriminator_loss = slm_discriminator_loss.detach()
@@ -527,7 +523,7 @@ class Trainer:
                 losses["rvq"] = rvq_loss
             if weights.alpha_flow > 0:
                 losses["alpha_flow"] = alpha_loss
-            if weights.adversarial > 0:
+            if waveform_adversarial:
                 period = waveform_generator_losses(
                     *modules.mpd(
                         waveform.float(),
@@ -544,7 +540,7 @@ class Trainer:
                 losses["feature_matching"] = period[1] + scale[1]
                 losses["generator_adversarial"] = period[2] + scale[2]
                 losses["relative_adversarial"] = period[3] + scale[3]
-            if weights.wavlm > 0 or weights.slm_adversarial > 0:
+            if weights.wavlm > 0 or slm_adversarial:
                 real_features = None
                 if weights.wavlm > 0:
                     with torch.no_grad():
@@ -559,7 +555,7 @@ class Trainer:
                         real_features,
                         generated_features,
                     )
-                if weights.slm_adversarial > 0:
+                if slm_adversarial:
                     generated_input = (
                         self.runtime.features.wavlm.discriminator_input(
                             generated_features
@@ -569,12 +565,13 @@ class Trainer:
                         modules.wd(generated_input)
                     )
             if weights.speaker_feature > 0 or weights.speaker_similarity > 0:
+                speaker = self.runtime.features.speaker
+                if speaker is None:
+                    raise RuntimeError("speaker features were not initialized")
                 with torch.no_grad():
-                    real_values, real_embedding = self.runtime.features.speaker(
-                        waveform.detach()
-                    )
+                    real_values, real_embedding = speaker(waveform.detach())
                 generated_values, generated_embedding = (
-                    self.runtime.features.speaker(reconstructed)
+                    speaker(reconstructed)
                 )
                 speaker_feature, speaker_similarity = speaker_losses(
                     real_values,
@@ -584,7 +581,7 @@ class Trainer:
                 )
                 losses["speaker_feature"] = speaker_feature
                 losses["speaker_similarity"] = speaker_similarity
-            if weights.prosody_adversarial > 0:
+            if prosody_adversarial:
                 prosody_lengths = batch.mel_lengths.to(reconstructed.device) // 2
                 prosody_scores, prosody_fake_features = (
                     modules.prosody_discriminator(
@@ -676,6 +673,14 @@ class Trainer:
                     if parameter.requires_grad:
                         parameter.grad = torch.zeros_like(parameter)
         synchronize_gradients(accelerator, modules, trainable)
+        gradient_metrics.update(
+            gradient_norm_metrics(
+                accelerator,
+                modules,
+                trainable,
+                group_name="generator",
+            )
+        )
         for name in trainable:
             optimizer.step(name)
         return self._reported_metrics(
@@ -689,6 +694,7 @@ class Trainer:
             slm_discriminator_loss,
             style_batch_std,
             finite,
+            gradient_metrics,
         )
 
     def _reported_metrics(
@@ -703,6 +709,7 @@ class Trainer:
         slm_discriminator_loss: torch.Tensor,
         style_batch_std: torch.Tensor,
         finite: bool,
+        gradient_metrics: dict[str, torch.Tensor | float],
     ) -> dict[str, torch.Tensor | float]:
         metrics: dict[str, torch.Tensor | float] = {
             item.value: losses[item.value]
@@ -775,6 +782,7 @@ class Trainer:
             )
         metrics["step_skipped"] = float(not finite)
         metrics["skipped_steps"] = float(self.skipped_steps)
+        metrics.update(gradient_metrics)
         return metrics
 
     @staticmethod

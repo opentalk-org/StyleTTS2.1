@@ -245,16 +245,8 @@ def _make_mlflow_run(config_path: Path) -> TrackerRun:
         "finetune_job_id": publish.get("finetune_job_id"),
         "total_steps": styletts_yaml.get("total_steps"),
         "distributed_processes": styletts_yaml.get("distributed_processes"),
-        "stage_batch_sizes": ",".join(
-            str(stage.get("batch_size"))
-            for stage in styletts_yaml.get("training_stages", [])
-        ),
         "stage_max_audio_seconds": ",".join(
             str(stage.get("max_audio_seconds"))
-            for stage in styletts_yaml.get("training_stages", [])
-        ),
-        "stage_max_decoder_seconds": ",".join(
-            str(stage.get("max_decoder_seconds"))
             for stage in styletts_yaml.get("training_stages", [])
         ),
         "precision": styletts_yaml.get("precision"),
