@@ -29,23 +29,7 @@ def _validation(
 
 def _loss_weights() -> TrainingLossWeights:
     return TrainingLossWeights(
-        alpha_flow=1,
-        adversarial=1,
-        duration=1,
-        duration_ce=20,
-        f0=1,
-        mel=5,
-        monotonic_alignment=1,
-        norm=1,
-        prosody_adversarial=1,
-        rvq=1,
-        sequence_alignment=1,
-        slm_adversarial=1,
-        speaker_feature=5,
-        speaker_similarity=5,
-        wavlm=1,
-        style_nuisance=0.1,
-        xcov=0.01,
+        **{loss.value: 0 for loss in TrainingLoss}
     )
 
 
@@ -65,19 +49,29 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         TrainableModule.POSITION_EMBEDDING,
         TrainableModule.FACTORIZATION,
     ]
-    prosody_losses = [
-        TrainingLoss.F0,
-        TrainingLoss.NORM,
-        TrainingLoss.DURATION,
-        TrainingLoss.DURATION_CE,
-        TrainingLoss.PROSODY_ADVERSARIAL,
-        TrainingLoss.RVQ,
-        TrainingLoss.STYLE_NUISANCE,
-        TrainingLoss.XCOV,
-    ]
-    common = dict(
-        loss_weights=weights,
-        train_discriminators=False,
+    acoustic_weights = weights.model_copy(
+        update={
+            "mel": 5,
+            "sequence_alignment": 1,
+            "monotonic_alignment": 1,
+            "adversarial": 1,
+            "wavlm": 1,
+            "slm_adversarial": 1,
+            "speaker_feature": 5,
+            "speaker_similarity": 5,
+        }
+    )
+    prosody_weights = weights.model_copy(
+        update={
+            "f0": 1,
+            "norm": 1,
+            "duration": 1,
+            "duration_ce": 20,
+            "prosody_adversarial": 1,
+            "rvq": 1,
+            "style_nuisance": 0.1,
+            "xcov": 0.01,
+        }
     )
     return [
         TrainingStageSpec(
@@ -86,23 +80,8 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             style_source=StyleSource.CONTINUOUS,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=acoustic_modules,
-            enabled_losses=[
-                TrainingLoss.MEL,
-                TrainingLoss.SEQUENCE_ALIGNMENT,
-                TrainingLoss.MONOTONIC_ALIGNMENT,
-                TrainingLoss.ADVERSARIAL,
-                TrainingLoss.WAVLM,
-                TrainingLoss.SLM_ADVERSARIAL,
-                TrainingLoss.SPEAKER_FEATURE,
-                TrainingLoss.SPEAKER_SIMILARITY,
-            ],
+            loss_weights=acoustic_weights,
             validation=_validation(False, False),
-            train_discriminators=True,
-            **{
-                key: value
-                for key, value in common.items()
-                if key != "train_discriminators"
-            },
         ),
         TrainingStageSpec(
             name="small_rec.py · prosody/RVQ and factorization",
@@ -110,9 +89,8 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             style_source=StyleSource.QUANTIZED,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=prosody_modules,
-            enabled_losses=prosody_losses,
+            loss_weights=prosody_weights,
             validation=_validation(True, False),
-            **common,
         ),
         TrainingStageSpec(
             name="v_diffusion.py · AlphaFlow",
@@ -120,8 +98,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             style_source=StyleSource.QUANTIZED,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=[TrainableModule.ALPHA_FLOW],
-            enabled_losses=[TrainingLoss.ALPHA_FLOW],
+            loss_weights=weights.model_copy(update={"alpha_flow": 1}),
             validation=_validation(True, True),
-            **common,
         ),
     ]

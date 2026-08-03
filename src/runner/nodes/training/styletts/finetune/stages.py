@@ -96,26 +96,16 @@ class TrainingStageSpec(BaseModel):
     style_source: StyleSource = StyleSource.QUANTIZED
     prosody_source: ProsodySource
     trainable_modules: list[TrainableModule]
-    enabled_losses: list[TrainingLoss]
     loss_weights: TrainingLossWeights
-    train_discriminators: bool
     validation: ValidationStageSpec
 
     @model_validator(mode="after")
     def validate_policy(self) -> "TrainingStageSpec":
         if len(set(self.trainable_modules)) != len(self.trainable_modules):
             raise ValueError("trainable_modules must not contain duplicates")
-        if len(set(self.enabled_losses)) != len(self.enabled_losses):
-            raise ValueError("enabled_losses must not contain duplicates")
-        if self.train_discriminators != (
-            TrainingLoss.ADVERSARIAL in self.enabled_losses
-        ):
-            raise ValueError(
-                "train_discriminators must match adversarial loss"
-            )
         if (
-            TrainingLoss.ADVERSARIAL in self.enabled_losses
-            and TrainingLoss.MEL not in self.enabled_losses
+            self.loss_weights.adversarial > 0
+            and self.loss_weights.mel == 0
         ):
             raise ValueError("waveform adversarial training requires mel reconstruction")
         return self
