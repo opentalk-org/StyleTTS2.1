@@ -55,7 +55,6 @@ def sample_target_prosody_input(
     batch: TrainingBatch,
     current: Tensor,
 ) -> tuple[Tensor, Tensor]:
-    """Sample masked or cropped prosody solely from the target utterance."""
     current_lengths = batch.mel_lengths.to(current.device) // 2
     if bool(random.getrandbits(1)):
         return _random_mask_batch(current, current_lengths), current_lengths
@@ -91,3 +90,65 @@ def _random_mask_batch(values: Tensor, lengths: Tensor) -> Tensor:
                 masked[index, :, start:end] = 0
                 masked_length += end - start
     return masked
+
+
+def crop_training_batch(
+    batch: TrainingBatch,
+    aligned_text: Tensor,
+    target_f0: Tensor,
+    target_energy: Tensor,
+    predicted_f0: Tensor,
+    predicted_energy: Tensor,
+    frames: int,
+) -> tuple[Tensor, ...]:
+    starts = [
+        int(np.random.randint(0, int(length.item() / 2) - frames))
+        for length in batch.mel_lengths
+    ]
+    aligned = torch.stack(
+        [
+            aligned_text[index, :, start : start + frames]
+            for index, start in enumerate(starts)
+        ]
+    )
+    slices = [slice(start * 2, (start + frames) * 2) for start in starts]
+    tracks = (
+        target_f0,
+        target_energy,
+        predicted_f0,
+        predicted_energy,
+    )
+    cropped = [
+        torch.stack([track[index, item] for index, item in enumerate(slices)])
+        for track in tracks
+    ]
+    cropped_mels = torch.stack(
+        [batch.mels[index, :, item] for index, item in enumerate(slices)]
+    ).detach()
+    waves = [
+        batch.waves[index][start * 600 : (start + frames) * 600]
+        for index, start in enumerate(starts)
+    ]
+    waveform = (
+        torch.from_numpy(np.stack(waves))
+        .to(batch.mels.device)
+        .float()
+        .unsqueeze(1)
+    )
+    return (aligned, *cropped, cropped_mels, waveform)
+
+
+def sample_voice_prompts(batch: TrainingBatch) -> Tensor:
+    prompt_frames = int(batch.mel_lengths.min().item() / 2 - 1)
+    prompt_starts = [
+        int(np.random.randint(0, int(length.item() / 2) - prompt_frames))
+        for length in batch.mel_lengths
+    ]
+    prompt_slices = [
+        slice(start * 2, (start + prompt_frames) * 2)
+        for start in prompt_starts
+    ]
+    prompt_mels = torch.stack(
+        [batch.mels[index, :, item] for index, item in enumerate(prompt_slices)]
+    ).detach()
+    return prompt_mels

@@ -30,11 +30,12 @@ from ...stages import (
     TrainingStageSpec,
     stage_for_step,
 )
-from .prosody_sampling import (
+from .batch_ops import (
+    crop_training_batch,
     sample_alpha_flow_features,
     sample_target_prosody_input,
+    sample_voice_prompts,
 )
-from .training_crops import crop_training_batch, sample_voice_prompts
 
 
 logger = logging.getLogger(__name__)
