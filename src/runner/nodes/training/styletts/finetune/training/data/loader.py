@@ -105,6 +105,7 @@ class FilePathDataset(torch.utils.data.Dataset):
             self.modality_id,
             audio_id,
             self._text_to_tensor(text),
+            self.durations[idx],
         )
 
     def _resolve_language_id(self, language: str | None) -> int:
@@ -192,6 +193,7 @@ class Collater:
             modality_id,
             audio_id,
             text,
+            _duration,
         ) in enumerate(batch):
             wave, mel = cache[audio_id]
             mel_size = mel.size(1)
@@ -207,6 +209,7 @@ class Collater:
 
         return TrainingBatch(
             waves=tuple(waves),
+            audio_durations=tuple(row[5] for row in batch),
             speaker_ids=labels,
             language_ids=language_ids,
             modality_ids=modality_ids,
