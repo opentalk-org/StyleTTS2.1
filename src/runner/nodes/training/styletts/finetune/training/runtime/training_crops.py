@@ -19,7 +19,10 @@ def crop_training_batch(
         for length in batch.mel_lengths
     ]
     aligned = torch.stack(
-        [aligned_text[index, :, start : start + frames] for index, start in enumerate(starts)]
+        [
+            aligned_text[index, :, start : start + frames]
+            for index, start in enumerate(starts)
+        ]
     )
     slices = [slice(start * 2, (start + frames) * 2) for start in starts]
     tracks = (
@@ -32,12 +35,20 @@ def crop_training_batch(
         torch.stack([track[index, item] for index, item in enumerate(slices)])
         for track in tracks
     ]
+    cropped_mels = torch.stack(
+        [batch.mels[index, :, item] for index, item in enumerate(slices)]
+    ).detach()
     waves = [
         batch.waves[index][start * 600 : (start + frames) * 600]
         for index, start in enumerate(starts)
     ]
-    waveform = torch.from_numpy(np.stack(waves)).to(batch.mels.device).float().unsqueeze(1)
-    return (aligned, *cropped, waveform)
+    waveform = (
+        torch.from_numpy(np.stack(waves))
+        .to(batch.mels.device)
+        .float()
+        .unsqueeze(1)
+    )
+    return (aligned, *cropped, cropped_mels, waveform)
 
 
 def sample_voice_prompts(batch: TrainingBatch) -> Tensor:

@@ -16,7 +16,6 @@ class AlphaFlow(nn.Module):
         style_scale: float = 1.0,
         transition_start: int = 1_000,
         transition_end: int = 4_000,
-        equal_time_ratio: float = 0.5,
         temperature: float = 25.0,
         conditional_dropout: float = 0.1,
     ) -> None:
@@ -30,7 +29,6 @@ class AlphaFlow(nn.Module):
         self.register_buffer("last_velocity_cosine", torch.tensor(float("nan")), persistent=False)
         self.transition_start = transition_start
         self.transition_end = transition_end
-        self.equal_time_ratio = equal_time_ratio
         self.temperature = temperature
         self.conditional_dropout = conditional_dropout
 
@@ -65,10 +63,14 @@ class AlphaFlow(nn.Module):
             self.style_scale.add_((scale.to(self.style_scale) - self.style_scale) / updates)
         target = target / scale.to(target)
         batch = target.size(0)
-        t = torch.rand(batch, device=target.device, dtype=target.dtype)
-        r = torch.rand_like(t) * t
-        equal_times = torch.rand(batch, device=target.device) < self.equal_time_ratio
-        r = torch.where(equal_times, t, r)
+        a = torch.sigmoid(
+            torch.randn(batch, device=target.device, dtype=target.dtype) * 1.0 - 0.4
+        )
+        b = torch.sigmoid(
+            torch.randn(batch, device=target.device, dtype=target.dtype) * 1.0 - 0.4
+        )
+        t = torch.maximum(a, b)
+        r = torch.minimum(a, b)
         noise = torch.randn_like(target)
         velocity = noise - target
         noisy = (1 - t[:, None, None]) * target + t[:, None, None] * noise
