@@ -18,7 +18,6 @@ from runner.nodes.models import (
     TrainingResult,
 )
 
-
 @dataclass(frozen=True)
 class TextPort(Port):
     TYPE_NAME = "TEXT"

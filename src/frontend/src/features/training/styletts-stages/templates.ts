@@ -40,11 +40,10 @@ export const TRAINING_LOSSES = [
   "rvq",
   "sequence_alignment",
   "slm_adversarial",
+  "speaker_feature",
+  "speaker_similarity",
   "wavlm",
   "style_nuisance",
-  "voice_metric",
-  "voice_nuisance",
-  "voice_pair",
   "xcov",
 ] as const;
 
@@ -80,11 +79,10 @@ export const DEFAULT_LOSS_WEIGHTS: TrainingLossWeights = {
   rvq: 1,
   sequence_alignment: 1,
   slm_adversarial: 1,
+  speaker_feature: 5,
+  speaker_similarity: 5,
   wavlm: 1,
   style_nuisance: 0.1,
-  voice_metric: 1,
-  voice_nuisance: 0.1,
-  voice_pair: 1,
   xcov: 0.01,
 };
 
@@ -106,8 +104,6 @@ const ACOUSTIC_MODULES: TrainableModule[] = [
   "voice_encoder",
   "decoder",
   "text_aligner",
-  "pitch_extractor",
-  "factorization",
 ];
 const PROSODY_MODULES: TrainableModule[] = [
   "duration_predictor",
@@ -145,9 +141,8 @@ export const STAGE_TEMPLATES: TrainingStageSpec[] = [
       "adversarial",
       "wavlm",
       "slm_adversarial",
-      "voice_pair",
-      "voice_metric",
-      "voice_nuisance",
+      "speaker_feature",
+      "speaker_similarity",
     ],
     loss_weights: { ...DEFAULT_LOSS_WEIGHTS },
     train_discriminators: true,

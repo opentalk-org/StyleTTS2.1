@@ -49,6 +49,7 @@ dependencies = [
     "pydantic>=2.9",
     "psycopg[binary]>=3.2",
     "pyarrow>=20.0",
+    "pyannote-audio>=4.0,<5",
     "pyopenjtalk>=0.4.1",
     "rapidfuzz>=3.14",
     "pyworld>=0.3",

@@ -58,11 +58,10 @@ class TrainingLoss(str, Enum):
     RVQ = "rvq"
     SEQUENCE_ALIGNMENT = "sequence_alignment"
     SLM_ADVERSARIAL = "slm_adversarial"
+    SPEAKER_FEATURE = "speaker_feature"
+    SPEAKER_SIMILARITY = "speaker_similarity"
     WAVLM = "wavlm"
     STYLE_NUISANCE = "style_nuisance"
-    VOICE_METRIC = "voice_metric"
-    VOICE_NUISANCE = "voice_nuisance"
-    VOICE_PAIR = "voice_pair"
     XCOV = "xcov"
 
 
@@ -81,11 +80,10 @@ class TrainingLossWeights(BaseModel):
     rvq: float = Field(ge=0)
     sequence_alignment: float = Field(ge=0)
     slm_adversarial: float = Field(ge=0)
+    speaker_feature: float = Field(ge=0)
+    speaker_similarity: float = Field(ge=0)
     wavlm: float = Field(ge=0)
     style_nuisance: float = Field(ge=0)
-    voice_metric: float = Field(ge=0)
-    voice_nuisance: float = Field(ge=0)
-    voice_pair: float = Field(ge=0)
     xcov: float = Field(ge=0)
 
 
