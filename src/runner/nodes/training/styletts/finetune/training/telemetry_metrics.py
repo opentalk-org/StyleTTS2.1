@@ -7,7 +7,7 @@ class TrainingTelemetry:
     total_steps: int
     initial_step: int
     started_at: float
-    items_processed: int = 0
+    audio_seconds_processed: float = 0.0
     data_wait_seconds: float = 0.0
     compute_seconds: float = 0.0
     validation_seconds: float = 0.0
@@ -39,7 +39,9 @@ class TrainingTelemetry:
             "residual": max(elapsed - measured, 0.0),
         }
         metrics = {
-            "performance/items_per_second": self.items_processed / elapsed,
+            "performance/audio_seconds_per_second": (
+                self.audio_seconds_processed / elapsed
+            ),
             "performance/steps_per_second": steps_per_second,
             "performance/elapsed_seconds": elapsed,
             "performance/eta_seconds": eta_seconds,

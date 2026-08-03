@@ -110,9 +110,15 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
             timing.compute_seconds += time.monotonic() - compute_started
             trainer.step += 1
             step = trainer.step
-            timing.items_processed += (
-                batch.texts.shape[0] * accelerator.num_processes
+            batch_audio_seconds = torch.tensor(
+                sum(batch.audio_durations),
+                device=accelerator.device,
+                dtype=torch.float64,
             )
+            timing.audio_seconds_processed += accelerator.reduce(
+                batch_audio_seconds,
+                reduction="sum",
+            ).item()
             metrics = dict(step_metrics)
             metrics.update(timing.metrics(step))
             if accelerator.is_main_process:

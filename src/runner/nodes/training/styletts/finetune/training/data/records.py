@@ -10,6 +10,7 @@ from ...studio.val_sample_export import ValidationSampleArtifacts
 @dataclass(frozen=True)
 class TrainingBatch:
     waves: tuple[np.ndarray, ...]
+    audio_durations: tuple[float, ...]
     speaker_ids: Tensor
     language_ids: Tensor
     modality_ids: Tensor
