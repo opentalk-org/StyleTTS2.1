@@ -1,31 +1,20 @@
 from dataclasses import dataclass
-from typing import Any
-
 import torch
 from accelerate import Accelerator
 from munch import Munch
 from torch import nn
 
 from .config import TrainingConfig
+from .features import SpeakerFeatures, WavLMFeatures
 from .loading import (
     build_model,
     load_ASR_models,
     load_checkpoint,
     load_F0_models,
 )
-from .losses import (
-    DiscriminatorLoss,
-    GeneratorLoss,
-    MultiResolutionSTFTLoss,
-    WavLMLoss,
-)
+from .losses import MultiResolutionSTFTLoss
 from .modules.plbert import load_plbert
-from .modules.zs.prosody_adversarial import (
-    ProsodyDiscriminatorLoss,
-    ProsodyGeneratorLoss,
-)
 from .optimizers import MultiOptimizer, build_optimizer
-from .speaker_verification import load_speaker_verification_loss
 from .utils import recursive_munch
 
 
@@ -44,15 +33,13 @@ class ModelBundle:
 
 @dataclass
 class LossBundle:
-    generator: nn.Module
-    discriminator: nn.Module
-    wavlm: nn.Module
-    speaker_verification: nn.Module
     stft: nn.Module
-    prosody_generator: nn.Module
-    prosody_discriminator: nn.Module
-    duration_generator: nn.Module
-    duration_discriminator: nn.Module
+
+
+@dataclass
+class FeatureBundle:
+    wavlm: WavLMFeatures
+    speaker: SpeakerFeatures
 
 
 @dataclass
@@ -60,6 +47,7 @@ class TrainingRuntime:
     accelerator: Accelerator
     models: ModelBundle
     losses: LossBundle
+    features: FeatureBundle
     optimizer: MultiOptimizer
 
 
@@ -82,41 +70,28 @@ def build_training_runtime(
         modules,
         optimizer,
     )
-    generator = GeneratorLoss(
-        accelerator.unwrap_model(modules.mpd),
-        accelerator.unwrap_model(modules.msd),
-    ).to(device)
-    discriminator = DiscriminatorLoss(modules.mpd, modules.msd).to(device)
-    wavlm = WavLMLoss(
-        parameters.slm.model,
-        modules.wd,
-        config.preprocess_params.sr,
-        parameters.slm.sr,
-    ).to(device)
     model_bundle = ModelBundle(
         modules,
         parameters,
         accelerator.unwrap_model(modules.text_aligner).n_down,
     )
-    losses = LossBundle(
-        generator,
-        discriminator,
-        wavlm,
-        load_speaker_verification_loss(
+    losses = LossBundle(MultiResolutionSTFTLoss().to(device))
+    features = FeatureBundle(
+        WavLMFeatures(
+            parameters.slm.model,
             config.preprocess_params.sr,
-            device,
+            parameters.slm.sr,
         ),
-        MultiResolutionSTFTLoss().to(device),
-        ProsodyGeneratorLoss(modules.prosody_discriminator).to(device),
-        ProsodyDiscriminatorLoss(modules.prosody_discriminator).to(device),
-        ProsodyGeneratorLoss(modules.duration_discriminator).to(device),
-        ProsodyDiscriminatorLoss(modules.duration_discriminator).to(device),
+        SpeakerFeatures(config.preprocess_params.sr),
     )
+    features.wavlm.to(device)
+    features.speaker.to(device)
     torch.cuda.empty_cache()
     return TrainingRuntime(
         accelerator,
         model_bundle,
         losses,
+        features,
         optimizer,
     )
 
@@ -150,7 +125,8 @@ def _build_models(
 ) -> Munch:
     aligner = load_ASR_models(config.ASR_path, config.ASR_config)
     pitch = load_F0_models(config.F0_path)
-    plbert = load_plbert(config.PLBERT_path, config.PLBERT_config)
+    with torch.random.fork_rng(devices=[]):
+        plbert = load_plbert(config.PLBERT_path, config.PLBERT_config)
     modules = build_model(parameters, aligner, pitch, plbert)
     for module in modules.values():
         module.to(device)
@@ -168,39 +144,12 @@ def _build_optimizer(
         "total_steps": config.total_steps,
     }
     schedules = {name: schedule.copy() for name in modules}
-    schedules["bert"]["max_lr"] = settings.bert_lr * 2
-    schedules["decoder"]["max_lr"] = settings.ft_lr * 2
-    schedules["voice_encoder"]["max_lr"] = settings.ft_lr * 2
     optimizer = build_optimizer(
         {name: module.parameters() for name, module in modules.items()},
         scheduler_params_dict=schedules,
         lr=settings.lr,
     )
-    _configure_optimizer_groups(optimizer, settings)
     return optimizer
-
-
-def _configure_optimizer_groups(
-    optimizer: MultiOptimizer,
-    settings: Any,
-) -> None:
-    for group in optimizer.optimizers["bert"].param_groups:
-        group.update(
-            betas=(0.9, 0.99),
-            lr=settings.bert_lr,
-            initial_lr=settings.bert_lr,
-            min_lr=0,
-            weight_decay=0.01,
-        )
-    for name in ("decoder", "voice_encoder"):
-        for group in optimizer.optimizers[name].param_groups:
-            group.update(
-                betas=(0.0, 0.99),
-                lr=settings.ft_lr,
-                initial_lr=settings.ft_lr,
-                min_lr=0,
-                weight_decay=1e-4,
-            )
 
 
 def _load_base_checkpoint(
@@ -210,7 +159,7 @@ def _load_base_checkpoint(
 ) -> tuple[Munch, MultiOptimizer]:
     if config.pretrained_model is None:
         return modules, optimizer
-    ignored = []
+    ignored = ["mpd", "msd", "wd"]
     for path, name in (
         (config.ASR_path, "text_aligner"),
         (config.F0_path, "pitch_extractor"),

@@ -18,6 +18,7 @@ from ...stages import (
 )
 from ..config import TrainingConfig
 from ..data import TrainingBatch, ValidationResult
+from ..losses import acoustic_losses, styletts_zs_reconstruction_loss
 from ..setup import TrainingRuntime
 from ..utils import (
     length_to_mask,
@@ -25,11 +26,8 @@ from ..utils import (
     mask_from_lens,
     maximum_path,
 )
-from .validation_batch import (
-    acoustic_losses,
-    styletts_zs_reconstruction_loss,
-)
 from .validation_synthesis import synthesize_validation
+from .training_crops import crop_training_batch, sample_voice_prompts
 
 
 def _validates_predictions(stage: TrainingStageSpec) -> bool:
@@ -196,7 +194,7 @@ class Validator:
                 text_encoding,
                 duration_encoding,
                 bert,
-                monotonic,
+                monotonic if validate_predictions else soft_alignment,
                 source_target_f0,
                 source_target_norm,
                 alpha_flow_noise,
@@ -206,13 +204,36 @@ class Validator:
                 min(length * 600, reconstructed.size(-1))
                 for length in decode_lengths
             ]
-            mel_loss = acoustic_losses(
-                self.runtime.losses.stft,
-                reconstructed,
-                waveform,
-                target_sample_lengths,
-                prediction_sample_lengths,
-            )
+            if validate_predictions:
+                validation_losses = []
+                for index, (target_samples, prediction_samples) in enumerate(
+                    zip(
+                        target_sample_lengths,
+                        prediction_sample_lengths,
+                        strict=True,
+                    )
+                ):
+                    samples = max(target_samples, prediction_samples)
+                    prediction = F.pad(
+                        reconstructed[index, 0, :prediction_samples],
+                        (0, samples - prediction_samples),
+                    ).unsqueeze(0)
+                    target = F.pad(
+                        waveform[index, 0, :target_samples],
+                        (0, samples - target_samples),
+                    ).unsqueeze(0)
+                    validation_losses.append(
+                        self.runtime.losses.stft(prediction, target)
+                    )
+                mel_loss = acoustic_losses(validation_losses)
+            else:
+                mel_loss = self._acoustic_reconstruction_loss(
+                    batch,
+                    text_encoding,
+                    soft_alignment,
+                    target_f0,
+                    target_norm,
+                )
             metrics = {"mel_loss": mel_loss}
             if validate_predictions:
                 full_lengths = [length * 2 for length in decode_lengths]
@@ -390,6 +411,50 @@ class Validator:
                     mode="free_running",
                 )
         return metrics, samples
+
+    def _acoustic_reconstruction_loss(
+        self,
+        batch: TrainingBatch,
+        text_encoding: torch.Tensor,
+        alignment: torch.Tensor,
+        target_f0: torch.Tensor,
+        target_norm: torch.Tensor,
+    ) -> torch.Tensor:
+        modules = self.runtime.models.modules
+        prompt_mels = sample_voice_prompts(batch)
+        voice, encoded_text = modules.voice_encoder(
+            prompt_mels,
+            text_encoding,
+            batch.input_lengths,
+            text_encoding.size(-1),
+        )
+        aligned_text = encoded_text @ alignment
+        crops = crop_training_batch(
+            batch,
+            aligned_text,
+            target_f0,
+            target_norm,
+            target_f0,
+            target_norm,
+            min(int(batch.mel_lengths.min().item() / 2 - 1), 80),
+        )
+        aligned_crop, _, _, _, _, cropped_mels, waveform = crops
+        lengths = batch.mel_lengths.new_full(
+            (cropped_mels.size(0),),
+            cropped_mels.size(-1),
+        )
+        f0, _, _ = modules.pitch_extractor(
+            cropped_mels.unsqueeze(1),
+            lengths,
+        )
+        norm = log_norm(cropped_mels.unsqueeze(1)).squeeze(1)
+        reconstructed = modules.decoder(
+            aligned_crop,
+            f0.squeeze(-1),
+            norm,
+            voice,
+        )
+        return self.runtime.losses.stft(reconstructed, waveform)
 
     @staticmethod
     def _alpha_flow_noise(

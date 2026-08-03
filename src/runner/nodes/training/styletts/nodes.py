@@ -50,14 +50,14 @@ class StyleTtsFinetuneSettings(StrictSettings):
     output_checkpoint_dir: str = Field(default="", title="External output checkpoint folder")
     validation_samples: int = Field(default=32, title="Validation samples", ge=0, le=512)
     learning_rate: float = Field(default=1e-4, title="Learning rate", gt=0)
-    numeric_precision: NumericPrecision = Field(default=NumericPrecision.BF16, title="Numeric precision")
+    numeric_precision: NumericPrecision = Field(default=NumericPrecision.FP32, title="Numeric precision")
     training_stages: list[TrainingStageSpec] = Field(
         default_factory=default_training_stages,
         title="Training stages",
         min_length=1,
     )
     validation_interval_steps: int = Field(
-        default=1000,
+        default=250,
         title="Validation interval",
         ge=1,
     )

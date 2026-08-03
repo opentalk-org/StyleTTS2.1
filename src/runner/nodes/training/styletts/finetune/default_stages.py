@@ -53,7 +53,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         update={
             "mel": 5,
             "sequence_alignment": 1,
-            "monotonic_alignment": 1,
+            "monotonic_alignment": 10,
             "adversarial": 1,
             "wavlm": 1,
             "slm_adversarial": 1,
@@ -77,15 +77,18 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         TrainingStageSpec(
             name="train_test.py · acoustic training",
             steps=2_000,
+            batch_size=10,
             style_source=StyleSource.CONTINUOUS,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=acoustic_modules,
             loss_weights=acoustic_weights,
+            max_decoder_seconds=3.75,
             validation=_validation(False, False),
         ),
         TrainingStageSpec(
             name="small_rec.py · prosody/RVQ and factorization",
             steps=2_000,
+            batch_size=10,
             style_source=StyleSource.QUANTIZED,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=prosody_modules,
@@ -95,6 +98,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         TrainingStageSpec(
             name="v_diffusion.py · AlphaFlow",
             steps=2_000,
+            batch_size=10,
             style_source=StyleSource.QUANTIZED,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=[TrainableModule.ALPHA_FLOW],

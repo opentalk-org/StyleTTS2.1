@@ -12,11 +12,8 @@ from shared.run_snapshots import failed_run_snapshot, stopped_run_snapshot
 from shared.schemas import RunSnapshot
 
 
-LEASE_SECONDS = 15
-# A claimed run whose lease expires was killed with its runner (crash / OOM-kill), which
-# never runs the in-process failure path. Re-queue it a few times to ride out transient
-# restarts (dev reload drops in-flight runs), but past this many attempts fail it so a
-# genuinely fatal run — e.g. one that OOMs the runner every time — surfaces as an error.
+LEASE_SECONDS = 120
+
 RUN_MAX_ATTEMPTS = 3
 RUN_NOTIFICATION_CHANNEL = "runflow_runs"
 RUNNER_NOTIFICATION_CHANNEL = "runflow_runners"
@@ -147,6 +144,12 @@ def _upsert_runner(session: Session, payload: RunnerStateFlush, now: datetime) -
 
 
 def _update_jobs(session: Session, payload: RunnerStateFlush, now: datetime) -> None:
+    if payload.active_run_ids:
+        session.execute(
+            update(Job)
+            .where(Job.claimed_runner_id == payload.runner_id, Job.run_id.in_(payload.active_run_ids))
+            .values(lease_expires_at=now + timedelta(seconds=LEASE_SECONDS))
+        )
     if not payload.jobs:
         return
     statement = (
@@ -179,12 +182,6 @@ def _update_jobs(session: Session, payload: RunnerStateFlush, now: datetime) -> 
             for job in payload.jobs
         ],
     )
-    if payload.active_run_ids:
-        session.execute(
-            update(Job)
-            .where(Job.claimed_runner_id == payload.runner_id, Job.run_id.in_(payload.active_run_ids))
-            .values(lease_expires_at=now + timedelta(seconds=LEASE_SECONDS))
-        )
 
 
 def _upsert_node_states(session: Session, payload: RunnerStateFlush, now: datetime) -> None:

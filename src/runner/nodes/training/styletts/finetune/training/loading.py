@@ -6,7 +6,7 @@ import yaml
 from munch import Munch
 
 from runner.nodes.training.styletts.finetune.training.modules.asr.models import ASRCNN
-from runner.nodes.training.styletts.finetune.training.modules.discriminators import MultiPeriodDiscriminator, MultiResSpecDiscriminator, WavLMDiscriminator
+from runner.nodes.training.styletts.finetune.training.modules.discriminators import MultiPeriodDiscriminator, MultiResSpecDiscriminator
 from runner.nodes.training.styletts.finetune.training.modules.encoders import TextEncoder
 from runner.nodes.training.styletts.finetune.training.modules.hifigan import Decoder as HifiganDecoder
 from runner.nodes.training.styletts.finetune.training.modules.istftnet import Decoder as IstftnetDecoder
@@ -167,16 +167,34 @@ def build_model(args, text_aligner, pitch_extractor, bert):
                 upsample_kernel_sizes=args.decoder.upsample_kernel_sizes,
                 gradient_checkpointing=generator_checkpointing) 
         
+    reference_token_count = min(args.n_token, 178)
     text_encoder = TextEncoder(
         channels=args.hidden_dim,
         kernel_size=5,
         depth=args.n_layer,
-        n_symbols=args.n_token,
+        n_symbols=reference_token_count,
     )
+    if args.n_token > reference_token_count:
+        base_weight = text_encoder.embedding.weight.detach()
+        appended = base_weight[0].expand(
+            args.n_token - reference_token_count,
+            -1,
+        )
+        text_encoder.embedding = nn.Embedding.from_pretrained(
+            torch.cat((base_weight, appended), dim=0),
+            freeze=False,
+        )
     voice_encoder = VoiceEncoder(
         mel_dim=args.n_mels,
         text_dim=args.hidden_dim,
         voice_dim=args.style_dim,
+    )
+    wd = ProsodyDiscriminator(mel_dim=args.slm.hidden * args.slm.nlayers)
+    mpd = MultiPeriodDiscriminator(
+        gradient_checkpointing=discriminators_checkpointing,
+    )
+    msd = MultiResSpecDiscriminator(
+        gradient_checkpointing=discriminators_checkpointing,
     )
     prosody_encoder = TVStyleEncoder(mel_dim=514)
     duration_predictor = DurationPredictor(max_dur=50)
@@ -220,10 +238,10 @@ def build_model(args, text_aligner, pitch_extractor, bert):
             text_aligner = text_aligner,
             pitch_extractor=pitch_extractor,
 
-            mpd = MultiPeriodDiscriminator(gradient_checkpointing=discriminators_checkpointing),
-            msd = MultiResSpecDiscriminator(gradient_checkpointing=discriminators_checkpointing),
+            mpd=mpd,
+            msd=msd,
         
-            wd = WavLMDiscriminator(args.slm.hidden, args.slm.nlayers, args.slm.initial_channel),
+            wd=wd,
        )
     
     return nets
@@ -234,6 +252,7 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
     reinitialized = set()
     for key in model:
         if key in ignore_modules:
+            reinitialized.add(key)
             continue
         source_key = _voice_checkpoint_source(params) if key == "voice_encoder" else key
         if key == "voice_encoder" and source_key is None:
