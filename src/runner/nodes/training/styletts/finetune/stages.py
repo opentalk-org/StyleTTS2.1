@@ -90,9 +90,8 @@ class TrainingStageSpec(BaseModel):
 
     name: str = Field(min_length=1)
     steps: int = Field(gt=0)
-    batch_size: int = Field(default=28, ge=1, le=128)
     max_audio_seconds: float = Field(default=15.0, ge=1, le=60)
-    max_decoder_seconds: float = Field(default=3.5, ge=1, le=30)
+    voice_conditioning_dropout: float = Field(default=0.0, ge=0, le=1)
     style_source: StyleSource = StyleSource.QUANTIZED
     prosody_source: ProsodySource
     trainable_modules: list[TrainableModule]

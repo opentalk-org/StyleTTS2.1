@@ -39,6 +39,9 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         TrainableModule.TEXT_ENCODER,
         TrainableModule.VOICE_ENCODER,
         TrainableModule.DECODER,
+    ]
+    tma_modules = [
+        *acoustic_modules,
         TrainableModule.TEXT_ALIGNER,
     ]
     prosody_modules = [
@@ -49,16 +52,14 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         TrainableModule.POSITION_EMBEDDING,
         TrainableModule.FACTORIZATION,
     ]
-    acoustic_weights = weights.model_copy(
+    mel_weights = weights.model_copy(update={"mel": 1})
+    tma_weights = weights.model_copy(
         update={
             "mel": 5,
             "sequence_alignment": 1,
             "monotonic_alignment": 10,
             "adversarial": 1,
             "wavlm": 1,
-            "slm_adversarial": 1,
-            "speaker_feature": 5,
-            "speaker_similarity": 5,
         }
     )
     prosody_weights = weights.model_copy(
@@ -75,30 +76,36 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
     )
     return [
         TrainingStageSpec(
-            name="train_test.py · acoustic training",
+            name="StyleTTS2 train_first.py · mel pretraining",
             steps=2_000,
-            batch_size=10,
             style_source=StyleSource.CONTINUOUS,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=acoustic_modules,
-            loss_weights=acoustic_weights,
-            max_decoder_seconds=3.75,
+            loss_weights=mel_weights,
+            validation=_validation(False, False),
+        ),
+        TrainingStageSpec(
+            name="StyleTTS2 train_first.py · TMA acoustic training",
+            steps=2_000,
+            style_source=StyleSource.CONTINUOUS,
+            prosody_source=ProsodySource.GROUND_TRUTH,
+            trainable_modules=tma_modules,
+            loss_weights=tma_weights,
             validation=_validation(False, False),
         ),
         TrainingStageSpec(
             name="small_rec.py · prosody/RVQ and factorization",
             steps=2_000,
-            batch_size=10,
             style_source=StyleSource.QUANTIZED,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=prosody_modules,
             loss_weights=prosody_weights,
+            voice_conditioning_dropout=0.2,
             validation=_validation(True, False),
         ),
         TrainingStageSpec(
             name="v_diffusion.py · AlphaFlow",
             steps=2_000,
-            batch_size=10,
             style_source=StyleSource.QUANTIZED,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=[TrainableModule.ALPHA_FLOW],

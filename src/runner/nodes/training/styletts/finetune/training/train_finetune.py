@@ -64,7 +64,6 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
         if stage is not active_stage:
             dataset_config = {
                 "symbols": config.symbols,
-                "max_audio_seconds": stage.max_audio_seconds,
                 "max_text_tokens": config.PLBERT_config["model_params"][
                     "max_position_embeddings"
                 ],
@@ -73,7 +72,7 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
             }
             train_batches = build_dataloader(
                 train_list,
-                batch_size=stage.batch_size,
+                max_seconds=stage.max_audio_seconds,
                 num_workers=0,
                 dataset_config=dataset_config,
                 device=config.device,
@@ -81,7 +80,7 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
             ).prepare(accelerator)
             validation_batches = build_dataloader(
                 validation_list,
-                batch_size=stage.batch_size,
+                max_seconds=stage.max_audio_seconds,
                 validation=True,
                 num_workers=0,
                 device=config.device,

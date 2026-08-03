@@ -6,7 +6,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Conv1d
 from torch.nn.utils import remove_weight_norm, weight_norm
-from torchaudio.models import Conformer
 
 from .utils import get_padding, init_weights
 
@@ -201,15 +200,7 @@ class DecoderBackbone(nn.Module):
     def __init__(self, dim_in=512, style_dim=64):
         super().__init__()
         self.decode = nn.ModuleList()
-        self.conformer = Conformer(
-            input_dim=dim_in + 2,
-            num_heads=2,
-            ffn_dim=dim_in * 2,
-            num_layers=1,
-            depthwise_conv_kernel_size=7,
-            use_group_norm=True,
-        )
-        self.encode = AdainResBlk1d(dim_in + 4, 1024, style_dim)
+        self.encode = AdainResBlk1d(dim_in + 2, 1024, style_dim)
         self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
         self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
         self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
@@ -257,14 +248,6 @@ class DecoderBackbone(nn.Module):
         f0 = self.F0_conv(f0_curve.unsqueeze(1))
         n_proj = self.N_conv(n.unsqueeze(1))
         x = torch.cat([asr, f0, n_proj], axis=1)
-        lengths = torch.full(
-            (x.size(0),),
-            x.size(-1),
-            device=x.device,
-            dtype=torch.long,
-        )
-        x, _ = self.conformer(x.transpose(-1, -2), lengths)
-        x = torch.cat([x.transpose(-1, -2), f0, n_proj], axis=1)
         x = self.encode(x, s)
         asr_res = self.asr_res(asr)
         res = True

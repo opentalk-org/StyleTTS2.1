@@ -16,6 +16,7 @@ from shared.db.audio import crud as audio_crud
 
 from .pipeline import PrefetchedDataPipeline
 from .records import TrainingBatch
+from .sampling import DurationBatchSampler
 
 logger = logging.getLogger(__name__)
 
@@ -69,12 +70,14 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.modality_id = int(plbert_modality_id)
         self.text_cleaner = TextCleaner(symbols)
         self.boundary_token_id = self.text_cleaner.symbol_index[PAD_SYMBOL]
-        self.data_list = [
-            row
+        accepted = [
+            (row, audio_files[audio_id].duration)
             for row, audio_id in zip(rows, audio_ids, strict=True)
-            if audio_files[audio_id].duration <= max_audio_seconds
+            if 0 < audio_files[audio_id].duration <= max_audio_seconds
             and len(self._text_to_tensor(row[1])) <= max_text_tokens
         ]
+        self.data_list = [row for row, _ in accepted]
+        self.durations = tuple(duration for _, duration in accepted)
         skipped = len(rows) - len(self.data_list)
         logger.info(
             "training data filter max_audio_seconds=%s max_text_tokens=%s "
@@ -164,6 +167,12 @@ class Collater:
                 list(dict.fromkeys(audio_ids)),
             )
         cache = self._load_batch_audio(audio_bytes)
+        batch = sorted(
+            batch,
+            key=lambda row: cache[row[3]][1].size(1),
+            reverse=True,
+        )
+        audio_ids = [row[3] for row in batch]
 
         max_mel_length = max(cache[audio_id][1].size(1) for audio_id in audio_ids)
         max_text_length = max(row[4].size(0) for row in batch)
@@ -211,7 +220,7 @@ class Collater:
 def build_dataloader(
     path_list,
     validation=False,
-    batch_size=4,
+    max_seconds=15.0,
     num_workers=1,
     device='cpu',
     dataset_config={},
@@ -219,16 +228,20 @@ def build_dataloader(
 ):
     dataset = FilePathDataset(
         path_list,
+        max_audio_seconds=max_seconds,
         **dataset_config,
     )
     collate_fn = Collater()
+    batch_sampler = DurationBatchSampler(
+        dataset.durations,
+        max_seconds,
+        shuffle=not validation,
+        seed=seed,
+    )
     loader = DataLoader(
         dataset,
-        batch_size=batch_size,
-        shuffle=(not validation),
-        generator=torch.Generator().manual_seed(seed),
+        batch_sampler=batch_sampler,
         num_workers=num_workers,
-        drop_last=(not validation),
         collate_fn=collate_fn,
         pin_memory=(device != 'cpu'),
     )
