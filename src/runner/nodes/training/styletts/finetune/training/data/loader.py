@@ -10,7 +10,7 @@ import torch
 import torchaudio
 from torch.utils.data import DataLoader
 
-from runner.nodes.text.runtime.symbols import END_SYMBOL, START_SYMBOL, TextCleaner
+from runner.nodes.text.runtime.symbols import PAD_SYMBOL, TextCleaner
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 
@@ -68,8 +68,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         }
         self.modality_id = int(plbert_modality_id)
         self.text_cleaner = TextCleaner(symbols)
-        self.start_token_id = self.text_cleaner.symbol_index[START_SYMBOL]
-        self.end_token_id = self.text_cleaner.symbol_index[END_SYMBOL]
+        self.boundary_token_id = self.text_cleaner.symbol_index[PAD_SYMBOL]
         self.data_list = [
             row
             for row, audio_id in zip(rows, audio_ids, strict=True)
@@ -124,8 +123,8 @@ class FilePathDataset(torch.utils.data.Dataset):
 
     def _text_to_tensor(self, text: str) -> torch.LongTensor:
         tokens = self.text_cleaner(text)
-        tokens.insert(0, self.start_token_id)
-        tokens.append(self.end_token_id)
+        tokens.insert(0, self.boundary_token_id)
+        tokens.append(self.boundary_token_id)
         return torch.LongTensor(tokens)
 
 
