@@ -1,5 +1,3 @@
-import numpy as np
-
 from ..checkpoint_publish import (
     publish_finetune_step_bundle_from_training_config,
 )
@@ -23,13 +21,6 @@ class CheckpointPublisher:
         running_std: list[float],
     ) -> None:
         payload = self.config.model_dump(mode="json")
-        if (
-            self.runtime.models.parameters.diffusion.dist.estimate_sigma_data
-            and running_std
-        ):
-            payload["model_params"]["diffusion"]["dist"]["sigma_data"] = float(
-                np.mean(running_std)
-            )
         state = {
             "net": {
                 name: self.runtime.accelerator.get_state_dict(module)

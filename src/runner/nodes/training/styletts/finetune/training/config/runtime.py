@@ -60,9 +60,6 @@ class TrainingConfig(StrictConfigModel):
     profiling_enabled: bool
     distributed_processes: int = Field(gt=0)
     device: str
-    batch_size: int = Field(gt=0)
-    max_len: int = Field(gt=0)
-    max_audio_seconds: float = Field(gt=0)
     second_stage_load_pretrained: bool
     load_only_params: bool
     precision: Literal["fp16", "bf16", "fp32"]

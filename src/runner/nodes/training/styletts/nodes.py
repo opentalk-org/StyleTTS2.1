@@ -21,7 +21,7 @@ from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AssetBundlePort, CheckpointRefPort, TrainingManifestPort, TrainingResultPort
 from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingManifest, TrainingResult, stable_id, typed_assets, typed_checkpoint
-from runner.nodes.training.common.manifest.cleanup import remove_run_dir
+from runner.nodes.training.common.manifest.cleanup import claim_run_dir, remove_run_dir
 from runner.nodes.training.common.mlflow_run import TrackerRun, start_mlflow_run
 from runflow.runtime.cancellation import check_cancel
 from runner.nodes.training.styletts.finetune.node_config import build_node_config
@@ -49,7 +49,6 @@ class StyleTtsFinetuneSettings(StrictSettings):
     seed: int = Field(default=1, title="Random seed", ge=0)
     output_checkpoint_dir: str = Field(default="", title="External output checkpoint folder")
     validation_samples: int = Field(default=32, title="Validation samples", ge=0, le=512)
-    batch_size: int = Field(default=28, title="Batch size", ge=1, le=128)
     learning_rate: float = Field(default=1e-4, title="Learning rate", gt=0)
     numeric_precision: NumericPrecision = Field(default=NumericPrecision.BF16, title="Numeric precision")
     training_stages: list[TrainingStageSpec] = Field(
@@ -73,18 +72,6 @@ class StyleTtsFinetuneSettings(StrictSettings):
         title="Distributed processes",
         ge=1,
         le=8,
-    )
-    max_audio_seconds: float = Field(
-        default=15.0,
-        title="Max audio duration (sec)",
-        ge=1,
-        le=60,
-    )
-    max_decoder_seconds: float = Field(
-        default=3.0,
-        title="Max decoder crop (sec)",
-        ge=1,
-        le=30,
     )
     load_optimizer: bool = Field(default=False, title="Load optimizer state")
     slmadv_min_len: int = Field(default=180, title="SLM min length", ge=1)
@@ -127,12 +114,14 @@ class StyleTtsFinetuneNode(Node):
                 pretrained_assets=typed_assets(inputs["assets"]),
                 settings=self.settings,
             )
-            config_path = _prepare_styletts_config(training_config, str(context.run_id))
-            try:
-                _run_styletts_train(config_path)
-                result = _latest_step_result(str(context.run_id))
-            finally:
-                remove_run_dir(_manifest_run_dir(manifest))
+            run_dir = _manifest_run_dir(manifest)
+            with claim_run_dir(run_dir):
+                config_path = _prepare_styletts_config(training_config, str(context.run_id))
+                try:
+                    _run_styletts_train(config_path)
+                    result = _latest_step_result(str(context.run_id))
+                finally:
+                    remove_run_dir(run_dir)
             outputs.append({"training_result": result})
         return outputs
 
@@ -261,8 +250,18 @@ def _make_mlflow_run(config_path: Path) -> TrackerRun:
         "finetune_job_id": publish.get("finetune_job_id"),
         "total_steps": styletts_yaml.get("total_steps"),
         "distributed_processes": styletts_yaml.get("distributed_processes"),
-        "batch_size": styletts_yaml.get("batch_size"),
-        "max_len": styletts_yaml.get("max_len"),
+        "stage_batch_sizes": ",".join(
+            str(stage.get("batch_size"))
+            for stage in styletts_yaml.get("training_stages", [])
+        ),
+        "stage_max_audio_seconds": ",".join(
+            str(stage.get("max_audio_seconds"))
+            for stage in styletts_yaml.get("training_stages", [])
+        ),
+        "stage_max_decoder_seconds": ",".join(
+            str(stage.get("max_decoder_seconds"))
+            for stage in styletts_yaml.get("training_stages", [])
+        ),
         "precision": styletts_yaml.get("precision"),
         "n_token": (styletts_yaml.get("model_params") or {}).get("n_token"),
         "decoder": ((styletts_yaml.get("model_params") or {}).get("decoder") or {}).get("type"),

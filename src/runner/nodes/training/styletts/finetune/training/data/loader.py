@@ -61,10 +61,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         stream_cache=None,
     ):
         _data_list = [l.strip().split('|') for l in data_list]
-        rows = [
-            data if len(data) == 3 else (*data, 0)
-            for data in _data_list
-        ]
+        rows = [data if len(data) == 3 else (*data, 0) for data in _data_list]
         audio_ids = [UUID(Path(row[0]).stem) for row in rows]
         with database_session() as session:
             audio_files = audio_crud.get_audio_files_bulk(session, audio_ids)
@@ -93,6 +90,7 @@ class FilePathDataset(torch.utils.data.Dataset):
                 f"skipped={skipped}"
             )
         self.sr = sr
+        self.validation = validation
 
         self.rows_by_speaker: dict[int, list[list[str]]] = {}
         for row in self.data_list:
@@ -117,8 +115,19 @@ class FilePathDataset(torch.utils.data.Dataset):
         speaker_id, audio_id, text, ref_audio_id, ref_text, ref_label = self._resolve_row(idx)
         return speaker_id, audio_id, text, ref_audio_id, ref_text, ref_label
 
-    def _reference_data(self, speaker_id: int) -> list[str]:
-        return random.choice(self.rows_by_speaker[speaker_id])
+    def _reference_data(self, speaker_id: int, audio_id: UUID) -> list[str]:
+        candidates = [
+            row
+            for row in self.rows_by_speaker[speaker_id]
+            if self._audio_id(row[0]) != audio_id
+        ]
+        if not candidates:
+            if self.validation:
+                return self.rows_by_speaker[speaker_id][0]
+            raise ValueError(
+                f"training speaker {speaker_id} needs at least two non-overlapping utterances"
+            )
+        return random.choice(candidates)
 
     def _audio_id(self, wave_path: str) -> UUID:
         return UUID(Path(wave_path).stem)
@@ -133,19 +142,15 @@ class FilePathDataset(torch.utils.data.Dataset):
         data_path, text, speaker_id_text = self.data_list[idx]
         speaker_id = int(speaker_id_text)
         audio_id = self._audio_id(data_path)
-        reference_row = self._reference_data(speaker_id)
+        reference_row = self._reference_data(speaker_id, audio_id)
         ref_audio_id = self._audio_id(reference_row[0])
         ref_label = int(reference_row[2])
-        ps = ""
-        while len(ps) < self.min_length:
-            rand_idx = np.random.randint(0, len(self.ptexts) - 1)
-            ps = self.ptexts[rand_idx]
         return (
             speaker_id,
             audio_id,
             self._text_to_tensor(text),
             ref_audio_id,
-            self._text_to_tensor(ps),
+            self._text_to_tensor(reference_row[1]),
             ref_label,
         )
 
@@ -179,13 +184,6 @@ class Collater:
         length_feature = mel_tensor.size(1)
         return mel_tensor[:, :(length_feature - length_feature % 2)]
 
-    def _load_ref_mel(self, mel_tensor: torch.Tensor) -> torch.Tensor:
-        mel_length = mel_tensor.size(1)
-        if mel_length > self.max_mel_length:
-            random_start = np.random.randint(0, mel_length - self.max_mel_length)
-            mel_tensor = mel_tensor[:, random_start:random_start + self.max_mel_length]
-        return mel_tensor
-
     def _load_batch_audio(self, audio_bytes: dict[UUID, bytes]) -> dict[UUID, tuple[np.ndarray, torch.Tensor]]:
         cached: dict[UUID, tuple[np.ndarray, torch.Tensor]] = {}
         for audio_id, wave_bytes in audio_bytes.items():
@@ -205,6 +203,9 @@ class Collater:
         cache = self._load_batch_audio(audio_bytes)
 
         max_mel_length = max(cache[audio_id][1].size(1) for audio_id in audio_ids)
+        max_ref_mel_length = max(
+            cache[audio_id][1].size(1) for audio_id in ref_audio_ids
+        )
         max_text_length = max(row[2].size(0) for row in batch)
         max_rtext_length = max(row[4].size(0) for row in batch)
 
@@ -215,7 +216,8 @@ class Collater:
         input_lengths = torch.zeros(batch_size).long()
         ref_lengths = torch.zeros(batch_size).long()
         output_lengths = torch.zeros(batch_size).long()
-        ref_mels = torch.zeros((batch_size, 80, self.max_mel_length)).float()
+        ref_mels = torch.zeros((batch_size, 80, max_ref_mel_length)).float()
+        ref_mel_lengths = torch.zeros(batch_size).long()
         waves = [None for _ in range(batch_size)]
 
         for bid, (label, audio_id, text, ref_audio_id, ref_text, ref_label) in enumerate(batch):
@@ -224,8 +226,6 @@ class Collater:
             mel_size = mel.size(1)
             text_size = text.size(0)
             rtext_size = ref_text.size(0)
-            ref_mel = self._load_ref_mel(ref_mel)
-
             labels[bid] = label
             mels[bid, :, :mel_size] = mel
             texts[bid, :text_size] = text
@@ -234,10 +234,12 @@ class Collater:
             ref_lengths[bid] = rtext_size
             output_lengths[bid] = mel_size
             ref_mels[bid, :, : ref_mel.size(1)] = ref_mel
+            ref_mel_lengths[bid] = ref_mel.size(1)
             waves[bid] = wave
 
         return TrainingBatch(
             waves=tuple(waves),
+            speaker_ids=labels,
             texts=texts,
             input_lengths=input_lengths,
             reference_texts=ref_texts,
@@ -245,6 +247,7 @@ class Collater:
             mels=mels,
             mel_lengths=output_lengths,
             reference_mels=ref_mels,
+            reference_mel_lengths=ref_mel_lengths,
         )
 
 

@@ -13,7 +13,7 @@ import { FormSelect } from "./FormSelect";
 import { checkpointOptions, checkpointSymbolCount, datasetOptions, oodSetValues, pretrainedAssetOptions, styleTtsParamsForBaseCheckpoint, trainingNode, type TrainingWorkflowSpec, updateNodeParams, updateTrainingParams } from "./logic";
 import { OodEditor } from "./OodEditor";
 import { useCreateTrainingConfigMutation, useTrainingConfigsQuery } from "./query";
-import { SettingField, SettingNumberInput, settingLabel } from "./SettingsField";
+import { SettingField, settingLabel } from "./SettingsField";
 import { StageScheduleEditor } from "./styletts-stages/StageScheduleEditor";
 import type { TrainingStageSpec } from "./styletts-stages/templates";
 
@@ -53,8 +53,6 @@ export function StyleTtsForm({
   const trainingInfo = schema.nodes[training.type];
   if (!trainingInfo) throw new Error(`Training node is not registered: ${training.type}`);
   const settingsSchema = trainingInfo.settings;
-  const decoderSeconds = Number(values.max_decoder_seconds);
-  const decoderFrames = Math.round((decoderSeconds * 24000) / 300);
   const updateParams = (nodeId: string, params: SchemaValues) => onChange(updateNodeParams(graph, nodeId, params));
   const updateTraining = (params: SchemaValues) => onChange(updateTrainingParams(graph, spec, params));
   const selectedCheckpoint = (checkpoints.data ?? []).find((item) => item.id === String(checkpoint.params.checkpoint_id));
@@ -131,8 +129,7 @@ export function StyleTtsForm({
       />
 
       <FormSection title="Optimization" tag="Optimizer">
-        <div className="grid grid-cols-3 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="batch_size" onChange={updateTraining} />
+        <div className="grid grid-cols-2 gap-3.5">
           <SettingField schema={settingsSchema} values={values} name="learning_rate" onChange={updateTraining} />
           <SettingField schema={settingsSchema} values={values} name="numeric_precision" onChange={updateTraining} />
         </div>
@@ -183,25 +180,6 @@ export function StyleTtsForm({
           <SettingField schema={settingsSchema} values={values} name="validation_interval_steps" onChange={updateTraining} />
           <SettingField schema={settingsSchema} values={values} name="checkpoint_interval_steps" onChange={updateTraining} />
           <SettingField schema={settingsSchema} values={values} name="log_interval_steps" onChange={updateTraining} />
-        </div>
-        <div className="h-3.5" />
-        <div className="grid grid-cols-2 gap-3.5">
-          <SettingNumberInput
-            schema={settingsSchema}
-            values={values}
-            name="max_audio_seconds"
-            hint="Longest dataset recording accepted by the loader."
-            step={0.5}
-            onChange={updateTraining}
-          />
-          <SettingNumberInput
-            schema={settingsSchema}
-            values={values}
-            name="max_decoder_seconds"
-            hint={`Decoder training crop · ≈ ${decoderFrames} frames`}
-            step={0.5}
-            onChange={updateTraining}
-          />
         </div>
       </FormSection>
 

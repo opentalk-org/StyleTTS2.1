@@ -1,36 +1,29 @@
-from dataclasses import dataclass
-
 import torch
 import torch.nn.functional as F
 from torch import nn
 
-
-@dataclass
-class ValidationBatch:
-    aligned_text: torch.Tensor
-    starts: list[int]
-    frames: int
-    mel: torch.Tensor
-    waveform: torch.Tensor
-    lengths: list[int]
-    sample_lengths: list[int]
+def styletts_zs_reconstruction_loss(
+    target: torch.Tensor,
+    prediction: torch.Tensor,
+    lengths: torch.Tensor | list[int],
+    divisor: float = 1.0,
+) -> torch.Tensor:
+    """The length-normalized reconstruction objective used by StyleTTS-ZS."""
+    length_total = torch.as_tensor(lengths, device=target.device).sum()
+    valid_ratio = target.numel() / length_total
+    return F.smooth_l1_loss(target, prediction) * valid_ratio / divisor
 
 
 def acoustic_losses(
     stft_loss: nn.Module,
     reconstructed: torch.Tensor,
     waveform: torch.Tensor,
-    predicted_f0: torch.Tensor,
-    target_f0: torch.Tensor,
-    lengths: list[int],
     ground_truth_samples: list[int],
     prediction_samples: list[int],
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> torch.Tensor:
     mel_losses = []
-    f0_losses = []
-    for index, (length, gt_samples, pred_samples) in enumerate(
+    for index, (gt_samples, pred_samples) in enumerate(
         zip(
-            lengths,
             ground_truth_samples,
             prediction_samples,
             strict=True,
@@ -48,14 +41,7 @@ def acoustic_losses(
         mel_losses.append(
             stft_loss(prediction, target).mean()
         )
-        f0_losses.append(
-            F.l1_loss(
-                target_f0[index, :length],
-                predicted_f0[index, :length],
-            )
-            / 10
-        )
-    return torch.stack(mel_losses).mean(), torch.stack(f0_losses).mean()
+    return torch.stack(mel_losses).mean()
 
 
 def predicted_alignment(

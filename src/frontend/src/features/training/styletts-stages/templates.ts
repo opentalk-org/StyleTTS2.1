@@ -1,41 +1,52 @@
 export type ProsodySource = "ground_truth" | "predicted";
-export type ReconstructionTarget =
-  | "real_audio"
-  | "teacher_reconstruction";
+export type StyleSource = "continuous" | "quantized";
 export type ValidationDurationSource = "ground_truth" | "predicted";
+
 export type ValidationStageSpec = {
   f0_source: ProsodySource;
   norm_source: ProsodySource;
   duration_source: ValidationDurationSource;
-  diffusion: boolean;
+  alpha_flow: boolean;
 };
 
 export const TRAINABLE_MODULES = [
+  "alpha_flow",
   "bert",
   "bert_encoder",
   "decoder",
-  "diffusion",
+  "duration_predictor",
+  "factorization",
+  "language_embedding",
   "pitch_extractor",
-  "predictor",
-  "predictor_encoder",
-  "style_encoder",
+  "position_embedding",
+  "prosody_encoder",
+  "prosody_predictor",
+  "quantizer",
   "text_aligner",
   "text_encoder",
+  "voice_encoder",
 ] as const;
 
 export const TRAINING_LOSSES = [
+  "alpha_flow",
   "adversarial",
-  "diffusion",
   "duration",
   "duration_ce",
   "f0",
   "mel",
   "monotonic_alignment",
   "norm",
+  "prosody_adversarial",
+  "rvq",
   "sequence_alignment",
   "slm_adversarial",
   "style",
   "wavlm",
+  "style_nuisance",
+  "voice_metric",
+  "voice_nuisance",
+  "voice_pair",
+  "xcov",
 ] as const;
 
 export type TrainableModule = (typeof TRAINABLE_MODULES)[number];
@@ -45,8 +56,11 @@ export type TrainingLossWeights = Record<TrainingLoss, number>;
 export type TrainingStageSpec = {
   name: string;
   steps: number;
+  batch_size: number;
+  max_audio_seconds: number;
+  max_decoder_seconds: number;
+  style_source: StyleSource;
   prosody_source: ProsodySource;
-  reconstruction_target: ReconstructionTarget;
   trainable_modules: TrainableModule[];
   enabled_losses: TrainingLoss[];
   loss_weights: TrainingLossWeights;
@@ -55,183 +69,140 @@ export type TrainingStageSpec = {
 };
 
 export const DEFAULT_LOSS_WEIGHTS: TrainingLossWeights = {
+  alpha_flow: 1,
   adversarial: 1,
-  diffusion: 1,
   duration: 1,
   duration_ce: 20,
   f0: 1,
   mel: 5,
   monotonic_alignment: 1,
   norm: 1,
+  prosody_adversarial: 1,
+  rvq: 1,
   sequence_alignment: 1,
   slm_adversarial: 1,
   style: 1,
   wavlm: 1,
-};
-export const DEFAULT_VALIDATION: ValidationStageSpec = {
-  f0_source: "predicted",
-  norm_source: "predicted",
-  duration_source: "ground_truth",
-  diffusion: false,
+  style_nuisance: 0.1,
+  voice_metric: 1,
+  voice_nuisance: 0.1,
+  voice_pair: 1,
+  xcov: 0.01,
 };
 
-const PREDICTORS: TrainableModule[] = [
-  "bert_encoder",
-  "bert",
-  "predictor",
-  "predictor_encoder",
-];
-const FINETUNE: TrainableModule[] = [
-  ...PREDICTORS,
-  "style_encoder",
-  "decoder",
+export const DEFAULT_VALIDATION: ValidationStageSpec = {
+  f0_source: "ground_truth",
+  norm_source: "ground_truth",
+  duration_source: "ground_truth",
+  alpha_flow: false,
+};
+
+const PREDICTED_PROSODY_VALIDATION: ValidationStageSpec = {
+  ...DEFAULT_VALIDATION,
+  f0_source: "predicted",
+  norm_source: "predicted",
+};
+
+const ACOUSTIC_MODULES: TrainableModule[] = [
   "text_encoder",
-  "text_aligner",
+  "voice_encoder",
+  "decoder",
+  "language_embedding",
+];
+const PROSODY_MODULES: TrainableModule[] = [
+  "duration_predictor",
+  "prosody_encoder",
+  "prosody_predictor",
+  "quantizer",
+  "position_embedding",
+  "voice_encoder",
+  "factorization",
 ];
 const PROSODY_LOSSES: TrainingLoss[] = [
-  "mel",
   "f0",
   "norm",
   "duration",
   "duration_ce",
-  "wavlm",
-];
-const FINETUNE_LOSSES: TrainingLoss[] = [
-  ...PROSODY_LOSSES,
-  "sequence_alignment",
-  "monotonic_alignment",
-  "adversarial",
+  "prosody_adversarial",
+  "rvq",
+  "voice_pair",
+  "voice_metric",
+  "voice_nuisance",
+  "style_nuisance",
+  "xcov",
 ];
 
 export const STAGE_TEMPLATES: TrainingStageSpec[] = [
   {
-    name: "First · acoustic bootstrap",
+    name: "train_test.py · reconstruction",
     steps: 100_000,
+    batch_size: 28,
+    max_audio_seconds: 15,
+    max_decoder_seconds: 3,
+    style_source: "continuous",
     prosody_source: "ground_truth",
-    reconstruction_target: "real_audio",
-    trainable_modules: ["text_encoder", "style_encoder", "decoder"],
+    trainable_modules: ACOUSTIC_MODULES,
     enabled_losses: ["mel"],
-    loss_weights: { ...DEFAULT_LOSS_WEIGHTS },
+    loss_weights: { ...DEFAULT_LOSS_WEIGHTS, mel: 1 },
     train_discriminators: false,
     validation: { ...DEFAULT_VALIDATION },
   },
   {
-    name: "First · TMA refinement",
+    name: "train_test.py · adversarial refinement",
     steps: 50_000,
+    batch_size: 28,
+    max_audio_seconds: 15,
+    max_decoder_seconds: 3,
+    style_source: "continuous",
     prosody_source: "ground_truth",
-    reconstruction_target: "real_audio",
-    trainable_modules: [
-      "text_encoder",
-      "style_encoder",
-      "decoder",
-      "text_aligner",
-      "pitch_extractor",
-    ],
+    trainable_modules: [...ACOUSTIC_MODULES, "text_aligner", "pitch_extractor"],
     enabled_losses: [
       "mel",
       "sequence_alignment",
       "monotonic_alignment",
       "adversarial",
       "wavlm",
+      "slm_adversarial",
     ],
     loss_weights: { ...DEFAULT_LOSS_WEIGHTS },
     train_discriminators: true,
     validation: { ...DEFAULT_VALIDATION },
   },
   {
-    name: "Second · prosody bootstrap",
+    name: "small_rec.py · prosody/RVQ and factorization",
     steps: 100_000,
-    prosody_source: "predicted",
-    reconstruction_target: "teacher_reconstruction",
-    trainable_modules: PREDICTORS,
+    batch_size: 28,
+    max_audio_seconds: 15,
+    max_decoder_seconds: 3,
+    style_source: "quantized",
+    prosody_source: "ground_truth",
+    trainable_modules: PROSODY_MODULES,
     enabled_losses: PROSODY_LOSSES,
     loss_weights: { ...DEFAULT_LOSS_WEIGHTS },
     train_discriminators: false,
-    validation: { ...DEFAULT_VALIDATION },
+    validation: { ...PREDICTED_PROSODY_VALIDATION },
   },
   {
-    name: "Second · style diffusion",
+    name: "v_diffusion.py · AlphaFlow",
     steps: 50_000,
-    prosody_source: "predicted",
-    reconstruction_target: "teacher_reconstruction",
-    trainable_modules: [...PREDICTORS, "diffusion"],
-    enabled_losses: [
-      ...PROSODY_LOSSES,
-      "style",
-      "diffusion",
-      "adversarial",
-    ],
+    batch_size: 28,
+    max_audio_seconds: 15,
+    max_decoder_seconds: 3,
+    style_source: "quantized",
+    prosody_source: "ground_truth",
+    trainable_modules: ["alpha_flow"],
+    enabled_losses: ["alpha_flow"],
     loss_weights: { ...DEFAULT_LOSS_WEIGHTS },
-    train_discriminators: true,
-    validation: { ...DEFAULT_VALIDATION },
-  },
-  {
-    name: "Second · joint",
-    steps: 25_000,
-    prosody_source: "predicted",
-    reconstruction_target: "real_audio",
-    trainable_modules: [
-      ...PREDICTORS,
-      "diffusion",
-      "style_encoder",
-      "decoder",
-    ],
-    enabled_losses: [
-      ...PROSODY_LOSSES,
-      "style",
-      "diffusion",
-      "adversarial",
-      "slm_adversarial",
-    ],
-    loss_weights: { ...DEFAULT_LOSS_WEIGHTS },
-    train_discriminators: true,
-    validation: { ...DEFAULT_VALIDATION },
-  },
-  {
-    name: "Finetune · base",
-    steps: 100_000,
-    prosody_source: "predicted",
-    reconstruction_target: "real_audio",
-    trainable_modules: FINETUNE,
-    enabled_losses: FINETUNE_LOSSES,
-    loss_weights: { ...DEFAULT_LOSS_WEIGHTS },
-    train_discriminators: true,
-    validation: { ...DEFAULT_VALIDATION },
-  },
-  {
-    name: "Finetune · diffusion",
-    steps: 50_000,
-    prosody_source: "predicted",
-    reconstruction_target: "real_audio",
-    trainable_modules: [...FINETUNE, "diffusion"],
-    enabled_losses: [...FINETUNE_LOSSES, "style", "diffusion"],
-    loss_weights: { ...DEFAULT_LOSS_WEIGHTS },
-    train_discriminators: true,
-    validation: { ...DEFAULT_VALIDATION },
-  },
-  {
-    name: "Finetune · joint",
-    steps: 25_000,
-    prosody_source: "predicted",
-    reconstruction_target: "real_audio",
-    trainable_modules: [...FINETUNE, "diffusion"],
-    enabled_losses: [
-      ...FINETUNE_LOSSES,
-      "style",
-      "diffusion",
-      "slm_adversarial",
-    ],
-    loss_weights: { ...DEFAULT_LOSS_WEIGHTS },
-    train_discriminators: true,
-    validation: { ...DEFAULT_VALIDATION },
+    train_discriminators: false,
+    validation: { ...PREDICTED_PROSODY_VALIDATION, alpha_flow: true },
   },
 ];
 
 export const STAGE_PRESETS = [
-  { label: "Original first", indexes: [0, 1] },
-  { label: "Original second", indexes: [2, 3, 4] },
-  { label: "Original finetune", indexes: [5, 6, 7] },
-  { label: "Unified scratch", indexes: [0, 1, 2, 3, 4] },
+  { label: "train_test.py", indexes: [0, 1] },
+  { label: "small_rec.py", indexes: [2] },
+  { label: "v_diffusion.py → AlphaFlow", indexes: [3] },
+  { label: "Full StyleTTS-ZS", indexes: [0, 1, 2, 3] },
 ] as const;
 
 export function cloneStage(stage: TrainingStageSpec): TrainingStageSpec {
