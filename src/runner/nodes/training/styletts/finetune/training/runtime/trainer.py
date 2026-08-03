@@ -294,7 +294,12 @@ class Trainer:
 
             crop_frames = min(
                 int(batch.mel_lengths.min().item() / 2 - 1),
-                150,
+                int(
+                    stage.max_decoder_seconds
+                    * self.config.preprocess_params.sr
+                    / self.config.preprocess_params.spect_params.hop_length
+                    / 2
+                ),
             )
             voice_dim = runtime.models.parameters.style_dim
             voice = batch.mels.new_zeros((batch.texts.size(0), voice_dim))

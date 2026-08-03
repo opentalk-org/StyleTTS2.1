@@ -19,6 +19,7 @@ import type { TrainingStageSpec } from "./styletts-stages/templates";
 
 const MODEL_RUNTIME_TOGGLES = [
   { key: "multispeaker", sub: "Per-speaker style encoder" },
+  { key: "load_optimizer", sub: "Resume optimizer state from the base checkpoint." },
   { key: "checkpoint_decoder_gradients", sub: "Uses less VRAM; reduces training speed." },
   { key: "checkpoint_discriminator_gradients", sub: "Uses less VRAM; reduces training speed." },
   { key: "profiling_enabled", sub: "CUDA-synchronized timing and VRAM event logging." },
@@ -53,6 +54,7 @@ export function StyleTtsForm({
   const trainingInfo = schema.nodes[training.type];
   if (!trainingInfo) throw new Error(`Training node is not registered: ${training.type}`);
   const settingsSchema = trainingInfo.settings;
+  const stageTemplates = trainingInfo.settings_defaults.training_stages as TrainingStageSpec[];
   const updateParams = (nodeId: string, params: SchemaValues) => onChange(updateNodeParams(graph, nodeId, params));
   const updateTraining = (params: SchemaValues) => onChange(updateTrainingParams(graph, spec, params));
   const selectedCheckpoint = (checkpoints.data ?? []).find((item) => item.id === String(checkpoint.params.checkpoint_id));
@@ -66,8 +68,9 @@ export function StyleTtsForm({
   return (
     <>
       <FormSection title="Identity & data" tag="Run">
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-3 gap-3.5">
           <SettingField schema={settingsSchema} values={values} name="display_name" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="seed" onChange={updateTraining} />
           <Field label="Training dataset">
             <FormSelect
               defaultValue=""
@@ -168,6 +171,7 @@ export function StyleTtsForm({
       <FormSection title="Training stages" tag="Full specifications">
         <StageScheduleEditor
           stages={values.training_stages as TrainingStageSpec[]}
+          templates={stageTemplates}
           onChange={(training_stages) => updateTraining({
             ...values,
             training_stages,
@@ -183,11 +187,10 @@ export function StyleTtsForm({
         </div>
       </FormSection>
 
-      <FormSection title="SLM adversarial" tag="Discriminator">
-        <div className="grid grid-cols-3 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="slmadv_min_len" onChange={updateTraining} />
-          <SettingField schema={settingsSchema} values={values} name="slmadv_max_len" onChange={updateTraining} />
-          <SettingField schema={settingsSchema} values={values} name="slm_scale" onChange={updateTraining} />
+      <FormSection title="Output paths" tag="Advanced">
+        <div className="grid grid-cols-2 gap-3.5">
+          <SettingField schema={settingsSchema} values={values} name="output_checkpoint_dir" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="config_output_dir" onChange={updateTraining} />
         </div>
       </FormSection>
 

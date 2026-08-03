@@ -148,8 +148,7 @@ def synthesize_validation(
                 duration_predictions,
                 batch.input_lengths,
             )
-    prompt_frames = int(batch.mel_lengths.min().item() / 2 - 1)
-    prompt_mels = batch.mels[..., : prompt_frames * 2]
+    prompt_mels = sample_voice_prompts(batch)
     with torch.autocast(device_type=device.type, enabled=False):
         decoder_voice, decoder_text = modules.voice_encoder(
             prompt_mels.float(),

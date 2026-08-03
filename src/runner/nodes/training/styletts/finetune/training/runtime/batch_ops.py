@@ -139,9 +139,12 @@ def crop_training_batch(
 
 
 def sample_voice_prompts(batch: TrainingBatch) -> Tensor:
-    prompt_frames = int(batch.mel_lengths.min().item() / 2 - 1)
+    maximum_frames = int(batch.mel_lengths.min().item() // 2)
+    prompt_frames = int(
+        np.random.randint((maximum_frames + 1) // 2, maximum_frames + 1)
+    )
     prompt_starts = [
-        int(np.random.randint(0, int(length.item() / 2) - prompt_frames))
+        int(np.random.randint(0, int(length.item() / 2) - prompt_frames + 1))
         for length in batch.mel_lengths
     ]
     prompt_slices = [
