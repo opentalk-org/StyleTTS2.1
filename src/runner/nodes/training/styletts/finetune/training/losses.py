@@ -66,11 +66,13 @@ def discriminator_tprls_loss(real_scores, generated_scores) -> Tensor:
 
 def generator_tprls_loss(real_scores, generated_scores) -> Tensor:
     loss = generated_scores[0].new_zeros(())
-    for generated, real in zip(generated_scores, real_scores, strict=True):
+    for real, generated in zip(real_scores, generated_scores, strict=True):
         tau = 0.04
-        median = torch.median(real - generated)
+        median = torch.median(generated - real)
         relative = torch.mean(
-            (((real - generated) - median) ** 2)[real < generated + median]
+            (((generated - real) - median) ** 2)[
+                generated < real + median
+            ]
         )
         loss = loss + tau - F.relu(tau - relative)
     return loss

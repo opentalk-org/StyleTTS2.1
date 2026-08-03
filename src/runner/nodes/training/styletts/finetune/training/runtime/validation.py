@@ -12,6 +12,7 @@ from ...studio.val_sample_export import (
 )
 from ...stages import (
     ProsodySource,
+    StyleSource,
     TrainingStageSpec,
     ValidationDurationSource,
     stage_for_step,
@@ -26,8 +27,183 @@ from ..utils import (
     mask_from_lens,
     maximum_path,
 )
-from .validation_synthesis import synthesize_validation
-from .training_crops import crop_training_batch, sample_voice_prompts
+from .batch_ops import crop_training_batch, prosody_inputs, sample_voice_prompts
+
+
+def predicted_alignment(
+    duration_predictions: torch.Tensor,
+    input_lengths: torch.Tensor,
+) -> tuple[torch.Tensor, list[int]]:
+    durations = torch.round(
+        torch.sigmoid(duration_predictions).sum(dim=-1)
+    ).clamp_min(1)
+    token_positions = torch.arange(
+        durations.size(1),
+        device=durations.device,
+    )
+    input_lengths = input_lengths.to(durations.device)
+    durations = durations * (
+        token_positions.unsqueeze(0) < input_lengths.unsqueeze(1)
+    )
+    ends = durations.cumsum(dim=1)
+    starts = ends - durations
+    lengths = [int(value.item()) for value in ends[:, -1]]
+    frames = torch.arange(max(lengths), device=durations.device)
+    alignment = (
+        (frames[None, None, :] >= starts[:, :, None])
+        & (frames[None, None, :] < ends[:, :, None])
+    )
+    return alignment.to(duration_predictions.dtype), lengths
+
+
+def resize_prosody(
+    values: torch.Tensor,
+    source_lengths: list[int],
+    target_lengths: list[int],
+) -> torch.Tensor:
+    resized = values.new_zeros((values.size(0), max(target_lengths)))
+    for index, (source, target) in enumerate(
+        zip(source_lengths, target_lengths, strict=True)
+    ):
+        resized[index, :target] = F.interpolate(
+            values[index, :source].reshape(1, 1, source),
+            size=target,
+            mode="linear",
+            align_corners=False,
+        ).reshape(target)
+    return resized
+
+
+def synthesize_validation(
+    runtime: TrainingRuntime,
+    batch: TrainingBatch,
+    stage: TrainingStageSpec,
+    text_encoding: torch.Tensor,
+    duration_encoding: torch.Tensor,
+    bert: torch.Tensor,
+    monotonic: torch.Tensor,
+    target_f0: torch.Tensor,
+    target_energy: torch.Tensor,
+    alpha_flow_noise: torch.Tensor | None = None,
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    list[int],
+]:
+    modules = runtime.models.modules
+    device = batch.mels.device
+    decode_alignment = monotonic
+    decode_lengths = [int(value.item() // 2) for value in batch.mel_lengths]
+    duration_predictions = batch.mels.new_zeros(
+        (batch.texts.size(0), batch.texts.size(1), 1)
+    )
+    predicted_f0 = target_f0.new_zeros(target_f0.shape)
+    predicted_energy = target_energy.new_zeros(target_energy.shape)
+    validates_predictions = (
+        stage.validation.alpha_flow
+        or stage.validation.f0_source is ProsodySource.PREDICTED
+        or stage.validation.norm_source is ProsodySource.PREDICTED
+        or (
+            stage.validation.duration_source
+            is ValidationDurationSource.PREDICTED
+        )
+    )
+    if validates_predictions:
+        conditioning = prosody_inputs(
+            modules.position_embedding,
+            monotonic,
+            target_f0,
+            target_energy,
+        )
+        with torch.autocast(device_type=device.type, enabled=False):
+            style = modules.prosody_encoder(
+                conditioning.float(),
+                batch.mel_lengths.to(device) // 2,
+            )
+            if stage.style_source is StyleSource.QUANTIZED:
+                style, _, _, _ = modules.quantizer(style)
+        if stage.validation.alpha_flow:
+            style = modules.alpha_flow.sample(
+                bert,
+                conditioning,
+                batch.input_lengths,
+                noise=alpha_flow_noise,
+            )
+        duration_predictions = modules.duration_predictor(
+            duration_encoding,
+            style,
+            batch.input_lengths,
+            duration_encoding.size(-1),
+        )
+        if (
+            stage.validation.duration_source
+            is ValidationDurationSource.PREDICTED
+        ):
+            decode_alignment, decode_lengths = predicted_alignment(
+                duration_predictions,
+                batch.input_lengths,
+            )
+    prompt_frames = int(batch.mel_lengths.min().item() / 2 - 1)
+    prompt_mels = batch.mels[..., : prompt_frames * 2]
+    with torch.autocast(device_type=device.type, enabled=False):
+        decoder_voice, decoder_text = modules.voice_encoder(
+            prompt_mels.float(),
+            text_encoding.float(),
+            batch.input_lengths,
+            text_encoding.size(-1),
+        )
+    aligned_text = decoder_text @ decode_alignment
+    if validates_predictions:
+        aligned_duration = duration_encoding @ decode_alignment
+        half_lengths = torch.tensor(decode_lengths, device=device)
+        predicted_f0, predicted_energy = modules.prosody_predictor(
+            aligned_duration,
+            style,
+            half_lengths,
+            decode_alignment.size(-1),
+        )
+    source_lengths = [int(value.item()) for value in batch.mel_lengths]
+    full_lengths = [value * 2 for value in decode_lengths]
+    resized_f0 = resize_prosody(target_f0, source_lengths, full_lengths)
+    resized_energy = resize_prosody(target_energy, source_lengths, full_lengths)
+    decoder_f0 = (
+        predicted_f0
+        if stage.validation.f0_source is ProsodySource.PREDICTED
+        else resized_f0
+    )
+    decoder_energy = (
+        predicted_energy
+        if stage.validation.norm_source is ProsodySource.PREDICTED
+        else resized_energy
+    )
+    positions = torch.arange(max(full_lengths), device=device)
+    frame_mask = positions[None, :] < torch.tensor(
+        full_lengths,
+        device=device,
+    )[:, None]
+    predicted_f0 = predicted_f0 * frame_mask
+    predicted_energy = predicted_energy * frame_mask
+    reconstructed = modules.decoder(
+        aligned_text,
+        decoder_f0,
+        decoder_energy,
+        decoder_voice,
+    )
+    return (
+        reconstructed,
+        duration_predictions,
+        predicted_f0,
+        predicted_energy,
+        resized_f0,
+        resized_energy,
+        decode_alignment,
+        decode_lengths,
+    )
 
 
 def _validates_predictions(stage: TrainingStageSpec) -> bool:
