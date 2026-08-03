@@ -46,47 +46,23 @@ class FactorizationHeads(nn.Module):
         style_dim: int = 512,
     ) -> None:
         super().__init__()
-        self.voice_verifier = SameSpeakerVerifier(voice_dim)
         self.style_verifier = SameSpeakerVerifier(voice_dim)
-        self.voice_language = nn.Linear(voice_dim, language_count)
         self.style_language = nn.Linear(voice_dim, language_count)
-        self.voice_content = nn.Linear(voice_dim, content_dim)
         self.style_content = nn.Linear(voice_dim, content_dim)
         self.style_projection = nn.Linear(style_dim, voice_dim)
 
-    def identity_losses(
+    def style_nuisance_loss(
         self,
-        voice: Tensor,
-        reference_voice: Tensor,
-        speaker_ids: Tensor,
-        margin: float = 0.2,
-    ) -> tuple[Tensor, Tensor]:
-        logits = self.voice_verifier(voice, reference_voice)
-        same = speaker_ids[:, None].eq(speaker_ids[None, :])
-        pair_loss = F.binary_cross_entropy_with_logits(logits, same.to(logits.dtype))
-        cosine = voice @ reference_voice.transpose(0, 1)
-        metric_loss = torch.where(same, 1 - cosine, (cosine - margin).clamp_min(0)).mean()
-        return pair_loss, metric_loss
-
-    def nuisance_losses(
-        self,
-        voice: Tensor,
         style: Tensor,
         speaker_ids: Tensor,
         language_ids: Tensor,
         content_bag: Tensor,
         reversal_strength: float,
-    ) -> tuple[Tensor, Tensor]:
+    ) -> Tensor:
         style = style.mean(-1)
-        reversed_voice = GradientReversal.apply(voice, reversal_strength)
         reversed_style = GradientReversal.apply(style, reversal_strength)
         style_features = self.style_projection(reversed_style)
-        voice_language = F.cross_entropy(self.voice_language(reversed_voice), language_ids)
         style_language = F.cross_entropy(self.style_language(style_features), language_ids)
-        voice_content = F.binary_cross_entropy_with_logits(
-            self.voice_content(reversed_voice),
-            content_bag,
-        )
         style_content = F.binary_cross_entropy_with_logits(
             self.style_content(style_features),
             content_bag,
@@ -94,10 +70,7 @@ class FactorizationHeads(nn.Module):
         speaker_logits = self.style_verifier(style_features, style_features)
         same = speaker_ids[:, None].eq(speaker_ids[None, :]).to(speaker_logits.dtype)
         style_speaker = F.binary_cross_entropy_with_logits(speaker_logits, same)
-        return (
-            voice_language + voice_content,
-            style_language + style_speaker + style_content,
-        )
+        return style_language + style_speaker + style_content
 
     def cross_covariance(self, voice: Tensor, style: Tensor) -> Tensor:
         if voice.size(0) < 2:

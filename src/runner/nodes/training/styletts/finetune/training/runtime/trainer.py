@@ -10,7 +10,7 @@ from ..profiling import set_profiling_step
 from ..setup import TrainingRuntime
 from ...stages import StyleSource, TrainingLoss, stage_for_step
 from .adversarial_training import discriminator_step, prosody_generator_loss
-from .factorization_training import nuisance_losses
+from .factorization_training import style_nuisance_loss
 from .stage_requirements import requires_voice
 from .training_forward import ForwardOutput, model_forward
 from .validation_batch import styletts_zs_reconstruction_loss
@@ -81,7 +81,8 @@ class Trainer:
             prosody_adversarial,
             TrainingLoss.SLM_ADVERSARIAL in enabled,
         )
-        optimizer.zero_grad()
+        for name in trainable:
+            optimizer.zero_grad(name)
         losses = self._generator_losses(output, batch, enabled)
         style_batch_std = output.style_target.mean(-1).std(
             0,
@@ -102,10 +103,6 @@ class Trainer:
                 for parameter in modules[name].parameters():
                     if parameter.requires_grad:
                         parameter.grad = torch.zeros_like(parameter)
-        for name in ("msd", "mpd"):
-            modules[name].requires_grad_(stage.train_discriminators)
-        for name in ("prosody_discriminator", "duration_discriminator"):
-            modules[name].requires_grad_(prosody_adversarial)
         synchronize_gradients(accelerator, modules, trainable)
         for name in trainable:
             optimizer.step(name)
@@ -190,29 +187,31 @@ class Trainer:
             losses["slm_adversarial"] = self.runtime.losses.wavlm.generator(
                 output.reconstructed.squeeze(1),
             )
+        if enabled & {
+            TrainingLoss.SPEAKER_FEATURE,
+            TrainingLoss.SPEAKER_SIMILARITY,
+        }:
+            speaker_feature, speaker_similarity = (
+                self.runtime.losses.speaker_verification(
+                    output.waveform.detach(),
+                    output.reconstructed,
+                )
+            )
+            losses["speaker_feature"] = speaker_feature
+            losses["speaker_similarity"] = speaker_similarity
         if TrainingLoss.PROSODY_ADVERSARIAL in enabled:
             (
                 losses["prosody_adversarial"],
                 losses["prosody_generator_adversarial"],
                 losses["prosody_feature_matching"],
             ) = prosody_generator_loss(self.runtime, output, batch)
-        if enabled & {TrainingLoss.VOICE_PAIR, TrainingLoss.VOICE_METRIC}:
-            pair, metric = self.runtime.models.modules.factorization.identity_losses(
-                output.voice,
-                output.reference_voice,
-                batch.speaker_ids,
-            )
-            losses["voice_pair"] = pair
-            losses["voice_metric"] = metric
-        if enabled & {TrainingLoss.VOICE_NUISANCE, TrainingLoss.STYLE_NUISANCE}:
-            voice_nuisance, style_nuisance = nuisance_losses(
+        if TrainingLoss.STYLE_NUISANCE in enabled:
+            losses["style_nuisance"] = style_nuisance_loss(
                 self.runtime,
                 output,
                 batch,
                 min(1.0, self.step / 1000),
             )
-            losses["voice_nuisance"] = voice_nuisance
-            losses["style_nuisance"] = style_nuisance
         if TrainingLoss.XCOV in enabled:
             losses["xcov"] = self.runtime.models.modules.factorization.cross_covariance(
                 output.voice,

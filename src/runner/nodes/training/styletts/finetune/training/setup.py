@@ -26,6 +26,7 @@ from .modules.zs.prosody_adversarial import (
 )
 from .modules.slmadv import SLMAdversarialLoss
 from .optimizers import MultiOptimizer, build_optimizer
+from .speaker_verification import load_speaker_verification_loss
 from .utils import recursive_munch
 
 
@@ -47,6 +48,7 @@ class LossBundle:
     generator: nn.Module
     discriminator: nn.Module
     wavlm: nn.Module
+    speaker_verification: nn.Module
     stft: nn.Module
     slm_adversarial: SLMAdversarialLoss
     prosody_generator: nn.Module
@@ -102,6 +104,10 @@ def build_training_runtime(
         generator,
         discriminator,
         wavlm,
+        load_speaker_verification_loss(
+            config.preprocess_params.sr,
+            device,
+        ),
         MultiResolutionSTFTLoss().to(device),
         _build_slm_loss(
             config,

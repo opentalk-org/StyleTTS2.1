@@ -31,12 +31,12 @@ def discriminator_step(
         return 0.0, 0.0, 0.0
     accelerator = runtime.accelerator
     optimizer = runtime.optimizer
-    optimizer.zero_grad()
     waveform_total = output.reconstructed.new_zeros(())
     prosody_total = output.reconstructed.new_zeros(())
     slm_total = output.reconstructed.new_zeros(())
     waveform_items = (("mpd", modules.mpd), ("msd", modules.msd))
     for name, discriminator in waveform_items if waveform_active else ():
+        optimizer.zero_grad(name)
         with accelerator.autocast():
             loss = runtime.losses.discriminator(
                 output.waveform.detach(),
@@ -65,13 +65,21 @@ def discriminator_step(
         ),
     )
     for name, objective, fake, real, lengths in prosody_items if prosody_active else ():
-        loss = objective(fake, real, output.style_target, lengths, real.size(-1))
+        optimizer.zero_grad(name)
+        loss = objective(
+            fake.float(),
+            real.float(),
+            output.style_target.float(),
+            lengths,
+            real.size(-1),
+        )
         accelerator.backward(loss)
         synchronize_gradients(accelerator, modules, (name,))
         optimizer.step(name)
         modules[name].requires_grad_(False)
         prosody_total = prosody_total + loss.detach()
     if slm_active:
+        optimizer.zero_grad("wd")
         with accelerator.autocast():
             slm_total = runtime.losses.wavlm.discriminator(
                 output.waveform.detach().squeeze(1),
@@ -91,17 +99,17 @@ def prosody_generator_loss(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     mel_lengths = batch.mel_lengths.to(output.reconstructed.device) // 2
     prosody, prosody_features = runtime.losses.prosody_generator(
-        output.prosody_fake,
-        output.prosody_real,
-        output.style_target,
+        output.prosody_fake.float(),
+        output.prosody_real.float(),
+        output.style_target.float(),
         mel_lengths,
         output.prosody_real.size(-1),
     )
     text_lengths = batch.input_lengths.to(output.reconstructed.device)
     duration, duration_features = runtime.losses.duration_generator(
-        output.duration_fake,
-        output.duration_real,
-        output.style_target,
+        output.duration_fake.float(),
+        output.duration_real.float(),
+        output.style_target.float(),
         text_lengths,
         output.duration_real.size(-1),
     )

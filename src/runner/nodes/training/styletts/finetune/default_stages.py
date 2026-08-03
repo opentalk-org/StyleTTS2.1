@@ -41,11 +41,10 @@ def _loss_weights() -> TrainingLossWeights:
         rvq=1,
         sequence_alignment=1,
         slm_adversarial=1,
+        speaker_feature=5,
+        speaker_similarity=5,
         wavlm=1,
         style_nuisance=0.1,
-        voice_metric=1,
-        voice_nuisance=0.1,
-        voice_pair=1,
         xcov=0.01,
     )
 
@@ -57,8 +56,6 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         TrainableModule.VOICE_ENCODER,
         TrainableModule.DECODER,
         TrainableModule.TEXT_ALIGNER,
-        TrainableModule.PITCH_EXTRACTOR,
-        TrainableModule.FACTORIZATION,
     ]
     prosody_modules = [
         TrainableModule.DURATION_PREDICTOR,
@@ -96,9 +93,8 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
                 TrainingLoss.ADVERSARIAL,
                 TrainingLoss.WAVLM,
                 TrainingLoss.SLM_ADVERSARIAL,
-                TrainingLoss.VOICE_PAIR,
-                TrainingLoss.VOICE_METRIC,
-                TrainingLoss.VOICE_NUISANCE,
+                TrainingLoss.SPEAKER_FEATURE,
+                TrainingLoss.SPEAKER_SIMILARITY,
             ],
             validation=_validation(False, False),
             train_discriminators=True,

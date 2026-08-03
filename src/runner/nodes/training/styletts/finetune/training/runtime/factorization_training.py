@@ -7,12 +7,12 @@ from ..setup import TrainingRuntime
 from .training_forward import ForwardOutput
 
 
-def nuisance_losses(
+def style_nuisance_loss(
     runtime: TrainingRuntime,
     output: ForwardOutput,
     batch: TrainingBatch,
     reversal_strength: float,
-) -> tuple[Tensor, Tensor]:
+) -> Tensor:
     factorization = runtime.models.modules.factorization
     parameters = runtime.models.parameters
     content_bag = _phoneme_bag(
@@ -20,8 +20,7 @@ def nuisance_losses(
         batch.input_lengths,
         parameters.n_token,
     )
-    return factorization.nuisance_losses(
-        output.voice,
+    return factorization.style_nuisance_loss(
         output.style_target,
         batch.speaker_ids,
         batch.language_ids,
