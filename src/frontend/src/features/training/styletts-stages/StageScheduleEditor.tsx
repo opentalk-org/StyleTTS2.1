@@ -8,7 +8,6 @@ import { ValidationSettingsEditor } from "./ValidationSettingsEditor";
 import {
   cloneStage,
   STAGE_PRESETS,
-  STAGE_TEMPLATES,
   TRAINABLE_MODULES,
   type TrainableModule,
   type TrainingStageSpec,
@@ -16,9 +15,11 @@ import {
 
 export function StageScheduleEditor({
   stages,
+  templates,
   onChange,
 }: {
   stages: TrainingStageSpec[];
+  templates: TrainingStageSpec[];
   onChange: (stages: TrainingStageSpec[]) => void;
 }) {
   const replace = (index: number, stage: TrainingStageSpec) => {
@@ -44,7 +45,7 @@ export function StageScheduleEditor({
               key={preset.label}
               size="sm"
               onClick={() => onChange(preset.indexes.map(
-                (index) => cloneStage(STAGE_TEMPLATES[index]!),
+                (index) => cloneStage(templates[index]!),
               ))}
             >
               {preset.label}
@@ -63,7 +64,7 @@ export function StageScheduleEditor({
           <div>
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-txt-mute">Add preconfigured stage</div>
             <div className="flex flex-wrap gap-2">
-              {STAGE_TEMPLATES.map((template) => (
+              {templates.map((template) => (
                 <Button
                   key={template.name}
                   size="sm"
@@ -140,15 +141,6 @@ function StageEditor({
         </Field>
       </div>
       <div className="mb-4 grid gap-3 md:grid-cols-3">
-        <Field label="Batch size">
-          <NumberInput
-            value={stage.batch_size}
-            min={1}
-            max={128}
-            step={1}
-            onChange={(batch_size) => onChange({ ...stage, batch_size })}
-          />
-        </Field>
         <Field label="Max audio duration (sec)">
           <NumberInput
             value={stage.max_audio_seconds}
@@ -167,12 +159,25 @@ function StageEditor({
         >
           <NumberInput
             value={stage.max_decoder_seconds}
-            min={1}
-            max={30}
-            step={0.5}
+            min={0.1}
+            max={60}
+            step={0.25}
             onChange={(max_decoder_seconds) => onChange({
               ...stage,
               max_decoder_seconds,
+            })}
+          />
+        </Field>
+        <Field label="Voice conditioning dropout">
+          <NumberInput
+            value={stage.voice_conditioning_dropout}
+            min={0}
+            max={1}
+            step={0.05}
+            decimals={2}
+            onChange={(voice_conditioning_dropout) => onChange({
+              ...stage,
+              voice_conditioning_dropout,
             })}
           />
         </Field>
