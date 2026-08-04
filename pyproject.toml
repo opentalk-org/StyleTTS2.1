@@ -85,9 +85,9 @@ dependencies = [
 [tool.uv]
 override-dependencies = [
     "numpy>=2.1,<2.5",
-    "torch>=2.11",
-    "torchaudio>=2.11",
-    "torchvision>=0.26",
+    "torch>=2.11,<2.12",
+    "torchaudio>=2.11,<2.12",
+    "torchvision>=0.26,<0.27",
     "transformers>=4.45,<5",
     "nemo-toolkit>=2.7",
     "onnx>=1.19",
