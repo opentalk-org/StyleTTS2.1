@@ -7,7 +7,8 @@ class TrainingTelemetry:
     total_steps: int
     initial_step: int
     started_at: float
-    audio_seconds_processed: float = 0.0
+    items_processed: float = 0.0
+    audio_seconds_trained: float = 0.0
     data_wait_seconds: float = 0.0
     compute_seconds: float = 0.0
     validation_seconds: float = 0.0
@@ -40,9 +41,9 @@ class TrainingTelemetry:
         }
         metrics = {
             "performance/audio_seconds_per_second": (
-                self.audio_seconds_processed / elapsed
+                self.audio_seconds_trained / elapsed
             ),
-            "performance/steps_per_second": steps_per_second,
+            "performance/items_per_second": self.items_processed / elapsed,
             "performance/elapsed_seconds": elapsed,
             "performance/eta_seconds": eta_seconds,
             "performance/eta_hours": eta_seconds / 3600,

@@ -17,7 +17,7 @@ from .mlflow_logging import MlflowLogger, start_run
 from .profiling import configure_profiling, profiling_fn
 from .runtime import Trainer, Validator
 from .setup import build_accelerator, build_training_runtime
-from ..stages import stage_for_step
+from ..stages import TrainableModule, stage_for_step
 from .telemetry_metrics import TrainingTelemetry
 from .utils import get_data_path_list
 
@@ -110,15 +110,36 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
             timing.compute_seconds += time.monotonic() - compute_started
             trainer.step += 1
             step = trainer.step
-            batch_audio_seconds = torch.tensor(
-                sum(batch.audio_durations),
+            if TrainableModule.DECODER in stage.trainable_modules:
+                crop_frames = min(
+                    int(batch.mel_lengths.min().item() / 2 - 1),
+                    int(
+                        stage.max_decoder_seconds
+                        * config.preprocess_params.sr
+                        / config.preprocess_params.spect_params.hop_length
+                        / 2
+                    ),
+                )
+                audio_seconds = (
+                    len(batch.audio_durations)
+                    * crop_frames
+                    * config.preprocess_params.spect_params.hop_length
+                    * 2
+                    / config.preprocess_params.sr
+                )
+            else:
+                audio_seconds = sum(batch.audio_durations)
+            batch_totals = torch.tensor(
+                (len(batch.audio_durations), audio_seconds),
                 device=accelerator.device,
                 dtype=torch.float64,
             )
-            timing.audio_seconds_processed += accelerator.reduce(
-                batch_audio_seconds,
+            reduced_totals = accelerator.reduce(
+                batch_totals,
                 reduction="sum",
-            ).item()
+            )
+            timing.items_processed += reduced_totals[0].item()
+            timing.audio_seconds_trained += reduced_totals[1].item()
             metrics = dict(step_metrics)
             metrics.update(timing.metrics(step))
             if accelerator.is_main_process:
