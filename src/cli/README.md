@@ -17,7 +17,14 @@ python -m cli run <run_id>               # one run's status
 python -m cli logs <run_id>              # aggregated logs, merged by time, node-tagged
 python -m cli node-log <run_id> <node>   # one node's raw log
 python -m cli failed <run_id>            # failed node(s): error + traceback + log
+python -m cli import-ds-v2-metadata --row-limit 100
 ```
+
+The metadata import command submits `workflows/ds_v2_metadata_import.json` to
+the backend. It reads the CSVs from the configured Hetzner SFTP host and saves
+idempotent external audio records; audio bytes remain in their source Parquet
+files. Omit `--row-limit` to import every row, or use `--row-offset` and
+`--row-limit` to launch a bounded range.
 
 `logs` prints exactly what the UI's "All node logs (merged by time)" popover
 shows — one `node_id<TAB>text` line per record, chronologically merged, with

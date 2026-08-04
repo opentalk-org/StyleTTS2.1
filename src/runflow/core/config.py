@@ -8,9 +8,7 @@ from runflow.core.settings import settings_defaults
 
 
 class RuntimeConfig(BaseModel):
-    """Typed runtime controls shared by runner APIs and the scheduler."""
-
-    model_config = ConfigDict(extra="forbid")
+   model_config = ConfigDict(extra="forbid")
 
     resources: dict[str, float] = Field(
         default_factory=lambda: {

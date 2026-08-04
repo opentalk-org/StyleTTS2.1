@@ -15,8 +15,7 @@
           "import_audio": false,
           "text_column": "text_src",
           "name_prefix": "ds_v2",
-          "download_retries": 3,
-          "create_voices": true
+          "download_retries": 3
         },
         "runtime": {}
       },

@@ -18,17 +18,6 @@ class JoinMode(str, Enum):
 
 @dataclass(frozen=True)
 class Port:
-    """A typed socket on a node.
-
-    Subclass once per datatype — the subclass *is* the type. Two ports may be
-    wired together iff they are the exact same class (see ``Graph.connect``);
-    there is no subtyping or union, so a connection that type-checks is
-    guaranteed to also validate at runtime.
-
-    Instance fields are the per-use knobs (how the socket batches / joins).
-    The datatype identity lives on the class as ClassVars.
-    """
-
     mode: PortMode = PortMode.SINGLE
     join_mode: JoinMode = JoinMode.ITEM
     optional: bool = False

@@ -44,9 +44,7 @@ class Graph:
 
         src = source_ports[source_port]
         dst = target_ports[target_port]
-        # A port's class *is* its type: only identical types connect (no
-        # subtyping, no unions), so a wiring that passes here cannot fail the
-        # runtime value check.
+
         if type(src) is not type(dst):
             raise TypeError(
                 f"Cannot connect {source_node}.{source_port} ({src.TYPE_NAME}) "
