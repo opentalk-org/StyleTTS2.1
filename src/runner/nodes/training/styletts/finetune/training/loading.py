@@ -15,16 +15,16 @@ from runner.nodes.training.styletts.finetune.training.modules.encoders import Te
 from runner.nodes.training.styletts.finetune.training.modules.hifigan import Decoder as HifiganDecoder
 from runner.nodes.training.styletts.finetune.training.modules.istftnet import Decoder as IstftnetDecoder
 from runner.nodes.training.styletts.finetune.training.modules.jdc import JDCNet
-from runner.nodes.training.styletts.finetune.training.modules.zs.alpha_flow import AlphaFlow
-from runner.nodes.training.styletts.finetune.training.modules.zs.factorization import FactorizationHeads
-from runner.nodes.training.styletts.finetune.training.modules.zs.zs_prosody import (
+from runner.nodes.training.styletts.finetune.training.modules.latent.alpha_flow import AlphaFlow
+from runner.nodes.training.styletts.finetune.training.modules.latent.factorization import FactorizationHeads
+from runner.nodes.training.styletts.finetune.training.modules.latent.prosody import (
     DurationPredictor,
     ProsodyDiscriminator,
     ProsodyPredictor,
     ResidualVectorQuantize,
     TVStyleEncoder,
 )
-from runner.nodes.training.styletts.finetune.training.modules.zs.voice import VoiceEncoder
+from runner.nodes.training.styletts.finetune.training.modules.latent.voice import VoiceEncoder
 from runner.nodes.training.styletts.finetune.training.state_dict_resize import merge_state_dict_with_dim0_resize
 
 _ASR_N_TOKEN_DIM0_KEYS = frozenset({
@@ -265,7 +265,7 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
         source_key = _voice_checkpoint_source(params) if key == "voice_encoder" else key
         if key == "voice_encoder" and source_key is None:
             logger.info(
-                "initialized StyleTTS-ZS voice encoder; checkpoint has no compatible weights"
+                "initialized voice encoder; checkpoint has no compatible weights"
             )
             reinitialized.add(key)
             continue
@@ -310,11 +310,13 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
     for module in model.values():
         module.eval()
 
+    resume_step = 0
     if not load_only_params:
         optimizer_state = [
             item for item in state["optimizer"]
             if item[0] not in reinitialized
         ]
         optimizer.load_state_dict(optimizer_state)
+        resume_step = int(state["step"])
 
-    return model, optimizer
+    return model, optimizer, resume_step

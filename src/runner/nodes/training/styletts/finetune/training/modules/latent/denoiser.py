@@ -4,11 +4,11 @@ from torchaudio.models import Conformer
 
 from ..diffusion.modules import FixedEmbedding, TimePositionalEmbedding
 from ..diffusion.utils import rand_bool
-from .zs_prosody import NumberEmbedder
+from .prosody import NumberEmbedder
 
 
 class StyleDiffuser(nn.Module):
-    """The author's StyleTTS-ZS conditional Conformer, adapted to interval time."""
+    """Conditional Conformer adapted to interval time."""
 
     def __init__(
         self,

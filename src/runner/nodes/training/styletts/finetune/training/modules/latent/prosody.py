@@ -32,7 +32,7 @@ class NumberEmbedder(nn.Module):
 
 
 class TVStyleEncoder(nn.Module):
-    """StyleTTS-ZS fixed-length prosody encoder from the author implementation."""
+    """Fixed-length prosody encoder."""
 
     def __init__(
         self,

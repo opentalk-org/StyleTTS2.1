@@ -134,3 +134,16 @@ def start_mlflow_run(*, experiment: str, name: str, config: dict[str, object]) -
     client.log_dict(run.info.run_id, config, "config.json")
     logger.info("MLflow run started experiment=%s name=%s", experiment, name)
     return MlflowRun(client, run.info.run_id)
+
+
+def resume_mlflow_run(run_id: str) -> TrackerRun:
+    """Attach metric and artifact logging to an existing MLflow run."""
+    client = MlflowClient(tracking_uri=os.environ["MLFLOW_TRACKING_URI"])
+    run = client.get_run(run_id)
+    client.update_run(run_id, status="RUNNING")
+    logger.info(
+        "MLflow run resumed experiment_id=%s run_id=%s",
+        run.info.experiment_id,
+        run_id,
+    )
+    return MlflowRun(client, run_id)
