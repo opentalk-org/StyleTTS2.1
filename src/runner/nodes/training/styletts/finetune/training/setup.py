@@ -180,13 +180,19 @@ def _load_base_checkpoint(
     ):
         if path is not None:
             ignored.append(name)
-    return load_checkpoint(
+    modules, optimizer, initial_step = load_checkpoint(
         modules,
         optimizer,
         config.pretrained_model,
         load_only_params=config.load_only_params,
         ignore_modules=ignored,
     )
+    learning_rate = config.optimizer_params.lr
+    for group in optimizer.param_groups:
+        for key in ("lr", "initial_lr", "max_lr", "min_lr"):
+            if key in group:
+                group[key] = learning_rate
+    return modules, optimizer, initial_step
 
 
 def _prepare_training(

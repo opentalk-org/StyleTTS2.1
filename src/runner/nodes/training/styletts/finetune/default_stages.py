@@ -50,7 +50,6 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         TrainableModule.PROSODY_PREDICTOR,
         TrainableModule.QUANTIZER,
         TrainableModule.POSITION_EMBEDDING,
-        TrainableModule.FACTORIZATION,
     ]
     mel_weights = weights.model_copy(update={"mel": 1})
     tma_weights = weights.model_copy(
@@ -70,8 +69,6 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             "duration_ce": 20,
             "prosody_adversarial": 1,
             "rvq": 1,
-            "style_nuisance": 0.1,
-            "xcov": 0.01,
         }
     )
     return [
@@ -94,13 +91,12 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             validation=_validation(False, False),
         ),
         TrainingStageSpec(
-            name="small_rec.py · prosody/RVQ and factorization",
+            name="small_rec.py · prosody/RVQ",
             steps=2_000,
             style_source=StyleSource.QUANTIZED,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=prosody_modules,
             loss_weights=prosody_weights,
-            voice_conditioning_dropout=0.2,
             validation=_validation(True, False),
         ),
         TrainingStageSpec(

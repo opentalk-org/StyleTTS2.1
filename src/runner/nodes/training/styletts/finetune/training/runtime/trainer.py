@@ -69,30 +69,6 @@ class Trainer:
             training_modules.update(("pitch_extractor", "text_aligner"))
         self.runtime.models.set_training_mode(training_modules)
 
-    @torch.no_grad()
-    def _initialize_rvq_codebooks(self, continuous_style: Tensor) -> None:
-        quantizer = self.runtime.models.modules.quantizer
-        if bool(quantizer._codebooks_initialized.item()):
-            return
-        residual = self.runtime.accelerator.gather(
-            continuous_style.detach()
-        ).float()
-        initialized = []
-        for layer in quantizer.quantizers:
-            encoded = layer.in_proj(residual)
-            vectors = encoded.transpose(1, 2).reshape(-1, encoded.size(1))
-            codebook_size = layer.codebook.num_embeddings
-            source_indices = torch.arange(
-                codebook_size,
-                device=vectors.device,
-            ).remainder(vectors.size(0))
-            layer.codebook.weight.copy_(vectors[source_indices])
-            quantized, _, _, _ = layer(residual)
-            residual = residual - quantized
-            initialized.append(min(vectors.size(0), codebook_size))
-        quantizer._codebooks_initialized.fill_(True)
-        logger.info("bootstrapped RVQ codebooks vectors=%s", initialized)
-
     def train_step(self, batch: TrainingBatch) -> dict[str, torch.Tensor | float]:
         set_profiling_step(self.step)
         runtime = self.runtime
@@ -236,7 +212,6 @@ class Trainer:
                         encoder_lengths,
                     )
                     if stage.style_source is StyleSource.QUANTIZED:
-                        self._initialize_rvq_codebooks(continuous_style)
                         style_target, commitment, codebook, _ = modules.quantizer(
                             continuous_style
                         )
