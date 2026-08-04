@@ -16,6 +16,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
     rustfs.url = "github:rustfs/rustfs/1.0.0-beta.8";
     flake-parts.url = "github:hercules-ci/flake-parts";
+    dnvr.url = "github:dialohq/dnvr";
   };
 
   outputs =
@@ -23,9 +24,11 @@
       nixpkgs,
       rustfs,
       flake-parts,
+      dnvr,
       ...
     }@inputs:
     flake-parts.lib.mkFlake { inherit inputs; } {
+      imports = [ dnvr.flakeModule ];
       systems = [
         "aarch64-darwin"
         "aarch64-linux"
@@ -39,6 +42,7 @@
           pkgs,
           system,
           lib,
+          presets,
           ...
         }:
         let
@@ -75,7 +79,7 @@
             default = self'.packages.frontend-static;
           };
 
-          devShells.default = pkgs.mkShell {
+          dnvr.shells.default = { config, ... }: {
             packages = [
               rustfs.packages.${system}.default
               python
@@ -88,6 +92,7 @@
               pkgs.rclone
               pkgs.uv
               pkgs.zellij
+              pkgs.pyright
             ]
             ++ runtimeLibs
             ++ runtimeExecutableDeps
@@ -128,6 +133,40 @@
                 echo "no .venv yet - run: uv sync --frozen"
               fi
             '';
+
+            processes.pg = {
+              imports = [ presets.postgres ];
+              package = pkgs.postgresql_16;
+              database = "runflow";
+              initialScript = ''
+                DO $$
+                  BEGIN
+                    IF NOT EXISTS (
+                      SELECT FROM pg_catalog.pg_roles WHERE rolname = 'runflow'
+                    ) THEN
+                      CREATE ROLE "runflow" LOGIN PASSWORD 'runflow';
+                    END IF;
+                  END
+                $$
+              '';
+            };
+
+            processes.s3 = {
+              runtimeInputs = [ rustfs.packages.${system}.default ];
+              command = ''
+                mkdir -p "$DNVR_STATE/rustfs"
+                rustfs server --address  127.0.0.1:9000 --access-key runflow --secret-key runflow --console-address 127.0.0.1:9001 --console-enable "$DNVR_STATE/rustfs"
+              '';
+            };
+
+            processes.s3-setup = {
+
+              command = ''
+                adawd
+                ad
+              '';
+            };
+
           };
         };
     };

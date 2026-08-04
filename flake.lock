@@ -1,5 +1,20 @@
 {
   "nodes": {
+    "dnvr": {
+      "locked": {
+        "lastModified": 1783848140,
+        "narHash": "sha256-5pWk9LGYII+az7hPD0jkXqfankpWaou3ifXOjz/7qkM=",
+        "owner": "dialohq",
+        "repo": "dnvr",
+        "rev": "d9b17efac65889b0061e9955b6ca4d46e99bf64c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "dialohq",
+        "repo": "dnvr",
+        "type": "github"
+      }
+    },
     "flake-parts": {
       "inputs": {
         "nixpkgs-lib": "nixpkgs-lib"
@@ -67,6 +82,7 @@
     },
     "root": {
       "inputs": {
+        "dnvr": "dnvr",
         "flake-parts": "flake-parts",
         "nixpkgs": "nixpkgs",
         "rustfs": "rustfs"
