@@ -46,6 +46,7 @@ class DecoderBackend(str, Enum):
 
 class StyleTtsFinetuneSettings(StrictSettings):
     display_name: str = Field(default="styletts_finetune", title="Display name")
+    mlflow_run_id: str = Field(default="", title="Existing MLflow run ID")
     seed: int = Field(default=1, title="Random seed", ge=0)
     output_checkpoint_dir: str = Field(default="", title="External output checkpoint folder")
     validation_samples: int = Field(default=32, title="Validation samples", ge=0, le=512)

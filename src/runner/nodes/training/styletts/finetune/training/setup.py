@@ -49,6 +49,7 @@ class TrainingRuntime:
     losses: LossBundle
     features: FeatureBundle
     optimizer: MultiOptimizer
+    initial_step: int
 
 
 def build_training_runtime(
@@ -60,7 +61,11 @@ def build_training_runtime(
     parameters = recursive_munch(config.model_params)
     modules = _build_models(config, parameters, device)
     optimizer = _build_optimizer(config, modules)
-    modules, optimizer = _load_base_checkpoint(config, modules, optimizer)
+    modules, optimizer, initial_step = _load_base_checkpoint(
+        config,
+        modules,
+        optimizer,
+    )
     if not config.profiling_enabled:
         modules.text_aligner.asr_s2s = torch.jit.script(
             modules.text_aligner.asr_s2s
@@ -101,6 +106,7 @@ def build_training_runtime(
         losses,
         features,
         optimizer,
+        initial_step,
     )
 
 def build_accelerator(config: TrainingConfig) -> Accelerator:
@@ -163,10 +169,10 @@ def _load_base_checkpoint(
     config: TrainingConfig,
     modules: Munch,
     optimizer: MultiOptimizer,
-) -> tuple[Munch, MultiOptimizer]:
+) -> tuple[Munch, MultiOptimizer, int]:
     if config.pretrained_model is None:
-        return modules, optimizer
-    ignored = ["mpd", "msd", "wd"]
+        return modules, optimizer, 0
+    ignored = [] if not config.load_only_params else ["mpd", "msd", "wd"]
     for path, name in (
         (config.ASR_path, "text_aligner"),
         (config.F0_path, "pitch_extractor"),

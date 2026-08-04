@@ -4,7 +4,7 @@ from torchaudio.models import Conformer
 
 
 class VoiceEncoder(nn.Module):
-    """StyleTTS-ZS joint acoustic and text voice encoder."""
+    """Joint acoustic and text voice encoder."""
 
     def __init__(
         self,

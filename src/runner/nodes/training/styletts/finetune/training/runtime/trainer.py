@@ -14,7 +14,7 @@ from ..losses import (
     slm_discriminator_loss as compute_slm_discriminator_loss,
     slm_generator_loss,
     speaker_losses,
-    styletts_zs_reconstruction_loss,
+    reconstruction_loss,
     waveform_discriminator_loss,
     waveform_generator_losses,
     wavlm_feature_loss,
@@ -53,7 +53,7 @@ class Trainer:
                 break
             self.alpha_flow_start += training_stage.steps
         self.skipped_steps = 0
-        self.step = 0
+        self.step = runtime.initial_step
 
     def set_training_mode(self) -> None:
         stage = stage_for_step(self.config.training_stages, self.step)
@@ -68,6 +68,30 @@ class Trainer:
         if weights.mel > 0:
             training_modules.update(("pitch_extractor", "text_aligner"))
         self.runtime.models.set_training_mode(training_modules)
+
+    @torch.no_grad()
+    def _initialize_rvq_codebooks(self, continuous_style: Tensor) -> None:
+        quantizer = self.runtime.models.modules.quantizer
+        if bool(quantizer._codebooks_initialized.item()):
+            return
+        residual = self.runtime.accelerator.gather(
+            continuous_style.detach()
+        ).float()
+        initialized = []
+        for layer in quantizer.quantizers:
+            encoded = layer.in_proj(residual)
+            vectors = encoded.transpose(1, 2).reshape(-1, encoded.size(1))
+            codebook_size = layer.codebook.num_embeddings
+            source_indices = torch.arange(
+                codebook_size,
+                device=vectors.device,
+            ).remainder(vectors.size(0))
+            layer.codebook.weight.copy_(vectors[source_indices])
+            quantized, _, _, _ = layer(residual)
+            residual = residual - quantized
+            initialized.append(min(vectors.size(0), codebook_size))
+        quantizer._codebooks_initialized.fill_(True)
+        logger.info("bootstrapped RVQ codebooks vectors=%s", initialized)
 
     def train_step(self, batch: TrainingBatch) -> dict[str, torch.Tensor | float]:
         set_profiling_step(self.step)
@@ -493,14 +517,14 @@ class Trainer:
                     waveform,
                 )
             if weights.f0 > 0:
-                losses["f0"] = styletts_zs_reconstruction_loss(
+                losses["f0"] = reconstruction_loss(
                     target_f0,
                     predicted_f0,
                     batch.mel_lengths,
                     divisor=10,
                 )
             if weights.norm > 0:
-                losses["norm"] = styletts_zs_reconstruction_loss(
+                losses["norm"] = reconstruction_loss(
                     target_energy,
                     predicted_energy,
                     batch.mel_lengths,

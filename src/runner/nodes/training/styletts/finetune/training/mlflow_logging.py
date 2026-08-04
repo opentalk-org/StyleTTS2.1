@@ -5,6 +5,7 @@ import torch
 
 from runner.nodes.training.common.mlflow_run import (
     TrackerRun,
+    resume_mlflow_run,
     start_mlflow_run,
 )
 
@@ -67,6 +68,9 @@ class MlflowLogger:
 
 def start_run(config: TrainingConfig) -> TrackerRun:
     publish = config.studio_publish
+    resume_run_id = str(publish["mlflow_run_id"])
+    if resume_run_id:
+        return resume_mlflow_run(resume_run_id)
     name = str(
         publish["run_name"]
         or publish["run_id"]

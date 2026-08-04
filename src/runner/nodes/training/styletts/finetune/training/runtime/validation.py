@@ -19,7 +19,7 @@ from ...stages import (
 )
 from ..config import TrainingConfig
 from ..data import TrainingBatch, ValidationResult
-from ..losses import acoustic_losses, styletts_zs_reconstruction_loss
+from ..losses import acoustic_losses, reconstruction_loss
 from ..setup import TrainingRuntime
 from ..utils import (
     length_to_mask,
@@ -412,13 +412,13 @@ class Validator:
             metrics = {"mel_loss": mel_loss}
             if validate_predictions:
                 full_lengths = [length * 2 for length in decode_lengths]
-                f0_loss = styletts_zs_reconstruction_loss(
+                f0_loss = reconstruction_loss(
                     target_f0,
                     predicted_f0,
                     full_lengths,
                     divisor=10,
                 )
-                norm_loss = styletts_zs_reconstruction_loss(
+                norm_loss = reconstruction_loss(
                     target_norm,
                     predicted_norm,
                     full_lengths,

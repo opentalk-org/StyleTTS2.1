@@ -202,7 +202,7 @@ def prosody_generator_losses(
     return adversarial_loss, torch.stack(feature_matching).mean()
 
 
-def styletts_zs_reconstruction_loss(
+def reconstruction_loss(
     target: Tensor,
     prediction: Tensor,
     lengths: Tensor | list[int],

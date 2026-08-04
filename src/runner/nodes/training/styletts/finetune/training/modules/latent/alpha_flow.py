@@ -5,8 +5,8 @@ import torch.distributed as dist
 from torch import Tensor, nn
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
-from .zs_denoiser import StyleDiffuser
-from .zs_prosody import STYLE_TOKEN_COUNT, STYLE_TOKEN_DIM
+from .denoiser import StyleDiffuser
+from .prosody import STYLE_TOKEN_COUNT, STYLE_TOKEN_DIM
 
 
 class AlphaFlow(nn.Module):

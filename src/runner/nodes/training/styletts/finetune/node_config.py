@@ -83,7 +83,13 @@ def build_node_config(
         architecture_path=architecture_path,
         multispeaker=settings.multispeaker,
         decoder_type=settings.decoder.value,
-        studio_publish=_studio_publish(scratch, base_checkpoint, pretrained_model, settings.display_name),
+        studio_publish=_studio_publish(
+            scratch,
+            base_checkpoint,
+            pretrained_model,
+            settings.display_name,
+            settings.mlflow_run_id,
+        ),
         symbols=symbols,
         symbol_count=symbol_count,
     )
@@ -105,6 +111,7 @@ def _studio_publish(
     base_checkpoint: CheckpointRef,
     pretrained_model: Path | None,
     run_name: str,
+    mlflow_run_id: str,
 ) -> dict[str, Any]:
     if scratch:
         return {
@@ -114,6 +121,7 @@ def _studio_publish(
             "base_library_root": "",
             "pretrained_relpath": "",
             "run_name": run_name,
+            "mlflow_run_id": mlflow_run_id,
         }
     return {
         "enabled": True,
@@ -122,6 +130,7 @@ def _studio_publish(
         "base_library_root": str(base_checkpoint.path),
         "pretrained_relpath": _relative_weight(base_checkpoint.path, pretrained_model),
         "run_name": run_name,
+        "mlflow_run_id": mlflow_run_id,
     }
 
 
