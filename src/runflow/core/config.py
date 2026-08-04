@@ -8,7 +8,7 @@ from runflow.core.settings import settings_defaults
 
 
 class RuntimeConfig(BaseModel):
-   model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid")
 
     resources: dict[str, float] = Field(
         default_factory=lambda: {
