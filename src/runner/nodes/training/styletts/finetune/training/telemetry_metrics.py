@@ -1,5 +1,16 @@
 import time
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
+
+
+THROUGHPUT_WINDOW_STEPS = 50
+
+
+@dataclass(frozen=True)
+class ThroughputSample:
+    step: int
+    elapsed_seconds: float
+    audio_seconds_trained: float
 
 
 @dataclass
@@ -14,16 +25,34 @@ class TrainingTelemetry:
     validation_seconds: float = 0.0
     checkpoint_seconds: float = 0.0
     reporting_seconds: float = 0.0
+    throughput_samples: deque[ThroughputSample] = field(
+        default_factory=lambda: deque(maxlen=THROUGHPUT_WINDOW_STEPS + 1)
+    )
 
     @classmethod
     def start(cls, total_steps: int, initial_step: int) -> "TrainingTelemetry":
-        return cls(total_steps, initial_step, time.monotonic())
+        telemetry = cls(total_steps, initial_step, time.monotonic())
+        telemetry.throughput_samples.append(
+            ThroughputSample(initial_step, 0.0, 0.0)
+        )
+        return telemetry
 
     def metrics(self, step: int) -> dict[str, float]:
         elapsed = time.monotonic() - self.started_at
         measured_steps = step - self.initial_step
         steps_per_second = measured_steps / elapsed
         eta_seconds = (self.total_steps - step) / steps_per_second
+        current_sample = ThroughputSample(
+            step,
+            elapsed,
+            self.audio_seconds_trained,
+        )
+        self.throughput_samples.append(current_sample)
+        window_start = self.throughput_samples[0]
+        window_elapsed = elapsed - window_start.elapsed_seconds
+        window_audio_seconds = (
+            self.audio_seconds_trained - window_start.audio_seconds_trained
+        )
         measured = (
             self.data_wait_seconds
             + self.compute_seconds
@@ -40,10 +69,9 @@ class TrainingTelemetry:
             "residual": max(elapsed - measured, 0.0),
         }
         metrics = {
-            "performance/audio_seconds_per_second": (
-                self.audio_seconds_trained / elapsed
-            ),
+            "performance/audio_seconds_per_second": window_audio_seconds / window_elapsed,
             "performance/items_per_second": self.items_processed / elapsed,
+            "performance/steps_per_second": steps_per_second,
             "performance/elapsed_seconds": elapsed,
             "performance/eta_seconds": eta_seconds,
             "performance/eta_hours": eta_seconds / 3600,
