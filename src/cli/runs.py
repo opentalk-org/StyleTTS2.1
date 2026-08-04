@@ -17,7 +17,9 @@ with ``--backend URL``.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from pathlib import Path
 
 import httpx
 
@@ -47,6 +49,26 @@ def cmd_runs(client: BackendClient, _: argparse.Namespace) -> int:
 
 def cmd_run(client: BackendClient, args: argparse.Namespace) -> int:
     _print_run_row(client.run_status(args.run_id))
+    return 0
+
+
+def cmd_import_ds_v2_metadata(client: BackendClient, args: argparse.Namespace) -> int:
+    workflow_path = Path(args.workflow)
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    request = workflow["data"]
+    source = next(node for node in request["nodes"] if node["type"] == "HetznerDsV2Source")
+    source["params"].update(
+        host=args.host,
+        row_offset=args.row_offset,
+        row_limit=args.row_limit,
+        text_column=args.text_column,
+        name_prefix=args.name_prefix,
+        download_retries=args.download_retries,
+    )
+    status = client.start_graph(request)
+    print(f"started ds_v2 metadata import: {status['run_id']} ({status['state']})")
+    print(f"monitor: python -m cli run {status['run_id']}")
+    print(f"logs:   python -m cli logs {status['run_id']}")
     return 0
 
 
@@ -158,6 +180,32 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="show one run's status")
     run.add_argument("run_id")
     run.set_defaults(func=cmd_run)
+
+    metadata_import = sub.add_parser(
+        "import-ds-v2-metadata",
+        help="start an idempotent Hetzner ds_v2 metadata import",
+    )
+    metadata_import.add_argument(
+        "--workflow",
+        default="workflows/ds_v2_metadata_import.json",
+        help="metadata import workflow (default: %(default)s)",
+    )
+    metadata_import.add_argument("--host", default="hetzner-storagebox")
+    metadata_import.add_argument("--row-offset", type=int, default=0)
+    metadata_import.add_argument(
+        "--row-limit",
+        type=int,
+        default=None,
+        help="maximum rows; omitted imports every metadata CSV",
+    )
+    metadata_import.add_argument(
+        "--text-column",
+        choices=("text_src", "text_parakeet", "text_whisper", "text_canary"),
+        default="text_src",
+    )
+    metadata_import.add_argument("--name-prefix", default="ds_v2")
+    metadata_import.add_argument("--download-retries", type=int, choices=range(1, 11), default=3)
+    metadata_import.set_defaults(func=cmd_import_ds_v2_metadata)
 
     logs = sub.add_parser("logs", help="aggregated logs, merged by time")
     logs.add_argument("run_id")

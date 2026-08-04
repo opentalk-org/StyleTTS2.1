@@ -56,11 +56,9 @@ class Node(ABC):
         self.runtime = NodeRuntimeConfig.model_validate(_merge_runtime_defaults(default_runtime, runtime_config))
 
     async def setup(self, context: Any) -> None:
-        """Load resources. Called by NodeManager."""
         return None
 
     async def teardown(self, context: Any) -> None:
-        """Release resources. Called by NodeManager."""
         return None
 
     def remaining_items(self, context: Any) -> int | None:

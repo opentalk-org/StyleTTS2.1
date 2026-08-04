@@ -51,6 +51,12 @@ class BackendClient:
         """GET /runs -> RunnerStatus."""
         return self._get("/runs")
 
+    def start_graph(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """POST /graphs/runs -> RunStatus."""
+        response = self._client.post("/graphs/runs", json=payload)
+        response.raise_for_status()
+        return response.json()
+
     def run_status(self, run_id: str) -> dict[str, Any]:
         """GET /runs/{run_id} -> RunStatus."""
         return self._get(f"/runs/{run_id}")
