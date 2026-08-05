@@ -2,9 +2,35 @@ import torch
 from torch import Tensor, nn
 from torchaudio.models import Conformer
 
-from ..diffusion.modules import FixedEmbedding, TimePositionalEmbedding
+from ..diffusion.modules import TimePositionalEmbedding
 from ..diffusion.utils import rand_bool
 from .prosody import NumberEmbedder
+
+
+class SinusoidalFixedEmbedding(nn.Module):
+    """Length-independent null conditioning with deterministic positions."""
+
+    def __init__(self, features: int) -> None:
+        super().__init__()
+        frequencies = torch.arange(0, features, 2, dtype=torch.float32)
+        self.register_buffer(
+            "frequencies",
+            10_000 ** (-frequencies / features),
+            persistent=False,
+        )
+        self.features = features
+
+    def forward(self, values: Tensor) -> Tensor:
+        batch_size, length = values.shape[:2]
+        positions = torch.arange(
+            length,
+            device=values.device,
+            dtype=torch.float32,
+        )
+        angles = positions[:, None] * self.frequencies.float()[None, :]
+        embedding = torch.stack((angles.sin(), angles.cos()), dim=-1).flatten(1)
+        embedding = embedding[:, : self.features].to(values.dtype)
+        return embedding.unsqueeze(0).expand(batch_size, -1, -1)
 
 
 class StyleDiffuser(nn.Module):
@@ -38,8 +64,8 @@ class StyleDiffuser(nn.Module):
         self.out = nn.Conv1d(text_dim, style_dim, 1)
         self.to_time = self._time_embedding(text_dim)
         self.to_start_time = self._time_embedding(text_dim)
-        self.fixed_embedding = FixedEmbedding(embedding_max_length, text_dim)
-        self.fixed_feature = FixedEmbedding(embedding_max_length * 4, 514)
+        self.fixed_embedding = SinusoidalFixedEmbedding(text_dim)
+        self.fixed_feature = SinusoidalFixedEmbedding(514)
         self.embedder = NumberEmbedder(features=text_dim)
         self.sep = nn.Embedding(num_embeddings=2, embedding_dim=text_dim)
 

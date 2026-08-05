@@ -72,6 +72,10 @@ _FACTORIZED_MODULES = frozenset({
     "quantizer",
     "duration_discriminator",
 })
+_OBSOLETE_ALPHA_FLOW_KEYS = frozenset({
+    "denoiser.fixed_embedding.embedding.weight",
+    "denoiser.fixed_feature.embedding.weight",
+})
 
 
 def _merge_checkpoint_state_with_dim0_resize(module_name, model_module, ckpt_sd):
@@ -291,6 +295,12 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
                 continue
             raise ValueError(f"checkpoint is missing unchanged module {key}")
         normalized_params = _maybe_normalize_module_prefix(model[key], params[source_key])
+        if key == "alpha_flow":
+            normalized_params = {
+                name: value
+                for name, value in normalized_params.items()
+                if name not in _OBSOLETE_ALPHA_FLOW_KEYS
+            }
         adapted_params = _merge_checkpoint_state_with_dim0_resize(key, model[key], normalized_params)
         if key == "factorization":
             current_keys = model[key].state_dict().keys()
