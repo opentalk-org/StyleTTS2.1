@@ -133,9 +133,12 @@
               MLFLOW_S3_ENDPOINT_URL = "http://127.0.0.1:9000";
               VITE_BACKEND_URL = "http://127.0.0.1:8001";
               RUNNER_ID = "runner-1";
-              RUNFLOW_RELOAD = "1";
+
+              HF_HOME = "$DNVR_ROOT/.cache/huggingface";
             }
             // lib.optionalAttrs pkgs.stdenv.isLinux {
+              PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True";
+
               LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib:${pkgs.ffmpeg-headless.lib}/lib:${pkgs.portaudio}/lib:${nvidiaDriverPath}";
               LIBRARY_PATH = "${pkgs.portaudio}/lib:${nvidiaDriverPath}";
 
@@ -295,6 +298,7 @@
                 ];
                 text = ''
                   cd "$DNVR_ROOT/src/frontend"
+                  npm install --no-audit --no-fund
                   exec npm run dev -- --host 127.0.0.1 --port 5173
                 '';
               };
