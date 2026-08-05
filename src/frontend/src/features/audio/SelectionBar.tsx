@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { useDatasetsQuery } from "@/features/datasets/query";
-import { askConfirm } from "@/shared/feedback/ConfirmDialog";
+import { askDeleteConfirm } from "@/shared/feedback/ConfirmDialog";
 import { showToast } from "@/shared/feedback/Toast";
 import { Icon, type IconName } from "@/shared/icons";
 import { cn } from "@/shared/ui/cn";
@@ -76,7 +76,7 @@ export function SelectionBar({ total }: { total: number }) {
   const toggle = (name: MenuName) => setMenu((m) => (m === name ? null : name));
   const count = selCount;
   const label = `${count.toLocaleString()} file${count === 1 ? "" : "s"}`;
-  const deleteSelectedFiles = () => askConfirm({
+  const deleteSelectedFiles = () => askDeleteConfirm({
     title: "Delete files?",
     desc: `Permanently delete ${label} and all of their segments. This cannot be undone.`,
     danger: true,

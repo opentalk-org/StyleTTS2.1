@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import { askConfirm } from "@/shared/feedback/ConfirmDialog";
+import { askDeleteConfirm } from "@/shared/feedback/ConfirmDialog";
 import { Icon, type IconName } from "@/shared/icons";
 import { IconButton } from "@/shared/ui/IconButton";
 import { EmptyState } from "@/shared/ui/EmptyState";
@@ -41,7 +41,7 @@ export function StatisticsScreen() {
 
   const remove = () => {
     if (!summary) return;
-    askConfirm({
+    askDeleteConfirm({
       title: "Delete statistics entry?",
       desc: `Delete “${summary.name}”. You can recompute it anytime.`,
       danger: true,

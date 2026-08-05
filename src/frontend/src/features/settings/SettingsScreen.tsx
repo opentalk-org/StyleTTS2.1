@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { useNav } from "@/app/navStore";
 import { showToast } from "@/shared/feedback/Toast";
+import { useFrontendPreferences } from "@/shared/preferences";
 import { Button } from "@/shared/ui/Button";
 import { Input } from "@/shared/ui/Input";
 import type { IntegrationSettings, IntegrationSettingsPayload, StorageSettings, StorageSettingsPayload } from "./api";
@@ -82,6 +83,7 @@ export function SettingsScreen() {
   const updateStorage = useStorageSettingsActions();
   const testStorage = useStorageConnectionTest();
   const integration = useIntegrationSettingsQuery();
+  const { confirmDeletes, setConfirmDeletes } = useFrontendPreferences();
   const updateIntegration = useIntegrationSettingsActions();
   const initialForm = createSettingsForm(backendUrl);
   const [form, setForm] = useState<SettingsForm>(initialForm);
@@ -155,6 +157,19 @@ export function SettingsScreen() {
 
   return (
     <div className="mx-auto max-w-[720px] px-7 pb-16 pt-6">
+      <SettingsSection title="Interface">
+        <SettingsRow title="Confirm deletions" desc="Ask before deleting items anywhere in this browser.">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={confirmDeletes}
+            onClick={() => setConfirmDeletes(!confirmDeletes)}
+            className={`relative h-6 w-11 rounded-full transition-colors ${confirmDeletes ? "bg-blue-600" : "bg-gray-300"}`}
+          >
+            <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${confirmDeletes ? "translate-x-5" : "translate-x-0"}`} />
+          </button>
+        </SettingsRow>
+      </SettingsSection>
       <SettingsSection title="Backend connection">
         <SettingsRow title="Backend URL" desc="Where datasets, jobs and checkpoints stream from.">
           <Input

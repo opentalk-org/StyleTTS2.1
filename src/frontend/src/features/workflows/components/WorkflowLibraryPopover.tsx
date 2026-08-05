@@ -4,7 +4,7 @@ import { fetchJobGraph, type Job } from "@/features/jobs/api";
 import { useJobsQuery } from "@/features/jobs/query";
 import { Icon } from "@/shared/icons";
 import { fmtAgo } from "@/shared/format";
-import { askConfirm } from "@/shared/feedback/ConfirmDialog";
+import { askDeleteConfirm } from "@/shared/feedback/ConfirmDialog";
 import { Button } from "@/shared/ui/Button";
 import { IconButton } from "@/shared/ui/IconButton";
 import { Input } from "@/shared/ui/Input";
@@ -170,7 +170,7 @@ export function WorkflowLibraryPopover({ onClose }: { onClose: () => void }) {
                     icon="folder-open"
                     onClick={() => loadGraph(workflow.data, workflow.data.context.config)}
                     onDelete={() =>
-                      askConfirm({
+                      askDeleteConfirm({
                         title: "Delete workflow?",
                         desc: `Remove "${workflow.name}" from your saved workflows. This cannot be undone.`,
                         danger: true,

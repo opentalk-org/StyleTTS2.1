@@ -4,13 +4,11 @@ import os
 
 import torch
 
-# Reserve a little head-room so the scheduler's vram budget never promises the
-# full physical device to concurrent nodes.
+
 _VRAM_HEADROOM_GB = 2.0
 _MIN_VRAM_GB = 8.0
 
-# Fraction of system RAM handed to the scheduler as its in-flight payload budget, and a
-# floor so tiny/undetectable machines still get a workable budget.
+
 _MEMORY_BUDGET_FRACTION = 0.5
 _MIN_MEMORY_BUDGET_MB = 512.0
 
@@ -40,5 +38,6 @@ def apply_detected_resources(resources: dict[str, float]) -> dict[str, float]:
     updated = dict(resources)
     detected = detect_vram_gb()
     if detected is not None:
-        updated["vram_gb"] = max(float(updated["vram_gb"]), detected)
+        configured = float(updated["vram_gb"]) if "vram_gb" in updated else 0.0
+        updated["vram_gb"] = max(configured, detected)
     return updated

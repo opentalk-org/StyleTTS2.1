@@ -1,4 +1,4 @@
-import { askConfirm } from "@/shared/feedback/ConfirmDialog";
+import { askDeleteConfirm } from "@/shared/feedback/ConfirmDialog";
 import { showToast } from "@/shared/feedback/Toast";
 import { Icon } from "@/shared/icons";
 import { Button } from "@/shared/ui/Button";
@@ -16,7 +16,7 @@ export function DatasetCard({
   onDelete: (id: string) => void;
 }) {
   const del = () =>
-    askConfirm({
+    askDeleteConfirm({
       title: "Delete dataset?",
       desc: `Delete "${dataset.name}". Files stay in the library but are unassigned from this dataset.`,
       danger: true,

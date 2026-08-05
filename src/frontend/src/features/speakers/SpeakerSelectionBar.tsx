@@ -1,4 +1,4 @@
-import { askConfirm } from "@/shared/feedback/ConfirmDialog";
+import { askDeleteConfirm } from "@/shared/feedback/ConfirmDialog";
 import { showToast } from "@/shared/feedback/Toast";
 import { Icon } from "@/shared/icons";
 import { useDeleteSpeakersMutation } from "./query";
@@ -12,7 +12,7 @@ export function SpeakerSelectionBar({ total }: { total: number }) {
   const label = `${count.toLocaleString()} speaker${count === 1 ? "" : "s"}`;
 
   const deleteSelected = () =>
-    askConfirm({
+    askDeleteConfirm({
       title: "Delete speakers?",
       desc: `Permanently delete ${label}. Segments keep their text but lose these speaker labels. This cannot be undone.`,
       danger: true,

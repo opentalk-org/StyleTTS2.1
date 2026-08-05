@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import { Icon, type IconName } from "../icons";
+import { useFrontendPreferences } from "../preferences";
 import { Button } from "../ui/Button";
 import { cn } from "../ui/cn";
 
@@ -27,6 +28,14 @@ export const useConfirm = create<ConfirmStore>((set) => ({
 
 export function askConfirm(config: ConfirmConfig) {
   useConfirm.getState().ask(config);
+}
+
+export function askDeleteConfirm(config: ConfirmConfig) {
+  if (!useFrontendPreferences.getState().confirmDeletes) {
+    config.onConfirm();
+    return;
+  }
+  askConfirm(config);
 }
 
 export function ConfirmHost() {

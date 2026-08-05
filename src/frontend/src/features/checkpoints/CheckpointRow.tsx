@@ -1,5 +1,5 @@
 import { copyText } from "@/shared/clipboard";
-import { askConfirm } from "@/shared/feedback/ConfirmDialog";
+import { askDeleteConfirm } from "@/shared/feedback/ConfirmDialog";
 import { showToast } from "@/shared/feedback/Toast";
 import { Icon } from "@/shared/icons";
 import { Badge } from "@/shared/ui/Badge";
@@ -14,7 +14,7 @@ export function CheckpointRow({ checkpoint: c }: { checkpoint: Checkpoint }) {
   const { rename, remove } = useCheckpointActions();
 
   const del = () =>
-    askConfirm({
+    askDeleteConfirm({
       title: "Delete checkpoint?",
       desc: `Delete "${c.name}". This permanently removes the artifact.`,
       danger: true,

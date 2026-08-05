@@ -5,7 +5,7 @@ import { fetchRunSnapshot, fetchWorkflowSchema } from "@/features/workflows/api"
 import { useWorkflowStore } from "@/features/workflows/store";
 import { Pager } from "@/shared/data/Pager";
 import { VirtualTable } from "@/shared/data/VirtualTable";
-import { askConfirm } from "@/shared/feedback/ConfirmDialog";
+import { askDeleteConfirm } from "@/shared/feedback/ConfirmDialog";
 import { fmtAgo } from "@/shared/format";
 import { Icon } from "@/shared/icons";
 import { Button } from "@/shared/ui/Button";
@@ -53,7 +53,7 @@ export function JobsScreen() {
   const allSel = rows.length > 0 && rows.every((job) => selection[job.run_id]);
 
   const removeSelected = () =>
-    askConfirm({
+    askDeleteConfirm({
       title: "Remove jobs?",
       desc: `Remove ${selectedIds.length} selected job${selectedIds.length === 1 ? "" : "s"}, stopping any still running and pruning their cached node logs. This cannot be undone.`,
       danger: true,
@@ -61,7 +61,7 @@ export function JobsScreen() {
       onConfirm: () => removeMany(selectedIds, { onSuccess: () => clearSelection() }),
     });
   const removeEverything = () =>
-    askConfirm({
+    askDeleteConfirm({
       title: "Remove all jobs?",
       desc: `Remove all ${total.toLocaleString()} jobs, stopping any still running and pruning their cached node logs. This cannot be undone.`,
       danger: true,
@@ -185,7 +185,7 @@ function JobRow({ job, selected, onToggle, onReview }: { job: Job; selected: boo
     }
   };
   const removeJob = () =>
-    askConfirm({
+    askDeleteConfirm({
       title: active ? "Stop and remove job?" : "Remove job?",
       desc: active
         ? `"${job.name}" is still running. Removing it stops the run and prunes its cached node logs. This cannot be undone.`
