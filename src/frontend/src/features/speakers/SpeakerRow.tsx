@@ -1,4 +1,4 @@
-import { askConfirm } from "@/shared/feedback/ConfirmDialog";
+import { askDeleteConfirm } from "@/shared/feedback/ConfirmDialog";
 import { Icon } from "@/shared/icons";
 import { cn } from "@/shared/ui/cn";
 import { IconButton } from "@/shared/ui/IconButton";
@@ -26,7 +26,7 @@ export function SpeakerRow({ speaker }: { speaker: Speaker }) {
   const selected = selectAllMatching || !!selection[speaker.id];
 
   const del = () =>
-    askConfirm({
+    askDeleteConfirm({
       title: "Delete speaker?",
       desc: `Clear "${speaker.id}" from its audio and segments.`,
       danger: true,

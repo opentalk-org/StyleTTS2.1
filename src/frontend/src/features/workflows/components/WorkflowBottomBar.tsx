@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { askDeleteConfirm } from "@/shared/feedback/ConfirmDialog";
 import { IconButton } from "@/shared/ui/IconButton";
 import { useWorkflowStore } from "../store";
 import { AllLogsPopover } from "./AllLogsPopover";
@@ -16,9 +17,16 @@ export function WorkflowBottomBar() {
   const toggle = (next: Popup) => setPopup((current) => (current === next ? null : next));
   const clearGraph = () => {
     if (graph.nodes.length === 0) return;
-    if (!window.confirm("Remove all nodes from the workflow?")) return;
-    setGraph({ nodes: [], edges: [] });
-    setPopup(null);
+    askDeleteConfirm({
+      title: "Clear workflow?",
+      desc: "Remove all nodes from the workflow. This cannot be undone.",
+      danger: true,
+      label: "Clear",
+      onConfirm: () => {
+        setGraph({ nodes: [], edges: [] });
+        setPopup(null);
+      },
+    });
   };
   return (
     <div className="absolute bottom-4 left-4 z-10 flex gap-2 rounded-md border border-line bg-panel p-2 shadow-lg">
