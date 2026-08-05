@@ -35,7 +35,6 @@ export const TRAINING_LOSSES = [
   "monotonic_alignment",
   "norm",
   "prosody_adversarial",
-  "rvq",
   "sequence_alignment",
   "slm_adversarial",
   "speaker_feature",
@@ -48,6 +47,25 @@ export const TRAINING_LOSSES = [
 export type TrainableModule = (typeof TRAINABLE_MODULES)[number];
 export type TrainingLoss = (typeof TRAINING_LOSSES)[number];
 export type TrainingLossWeights = Record<TrainingLoss, number>;
+
+export const TRAINING_LOSS_LABELS: Record<TrainingLoss, string> = {
+  alpha_flow: "AlphaFlow",
+  adversarial: "Waveform adversarial",
+  duration: "Duration",
+  duration_ce: "Duration cross-entropy",
+  f0: "F0 reconstruction",
+  mel: "Mel reconstruction",
+  monotonic_alignment: "Monotonic alignment",
+  norm: "Energy / norm reconstruction",
+  prosody_adversarial: "Prosody GAN + feature matching",
+  sequence_alignment: "Sequence alignment",
+  slm_adversarial: "SLM adversarial",
+  speaker_feature: "Speaker feature",
+  speaker_similarity: "Speaker similarity",
+  wavlm: "WavLM reconstruction",
+  style_nuisance: "Style nuisance",
+  xcov: "Cross-covariance",
+};
 
 export type TrainingStageSpec = {
   name: string;
@@ -64,12 +82,18 @@ export type TrainingStageSpec = {
 
 export const STAGE_PRESETS = [
   { label: "Mel pretraining", indexes: [0] },
-  { label: "TMA acoustic training", indexes: [1] },
-  { label: "Prosody / RVQ", indexes: [2] },
-  { label: "AlphaFlow", indexes: [3] },
+  { label: "TMA acoustic GAN", indexes: [1] },
+  { label: "Prosody without GAN", indexes: [2] },
+  { label: "Prosody GAN", indexes: [3] },
+  { label: "AlphaFlow", indexes: [4] },
   { label: "StyleTTS2 acoustic", indexes: [0, 1] },
-  { label: "Full StyleTTS-ZS", indexes: [0, 1, 2, 3] },
+  { label: "Default StyleTTS-ZS", indexes: [0, 1, 2, 3, 4] },
+  { label: "Without mel pretraining", indexes: [1, 2, 3, 4] },
 ] as const;
+
+export function stageTemplates(defaultStages: TrainingStageSpec[]): TrainingStageSpec[] {
+  return defaultStages.map(cloneStage);
+}
 
 export function cloneStage(stage: TrainingStageSpec): TrainingStageSpec {
   return structuredClone(stage);

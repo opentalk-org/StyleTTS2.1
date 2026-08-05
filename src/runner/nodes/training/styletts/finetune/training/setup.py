@@ -157,6 +157,7 @@ def _build_optimizer(
         "total_steps": config.total_steps,
     }
     schedules = {name: schedule.copy() for name in modules}
+    schedules["bert"]["max_lr"] = settings.bert_lr
     optimizer = build_optimizer(
         {name: module.parameters() for name, module in modules.items()},
         scheduler_params_dict=schedules,
@@ -187,11 +188,13 @@ def _load_base_checkpoint(
         load_only_params=config.load_only_params,
         ignore_modules=ignored,
     )
-    learning_rate = config.optimizer_params.lr
-    for group in optimizer.param_groups:
-        for key in ("lr", "initial_lr", "max_lr", "min_lr"):
-            if key in group:
-                group[key] = learning_rate
+    settings = config.optimizer_params
+    for name, module_optimizer in optimizer.optimizers.items():
+        learning_rate = settings.bert_lr if name == "bert" else settings.lr
+        for group in module_optimizer.param_groups:
+            for key in ("lr", "initial_lr", "max_lr", "min_lr"):
+                if key in group:
+                    group[key] = learning_rate
     return modules, optimizer, initial_step
 
 

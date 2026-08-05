@@ -74,43 +74,43 @@ def resize_prosody(
     return resized
 
 
-def rvq_usage_metrics(counts: torch.Tensor) -> dict[str, torch.Tensor]:
+def rfsq_usage_metrics(counts: torch.Tensor) -> dict[str, torch.Tensor]:
     metrics = {}
     utilizations = []
     dead_fractions = []
     perplexities = []
     top_shares = []
-    codebook_size = counts.size(1)
-    for index, code_counts in enumerate(counts):
-        assignments = code_counts.sum()
-        probabilities = code_counts.float() / assignments
-        active = (code_counts > 0).sum()
+    level_count = counts.size(1)
+    for index, level_counts in enumerate(counts):
+        assignments = level_counts.sum()
+        probabilities = level_counts.float() / assignments
+        active = (level_counts > 0).sum()
         nonzero = probabilities > 0
         perplexity = torch.exp(
             -(probabilities[nonzero] * probabilities[nonzero].log()).sum()
         )
-        utilization = active.float() / codebook_size
+        utilization = active.float() / level_count
         top_share = probabilities.max()
-        prefix = f"rvq/codebook_{index:02d}"
-        metrics[f"{prefix}/active_codes"] = active.float()
+        prefix = f"rfsq/stage_{index:02d}"
+        metrics[f"{prefix}/active_levels"] = active.float()
         metrics[f"{prefix}/utilization"] = utilization
-        metrics[f"{prefix}/dead_code_fraction"] = 1 - utilization
+        metrics[f"{prefix}/dead_level_fraction"] = 1 - utilization
         metrics[f"{prefix}/perplexity"] = perplexity
         metrics[f"{prefix}/normalized_perplexity"] = (
-            perplexity / codebook_size
+            perplexity / level_count
         )
-        metrics[f"{prefix}/top_code_share"] = top_share
+        metrics[f"{prefix}/top_level_share"] = top_share
         utilizations.append(utilization)
         dead_fractions.append(1 - utilization)
         perplexities.append(perplexity)
         top_shares.append(top_share)
-    metrics["rvq/mean_utilization"] = torch.stack(utilizations).mean()
-    metrics["rvq/mean_dead_code_fraction"] = torch.stack(
+    metrics["rfsq/mean_utilization"] = torch.stack(utilizations).mean()
+    metrics["rfsq/mean_dead_level_fraction"] = torch.stack(
         dead_fractions
     ).mean()
-    metrics["rvq/mean_perplexity"] = torch.stack(perplexities).mean()
-    metrics["rvq/mean_top_code_share"] = torch.stack(top_shares).mean()
-    metrics["rvq/assignments_per_codebook"] = counts.sum(1).float().mean()
+    metrics["rfsq/mean_perplexity"] = torch.stack(perplexities).mean()
+    metrics["rfsq/mean_top_level_share"] = torch.stack(top_shares).mean()
+    metrics["rfsq/assignments_per_stage"] = counts.sum(1).float().mean()
     return metrics
 
 
@@ -145,7 +145,7 @@ def synthesize_validation(
     )
     predicted_f0 = target_f0.new_zeros(target_f0.shape)
     predicted_energy = target_energy.new_zeros(target_energy.shape)
-    rvq_indices = None
+    rfsq_indices = None
     validates_predictions = (
         stage.validation.alpha_flow
         or stage.validation.f0_source is ProsodySource.PREDICTED
@@ -163,19 +163,23 @@ def synthesize_validation(
             target_energy,
         )
         with torch.autocast(device_type=device.type, enabled=False):
-            style = modules.prosody_encoder(
+            encoded_style = modules.prosody_encoder(
                 conditioning.float(),
                 batch.mel_lengths.to(device) // 2,
             )
+            style = encoded_style
             if stage.style_source is StyleSource.QUANTIZED:
-                style, _, _, rvq_indices = modules.quantizer(style)
+                latents = modules.quantizer(encoded_style)
+                style = latents.quantized_style
+                rfsq_indices = latents.indices
         if stage.validation.alpha_flow:
-            style = modules.alpha_flow.sample(
+            continuous_latent = modules.alpha_flow.sample(
                 bert,
                 conditioning,
                 batch.input_lengths,
                 noise=alpha_flow_noise,
             )
+            style = modules.quantizer.decode_continuous(continuous_latent)
         duration_predictions = modules.duration_predictor(
             duration_encoding,
             style,
@@ -244,7 +248,7 @@ def synthesize_validation(
         resized_energy,
         decode_alignment,
         decode_lengths,
-        rvq_indices,
+        rfsq_indices,
     )
 
 
@@ -294,10 +298,10 @@ class Validator:
         zero = torch.zeros((), device=self.runtime.accelerator.device)
         totals = {name: zero.clone() for name in metric_names}
         quantizer = modules.quantizer
-        rvq_counts = torch.zeros(
+        rfsq_counts = torch.zeros(
             (
-                len(quantizer.quantizers),
-                quantizer.quantizers[0].codebook.num_embeddings,
+                quantizer.num_stages,
+                quantizer.levels,
             ),
             device=zero.device,
             dtype=torch.long,
@@ -308,7 +312,7 @@ class Validator:
             for batch in batches:
                 check_cancel()
                 batch = batch.to(self.runtime.accelerator.device)
-                values, exported, rvq_indices = self._validate_batch(
+                values, exported, rfsq_indices = self._validate_batch(
                     batch,
                     step,
                     stage,
@@ -317,11 +321,13 @@ class Validator:
                 for name, value in values.items():
                     totals[name] += value
                 samples.extend(exported)
-                if rvq_indices is not None:
-                    for index in range(rvq_counts.size(0)):
-                        rvq_counts[index] += torch.bincount(
-                            rvq_indices[:, index].reshape(-1),
-                            minlength=rvq_counts.size(1),
+                if rfsq_indices is not None:
+                    for index in range(rfsq_counts.size(0)):
+                        stage_indices = rfsq_indices[:, index].reshape(-1)
+                        stage_indices = stage_indices[stage_indices >= 0]
+                        rfsq_counts[index] += torch.bincount(
+                            stage_indices,
+                            minlength=rfsq_counts.size(1),
                         )
                 count += 1
         if count == 0:
@@ -330,8 +336,8 @@ class Validator:
             name: value / count
             for name, value in totals.items()
         }
-        if rvq_counts.sum() > 0:
-            reduced.update(rvq_usage_metrics(rvq_counts))
+        if rfsq_counts.sum() > 0:
+            reduced.update(rfsq_usage_metrics(rfsq_counts))
         return ValidationResult(
             reduced,
             samples,
@@ -416,6 +422,7 @@ class Validator:
                 batch.texts,
                 batch.input_lengths,
                 bert,
+                modules.alpha_flow.style_dim,
             ) if stage.validation.alpha_flow else None
             (
                 reconstructed,
@@ -426,7 +433,7 @@ class Validator:
                 target_norm,
                 decode_alignment,
                 decode_lengths,
-                rvq_indices,
+                rfsq_indices,
             ) = synthesize_validation(
                 self.runtime,
                 batch,
@@ -651,7 +658,7 @@ class Validator:
                     free_run_samples,
                     mode="free_running",
                 )
-        return metrics, samples, rvq_indices
+        return metrics, samples, rfsq_indices
 
     def _acoustic_reconstruction_loss(
         self,
@@ -702,6 +709,7 @@ class Validator:
         texts: torch.Tensor,
         lengths: torch.Tensor,
         like: torch.Tensor,
+        latent_dim: int,
     ) -> torch.Tensor:
         """Stable validation noise makes checkpoints directly comparable."""
         rows = []
@@ -721,7 +729,7 @@ class Validator:
             generator.manual_seed(seed)
             rows.append(
                 torch.randn(
-                    512,
+                    latent_dim,
                     50,
                     generator=generator,
                     device=text.device,

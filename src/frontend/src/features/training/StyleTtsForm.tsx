@@ -15,7 +15,7 @@ import { OodEditor } from "./OodEditor";
 import { useCreateTrainingConfigMutation, useTrainingConfigsQuery } from "./query";
 import { SettingField, settingLabel } from "./SettingsField";
 import { StageScheduleEditor } from "./styletts-stages/StageScheduleEditor";
-import type { TrainingStageSpec } from "./styletts-stages/templates";
+import { stageTemplates, type TrainingStageSpec } from "./styletts-stages/templates";
 
 const MODEL_RUNTIME_TOGGLES = [
   { key: "multispeaker", sub: "Per-speaker style encoder" },
@@ -54,7 +54,9 @@ export function StyleTtsForm({
   const trainingInfo = schema.nodes[training.type];
   if (!trainingInfo) throw new Error(`Training node is not registered: ${training.type}`);
   const settingsSchema = trainingInfo.settings;
-  const stageTemplates = trainingInfo.settings_defaults.training_stages as TrainingStageSpec[];
+  const templates = stageTemplates(
+    trainingInfo.settings_defaults.training_stages as TrainingStageSpec[],
+  );
   const updateParams = (nodeId: string, params: SchemaValues) => onChange(updateNodeParams(graph, nodeId, params));
   const updateTraining = (params: SchemaValues) => onChange(updateTrainingParams(graph, spec, params));
   const selectedCheckpoint = (checkpoints.data ?? []).find((item) => item.id === String(checkpoint.params.checkpoint_id));
@@ -171,7 +173,7 @@ export function StyleTtsForm({
       <FormSection title="Training stages" tag="Full specifications">
         <StageScheduleEditor
           stages={values.training_stages as TrainingStageSpec[]}
-          templates={stageTemplates}
+          templates={templates}
           onChange={(training_stages) => updateTraining({
             ...values,
             training_stages,

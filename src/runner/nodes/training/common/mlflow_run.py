@@ -9,6 +9,7 @@ from typing import Protocol
 
 from mlflow import MlflowClient
 from mlflow.entities import Metric
+from mlflow.system_metrics.system_metrics_monitor import SystemMetricsMonitor
 
 logger = logging.getLogger(__name__)
 MAX_PENDING_OPERATIONS = 256
@@ -55,12 +56,24 @@ class PendingOperation(Protocol):
 class MlflowRun:
     """Concurrency-safe adapter that always addresses one explicit MLflow run."""
 
-    def __init__(self, client: TrackingClient, run_id: str) -> None:
+    def __init__(
+        self,
+        client: TrackingClient,
+        run_id: str,
+        *,
+        resume_system_metrics: bool,
+    ) -> None:
         self._client = client
         self._run_id = run_id
         self._last_epoch_step: tuple[int, int] | None = None
         self._last_logged_step: int | None = None
         self._pending: list[PendingOperation] = []
+        self._system_metrics = SystemMetricsMonitor(
+            run_id,
+            resume_logging=resume_system_metrics,
+            tracking_uri=os.environ["MLFLOW_TRACKING_URI"],
+        )
+        self._system_metrics.start()
 
     def track(self, value: object, name: str, step: int, epoch: int | None = None) -> None:
         if step != self._last_logged_step:
@@ -107,6 +120,7 @@ class MlflowRun:
         self._client.log_artifacts(self._run_id, str(path), artifact_path)
 
     def close(self) -> None:
+        self._system_metrics.finish()
         self._flush_pending()
         self._client.set_terminated(self._run_id, "FINISHED")
 
@@ -133,7 +147,11 @@ def start_mlflow_run(*, experiment: str, name: str, config: dict[str, object]) -
     run = client.create_run(experiment_id, tags={"mlflow.runName": name})
     client.log_dict(run.info.run_id, config, "config.json")
     logger.info("MLflow run started experiment=%s name=%s", experiment, name)
-    return MlflowRun(client, run.info.run_id)
+    return MlflowRun(
+        client,
+        run.info.run_id,
+        resume_system_metrics=False,
+    )
 
 
 def resume_mlflow_run(run_id: str) -> TrackerRun:
@@ -146,4 +164,8 @@ def resume_mlflow_run(run_id: str) -> TrackerRun:
         run.info.experiment_id,
         run_id,
     )
-    return MlflowRun(client, run_id)
+    return MlflowRun(
+        client,
+        run_id,
+        resume_system_metrics=True,
+    )

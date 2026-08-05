@@ -31,6 +31,10 @@ class OptimizerConfig(StrictConfigModel):
     lr: float = Field(gt=0)
     bert_lr: float = Field(gt=0)
     ft_lr: float = Field(gt=0)
+    gradient_clip_norm: float = Field(
+        gt=0,
+        description="Global gradient norm limit applied before optimizer updates",
+    )
 
 
 class TrainingConfig(StrictConfigModel):

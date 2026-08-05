@@ -1,6 +1,7 @@
 import { NumberInput } from "@/shared/ui/form/NumberInput";
 
 import {
+  TRAINING_LOSS_LABELS,
   TRAINING_LOSSES,
   type TrainingLossWeights,
 } from "./templates";
@@ -21,7 +22,7 @@ export function LossWeightsEditor({
         {TRAINING_LOSSES.map((loss) => (
           <label key={loss} className="flex flex-col gap-1">
             <span className="text-[11px] font-semibold text-txt">
-              {loss.replaceAll("_", " ")}
+              {TRAINING_LOSS_LABELS[loss]}
             </span>
             <NumberInput
               value={weights[loss]}

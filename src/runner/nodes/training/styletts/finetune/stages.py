@@ -53,7 +53,6 @@ class TrainingLoss(str, Enum):
     MONOTONIC_ALIGNMENT = "monotonic_alignment"
     NORM = "norm"
     PROSODY_ADVERSARIAL = "prosody_adversarial"
-    RVQ = "rvq"
     SEQUENCE_ALIGNMENT = "sequence_alignment"
     SLM_ADVERSARIAL = "slm_adversarial"
     SPEAKER_FEATURE = "speaker_feature"
@@ -75,7 +74,6 @@ class TrainingLossWeights(BaseModel):
     monotonic_alignment: float = Field(ge=0)
     norm: float = Field(ge=0)
     prosody_adversarial: float = Field(default=1, ge=0)
-    rvq: float = Field(ge=0)
     sequence_alignment: float = Field(ge=0)
     slm_adversarial: float = Field(ge=0)
     speaker_feature: float = Field(ge=0)

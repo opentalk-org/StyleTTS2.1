@@ -150,7 +150,6 @@ class Trainer:
                 or weights.f0 > 0
                 or weights.norm > 0
                 or prosody_adversarial
-                or weights.rvq > 0
                 or weights.style_nuisance > 0
                 or weights.xcov > 0
             )
@@ -195,7 +194,7 @@ class Trainer:
             encoder_inputs = style_inputs
             encoder_lengths = batch.mel_lengths.to(device) // 2
             if (
-                weights.rvq > 0
+                stage.style_source is StyleSource.QUANTIZED
                 and TrainableModule.PROSODY_ENCODER in stage.trainable_modules
             ):
                 encoder_inputs, encoder_lengths = sample_target_prosody_input(
@@ -204,20 +203,33 @@ class Trainer:
                 )
 
             style_target = batch.mels.new_zeros((batch.mels.size(0), 512, 1))
-            rvq_loss = batch.mels.new_zeros(())
+            continuous_decode_style = style_target
+            continuous_latent = batch.mels.new_zeros(
+                (
+                    batch.mels.size(0),
+                    modules.quantizer.latent_dim,
+                    1,
+                )
+            )
+            quantization_error = batch.mels.new_zeros(())
+            dual_decode = False
             if style_required:
                 with torch.autocast(device_type=device.type, enabled=False):
-                    continuous_style = modules.prosody_encoder(
+                    encoded_style = modules.prosody_encoder(
                         encoder_inputs.float(),
                         encoder_lengths,
                     )
                     if stage.style_source is StyleSource.QUANTIZED:
-                        style_target, commitment, codebook, _ = modules.quantizer(
-                            continuous_style
+                        latents = modules.quantizer(encoded_style)
+                        continuous_latent = latents.continuous
+                        continuous_decode_style = latents.continuous_style
+                        style_target = latents.quantized_style
+                        quantization_error = latents.quantization_error
+                        dual_decode = (
+                            TrainableModule.QUANTIZER in stage.trainable_modules
                         )
-                        rvq_loss = commitment.mean() + codebook.mean()
                     else:
-                        style_target = continuous_style
+                        style_target = encoded_style
 
             alpha_loss = style_target.new_zeros(())
             if weights.alpha_flow > 0:
@@ -230,7 +242,7 @@ class Trainer:
                     target_energy,
                 )
                 alpha_loss = modules.alpha_flow(
-                    style_target.detach(),
+                    continuous_latent.detach(),
                     bert,
                     alpha_features,
                     batch.input_lengths,
@@ -242,6 +254,9 @@ class Trainer:
             )
             predicted_f0 = target_f0.new_zeros(target_f0.shape)
             predicted_energy = target_energy.new_zeros(target_energy.shape)
+            continuous_duration_predictions = duration_predictions
+            continuous_predicted_f0 = predicted_f0
+            continuous_predicted_energy = predicted_energy
             if duration_required or prosody_required:
                 duration_encoding = modules.bert_encoder(bert).transpose(-1, -2)
                 if duration_required:
@@ -251,6 +266,13 @@ class Trainer:
                         batch.input_lengths,
                         duration_encoding.size(-1),
                     )
+                    if dual_decode:
+                        continuous_duration_predictions = modules.duration_predictor(
+                            duration_encoding,
+                            continuous_decode_style,
+                            batch.input_lengths,
+                            duration_encoding.size(-1),
+                        )
                 if prosody_required:
                     aligned_duration = duration_encoding @ monotonic
                     predicted_f0, predicted_energy = modules.prosody_predictor(
@@ -259,8 +281,26 @@ class Trainer:
                         batch.mel_lengths.to(device) // 2,
                         monotonic.size(-1),
                     )
+                    if dual_decode:
+                        (
+                            continuous_predicted_f0,
+                            continuous_predicted_energy,
+                        ) = modules.prosody_predictor(
+                            aligned_duration,
+                            continuous_decode_style,
+                            batch.mel_lengths.to(device) // 2,
+                            monotonic.size(-1),
+                        )
             predicted_f0 = predicted_f0.masked_fill(full_mask, 0.0)
             predicted_energy = predicted_energy.masked_fill(full_mask, 0.0)
+            continuous_predicted_f0 = continuous_predicted_f0.masked_fill(
+                full_mask,
+                0.0,
+            )
+            continuous_predicted_energy = continuous_predicted_energy.masked_fill(
+                full_mask,
+                0.0,
+            )
 
             prosody_fake = style_inputs.new_zeros(style_inputs.shape)
             duration_shape = (batch.texts.size(0), 513, monotonic.size(1))
@@ -401,6 +441,10 @@ class Trainer:
                 gradient_metrics.update(
                     gradient_norm_metrics(accelerator, modules, (name,))
                 )
+                accelerator.clip_grad_norm_(
+                    discriminator.parameters(),
+                    self.config.optimizer_params.gradient_clip_norm,
+                )
                 optimizer.step(name)
                 discriminator.requires_grad_(False)
                 discriminator_loss = discriminator_loss + loss.detach()
@@ -446,6 +490,10 @@ class Trainer:
                 gradient_metrics.update(
                     gradient_norm_metrics(accelerator, modules, (name,))
                 )
+                accelerator.clip_grad_norm_(
+                    discriminator.parameters(),
+                    self.config.optimizer_params.gradient_clip_norm,
+                )
                 optimizer.step(name)
                 modules[name].requires_grad_(False)
                 prosody_discriminator_total += loss.detach()
@@ -477,12 +525,21 @@ class Trainer:
             gradient_metrics.update(
                 gradient_norm_metrics(accelerator, modules, ("wd",))
             )
+            accelerator.clip_grad_norm_(
+                modules.wd.parameters(),
+                self.config.optimizer_params.gradient_clip_norm,
+            )
             optimizer.step("wd")
             modules.wd.requires_grad_(False)
             slm_discriminator_loss = slm_discriminator_loss.detach()
 
         for name in trainable:
             optimizer.zero_grad(name)
+        dual_metrics: dict[str, torch.Tensor] = {}
+        if style_required and stage.style_source is StyleSource.QUANTIZED:
+            dual_metrics["rfsq_quantization_error"] = (
+                quantization_error.detach()
+            )
         with accelerator.autocast():
             zero = reconstructed.new_zeros(())
             losses = {item.value: zero for item in TrainingLoss}
@@ -492,18 +549,39 @@ class Trainer:
                     waveform,
                 )
             if weights.f0 > 0:
-                losses["f0"] = reconstruction_loss(
+                quantized_f0 = reconstruction_loss(
                     target_f0,
                     predicted_f0,
                     batch.mel_lengths,
                     divisor=10,
                 )
+                losses["f0"] = quantized_f0
+                if dual_decode:
+                    continuous_f0 = reconstruction_loss(
+                        target_f0,
+                        continuous_predicted_f0,
+                        batch.mel_lengths,
+                        divisor=10,
+                    )
+                    losses["f0"] = (quantized_f0 + continuous_f0) / 2
+                    dual_metrics["f0_quantized"] = quantized_f0.detach()
+                    dual_metrics["f0_continuous"] = continuous_f0.detach()
             if weights.norm > 0:
-                losses["norm"] = reconstruction_loss(
+                quantized_norm = reconstruction_loss(
                     target_energy,
                     predicted_energy,
                     batch.mel_lengths,
                 )
+                losses["norm"] = quantized_norm
+                if dual_decode:
+                    continuous_norm = reconstruction_loss(
+                        target_energy,
+                        continuous_predicted_energy,
+                        batch.mel_lengths,
+                    )
+                    losses["norm"] = (quantized_norm + continuous_norm) / 2
+                    dual_metrics["norm_quantized"] = quantized_norm.detach()
+                    dual_metrics["norm_continuous"] = continuous_norm.detach()
             if weights.duration > 0 or weights.duration_ce > 0:
                 duration, duration_ce = self._duration_losses(
                     reconstructed,
@@ -511,6 +589,25 @@ class Trainer:
                     duration_targets,
                     batch,
                 )
+                if dual_decode:
+                    continuous_duration, continuous_duration_ce = (
+                        self._duration_losses(
+                            reconstructed,
+                            continuous_duration_predictions,
+                            duration_targets,
+                            batch,
+                        )
+                    )
+                    dual_metrics["duration_quantized"] = duration.detach()
+                    dual_metrics["duration_continuous"] = (
+                        continuous_duration.detach()
+                    )
+                    dual_metrics["duration_ce_quantized"] = duration_ce.detach()
+                    dual_metrics["duration_ce_continuous"] = (
+                        continuous_duration_ce.detach()
+                    )
+                    duration = (duration + continuous_duration) / 2
+                    duration_ce = (duration_ce + continuous_duration_ce) / 2
                 losses["duration"] = duration
                 losses["duration_ce"] = duration_ce
             if (
@@ -526,8 +623,6 @@ class Trainer:
                 )
                 losses["sequence_alignment"] = sequence
                 losses["monotonic_alignment"] = monotonic_loss
-            if weights.rvq > 0:
-                losses["rvq"] = rvq_loss
             if weights.alpha_flow > 0:
                 losses["alpha_flow"] = alpha_loss
             if waveform_adversarial:
@@ -688,9 +783,19 @@ class Trainer:
                 group_name="generator",
             )
         )
+        trainable_parameters = [
+            parameter
+            for name in trainable
+            for parameter in modules[name].parameters()
+            if parameter.requires_grad
+        ]
+        accelerator.clip_grad_norm_(
+            trainable_parameters,
+            self.config.optimizer_params.gradient_clip_norm,
+        )
         for name in trainable:
             optimizer.step(name)
-        return self._reported_metrics(
+        metrics = self._reported_metrics(
             voice,
             style_target,
             losses,
@@ -703,6 +808,12 @@ class Trainer:
             finite,
             gradient_metrics,
         )
+        metrics.update(dual_metrics)
+        if style_required and stage.style_source is StyleSource.QUANTIZED:
+            metrics["continuous_latent_batch_std"] = (
+                continuous_latent.mean(-1).std(0, unbiased=False).mean()
+            )
+        return metrics
 
     def _reported_metrics(
         self,
@@ -759,7 +870,11 @@ class Trainer:
             ).mean()
         if (
             weights.alpha_flow > 0
-            or weights.rvq > 0
+            or weights.duration > 0
+            or weights.duration_ce > 0
+            or weights.f0 > 0
+            or weights.norm > 0
+            or weights.prosody_adversarial > 0
             or weights.style_nuisance > 0
             or weights.xcov > 0
         ):
