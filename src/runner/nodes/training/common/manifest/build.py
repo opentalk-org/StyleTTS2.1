@@ -39,8 +39,7 @@ def audio_file_selection(value: dict[str, Any]) -> AudioFileSelection:
 
 
 def phoneme_alphabet_symbols(value: dict) -> list[str]:
-    # Prefer an explicit symbol_list: the canonical StyleTTS2 alphabet contains a
-    # literal space symbol, so a space-joined string cannot round-trip it.
+
     symbol_list = value.get("symbol_list") if isinstance(value, dict) else None
     if isinstance(symbol_list, list) and symbol_list:
         return [str(part) for part in symbol_list]
@@ -96,17 +95,18 @@ def manifest_lines(
 
 
 def speaker_id_map(groups: dict[UUID, list[AudioSegment]]) -> dict[str, int]:
-    """Map each distinct speaker key to a stable integer id.
 
-    The StyleTTS2 dataset loader casts the manifest speaker column with
-    ``int(...)`` and uses it as a multispeaker embedding index, so the column
-    must be numeric. Free-text speaker IDs are enumerated to
-    contiguous integers here."""
     keys = sorted({speaker_key(segments[0]) for segments in groups.values() if segments})
     return {key: index for index, key in enumerate(keys)}
 
 
 def speaker_key(segment: AudioSegment) -> str:
+
+    if segment.metadata.get("repository") == "ylacombe/expresso":
+        source_id = str(segment.metadata.get("source_id", ""))
+        source_speaker = source_id.partition("_")[0]
+        if source_speaker.startswith("ex") and source_speaker[2:].isdigit():
+            return source_speaker
     if segment.speaker_id is not None and segment.speaker_id.strip():
         return segment.speaker_id.strip()
     return "0"

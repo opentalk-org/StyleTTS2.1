@@ -149,6 +149,17 @@ class FeatureLinear(nn.Module):
     def __init__(self, config: FeatureConfig) -> None:
         super().__init__()
         self.config = config
+        self.residual = nn.ModuleList(
+            weight_norm(
+                nn.Conv1d(
+                    config.latent_channels,
+                    config.latent_channels,
+                    kernel_size=3,
+                    padding=1,
+                )
+            )
+            for _ in range(config.residual_layer_count)
+        )
         self.projection = nn.Conv1d(config.latent_channels, 3, 1)
         nn.init.zeros_(self.projection.weight[:2])
         nn.init.zeros_(self.projection.bias[:2])
@@ -160,7 +171,12 @@ class FeatureLinear(nn.Module):
         frame_mask: Tensor,
     ) -> AcousticFeatures:
         numeric_latent_mask = latent_mask.to(dtype=latent.dtype)
-        projected = self.projection(latent * numeric_latent_mask) * numeric_latent_mask
+        features = latent * numeric_latent_mask
+        for layer in self.residual:
+            features = (
+                features + layer(F.silu(features)) * numeric_latent_mask
+            ) * numeric_latent_mask
+        projected = self.projection(features) * numeric_latent_mask
         interpolated = F.interpolate(
             projected,
             scale_factor=self.config.upsample_rate,
@@ -186,13 +202,12 @@ class F0Extractor(nn.Module):
     @classmethod
     def from_checkpoint(cls, path: str | Path) -> "F0Extractor":
         model = JDCNet(num_class=1, seq_len=192)
-        payload = torch.load(Path(path), map_location="cpu", weights_only=True)
-        model.load_state_dict(payload["net"])
+        payload = torch.load(Path(path), map_location="cpu", weights_only=False)
+        model.load_state_dict(payload["model"])
         return cls(model)
 
     def train(self, mode: bool = True) -> "F0Extractor":
-        del mode
-        super().train(False)
+        super().train(mode)
         return self
 
     def forward(self, mel: Tensor, mask: Tensor) -> Tensor:

@@ -1,0 +1,57 @@
+from dataclasses import dataclass
+
+import torch
+from torch import Tensor
+from torch.nn import functional as F
+
+@dataclass(frozen=True)
+class AlignmentLosses:
+    s2s: Tensor
+    mono: Tensor
+    ctc: Tensor
+
+
+def compute_alignment_losses(
+    ctc_logits: Tensor,
+    s2s_logits: Tensor,
+    soft_alignment: Tensor,
+    hard_alignment: Tensor,
+    phonemes: Tensor,
+    phoneme_mask: Tensor,
+    alignment_mask: Tensor,
+    blank_id: int,
+) -> AlignmentLosses:
+    token_count = phoneme_mask.sum()
+    torch._assert_async(token_count > 0, "alignment loss requires a valid phoneme")
+    sequence_loss = F.cross_entropy(
+        s2s_logits.transpose(1, 2),
+        phonemes,
+        reduction="none",
+    )
+    s2s = (sequence_loss * phoneme_mask).sum() / token_count
+
+    valid_matrix = phoneme_mask.unsqueeze(2) & alignment_mask
+    mono = (
+        (soft_alignment - hard_alignment).abs() * valid_matrix
+    ).sum() / valid_matrix.sum()
+    mono = mono * 10
+
+    input_lengths = alignment_mask.sum(dim=(1, 2))
+    target_lengths = phoneme_mask.sum(dim=1)
+    torch._assert_async(
+        torch.all(target_lengths <= input_lengths),
+        "CTC target length exceeds reduced input length",
+    )
+    ctc = (
+        F.ctc_loss(
+            ctc_logits.float().log_softmax(dim=2).transpose(0, 1),
+            phonemes.masked_select(phoneme_mask),
+            input_lengths,
+            target_lengths,
+            blank=blank_id,
+            reduction="sum",
+            zero_infinity=False,
+        )
+        / token_count
+    )
+    return AlignmentLosses(s2s=s2s, mono=mono, ctc=ctc)

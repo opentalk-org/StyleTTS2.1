@@ -43,12 +43,12 @@ class Decoder(nn.Module):
         latent_mask: Tensor,
         frame_mask: Tensor,
     ) -> DecoderOutput:
-        batch_size, _, latent_frames = latent.shape
-        frame_frames = latent_frames * 2
         boolean_latent_mask = latent_mask.to(dtype=torch.bool)
         boolean_frame_mask = frame_mask.to(dtype=torch.bool)
         numeric_latent_mask = boolean_latent_mask.to(dtype=latent.dtype)
         numeric_frame_mask = boolean_frame_mask.to(dtype=latent.dtype)
+        prepared_f0 = f0 * numeric_frame_mask[:, 0]
+        prepared_n = n * numeric_frame_mask[:, 0]
         masked_latent = latent * numeric_latent_mask
         features = self.latent_upsample(masked_latent)
         features = features * numeric_frame_mask

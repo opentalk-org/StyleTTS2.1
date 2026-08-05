@@ -6,19 +6,23 @@ import { useCheckpointsQuery } from "../checkpoints/query";
 import { useDatasetsQuery } from "../datasets/query";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
 
-import { AlphabetEditor } from "./AlphabetEditor";
+import { AlphabetEditor, parseAlphabetSymbols } from "./AlphabetEditor";
 import { AssetSlot } from "./AssetSlot";
 import { FormSection } from "./FormSection";
 import { FormSelect } from "./FormSelect";
 import { checkpointOptions, checkpointSymbolCount, datasetOptions, oodSetValues, pretrainedAssetOptions, styleTtsParamsForBaseCheckpoint, trainingNode, type TrainingWorkflowSpec, updateNodeParams, updateTrainingParams } from "./logic";
 import { OodEditor } from "./OodEditor";
 import { useCreateTrainingConfigMutation, useTrainingConfigsQuery } from "./query";
-import { SettingField, SettingNumberInput, settingLabel } from "./SettingsField";
+import { SettingField, settingLabel } from "./SettingsField";
+import { StageScheduleEditor } from "./styletts-stages/StageScheduleEditor";
+import type { TrainingStageSpec } from "./styletts-stages/templates";
 
-const TOGGLE_ROWS = [
+const MODEL_RUNTIME_TOGGLES = [
   { key: "multispeaker", sub: "Per-speaker style encoder" },
+  { key: "load_optimizer", sub: "Resume optimizer state from the base checkpoint." },
   { key: "checkpoint_decoder_gradients", sub: "Uses less VRAM; reduces training speed." },
   { key: "checkpoint_discriminator_gradients", sub: "Uses less VRAM; reduces training speed." },
+  { key: "profiling_enabled", sub: "CUDA-synchronized timing and VRAM event logging." },
 ];
 
 export function StyleTtsForm({
@@ -50,8 +54,7 @@ export function StyleTtsForm({
   const trainingInfo = schema.nodes[training.type];
   if (!trainingInfo) throw new Error(`Training node is not registered: ${training.type}`);
   const settingsSchema = trainingInfo.settings;
-  const seqSeconds = Number(values.max_sequence_seconds);
-  const frames = Math.round((seqSeconds * 24000) / 300);
+  const stageTemplates = trainingInfo.settings_defaults.training_stages as TrainingStageSpec[];
   const updateParams = (nodeId: string, params: SchemaValues) => onChange(updateNodeParams(graph, nodeId, params));
   const updateTraining = (params: SchemaValues) => onChange(updateTrainingParams(graph, spec, params));
   const selectedCheckpoint = (checkpoints.data ?? []).find((item) => item.id === String(checkpoint.params.checkpoint_id));
@@ -65,8 +68,9 @@ export function StyleTtsForm({
   return (
     <>
       <FormSection title="Identity & data" tag="Run">
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-3 gap-3.5">
           <SettingField schema={settingsSchema} values={values} name="display_name" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="seed" onChange={updateTraining} />
           <Field label="Training dataset">
             <FormSelect
               defaultValue=""
@@ -122,52 +126,71 @@ export function StyleTtsForm({
           createAlphabet.mutate({
             name,
             type_: "phoneme_alphabet",
-            metadata: { preset: "custom", symbols: Array.from(symbols.replace(/[\n\t]/g, "")) },
+            metadata: { preset: "custom", symbols: parseAlphabetSymbols(symbols) },
           })
         }
       />
 
       <FormSection title="Optimization" tag="Optimizer">
-        <div className="grid grid-cols-3 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="batch_size" onChange={updateTraining} />
+        <div className="grid grid-cols-2 gap-3.5">
           <SettingField schema={settingsSchema} values={values} name="learning_rate" onChange={updateTraining} />
           <SettingField schema={settingsSchema} values={values} name="numeric_precision" onChange={updateTraining} />
         </div>
-      </FormSection>
-
-      <FormSection title="Schedule" tag="Epochs & sequence">
-        <div className="grid grid-cols-3 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="epochs_base" onChange={updateTraining} />
-          <SettingField schema={settingsSchema} values={values} name="epochs_diffusion" onChange={updateTraining} />
-          <SettingField schema={settingsSchema} values={values} name="epochs_joint" onChange={updateTraining} />
-        </div>
         <div className="h-3.5" />
-        <div className="grid grid-cols-3 gap-3.5">
-          <SettingNumberInput schema={settingsSchema} values={values} name="max_sequence_seconds" hint={`≈ ${frames} frames @ 300 hop`} step={0.5} onChange={updateTraining} />
-          <SettingField schema={settingsSchema} values={values} name="save_interval_epochs" onChange={updateTraining} />
+        <SettingField schema={settingsSchema} values={values} name="distributed_processes" onChange={updateTraining} />
+      </FormSection>
+
+      <FormSection title="Model & runtime behavior" tag="Architecture · memory · diagnostics">
+        <div className="grid gap-4 md:grid-cols-[minmax(12rem,1fr)_2fr]">
           <SettingField schema={settingsSchema} values={values} name="decoder" onChange={updateTraining} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            {MODEL_RUNTIME_TOGGLES.map((row) => (
+              <label
+                key={row.key}
+                className="flex cursor-pointer items-center gap-3 rounded-md border border-line bg-panel p-3"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-semibold text-txt">
+                    {settingLabel(settingsSchema, row.key)}
+                  </span>
+                  <span className="block text-xs text-txt-mute">{row.sub}</span>
+                </span>
+                <Toggle
+                  checked={Boolean(values[row.key])}
+                  onChange={(value) => updateTraining({
+                    ...values,
+                    [row.key]: value,
+                  })}
+                />
+              </label>
+            ))}
+          </div>
         </div>
       </FormSection>
 
-      <FormSection title="SLM adversarial" tag="Discriminator">
+      <FormSection title="Training stages" tag="Full specifications">
+        <StageScheduleEditor
+          stages={values.training_stages as TrainingStageSpec[]}
+          templates={stageTemplates}
+          onChange={(training_stages) => updateTraining({
+            ...values,
+            training_stages,
+          })}
+        />
+      </FormSection>
+
+      <FormSection title="Schedule" tag="Runtime cadence">
         <div className="grid grid-cols-3 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="slmadv_min_len" onChange={updateTraining} />
-          <SettingField schema={settingsSchema} values={values} name="slmadv_max_len" onChange={updateTraining} />
-          <SettingField schema={settingsSchema} values={values} name="slm_scale" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="validation_interval_steps" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="checkpoint_interval_steps" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="log_interval_steps" onChange={updateTraining} />
         </div>
-        <div className="mt-4 flex flex-col gap-3">
-          {TOGGLE_ROWS.map((r) => (
-            <label key={r.key} className="flex items-center gap-3 cursor-pointer">
-              <span className="flex-1">
-                <div className="text-[13px] font-semibold text-txt">{settingLabel(settingsSchema, r.key)}</div>
-                <div className="text-xs text-txt-mute">{r.sub}</div>
-              </span>
-              <Toggle
-                checked={Boolean(values[r.key])}
-                onChange={(value) => updateTraining({ ...values, [r.key]: value })}
-              />
-            </label>
-          ))}
+      </FormSection>
+
+      <FormSection title="Output paths" tag="Advanced">
+        <div className="grid grid-cols-2 gap-3.5">
+          <SettingField schema={settingsSchema} values={values} name="output_checkpoint_dir" onChange={updateTraining} />
+          <SettingField schema={settingsSchema} values={values} name="config_output_dir" onChange={updateTraining} />
         </div>
       </FormSection>
 

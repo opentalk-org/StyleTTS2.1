@@ -34,31 +34,43 @@ class StyleTtsSynthesisRuntime:
 def load_synthesis_runtime(payload: dict[str, Any]) -> StyleTtsSynthesisRuntime:
     bundle_root = Path(payload["bundle_root"])
     weights_path = Path(payload["weights_path"])
-    symbols_str = str(payload["symbols"])
+    symbols = [str(symbol) for symbol in payload["symbols"]]
     arch_path = bundle_root / "config.yml"
     if not arch_path.is_file():
         raise ValueError("checkpoint_styletts_config_missing")
     arch = yaml.safe_load(arch_path.read_text(encoding="utf-8"))
     model_params = recursive_munch(arch["model_params"])
-    model_params.n_token = len(symbols_str)
+    model_params.n_token = len(symbols)
+    plbert_path = payload["plbert_path"]
+    plbert_config = payload["plbert_config"]
+    if plbert_path is None:
+        plbert_path = arch["PLBERT_path"]
+        plbert_config = arch["PLBERT_config"]
     torch = importlib.import_module("torch")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     with training_import_context():
         sampler_module = importlib.import_module("modules.diffusion.sampler")
         loading_module = importlib.import_module("loading")
+        plbert_module = importlib.import_module("modules.plbert")
         text_aligner = loading_module.load_ASR_models(payload["asr_path"], payload["asr_config"])
         pitch_extractor = loading_module.load_F0_models(payload["f0_path"])
-        plbert = loading_module.load_plbert(payload["plbert_path"], payload["plbert_config"])
+        plbert = plbert_module.load_plbert(plbert_path, plbert_config)
         model = loading_module.build_model(model_params, text_aligner, pitch_extractor, plbert)
         try:
-            model, _ = loading_module.load_checkpoint(model, None, str(weights_path), load_only_params=True)
+            model, _ = loading_module.load_checkpoint(
+                model,
+                None,
+                str(weights_path),
+                load_only_params=True,
+                ignore_modules=[],
+            )
         except Exception as exc:
             raise ValueError("finetune_test_weights_incompatible") from exc
         _prepare_model(model, device)
         sampler = _build_sampler(sampler_module, model)
 
-    return StyleTtsSynthesisRuntime(model, sampler, model_params, list(symbols_str), device)
+    return StyleTtsSynthesisRuntime(model, sampler, model_params, symbols, device)
 
 
 def run_synthesis_with_runtime(runtime: StyleTtsSynthesisRuntime, payload: dict[str, Any]) -> Path:
@@ -116,10 +128,17 @@ def _synthesize_wave(
 ) -> Any:
     torch = importlib.import_module("torch")
     with torch.no_grad():
-        input_lengths = torch.LongTensor([tok.shape[-1]]).to(runtime.device)
+        # the text encoders feed input_lengths straight into pack_padded_sequence,
+        # which needs them on CPU (the training batch keeps them there too)
+        input_lengths = torch.LongTensor([tok.shape[-1]])
         text_mask = length_to_mask(input_lengths).to(runtime.device)
-        t_en = runtime.model.text_encoder(tok, input_lengths, text_mask)
         bert_dur = runtime.model.bert(tok, attention_mask=(~text_mask).int())
+        t_en = runtime.model.text_encoder(
+            tok,
+            input_lengths,
+            text_mask,
+            bert_dur,
+        )
         d_en = runtime.model.bert_encoder(bert_dur).transpose(-1, -2)
         s_pred = runtime.sampler(
             noise=torch.randn((1, 256), device=runtime.device).unsqueeze(1),

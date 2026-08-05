@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from safetensors import safe_open
+
 from runner.nodes.assets.checkpoints import is_scratch_checkpoint
 from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingManifest
 from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
@@ -11,22 +13,22 @@ from runner.nodes.training.styletts.finetune import layout as styletts_layout
 
 
 def resolve_symbol_list(alphabet: list[str] | None) -> list[str]:
-    """Return the symbol table used to index the text embedding.
-
-    StyleTTS2 (LJSpeech / LibriTTS / Vokan) is trained with the canonical
-    178-entry single-character IPA symbol set, and the pretrained text-encoder /
-    text-aligner embeddings have exactly that many rows. A finetune must reuse
-    that table so the pretrained embeddings stay aligned. We only honour a
-    provided alphabet if it is a genuine single-character table of the same size;
-    anything else (e.g. the legacy multi-character token list) falls back to the
-    canonical set instead of silently resizing embeddings."""
+    """Keep pretrained rows stable and allow explicitly appended tokens."""
     canonical = [str(symbol) for symbol in DEFAULT_STYLETTS_SYMBOLS]
     if not alphabet:
         return canonical
     symbols = [str(symbol) for symbol in alphabet]
-    if len(symbols) == len(canonical) and all(len(symbol) == 1 for symbol in symbols):
-        return symbols
-    return canonical
+    if symbols[:len(canonical)] != canonical:
+        raise ValueError(
+            "StyleTTS finetune alphabet must retain the canonical symbol prefix; "
+            "append custom tokens after <end/>"
+        )
+    appended = symbols[len(canonical):]
+    if len(set(appended)) != len(appended) or any(
+        symbol in canonical for symbol in appended
+    ):
+        raise ValueError("StyleTTS finetune appended alphabet contains duplicate tokens")
+    return symbols
 
 
 def build_node_config(
@@ -42,7 +44,7 @@ def build_node_config(
     symbol_count = len(symbol_list)
     symbols = symbol_list
     scratch = is_scratch_checkpoint(base_checkpoint)
-    asset_paths, ood_paths = _training_asset_paths(pretrained_assets)
+    asset_paths, asset_metadata = _training_asset_paths(pretrained_assets)
     if scratch:
         _require_scratch_assets(asset_paths)
         pretrained_model = None
@@ -55,37 +57,39 @@ def build_node_config(
         log_dir=output_dir / "run",
         train_list=str(manifest.metadata["train_manifest_path"]),
         validation_list=str(manifest.metadata["validation_manifest_path"]),
-        root_path=str(manifest.metadata["root_path"]),
-        stream_from_buckets=bool(manifest.metadata.get("stream_from_buckets", False)),
-        stream_plan_path=str(manifest.metadata.get("stream_plan_path", "")),
-        cache_dir=str(manifest.metadata.get("cache_dir", "")),
-        bucket_cache_budget_bytes=int(settings.bucket_cache_budget_gb * 1024 * 1024 * 1024),
-        ood_texts=str(_ood_text_path(ood_paths, output_dir)),
         pretrained_model=pretrained_model,
         asr_config=_asr_config(symbol_count),
         asr_path=asset_paths["asr_bundle"],
         f0_path=asset_paths["f0_model"],
-        plbert_config=_plbert_config(symbol_count),
+        plbert_config=_plbert_config(
+            symbol_list,
+            asset_paths["plbert"],
+            asset_metadata["plbert"],
+        ),
         plbert_path=asset_paths["plbert"],
-        epochs=settings.epochs_base + settings.epochs_diffusion + settings.epochs_joint,
-        batch_size=settings.batch_size,
+        total_steps=sum(stage.steps for stage in settings.training_stages),
+        seed=settings.seed,
         learning_rate=settings.learning_rate,
-        max_len=int(settings.max_sequence_seconds * 30),
-        diff_epoch=settings.epochs_base,
-        joint_epoch=settings.epochs_base + settings.epochs_diffusion,
-        save_every_n_epochs=settings.save_interval_epochs,
+        training_stages=settings.training_stages,
+        validation_every_steps=settings.validation_interval_steps,
+        checkpoint_every_steps=settings.checkpoint_interval_steps,
+        log_every_steps=settings.log_interval_steps,
+        profiling_enabled=settings.profiling_enabled,
+        distributed_processes=settings.distributed_processes,
         load_optimizer=settings.load_optimizer,
         generator_checkpointing=settings.checkpoint_decoder_gradients,
         discriminators_checkpointing=settings.checkpoint_discriminator_gradients,
         precision=settings.numeric_precision.value,
-        slmadv_min_len=settings.slmadv_min_len,
-        slmadv_max_len=settings.slmadv_max_len,
-        slmadv_batch_samples=settings.slmadv_batch_samples,
-        slmadv_scale=settings.slm_scale,
         architecture_path=architecture_path,
         multispeaker=settings.multispeaker,
         decoder_type=settings.decoder.value,
-        studio_publish=_studio_publish(scratch, base_checkpoint, pretrained_model, settings.display_name),
+        studio_publish=_studio_publish(
+            scratch,
+            base_checkpoint,
+            pretrained_model,
+            settings.display_name,
+            settings.mlflow_run_id,
+        ),
         symbols=symbols,
         symbol_count=symbol_count,
     )
@@ -107,6 +111,7 @@ def _studio_publish(
     base_checkpoint: CheckpointRef,
     pretrained_model: Path | None,
     run_name: str,
+    mlflow_run_id: str,
 ) -> dict[str, Any]:
     if scratch:
         return {
@@ -116,6 +121,7 @@ def _studio_publish(
             "base_library_root": "",
             "pretrained_relpath": "",
             "run_name": run_name,
+            "mlflow_run_id": mlflow_run_id,
         }
     return {
         "enabled": True,
@@ -124,32 +130,24 @@ def _studio_publish(
         "base_library_root": str(base_checkpoint.path),
         "pretrained_relpath": _relative_weight(base_checkpoint.path, pretrained_model),
         "run_name": run_name,
+        "mlflow_run_id": mlflow_run_id,
     }
 
 
-def _training_asset_paths(ref: AssetBundleRef | None) -> tuple[dict[str, Path | None], list[Path]]:
+def _training_asset_paths(
+    ref: AssetBundleRef | None,
+) -> tuple[dict[str, Path | None], dict[str, dict[str, Any]]]:
     paths: dict[str, Path | None] = {"asr_bundle": None, "f0_model": None, "plbert": None}
-    ood_paths: list[Path] = []
+    metadata: dict[str, dict[str, Any]] = {"plbert": {}}
     if ref is None:
-        return paths, ood_paths
+        return paths, metadata
     for asset in ref.metadata["assets"]:
         role = str(asset["role"])
-        if role == "ood_text_set":
-            ood_paths.append(Path(str(asset["path"])))
-        elif role in paths and paths[role] is None:
+        if role in paths and paths[role] is None:
             paths[role] = Path(str(asset["path"]))
-    return paths, ood_paths
-
-
-def _ood_text_path(ood_paths: list[Path], output_dir: Path) -> Path:
-    existing = [path for path in ood_paths if path.is_file()]
-    if not existing:
-        raise ValueError("StyleTTS finetune config requires an OOD text file path")
-    if len(existing) == 1:
-        return existing[0]
-    combined = output_dir / "ood_texts.txt"
-    combined.write_text("\n".join(path.read_text(encoding="utf-8").strip() for path in existing), encoding="utf-8")
-    return combined
+            if role == "plbert":
+                metadata["plbert"] = dict(asset["metadata"])
+    return paths, metadata
 
 
 def _asr_config(symbol_count: int) -> dict[str, Any]:
@@ -158,9 +156,23 @@ def _asr_config(symbol_count: int) -> dict[str, Any]:
     return config
 
 
-def _plbert_config(symbol_count: int) -> dict[str, Any]:
+def _plbert_config(
+    symbols: list[str],
+    path: Path | None,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
     config = styletts_config.load_yaml(styletts_config.PLBERT_YAML)
-    config["model_params"]["vocab_size"] = int(symbol_count)
+    config["model_params"]["vocab_size"] = len(symbols)
+    if path is not None and path.suffix == ".safetensors":
+        with safe_open(path, framework="pt", device="cpu") as checkpoint:
+            positions = checkpoint.get_slice(
+                "encoder._orig_mod.embeddings.position_embeddings.weight"
+            ).get_shape()[0]
+        config["model_params"]["max_position_embeddings"] = int(positions)
+        config["input_symbols"] = symbols
+        config["artifact_symbols"] = metadata["phoneme_symbols"]
+        config["languages"] = metadata["languages"]
+        config["modality_id"] = 0
     return config
 
 

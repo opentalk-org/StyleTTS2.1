@@ -78,6 +78,28 @@ def checkpoint_cache_path(item: Checkpoint, store: ObjectStore) -> Path:
     return target
 
 
+def populate_checkpoint_cache(folder_path: Path, content_hash: str) -> Path:
+    target = _cache_root() / "checkpoints" / content_hash
+    if target.exists():
+        return target
+    temp_dir = Path(
+        tempfile.mkdtemp(
+            prefix="checkpoint-local-",
+            dir=_cache_parent(target),
+        )
+    )
+    try:
+        shutil.copytree(folder_path, temp_dir, dirs_exist_ok=True)
+        if not target.exists():
+            temp_dir.rename(target)
+        else:
+            shutil.rmtree(temp_dir)
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+    return target
+
+
 def extra_file_cache_path(item: ExtraFile, store: ObjectStore) -> Path:
     target = _cache_root() / "extra-files" / item.content_hash / item.name
     if target.exists():

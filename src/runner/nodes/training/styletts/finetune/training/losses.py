@@ -1,211 +1,219 @@
 import torch
 import torch.nn.functional as F
 import torchaudio
-from transformers import AutoModel
-
-class SpectralConvergengeLoss(torch.nn.Module):
-    def __init__(self):
-        super(SpectralConvergengeLoss, self).__init__()
-
-    def forward(self, x_mag, y_mag):
-        return torch.norm(y_mag - x_mag, p=1) / torch.norm(y_mag, p=1)
-
-class STFTLoss(torch.nn.Module):
-    def __init__(self, fft_size=1024, shift_size=120, win_length=600, window=torch.hann_window):
-        super(STFTLoss, self).__init__()
-        self.fft_size = fft_size
-        self.shift_size = shift_size
-        self.win_length = win_length
-        self.to_mel = torchaudio.transforms.MelSpectrogram(sample_rate=24000, n_fft=fft_size, win_length=win_length, hop_length=shift_size, window_fn=window)
-
-        self.spectral_convergenge_loss = SpectralConvergengeLoss()
-
-    def forward(self, x, y):
-        x_mag = self.to_mel(x)
-        mean, std = -4, 4
-        x_mag = (torch.log(1e-5 + x_mag) - mean) / std
-        
-        y_mag = self.to_mel(y)
-        mean, std = -4, 4
-        y_mag = (torch.log(1e-5 + y_mag) - mean) / std
-        
-        sc_loss = self.spectral_convergenge_loss(x_mag, y_mag)    
-        return sc_loss
+from torch import Tensor, nn
 
 
-class MultiResolutionSTFTLoss(torch.nn.Module):
-    def __init__(self,
-                 fft_sizes=[1024, 2048, 512],
-                 hop_sizes=[120, 240, 50],
-                 win_lengths=[600, 1200, 240],
-                 window=torch.hann_window):
-        super(MultiResolutionSTFTLoss, self).__init__()
-        assert len(fft_sizes) == len(hop_sizes) == len(win_lengths)
-        self.stft_losses = torch.nn.ModuleList()
-        for fs, ss, wl in zip(fft_sizes, hop_sizes, win_lengths):
-            self.stft_losses += [STFTLoss(fs, ss, wl, window)]
+class STFTLoss(nn.Module):
+    def __init__(
+        self,
+        fft_size=1024,
+        shift_size=120,
+        win_length=600,
+        window=torch.hann_window,
+    ):
+        super().__init__()
+        self.to_mel = torchaudio.transforms.MelSpectrogram(
+            sample_rate=24000,
+            n_fft=fft_size,
+            win_length=win_length,
+            hop_length=shift_size,
+            window_fn=window,
+        )
 
-    def forward(self, x, y):
-        sc_loss = 0.0
-        for f in self.stft_losses:
-            sc_l = f(x, y)
-            sc_loss += sc_l
-        sc_loss /= len(self.stft_losses)
-
-        return sc_loss
-    
-    
-def feature_loss(fmap_r, fmap_g):
-    loss = 0
-    for dr, dg in zip(fmap_r, fmap_g):
-        for rl, gl in zip(dr, dg):
-            loss += torch.mean(torch.abs(rl - gl))
-
-    return loss*2
+    def forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        prediction = (torch.log(1e-5 + self.to_mel(prediction)) + 4) / 4
+        target = (torch.log(1e-5 + self.to_mel(target)) + 4) / 4
+        return torch.norm(target - prediction, p=1) / torch.norm(target, p=1)
 
 
-def discriminator_loss(disc_real_outputs, disc_generated_outputs):
-    loss = 0
-    r_losses = []
-    g_losses = []
-    for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
-        r_loss = torch.mean((1-dr)**2)
-        g_loss = torch.mean(dg**2)
-        loss += (r_loss + g_loss)
-        r_losses.append(r_loss.item())
-        g_losses.append(g_loss.item())
+class MultiResolutionSTFTLoss(nn.Module):
+    def __init__(
+        self,
+        fft_sizes=(1024, 2048, 512),
+        hop_sizes=(120, 240, 50),
+        win_lengths=(600, 1200, 240),
+        window=torch.hann_window,
+    ):
+        super().__init__()
+        self.stft_losses = nn.ModuleList(
+            STFTLoss(fft_size, hop_size, win_length, window)
+            for fft_size, hop_size, win_length in zip(
+                fft_sizes,
+                hop_sizes,
+                win_lengths,
+                strict=True,
+            )
+        )
 
-    return loss, r_losses, g_losses
+    def forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        return torch.stack(
+            [loss(prediction, target) for loss in self.stft_losses]
+        ).mean()
 
 
-def generator_loss(disc_outputs):
-    loss = 0
-    gen_losses = []
-    for dg in disc_outputs:
-        l = torch.mean((1-dg)**2)
-        gen_losses.append(l)
-        loss += l
-
-    return loss, gen_losses
-
-def discriminator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
-    loss = 0
-    for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
+def discriminator_tprls_loss(real_scores, generated_scores) -> Tensor:
+    loss = real_scores[0].new_zeros(())
+    for real, generated in zip(real_scores, generated_scores, strict=True):
         tau = 0.04
-        m_DG = torch.median((dr-dg))
-        L_rel = torch.mean((((dr - dg) - m_DG)**2)[dr < dg + m_DG])
-        loss += tau - F.relu(tau - L_rel)
+        median = torch.median(real - generated)
+        relative = torch.mean(
+            (((real - generated) - median) ** 2)[real < generated + median]
+        )
+        loss = loss + tau - F.relu(tau - relative)
     return loss
 
-def generator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
-    loss = 0
-    for dg, dr in zip(disc_real_outputs, disc_generated_outputs):
+
+def generator_tprls_loss(real_scores, generated_scores) -> Tensor:
+    loss = generated_scores[0].new_zeros(())
+    for real, generated in zip(real_scores, generated_scores, strict=True):
         tau = 0.04
-        m_DG = torch.median((dr-dg))
-        L_rel = torch.mean((((dr - dg) - m_DG)**2)[dr < dg + m_DG])
-        loss += tau - F.relu(tau - L_rel)
+        median = torch.median(generated - real)
+        relative = torch.mean(
+            (((generated - real) - median) ** 2)[
+                generated < real + median
+            ]
+        )
+        loss = loss + tau - F.relu(tau - relative)
     return loss
 
-class GeneratorLoss(torch.nn.Module):
 
-    def __init__(self, mpd, msd):
-        super(GeneratorLoss, self).__init__()
-        self.mpd = mpd
-        self.msd = msd
-        
-    def forward(self, y, y_hat):
-        y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = self.mpd(y, y_hat)
-        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = self.msd(y, y_hat)
-        loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
-        loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
-        loss_gen_f, losses_gen_f = generator_loss(y_df_hat_g)
-        loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
-
-        loss_rel = generator_TPRLS_loss(y_df_hat_r, y_df_hat_g) + generator_TPRLS_loss(y_ds_hat_r, y_ds_hat_g)
-        
-        loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_rel
-        
-        return loss_gen_all.mean()
-    
-class DiscriminatorLoss(torch.nn.Module):
-
-    def __init__(self, mpd, msd):
-        super(DiscriminatorLoss, self).__init__()
-        self.mpd = mpd
-        self.msd = msd
-        
-    def forward(self, y, y_hat):
-        y_df_hat_r, y_df_hat_g, _, _ = self.mpd(y, y_hat)
-        loss_disc_f, losses_disc_f_r, losses_disc_f_g = discriminator_loss(y_df_hat_r, y_df_hat_g)
-        y_ds_hat_r, y_ds_hat_g, _, _ = self.msd(y, y_hat)
-        loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
-        
-        loss_rel = discriminator_TPRLS_loss(y_df_hat_r, y_df_hat_g) + discriminator_TPRLS_loss(y_ds_hat_r, y_ds_hat_g)
+def waveform_discriminator_loss(real_scores, generated_scores) -> Tensor:
+    adversarial = real_scores[0].new_zeros(())
+    for real, generated in zip(real_scores, generated_scores, strict=True):
+        adversarial = adversarial + torch.mean((1 - real) ** 2)
+        adversarial = adversarial + torch.mean(generated**2)
+    relative = discriminator_tprls_loss(real_scores, generated_scores)
+    return (adversarial + relative).mean()
 
 
-        d_loss = loss_disc_s + loss_disc_f + loss_rel
-        
-        return d_loss.mean()
-   
-    
-class WavLMLoss(torch.nn.Module):
+def waveform_generator_losses(
+    real_scores,
+    generated_scores,
+    real_features,
+    generated_features,
+) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    feature = generated_scores[0].new_zeros(())
+    for real_maps, generated_maps in zip(
+        real_features,
+        generated_features,
+        strict=True,
+    ):
+        for real, generated in zip(real_maps, generated_maps, strict=True):
+            feature = feature + torch.mean(torch.abs(real - generated))
+    feature = feature * 2
+    adversarial = sum(torch.mean((1 - score) ** 2) for score in generated_scores)
+    relative = generator_tprls_loss(real_scores, generated_scores)
+    total = feature + adversarial + relative
+    return total.mean(), feature.mean(), adversarial.mean(), relative.mean()
 
-    def __init__(self, model, wd, model_sr, slm_sr=16000):
-        super(WavLMLoss, self).__init__()
-        self.wavlm = AutoModel.from_pretrained(model)
-        self.wd = wd
-        self.resample = torchaudio.transforms.Resample(model_sr, slm_sr)
-     
-    def forward(self, wav, y_rec):
-        with torch.no_grad():
-            wav_16 = self.resample(wav)
-            wav_embeddings = self.wavlm(input_values=wav_16, output_hidden_states=True).hidden_states
-        y_rec_16 = self.resample(y_rec)
-        y_rec_embeddings = self.wavlm(input_values=y_rec_16, output_hidden_states=True).hidden_states
 
-        floss = 0
-        for er, eg in zip(wav_embeddings, y_rec_embeddings):
-            floss += torch.mean(torch.abs(er - eg))
-        
-        return floss.mean()
-    
-    def generator(self, y_rec):
-        y_rec_16 = self.resample(y_rec)
-        y_rec_embeddings = self.wavlm(input_values=y_rec_16, output_hidden_states=True).hidden_states
-        y_rec_embeddings = torch.stack(y_rec_embeddings, dim=1).transpose(-1, -2).flatten(start_dim=1, end_dim=2)
-        y_df_hat_g = self.wd(y_rec_embeddings)
-        loss_gen = torch.mean((1-y_df_hat_g)**2)
-        
-        return loss_gen
-    
-    def discriminator(self, wav, y_rec):
-        with torch.no_grad():
-            wav_16 = self.resample(wav)
-            wav_embeddings = self.wavlm(input_values=wav_16, output_hidden_states=True).hidden_states
-            y_rec_16 = self.resample(y_rec)
-            y_rec_embeddings = self.wavlm(input_values=y_rec_16, output_hidden_states=True).hidden_states
+def wavlm_feature_loss(real_features, generated_features) -> Tensor:
+    return sum(
+        torch.mean(torch.abs(real - generated))
+        for real, generated in zip(real_features, generated_features, strict=True)
+    ).mean()
 
-            y_embeddings = torch.stack(wav_embeddings, dim=1).transpose(-1, -2).flatten(start_dim=1, end_dim=2)
-            y_rec_embeddings = torch.stack(y_rec_embeddings, dim=1).transpose(-1, -2).flatten(start_dim=1, end_dim=2)
 
-        y_d_rs = self.wd(y_embeddings)
-        y_d_gs = self.wd(y_rec_embeddings)
-        
-        y_df_hat_r, y_df_hat_g = y_d_rs, y_d_gs
-        
-        r_loss = torch.mean((1-y_df_hat_r)**2)
-        g_loss = torch.mean((y_df_hat_g)**2)
-        
-        loss_disc_f = r_loss + g_loss
-                        
-        return loss_disc_f.mean()
+def slm_discriminator_loss(real_scores: Tensor, generated_scores: Tensor) -> Tensor:
+    return (
+        torch.mean((1 - real_scores) ** 2)
+        + torch.mean(generated_scores**2)
+    ).mean()
 
-    def discriminator_forward(self, wav):
-        with torch.no_grad():
-            wav_16 = self.resample(wav)
-            wav_embeddings = self.wavlm(input_values=wav_16, output_hidden_states=True).hidden_states
-            y_embeddings = torch.stack(wav_embeddings, dim=1).transpose(-1, -2).flatten(start_dim=1, end_dim=2)
 
-        y_d_rs = self.wd(y_embeddings)
-        
-        return y_d_rs
+def slm_generator_loss(generated_scores: Tensor) -> Tensor:
+    return torch.mean((1 - generated_scores) ** 2)
+
+
+def speaker_losses(
+    real_values: Tensor,
+    generated_values: Tensor,
+    real_embedding: Tensor,
+    generated_embedding: Tensor,
+) -> tuple[Tensor, Tensor]:
+    feature = F.l1_loss(generated_values, real_values)
+    similarity = 1 - F.cosine_similarity(
+        F.normalize(generated_embedding, dim=-1),
+        F.normalize(real_embedding, dim=-1),
+        dim=-1,
+    ).mean()
+    return feature, similarity
+
+
+def prosody_discriminator_loss(
+    real_scores: Tensor,
+    generated_scores: Tensor,
+    lengths: Tensor,
+) -> Tensor:
+    losses = []
+    for index, length_value in enumerate(lengths):
+        length = int(length_value.item())
+        generated = generated_scores[index, :length]
+        real = real_scores[index, :length]
+        item = (
+            torch.mean(generated.square())
+            + torch.mean((1 - real).square())
+            + discriminator_tprls_loss(
+                [real.unsqueeze(0)],
+                [generated.unsqueeze(0)],
+            )
+        )
+        if not torch.isnan(item):
+            losses.append(item)
+    if losses:
+        return torch.stack(losses).mean()
+    return (generated_scores.sum() + real_scores.sum()) * 0
+
+
+def prosody_generator_losses(
+    real_scores: Tensor,
+    generated_scores: Tensor,
+    real_features,
+    generated_features,
+    lengths: Tensor,
+) -> tuple[Tensor, Tensor]:
+    adversarial = []
+    feature_matching = []
+    for index, length_value in enumerate(lengths):
+        length = int(length_value.item())
+        generated = generated_scores[index, :length]
+        real = real_scores[index, :length]
+        item = torch.mean((1 - generated).square()) + generator_tprls_loss(
+            [real.unsqueeze(0)],
+            [generated.unsqueeze(0)],
+        )
+        if not torch.isnan(item):
+            adversarial.append(item)
+        feature_matching.append(
+            sum(
+                F.l1_loss(real_map[index, :length], generated_map[index, :length])
+                for real_map, generated_map in zip(
+                    real_features,
+                    generated_features,
+                    strict=True,
+                )
+            )
+        )
+    if adversarial:
+        adversarial_loss = torch.stack(adversarial).mean()
+    else:
+        adversarial_loss = generated_scores.sum() * 0
+    return adversarial_loss, torch.stack(feature_matching).mean()
+
+
+def reconstruction_loss(
+    target: Tensor,
+    prediction: Tensor,
+    lengths: Tensor | list[int],
+    divisor: float = 1.0,
+) -> Tensor:
+    length_total = torch.as_tensor(lengths, device=target.device).sum()
+    valid_ratio = target.numel() / length_total
+    return F.smooth_l1_loss(target, prediction) * valid_ratio / divisor
+
+
+def acoustic_losses(
+    losses: list[Tensor],
+) -> Tensor:
+    return torch.stack(losses).mean()

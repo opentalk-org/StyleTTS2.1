@@ -131,7 +131,11 @@ def _audio_item(
         byte_length=item.byte_length,
         size_mb=f"{item.byte_length / 1024 / 1024:.1f}",
         segments=segment_count,
-        segment_preview=[segment_response(segment) for segment in segment_preview],
+        segment_preview=[
+            segment_response(segment)
+            for segment in segment_preview
+            if all(field in segment for field in ("id", "type_", "alignment"))
+        ],
         dataset_ids=[dataset.id for dataset in item.datasets],
         virtual=item.virtual,
         storage_kind=item.storage_kind,

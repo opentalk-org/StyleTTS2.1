@@ -2,6 +2,8 @@ import math
 import torch
 from torch import nn
 import torch.nn.functional as F
+
+from ...profiling import profiling_fn
 from .layers import MFCC, Attention, LinearNorm, ConvNorm, ConvBlock
 
 
@@ -43,14 +45,26 @@ class ASRCNN(nn.Module):
         )
 
     def forward(self, x, src_key_padding_mask=None, text_input=None):
-        x = self.to_mfcc(x)
-        x = self.init_cnn(x)
-        x = self.cnns(x)
-        x = self.projection(x)
+        with profiling_fn("mfcc_projection"):
+            x = self.to_mfcc(x)
+        with profiling_fn("initial_convolution"):
+            x = self.init_cnn(x)
+        with profiling_fn("convolution_stack"):
+            for index, block in enumerate(self.cnns):
+                with profiling_fn(f"convolution_block_{index}"):
+                    x = block(x)
+        with profiling_fn("feature_projection"):
+            x = self.projection(x)
         x = x.transpose(1, 2)
-        ctc_logit = self.ctc_linear(x)
+        with profiling_fn("ctc_projection"):
+            ctc_logit = self.ctc_linear(x)
         if text_input is not None:
-            _, s2s_logit, s2s_attn = self.asr_s2s(x, src_key_padding_mask, text_input)
+            with profiling_fn("sequence_to_sequence"):
+                _, s2s_logit, s2s_attn = self.asr_s2s(
+                    x,
+                    src_key_padding_mask,
+                    text_input,
+                )
             return ctc_logit, s2s_logit, s2s_attn
         else:
             return ctc_logit
@@ -109,89 +123,77 @@ class ASRS2S(nn.Module):
         )
         self.sos = 1
         self.eos = 2
-
-    def initialize_decoder_states(self, memory, mask):
-        B, L, H = memory.shape
-        self.decoder_hidden = torch.zeros((B, self.decoder_rnn_dim)).type_as(memory)
-        self.decoder_cell = torch.zeros((B, self.decoder_rnn_dim)).type_as(memory)
-        self.attention_weights = torch.zeros((B, L)).type_as(memory)
-        self.attention_weights_cum = torch.zeros((B, L)).type_as(memory)
-        self.attention_context = torch.zeros((B, H)).type_as(memory)
-        self.memory = memory
-        self.processed_memory = self.attention_layer.memory_layer(memory)
-        self.mask = mask
         self.unk_index = 3
         self.random_mask = 0.1
 
     def forward(self, memory, memory_mask, text_input):
-        self.initialize_decoder_states(memory, memory_mask)
-        random_mask = (torch.rand(text_input.shape) < self.random_mask).to(
-            text_input.device
+        batch_size, memory_steps, memory_dim = memory.shape
+        decoder_hidden = memory.new_zeros((batch_size, self.decoder_rnn_dim))
+        decoder_cell = memory.new_zeros((batch_size, self.decoder_rnn_dim))
+        attention_weights = memory.new_zeros((batch_size, memory_steps))
+        attention_weights_cum = memory.new_zeros((batch_size, memory_steps))
+        attention_context = memory.new_zeros((batch_size, memory_dim))
+        processed_memory = self.attention_layer.memory_layer(memory)
+        random_mask = (
+            torch.rand(
+                text_input.shape,
+                device=text_input.device,
+            )
+            < self.random_mask
         )
         _text_input = text_input.clone()
         _text_input.masked_fill_(random_mask, self.unk_index)
         decoder_inputs = self.embedding(_text_input).transpose(0, 1)
         start_embedding = self.embedding(
-            torch.LongTensor([self.sos] * decoder_inputs.size(1)).to(
-                decoder_inputs.device
+            torch.full(
+                (decoder_inputs.size(1),),
+                self.sos,
+                dtype=torch.long,
+                device=decoder_inputs.device,
             )
         )
         decoder_inputs = torch.cat(
-            (start_embedding.unsqueeze(0), decoder_inputs), dim=0
+            (start_embedding.unsqueeze(0), decoder_inputs),
+            dim=0,
         )
 
-        hidden_outputs, logit_outputs, alignments = [], [], []
-        while len(hidden_outputs) < decoder_inputs.size(0):
-            decoder_input = decoder_inputs[len(hidden_outputs)]
-            hidden, logit, attention_weights = self.decode(decoder_input)
-            hidden_outputs += [hidden]
-            logit_outputs += [logit]
-            alignments += [attention_weights]
+        decoder_outputs = torch.jit.annotate(list[torch.Tensor], [])
+        alignments = torch.jit.annotate(list[torch.Tensor], [])
+        while len(decoder_outputs) < decoder_inputs.size(0):
+            decoder_input = decoder_inputs[len(decoder_outputs)]
+            cell_input = torch.cat((decoder_input, attention_context), -1)
+            decoder_hidden, decoder_cell = self.decoder_rnn(
+                cell_input,
+                (decoder_hidden, decoder_cell),
+            )
+            attention_weights_cat = torch.cat(
+                (
+                    attention_weights.unsqueeze(1),
+                    attention_weights_cum.unsqueeze(1),
+                ),
+                dim=1,
+            )
+            attention_context, attention_weights = self.attention_layer(
+                decoder_hidden,
+                memory,
+                processed_memory,
+                attention_weights_cat,
+                memory_mask,
+            )
+            attention_weights_cum = attention_weights_cum + attention_weights
+            hidden_and_context = torch.cat(
+                (decoder_hidden, attention_context),
+                -1,
+            )
+            decoder_outputs.append(hidden_and_context)
+            alignments.append(attention_weights)
 
-        hidden_outputs, logit_outputs, alignments = self.parse_decoder_outputs(
-            hidden_outputs, logit_outputs, alignments
+        decoder_output = (
+            torch.stack(decoder_outputs).transpose(0, 1).contiguous()
         )
-
-        return hidden_outputs, logit_outputs, alignments
-
-    def decode(self, decoder_input):
-
-        cell_input = torch.cat((decoder_input, self.attention_context), -1)
-        self.decoder_hidden, self.decoder_cell = self.decoder_rnn(
-            cell_input, (self.decoder_hidden, self.decoder_cell)
+        hidden = self.project_to_hidden(decoder_output)
+        logit = self.project_to_n_symbols(
+            F.dropout(hidden, 0.5, self.training)
         )
-
-        attention_weights_cat = torch.cat(
-            (
-                self.attention_weights.unsqueeze(1),
-                self.attention_weights_cum.unsqueeze(1),
-            ),
-            dim=1,
-        )
-
-        self.attention_context, self.attention_weights = self.attention_layer(
-            self.decoder_hidden,
-            self.memory,
-            self.processed_memory,
-            attention_weights_cat,
-            self.mask,
-        )
-
-        self.attention_weights_cum += self.attention_weights
-
-        hidden_and_context = torch.cat(
-            (self.decoder_hidden, self.attention_context), -1
-        )
-        hidden = self.project_to_hidden(hidden_and_context)
-
-        logit = self.project_to_n_symbols(F.dropout(hidden, 0.5, self.training))
-
-        return hidden, logit, self.attention_weights
-
-    def parse_decoder_outputs(self, hidden, logit, alignments):
-
-        alignments = torch.stack(alignments).transpose(0, 1)
-        logit = torch.stack(logit).transpose(0, 1).contiguous()
-        hidden = torch.stack(hidden).transpose(0, 1).contiguous()
-
-        return hidden, logit, alignments
+        alignment = torch.stack(alignments).transpose(0, 1)
+        return hidden, logit, alignment

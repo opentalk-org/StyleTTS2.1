@@ -10,6 +10,7 @@ from shared.db.assets.file_store import (
     checkpoint_cache_path,
     checkpoint_tar,
     extra_file_cache_path,
+    populate_checkpoint_cache,
     stored_bytes,
     stored_path,
 )
@@ -19,6 +20,7 @@ from shared.db.assets.schemas import (
     CheckpointCreate,
     CheckpointUpdate,
     ConfigCreate,
+    ConfigUpdate,
     ExtraFileCreate,
     ExtraFilePathCreate,
     ExtraFileUpdate,
@@ -61,6 +63,8 @@ def create_checkpoint(session: Session, payload: CheckpointCreate) -> Checkpoint
     session.add(item)
     session.commit()
     session.refresh(item)
+    if payload.folder_path is not None:
+        populate_checkpoint_cache(payload.folder_path, item.content_hash)
     return item
 
 
@@ -84,6 +88,20 @@ def list_configs(session: Session, type_: str | None = None) -> Sequence[Config]
     if type_ is not None:
         statement = statement.where(Config.type_ == type_)
     return session.execute(statement).scalars().all()
+
+
+def update_config(
+    session: Session,
+    config_id: UUID,
+    payload: ConfigUpdate,
+) -> Config:
+    item = one(session, Config, config_id)
+    item.name = payload.name
+    item.type_ = payload.type_
+    item.metadata_ = payload.metadata
+    session.commit()
+    session.refresh(item)
+    return item
 
 
 def read_checkpoint(session: Session, checkpoint_id: UUID) -> bytes:

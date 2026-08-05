@@ -5,7 +5,6 @@ from uuid import UUID
 
 from torch import Tensor
 
-from shared.audio_annotations import AudioAnnotations
 from shared.db.audio.segment_catalog import SegmentReference
 from shared.db.audio.ranges.wav import WavClip
 
@@ -105,7 +104,7 @@ def _conditional_voice(
     configured_languages: frozenset[str],
 ) -> str | None:
     segment = reference.segment
-    voice = AudioAnnotations.model_validate(segment["annotations"]).speaker_id
+    voice = reference.annotations.speaker_id
     if (
         reference.language not in configured_languages
         or not str(segment["text"]).strip()

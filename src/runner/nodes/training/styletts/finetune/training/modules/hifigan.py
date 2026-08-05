@@ -1,19 +1,16 @@
 import torch
 import numpy as np
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.nn import Conv1d, ConvTranspose1d
 from torch.nn.utils import remove_weight_norm, weight_norm
 
+from ..profiling import profiling_fn
 from .decoder_blocks import AdaINResBlock1, DecoderBackbone
 from .source_generator import SourceModuleHnNSF
 from .utils import checkpoint_with_mixed_precision, init_weights
 
 LRELU_SLOPE = 0.1
 
-
-def padDiff(x):
-    return F.pad(F.pad(x, (0,0,-1,1), 'constant', 0) - x, (0,0,0,-1), 'constant', 0)
 
 class Generator(torch.nn.Module):
     def __init__(self, style_dim, resblock_kernel_sizes, upsample_rates, upsample_initial_channel, resblock_dilation_sizes, upsample_kernel_sizes, gradient_checkpointing=False):
@@ -69,39 +66,59 @@ class Generator(torch.nn.Module):
     def forward(self, x, s, f0):
         f0 = self.f0_upsamp(f0[:, None]).transpose(1, 2)
 
-        har_source, noi_source, uv = self.m_source(f0)
-        har_source = har_source.transpose(1, 2)
         dummy = self.dummy_tensor
+        if self.gradient_checkpointing:
+            har_source = checkpoint_with_mixed_precision(
+                self.m_source,
+                f0,
+            )
+        else:
+            har_source = self.m_source(f0)
+        har_source = har_source.transpose(1, 2)
 
         for i in range(self.num_upsamples):
-            if self.gradient_checkpointing:
-                x, x_source = checkpoint_with_mixed_precision(
-                    self._pre_upsample_noise, x, har_source, s, i, dummy
-                )
-            else:
-                x, x_source = self._pre_upsample_noise(x, har_source, s, i, dummy)
-            x = self.ups[i](x)
-            x = x + x_source
+            with profiling_fn(f"decoder_stage_{i}"):
+                if self.gradient_checkpointing:
+                    x, x_source = checkpoint_with_mixed_precision(
+                        self._pre_upsample_noise, x, har_source, s, i, dummy
+                    )
+                else:
+                    x, x_source = self._pre_upsample_noise(
+                        x, har_source, s, i, dummy
+                    )
+                with profiling_fn("transposed_convolution"):
+                    x = self.ups[i](x)
+                    x = x + x_source
 
-            if self.gradient_checkpointing:
-                x = checkpoint_with_mixed_precision(self._forward_res_block, x, s, i, dummy)
-            else:
-                x = self._forward_res_block(x, s, i, dummy)
+                if self.gradient_checkpointing:
+                    x = checkpoint_with_mixed_precision(
+                        self._forward_res_block, x, s, i, dummy
+                    )
+                else:
+                    with profiling_fn("residual_blocks"):
+                        x = self._forward_res_block(x, s, i, dummy)
 
         if self.gradient_checkpointing:
             return checkpoint_with_mixed_precision(self._output_forward, x, dummy)
         return self._output_forward(x, dummy)
 
     def _pre_upsample_noise(self, x, har_source, s, i, dummy):
-        x = x + (1 / self.alphas[i]) * (torch.sin(self.alphas[i] * x) ** 2)
-        x_source = self.noise_convs[i](har_source)
-        x_source = self.noise_res[i](x_source, s)
-        return x, x_source
+        with profiling_fn("input_activation"):
+            x = x + torch.sin(self.alphas[i] * x).square() / self.alphas[i]
+        return x, self._noise_forward(har_source, s, i)
+
+    def _noise_forward(self, har_source, s, i):
+        with profiling_fn("harmonic_convolution"):
+            x_source = self.noise_convs[i](har_source)
+        with profiling_fn("harmonic_residual"):
+            x_source = self.noise_res[i](x_source, s)
+        return x_source
 
     def _forward_res_block(self, x, s, i, dummy):
         xs = None
         for j in range(self.num_kernels):
-            res_out = self.resblocks[i * self.num_kernels + j](x, s)
+            with profiling_fn(f"residual_kernel_{j}"):
+                res_out = self.resblocks[i * self.num_kernels + j](x, s)
             if xs is None:
                 xs = res_out
             else:
@@ -109,7 +126,7 @@ class Generator(torch.nn.Module):
         return xs / self.num_kernels
 
     def _output_forward(self, x, dummy):
-        x = x + (1 / self.alphas[-1]) * (torch.sin(self.alphas[-1] * x) ** 2)
+        x = x + torch.sin(self.alphas[-1] * x).square() / self.alphas[-1]
         x = self.conv_post(x)
         return torch.tanh(x)
 

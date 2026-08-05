@@ -4,6 +4,7 @@ import torch
 from torch import Tensor, nn
 
 from ...config.training import TrainingConfig
+from ...data.records import BeetleBatch
 from ...data.sampling import derive_seed
 from ...data.validation_records import ValidationRecording
 from ...losses.acoustic import (
@@ -121,6 +122,8 @@ class TrainingValidationEvaluator(ConditionalValidationEvaluator):
             posterior_waveform,
         )
         adversarial = adversarial_view.adversarial
+        feature_period = adversarial_view.feature_period
+        feature_resolution = adversarial_view.feature_resolution
         feature_matching = adversarial_view.feature_matching
         weights = self.training_schedules.acoustic_weights(step)
         conditional_metrics = tuple(
@@ -147,6 +150,8 @@ class TrainingValidationEvaluator(ConditionalValidationEvaluator):
             _metric("reconstruction", reconstruction),
             _metric("discriminator", discriminator),
             _metric("generator_adversarial", adversarial),
+            _metric("feature_period", feature_period),
+            _metric("feature_resolution", feature_resolution),
             _metric("feature_matching", feature_matching),
             *conditional_metrics,
             _metric("discriminator_total", discriminator * weights.discriminator),
@@ -181,11 +186,23 @@ class TrainingValidationEvaluator(ConditionalValidationEvaluator):
     def _posterior(
         self,
         audio_file_id: UUID,
-        batch: object,
+        batch: BeetleBatch,
         step: int,
     ) -> AcousticSynthesis:
         latent = self._generator(step, audio_file_id, "posterior-latent")
-        return self.acoustic.reconstruct(batch.mel, batch.frame_mask, latent)
+        source = self._generator(step, audio_file_id, "posterior-source")
+        target = self.acoustic.acoustic_targets(
+            batch.mel,
+            batch.jdc_mel,
+            batch.frame_mask,
+        )
+        return self.acoustic.reconstruct(
+            batch.mel,
+            batch.frame_mask,
+            target,
+            latent,
+            source,
+        )
 
     def _generator(
         self,

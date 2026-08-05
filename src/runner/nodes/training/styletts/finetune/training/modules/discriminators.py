@@ -4,6 +4,7 @@ import torch.nn as nn
 from torch.nn import Conv1d, Conv2d
 from torch.nn.utils import weight_norm, spectral_norm
 
+from ..profiling import profiling_fn
 from .utils import checkpoint_with_mixed_precision, get_padding
 
 LRELU_SLOPE = 0.1
@@ -31,7 +32,11 @@ class SpecDiscriminator(nn.Module):
         self.fft_size = fft_size
         self.shift_size = shift_size
         self.win_length = win_length
-        self.window = getattr(torch, window)(win_length)
+        self.register_buffer(
+            "window",
+            getattr(torch, window)(win_length),
+            persistent=False,
+        )
         self.discriminators = nn.ModuleList([
             norm_f(nn.Conv2d(1, 32, kernel_size=(3, 9), padding=(1, 4))),
             norm_f(nn.Conv2d(32, 32, kernel_size=(3, 9), stride=(1,2), padding=(1, 4))),
@@ -46,16 +51,16 @@ class SpecDiscriminator(nn.Module):
 
     def _conv_block(self, y, i, dummy):
         y = self.discriminators[i](y)
-        return F.leaky_relu(y, LRELU_SLOPE)
+        return F.leaky_relu(y, LRELU_SLOPE, inplace=True)
 
     def _out_block(self, y, dummy):
         return self.out(y)
 
-    def forward(self, y):
+    def forward(self, y, return_features=True):
 
         fmap = []
         y = y.squeeze(1)
-        y = stft(y, self.fft_size, self.shift_size, self.win_length, self.window.to(y.get_device()))
+        y = stft(y, self.fft_size, self.shift_size, self.win_length, self.window)
         y = y.unsqueeze(1)
         dummy = self.dummy_tensor
         for i in range(len(self.discriminators)):
@@ -63,13 +68,15 @@ class SpecDiscriminator(nn.Module):
                 y = checkpoint_with_mixed_precision(self._conv_block, y, i, dummy)
             else:
                 y = self._conv_block(y, i, dummy)
-            fmap.append(y)
+            if return_features:
+                fmap.append(y)
 
         if self.gradient_checkpointing:
             y = checkpoint_with_mixed_precision(self._out_block, y, dummy)
         else:
             y = self._out_block(y, dummy)
-        fmap.append(y)
+        if return_features:
+            fmap.append(y)
 
         return torch.flatten(y, 1, -1), fmap
 
@@ -89,14 +96,31 @@ class MultiResSpecDiscriminator(torch.nn.Module):
             SpecDiscriminator(fft_sizes[2], hop_sizes[2], win_lengths[2], window, gradient_checkpointing=gradient_checkpointing)
             ])
 
-    def forward(self, y, y_hat):
+    def forward(self, y, y_hat, return_features=True):
         y_d_rs = []
         y_d_gs = []
         fmap_rs = []
         fmap_gs = []
-        for i, d in enumerate(self.discriminators):
-            y_d_r, fmap_r = d(y)
-            y_d_g, fmap_g = d(y_hat)
+        batch_size = y.shape[0]
+        for discriminator in self.discriminators:
+            with profiling_fn(f"stft_{discriminator.fft_size}"):
+                if discriminator.dummy_tensor.requires_grad:
+                    with profiling_fn("real_and_generated"):
+                        combined = torch.cat((y, y_hat), dim=0)
+                        scores, feature_maps = discriminator(combined, return_features)
+                        y_d_r, y_d_g = scores.split(batch_size)
+                        fmap_r = []
+                        fmap_g = []
+                        if return_features:
+                            for feature_map in feature_maps:
+                                real_map, generated_map = feature_map.split(batch_size)
+                                fmap_r.append(real_map)
+                                fmap_g.append(generated_map)
+                else:
+                    with profiling_fn("real"):
+                        y_d_r, fmap_r = discriminator(y, return_features)
+                    with profiling_fn("generated"):
+                        y_d_g, fmap_g = discriminator(y_hat, return_features)
             y_d_rs.append(y_d_r)
             fmap_rs.append(fmap_r)
             y_d_gs.append(y_d_g)
@@ -123,12 +147,12 @@ class DiscriminatorP(torch.nn.Module):
 
     def _conv_block(self, x, i, dummy):
         x = self.convs[i](x)
-        return F.leaky_relu(x, LRELU_SLOPE)
+        return F.leaky_relu(x, LRELU_SLOPE, inplace=True)
 
     def _post_block(self, x, dummy):
         return self.conv_post(x)
 
-    def forward(self, x):
+    def forward(self, x, return_features=True):
         fmap = []
 
         b, c, t = x.shape
@@ -144,12 +168,14 @@ class DiscriminatorP(torch.nn.Module):
                 x = checkpoint_with_mixed_precision(self._conv_block, x, i, dummy)
             else:
                 x = self._conv_block(x, i, dummy)
-            fmap.append(x)
+            if return_features:
+                fmap.append(x)
         if self.gradient_checkpointing:
             x = checkpoint_with_mixed_precision(self._post_block, x, dummy)
         else:
             x = self._post_block(x, dummy)
-        fmap.append(x)
+        if return_features:
+            fmap.append(x)
         x = torch.flatten(x, 1, -1)
 
         return x, fmap
@@ -166,14 +192,31 @@ class MultiPeriodDiscriminator(torch.nn.Module):
             DiscriminatorP(11, gradient_checkpointing=gradient_checkpointing),
         ])
 
-    def forward(self, y, y_hat):
+    def forward(self, y, y_hat, return_features=True):
         y_d_rs = []
         y_d_gs = []
         fmap_rs = []
         fmap_gs = []
-        for i, d in enumerate(self.discriminators):
-            y_d_r, fmap_r = d(y)
-            y_d_g, fmap_g = d(y_hat)
+        batch_size = y.shape[0]
+        for discriminator in self.discriminators:
+            with profiling_fn(f"period_{discriminator.period}"):
+                if discriminator.dummy_tensor.requires_grad:
+                    with profiling_fn("real_and_generated"):
+                        combined = torch.cat((y, y_hat), dim=0)
+                        scores, feature_maps = discriminator(combined, return_features)
+                        y_d_r, y_d_g = scores.split(batch_size)
+                        fmap_r = []
+                        fmap_g = []
+                        if return_features:
+                            for feature_map in feature_maps:
+                                real_map, generated_map = feature_map.split(batch_size)
+                                fmap_r.append(real_map)
+                                fmap_g.append(generated_map)
+                else:
+                    with profiling_fn("real"):
+                        y_d_r, fmap_r = discriminator(y, return_features)
+                    with profiling_fn("generated"):
+                        y_d_g, fmap_g = discriminator(y_hat, return_features)
             y_d_rs.append(y_d_r)
             fmap_rs.append(fmap_r)
             y_d_gs.append(y_d_g)
@@ -204,7 +247,7 @@ class WavLMDiscriminator(nn.Module):
         fmap = []
         for l in self.convs:
             x = l(x)
-            x = F.leaky_relu(x, LRELU_SLOPE)
+            x = F.leaky_relu(x, LRELU_SLOPE, inplace=True)
             fmap.append(x)
         x = self.conv_post(x)
         x = torch.flatten(x, 1, -1)

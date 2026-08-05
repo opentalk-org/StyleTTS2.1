@@ -1,786 +1,214 @@
 import logging
-import os
 import random
 import shutil
 import time
-from contextlib import nullcontext
+from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn.functional as F
-import yaml
-from munch import Munch
 
 from runflow.runtime.cancellation import check_cancel
 from runner.nodes.training.common.mlflow_run import TrackerRun
-from runner.nodes.training.styletts.finetune.checkpoint_publish import publish_finetune_epoch_bundle_from_training_config
-from runner.nodes.training.styletts.finetune.studio.finetune_mlflow_logger import FinetuneMlflowLogger
-from runner.nodes.training.styletts.finetune.studio.val_sample_export import export_finetune_val_wavs_for_studio
-from runner.nodes.training.styletts.finetune.training.meldataset import build_dataloader
-from runner.nodes.training.styletts.finetune.training.modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
-from .losses import GeneratorLoss, DiscriminatorLoss, WavLMLoss, MultiResolutionSTFTLoss
-from .loading import build_model, load_ASR_models, load_checkpoint, load_F0_models
-from .modules.plbert import load_plbert
-from .modules.slmadv import SLMAdversarialLoss
-from .optimizers import build_optimizer
-from .utils import get_data_path_list, length_to_mask, log_norm, mask_from_lens, maximum_path, recursive_munch
+
+from .checkpoints import CheckpointPublisher
+from .config import load_training_config
+from .data import build_dataloader
+from .mlflow_logging import MlflowLogger, start_run
+from .profiling import configure_profiling, profiling_fn
+from .runtime import Trainer, Validator
+from .setup import build_accelerator, build_training_runtime
+from ..stages import TrainableModule, stage_for_step
+from .telemetry_metrics import TrainingTelemetry
+from .utils import get_data_path_list
 
 logger = logging.getLogger(__name__)
 
 
-class MyDataParallel(torch.nn.DataParallel):
-    def __getattr__(self, name):
-        try:
-            return super().__getattr__(name)
-        except AttributeError:
-            return getattr(self.module, name)
+def train(config_path: str, *, run: TrackerRun | None) -> None:
+    config = load_training_config(config_path)
+    random.seed(config.seed)
+    np.random.seed(config.seed)
+    torch.manual_seed(config.seed)
+    torch.cuda.manual_seed_all(config.seed)
+    configure_profiling(config.profiling_enabled)
+    log_dir = Path(config.log_dir)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy(config_path, log_dir / Path(config_path).name)
+    train_list, validation_list = get_data_path_list(
+        config.data_params.train_data,
+        config.data_params.val_data,
+    )
+    accelerator = build_accelerator(config)
+    owns_run = run is None and accelerator.is_main_process
+    if owns_run:
+        run = start_run(config)
+    telemetry = (
+        MlflowLogger(run, config.total_steps)
+        if accelerator.is_main_process and run is not None
+        else None
+    )
+    runtime = build_training_runtime(config, accelerator)
+    trainer = Trainer(config, runtime)
+    validator = Validator(config, runtime)
+    checkpoints = CheckpointPublisher(config, runtime)
+    timing = TrainingTelemetry.start(config.total_steps, trainer.step)
+    logged_total_loss = 0.0
+    logged_steps = 0
+    validation_loss = None
+    active_stage = None
+    train_batches = None
+    validation_batches = None
+
+    while trainer.step < config.total_steps:
+        stage = stage_for_step(config.training_stages, trainer.step)
+        if stage is not active_stage:
+            dataset_config = {
+                "symbols": config.symbols,
+                "max_text_tokens": config.PLBERT_config["model_params"][
+                    "max_position_embeddings"
+                ],
+                "plbert_languages": config.PLBERT_config.get("languages"),
+                "plbert_modality_id": config.PLBERT_config.get("modality_id", 0),
+            }
+            train_batches = build_dataloader(
+                train_list,
+                max_seconds=stage.max_audio_seconds,
+                num_workers=0,
+                dataset_config=dataset_config,
+                device=config.device,
+                seed=config.seed,
+            ).prepare(accelerator)
+            validation_batches = build_dataloader(
+                validation_list,
+                max_seconds=stage.max_audio_seconds,
+                validation=True,
+                num_workers=0,
+                device=config.device,
+                seed=config.seed,
+                dataset_config=dataset_config,
+            )
+            active_stage = stage
+        assert train_batches is not None
+        assert validation_batches is not None
+        trainer.set_training_mode()
+        batch_iterator = iter(train_batches)
+        while (
+            trainer.step < config.total_steps
+            and stage_for_step(config.training_stages, trainer.step)
+            is active_stage
+        ):
+            data_wait_started = time.monotonic()
+            try:
+                batch = next(batch_iterator)
+            except StopIteration:
+                break
+            timing.data_wait_seconds += time.monotonic() - data_wait_started
+            check_cancel()
+            compute_started = time.monotonic()
+            with profiling_fn("train_step"):
+                step_metrics = trainer.train_step(batch)
+            timing.compute_seconds += time.monotonic() - compute_started
+            trainer.step += 1
+            step = trainer.step
+            if TrainableModule.DECODER in stage.trainable_modules:
+                crop_frames = min(
+                    int(batch.mel_lengths.min().item() / 2 - 1),
+                    int(
+                        stage.max_decoder_seconds
+                        * config.preprocess_params.sr
+                        / config.preprocess_params.spect_params.hop_length
+                        / 2
+                    ),
+                )
+                audio_seconds = (
+                    len(batch.audio_durations)
+                    * crop_frames
+                    * config.preprocess_params.spect_params.hop_length
+                    * 2
+                    / config.preprocess_params.sr
+                )
+            else:
+                audio_seconds = sum(batch.audio_durations)
+            batch_totals = torch.tensor(
+                (len(batch.audio_durations), audio_seconds),
+                device=accelerator.device,
+                dtype=torch.float64,
+            )
+            reduced_totals = accelerator.reduce(
+                batch_totals,
+                reduction="sum",
+            )
+            timing.items_processed += reduced_totals[0].item()
+            timing.audio_seconds_trained += reduced_totals[1].item()
+            metrics = dict(step_metrics)
+            metrics.update(timing.metrics(step))
+            if accelerator.is_main_process:
+                assert telemetry is not None
+                reporting_started = time.monotonic()
+                telemetry.log_train(step, metrics)
+                timing.reporting_seconds += (
+                    time.monotonic() - reporting_started
+                )
+            if not metrics["step_skipped"]:
+                logged_total_loss += _scalar(metrics["total"])
+                logged_steps += 1
+            if (
+                accelerator.is_main_process
+                and step % config.log_every_steps == 0
+            ):
+                logger.info(
+                    "step=%s/%s total_loss=%.5f elapsed_seconds=%.3f",
+                    step,
+                    config.total_steps,
+                    logged_total_loss / max(1, logged_steps),
+                    time.monotonic() - timing.started_at,
+                )
+                logged_total_loss = 0.0
+                logged_steps = 0
+            validate = (
+                step % config.validation_every_steps == 0
+                or step == config.total_steps
+            )
+            if validate:
+                validation_started = time.monotonic()
+                if accelerator.is_main_process:
+                    assert telemetry is not None
+                    with profiling_fn("validation"):
+                        result = validator.run(validation_batches, step)
+                    validation_loss = result.metrics["mel_loss"]
+                    telemetry.log_validation(
+                        step,
+                        result.metrics,
+                        result.samples,
+                        config.log_dir,
+                    )
+                    if trainer.step < config.total_steps:
+                        trainer.set_training_mode()
+                timing.validation_seconds += (
+                    time.monotonic() - validation_started
+                )
+
+            checkpoint = (
+                step % config.checkpoint_every_steps == 0
+                or step == config.total_steps
+            )
+            if checkpoint and accelerator.is_main_process:
+                checkpoint_started = time.monotonic()
+                checkpoints.publish(
+                    step,
+                    validation_loss,
+                )
+                timing.checkpoint_seconds += (
+                    time.monotonic() - checkpoint_started
+                )
+            if validate or checkpoint:
+                accelerator.wait_for_everyone()
+    if owns_run:
+        assert run is not None
+        run.close()
 
 
-def _has_external_checkpoint(path: str | None) -> bool:
-    return path is not None
-
-
-def _to_scalar_float(value):
+def _scalar(value: torch.Tensor | float) -> float:
     if isinstance(value, torch.Tensor):
-        if value.numel() == 1:
-            return float(value.detach().item())
         return float(value.detach().mean().item())
     return float(value)
-
-
-def _resolve_precision(precision: object) -> tuple[bool, torch.dtype | None, bool]:
-    value = str(precision).strip().lower()
-    if value == "fp32":
-        return False, None, False
-    if value == "bf16":
-        return True, torch.bfloat16, False
-    if value == "fp16":
-        return True, torch.float16, True
-    raise ValueError("precision_invalid")
-
-
-def train(config_path: str, *, run: TrackerRun) -> None:
-    config = yaml.safe_load(open(config_path))
-    
-    log_dir = config['log_dir']
-    shutil.copy(config_path, os.path.join(log_dir, os.path.basename(config_path)))
-
-    batch_size = config['batch_size']
-
-    epochs = config['epochs']
-    save_freq = config['save_freq']
-    log_interval = config['log_interval']
-
-    data_params = config['data_params']
-    sr = config['preprocess_params']['sr']
-    train_path = data_params['train_data']
-    val_path = data_params['val_data']
-    root_path = data_params['root_path']
-    min_length = data_params['min_length']
-    OOD_data = data_params['OOD_data']
-
-    max_len = config['max_len']
-
-    loss_params = Munch(config['loss_params'])
-    diff_epoch = loss_params.diff_epoch
-    joint_epoch = loss_params.joint_epoch
-
-    optimizer_params = Munch(config['optimizer_params'])
-    symbols = config['symbols']
-    precision = config["precision"]
-
-    train_list, val_list = get_data_path_list(train_path, val_path)
-    device = 'cuda'
-    autocast_enabled, autocast_dtype, use_grad_scaler = _resolve_precision(precision)
-    if use_grad_scaler and not torch.cuda.is_available():
-        raise RuntimeError("fp16_requires_cuda")
-    scaler = torch.amp.GradScaler("cuda", enabled=use_grad_scaler)
-
-    train_dataloader = build_dataloader(train_list,
-                                        root_path,
-                                        OOD_data=OOD_data,
-                                        min_length=min_length,
-                                        batch_size=batch_size,
-                                        num_workers=0,
-                                        dataset_config={"symbols": symbols},
-                                        device=device,
-                                        stream_cache=None)
-
-    val_dataloader = build_dataloader(val_list,
-                                      root_path,
-                                      OOD_data=OOD_data,
-                                      min_length=min_length,
-                                      batch_size=batch_size,
-                                      validation=True,
-                                      num_workers=0,
-                                      device=device,
-                                      dataset_config={"symbols": symbols})
-
-    mlflow_logger = FinetuneMlflowLogger(
-        run,
-        schedule_epochs_total=int(epochs),
-        batches_per_epoch=max(1, len(train_dataloader)),
-        diff_epoch=int(diff_epoch),
-        joint_epoch=int(joint_epoch),
-    )
-
-    ASR_config = config['ASR_config']
-    ASR_path = config['ASR_path']
-    text_aligner = load_ASR_models(ASR_path, ASR_config)
-    
-    F0_path = config['F0_path']
-    pitch_extractor = load_F0_models(F0_path)
-    
-    PLBERT_path = config['PLBERT_path']
-    PLBERT_config = config['PLBERT_config']
-    plbert = load_plbert(PLBERT_path, PLBERT_config)
-    
-    model_params = recursive_munch(config['model_params'])
-    multispeaker = model_params.multispeaker
-    model = build_model(model_params, text_aligner, pitch_extractor, plbert)
-    _ = [model[key].to(device) for key in model]
-    
-    start_epoch = 0
-    iters = 0
-
-    gl = GeneratorLoss(model.mpd, model.msd).to(device)
-    dl = DiscriminatorLoss(model.mpd, model.msd).to(device)
-    wl = WavLMLoss(model_params.slm.model, 
-                   model.wd, 
-                   sr, 
-                   model_params.slm.sr).to(device)
-
-    gl = MyDataParallel(gl)
-    dl = MyDataParallel(dl)
-    wl = MyDataParallel(wl)
-    
-    sampler = DiffusionSampler(
-        model.diffusion.diffusion,
-        sampler=ADPM2Sampler(),
-        sigma_schedule=KarrasSchedule(sigma_min=0.0001, sigma_max=3.0, rho=9.0),
-        clamp=False
-    )
-    
-    scheduler_params = {
-        "max_lr": optimizer_params.lr,
-        "pct_start": float(0),
-        "epochs": epochs,
-        "steps_per_epoch": len(train_dataloader),
-    }
-    scheduler_params_dict= {key: scheduler_params.copy() for key in model}
-    scheduler_params_dict['bert']['max_lr'] = optimizer_params.bert_lr * 2
-    scheduler_params_dict['decoder']['max_lr'] = optimizer_params.ft_lr * 2
-    scheduler_params_dict['style_encoder']['max_lr'] = optimizer_params.ft_lr * 2
-    
-    optimizer = build_optimizer({key: model[key].parameters() for key in model},
-                                          scheduler_params_dict=scheduler_params_dict, lr=optimizer_params.lr)
-    
-    for g in optimizer.optimizers['bert'].param_groups:
-        g['betas'] = (0.9, 0.99)
-        g['lr'] = optimizer_params.bert_lr
-        g['initial_lr'] = optimizer_params.bert_lr
-        g['min_lr'] = 0
-        g['weight_decay'] = 0.01
-        
-    for module in ["decoder", "style_encoder"]:
-        for g in optimizer.optimizers[module].param_groups:
-            g['betas'] = (0.0, 0.99)
-            g['lr'] = optimizer_params.ft_lr
-            g['initial_lr'] = optimizer_params.ft_lr
-            g['min_lr'] = 0
-            g['weight_decay'] = 1e-4
-        
-    ignore_modules: list[str] = []
-    if _has_external_checkpoint(ASR_path):
-        ignore_modules.append("text_aligner")
-    if _has_external_checkpoint(F0_path):
-        ignore_modules.append("pitch_extractor")
-    if _has_external_checkpoint(PLBERT_path):
-        ignore_modules.append("bert")
-
-    # From-scratch runs carry no pretrained StyleTTS weights; the main modules
-    # keep their random init while ASR/F0/PL-BERT are loaded above from assets.
-    if config["pretrained_model"] is not None:
-        model, optimizer = load_checkpoint(
-            model,
-            optimizer,
-            config["pretrained_model"],
-            load_only_params=config["load_only_params"],
-            ignore_modules=ignore_modules,
-        )
-
-    for key in model:
-        if key != "mpd" and key != "msd" and key != "wd":
-            model[key] = MyDataParallel(model[key])
-
-    n_down = model.text_aligner.n_down
-
-    torch.cuda.empty_cache()
-    
-    stft_loss = MultiResolutionSTFTLoss().to(device)
-    
-    running_std = []
-    
-    slmadv_params = Munch(config['slmadv_params'])
-    slmadv = SLMAdversarialLoss(
-        model,
-        wl,
-        sampler,
-        slmadv_params.min_len,
-        slmadv_params.max_len,
-        int(config["slmadv_params"]["batch_max_samples"]),
-        skip_update=slmadv_params.iter,
-        sig=slmadv_params.sig,
-    )
-    
-    
-    for epoch in range(start_epoch, epochs):
-        check_cancel()
-        running_loss = 0
-        start_time = time.time()
-
-        _ = [model[key].eval() for key in model]
-        
-        model.text_aligner.train()
-        model.text_encoder.train()
-        
-        model.predictor.train()
-        model.bert_encoder.train()
-        model.bert.train()
-        model.msd.train()
-        model.mpd.train()
-
-        for i, batch in enumerate(train_dataloader):
-            check_cancel()
-            waves = batch[0]
-            batch = [b.to(device) for b in batch[1:]]
-            texts, input_lengths, ref_texts, ref_lengths, mels, mel_input_length, ref_mels = batch
-            with torch.no_grad():
-                mask = length_to_mask(mel_input_length // (2 ** n_down)).to(device)
-                mel_mask = length_to_mask(mel_input_length).to(device)
-                text_mask = length_to_mask(input_lengths).to(texts.device)
-
-                if multispeaker and epoch >= diff_epoch:
-                    ref_ss = model.style_encoder(ref_mels.unsqueeze(1))
-                    ref_sp = model.predictor_encoder(ref_mels.unsqueeze(1))
-                    ref = torch.cat([ref_ss, ref_sp], dim=1)
-                
-            autocast_ctx = (
-                torch.autocast(device_type="cuda", dtype=autocast_dtype)
-                if autocast_enabled and autocast_dtype is not None
-                else nullcontext()
-            )
-            with autocast_ctx:
-                try:
-                    ppgs, s2s_pred, s2s_attn = model.text_aligner(mels, mask, texts)
-                    s2s_attn = s2s_attn.transpose(-1, -2)
-                    s2s_attn = s2s_attn[..., 1:]
-                    s2s_attn = s2s_attn.transpose(-1, -2)
-                except Exception:
-                    logger.exception("text_aligner forward failed at epoch=%s step=%s", epoch + 1, i + 1)
-                    raise
-
-                mask_ST = mask_from_lens(s2s_attn, input_lengths, mel_input_length // (2 ** n_down))
-                s2s_attn_mono = maximum_path(s2s_attn, mask_ST)
-                t_en = model.text_encoder(texts, input_lengths, text_mask)
-                if bool(random.getrandbits(1)):
-                    asr = (t_en @ s2s_attn)
-                else:
-                    asr = (t_en @ s2s_attn_mono)
-                d_gt = s2s_attn_mono.sum(axis=-1).detach()
-                ss = []
-                gs = []
-                for bib in range(len(mel_input_length)):
-                    mel_length = int(mel_input_length[bib].item())
-                    mel = mels[bib, :, :mel_input_length[bib]]
-                    s = model.predictor_encoder(mel.unsqueeze(0).unsqueeze(1))
-                    ss.append(s)
-                    s = model.style_encoder(mel.unsqueeze(0).unsqueeze(1))
-                    gs.append(s)
-
-                s_dur = torch.stack(ss).squeeze(1)
-                gs = torch.stack(gs).squeeze(1)
-                s_trg = torch.cat([gs, s_dur], dim=-1).detach()
-                bert_dur = model.bert(texts, attention_mask=(~text_mask).int())
-                d_en = model.bert_encoder(bert_dur).transpose(-1, -2)
-
-                if epoch >= diff_epoch:
-                    num_steps = np.random.randint(3, 5)
-                    if model_params.diffusion.dist.estimate_sigma_data:
-                        model.diffusion.module.diffusion.sigma_data = s_trg.std(axis=-1).mean().item()
-                        running_std.append(model.diffusion.module.diffusion.sigma_data)
-                    if multispeaker:
-                        s_preds = sampler(
-                            noise=torch.randn_like(s_trg).unsqueeze(1).to(device),
-                            embedding=bert_dur,
-                            embedding_scale=1,
-                            features=ref,
-                            embedding_mask_proba=0.1,
-                            num_steps=num_steps,
-                        ).squeeze(1)
-                        loss_diff = model.diffusion(s_trg.unsqueeze(1), embedding=bert_dur, features=ref).mean()
-                        loss_sty = F.l1_loss(s_preds, s_trg.detach())
-                    else:
-                        s_preds = sampler(
-                            noise=torch.randn_like(s_trg).unsqueeze(1).to(device),
-                            embedding=bert_dur,
-                            embedding_scale=1,
-                            embedding_mask_proba=0.1,
-                            num_steps=num_steps,
-                        ).squeeze(1)
-                        loss_diff = model.diffusion.module.diffusion(s_trg.unsqueeze(1), embedding=bert_dur).mean()
-                        loss_sty = F.l1_loss(s_preds, s_trg.detach())
-                else:
-                    loss_sty = 0
-                    loss_diff = 0
-
-                s_loss = 0
-                d, p = model.predictor(d_en, s_dur, input_lengths, s2s_attn_mono, text_mask)
-                mel_len_st = int(mel_input_length.min().item() / 2 - 1)
-                mel_len = min(int(mel_input_length.min().item() / 2 - 1), max_len // 2)
-                en = []
-                gt = []
-                p_en = []
-                wav = []
-                st = []
-                for bib in range(len(mel_input_length)):
-                    mel_length = int(mel_input_length[bib].item() / 2)
-                    random_start = np.random.randint(0, mel_length - mel_len)
-                    en.append(asr[bib, :, random_start:random_start+mel_len])
-                    p_en.append(p[bib, :, random_start:random_start+mel_len])
-                    gt.append(mels[bib, :, (random_start * 2):((random_start+mel_len) * 2)])
-                    y = waves[bib][(random_start * 2) * 300:((random_start+mel_len) * 2) * 300]
-                    wav.append(torch.from_numpy(y).to(device))
-                    random_start = np.random.randint(0, mel_length - mel_len_st)
-                    st.append(mels[bib, :, (random_start * 2):((random_start+mel_len_st) * 2)])
-
-                wav = torch.stack(wav).float().detach()
-                en = torch.stack(en)
-                p_en = torch.stack(p_en)
-                gt = torch.stack(gt).detach()
-                st = torch.stack(st).detach()
-                if gt.size(-1) < 80:
-                    raise ValueError(f"training crop is too short: {gt.size(-1)}")
-
-                s = model.style_encoder(gt.unsqueeze(1))
-                s_dur = model.predictor_encoder(gt.unsqueeze(1))
-                with torch.no_grad():
-                    F0_real, _, F0 = model.pitch_extractor(gt.unsqueeze(1))
-                    F0_real = F0_real.squeeze(-1)
-                    F0 = F0.reshape(F0.shape[0], F0.shape[1] * 2, F0.shape[2], 1).squeeze(-1)
-                    N_real = log_norm(gt.unsqueeze(1)).squeeze(1)
-                    y_rec_gt = wav.unsqueeze(1)
-                    y_rec_gt_pred = model.decoder(en, F0_real, N_real, s)
-                    wav = y_rec_gt
-
-                F0_fake, N_fake = model.predictor.F0Ntrain(p_en, s_dur)
-                y_rec = model.decoder(en, F0_fake, N_fake, s)
-                loss_F0_rec = (F.smooth_l1_loss(F0_real, F0_fake)) / 10
-                loss_norm_rec = F.smooth_l1_loss(N_real, N_fake)
-
-            optimizer.zero_grad()
-            autocast_ctx = (
-                torch.autocast(device_type="cuda", dtype=autocast_dtype)
-                if autocast_enabled and autocast_dtype is not None
-                else nullcontext()
-            )
-            with autocast_ctx:
-                d_loss = dl(wav.detach(), y_rec.detach()).mean()
-            if use_grad_scaler:
-                scaler.scale(d_loss).backward()
-                optimizer.step('msd', scaler=scaler)
-                optimizer.step('mpd', scaler=scaler)
-            else:
-                d_loss.backward()
-                optimizer.step('msd')
-                optimizer.step('mpd')
-
-            optimizer.zero_grad()
-            autocast_ctx = (
-                torch.autocast(device_type="cuda", dtype=autocast_dtype)
-                if autocast_enabled and autocast_dtype is not None
-                else nullcontext()
-            )
-            with autocast_ctx:
-                loss_mel = stft_loss(y_rec, wav)
-                loss_gen_all = gl(wav, y_rec).mean()
-                loss_lm = wl(wav.detach().squeeze(1), y_rec.squeeze(1)).mean()
-
-            loss_ce = 0
-            loss_dur = 0
-            for _s2s_pred, _text_input, _text_length in zip(d, (d_gt), input_lengths):
-                _s2s_pred = _s2s_pred[:_text_length, :]
-                _text_input = _text_input[:_text_length].long()
-                _s2s_trg = torch.zeros_like(_s2s_pred)
-                for p in range(_s2s_trg.shape[0]):
-                    _s2s_trg[p, :_text_input[p]] = 1
-                _dur_pred = torch.sigmoid(_s2s_pred).sum(axis=1)
-
-                loss_dur += F.l1_loss(_dur_pred[1:_text_length-1], 
-                                       _text_input[1:_text_length-1])
-                loss_ce += F.binary_cross_entropy_with_logits(_s2s_pred.flatten(), _s2s_trg.flatten())
-
-            loss_ce /= texts.size(0)
-            loss_dur /= texts.size(0)
-            
-            loss_s2s = 0
-            for _s2s_pred, _text_input, _text_length in zip(s2s_pred, texts, input_lengths):
-                loss_s2s += F.cross_entropy(_s2s_pred[:_text_length], _text_input[:_text_length])
-            loss_s2s /= texts.size(0)
-
-            loss_mono = F.l1_loss(s2s_attn, s2s_attn_mono) * 10
-
-            g_loss = loss_params.lambda_mel * loss_mel + \
-                     loss_params.lambda_F0 * loss_F0_rec + \
-                     loss_params.lambda_ce * loss_ce + \
-                     loss_params.lambda_norm * loss_norm_rec + \
-                     loss_params.lambda_dur * loss_dur + \
-                     loss_params.lambda_gen * loss_gen_all + \
-                     loss_params.lambda_slm * loss_lm + \
-                     loss_params.lambda_sty * loss_sty + \
-                     loss_params.lambda_diff * loss_diff + \
-                    loss_params.lambda_mono * loss_mono + \
-                    loss_params.lambda_s2s * loss_s2s
-            
-            running_loss += loss_mel.item()
-            if not torch.isfinite(g_loss):
-                loss_terms = {
-                    "loss_mel": _to_scalar_float(loss_mel),
-                    "loss_F0_rec": _to_scalar_float(loss_F0_rec),
-                    "loss_ce": _to_scalar_float(loss_ce),
-                    "loss_norm_rec": _to_scalar_float(loss_norm_rec),
-                    "loss_dur": _to_scalar_float(loss_dur),
-                    "loss_gen_all": _to_scalar_float(loss_gen_all),
-                    "loss_lm": _to_scalar_float(loss_lm),
-                    "loss_sty": _to_scalar_float(loss_sty),
-                    "loss_diff": _to_scalar_float(loss_diff),
-                    "loss_mono": _to_scalar_float(loss_mono),
-                    "loss_s2s": _to_scalar_float(loss_s2s),
-                    "g_loss": _to_scalar_float(g_loss),
-                }
-                bad_terms = sorted(
-                    term for term, value in loss_terms.items() if not np.isfinite(value)
-                )
-                raise FloatingPointError(
-                    f"non-finite generator loss: bad={bad_terms} values={loss_terms}"
-                )
-            if use_grad_scaler:
-                scaler.scale(g_loss).backward()
-                optimizer.step('bert_encoder', scaler=scaler)
-                optimizer.step('bert', scaler=scaler)
-                optimizer.step('predictor', scaler=scaler)
-                optimizer.step('predictor_encoder', scaler=scaler)
-                optimizer.step('style_encoder', scaler=scaler)
-                optimizer.step('decoder', scaler=scaler)
-                optimizer.step('text_encoder', scaler=scaler)
-                optimizer.step('text_aligner', scaler=scaler)
-                if epoch >= diff_epoch:
-                    optimizer.step('diffusion', scaler=scaler)
-            else:
-                g_loss.backward()
-                optimizer.step('bert_encoder')
-                optimizer.step('bert')
-                optimizer.step('predictor')
-                optimizer.step('predictor_encoder')
-                optimizer.step('style_encoder')
-                optimizer.step('decoder')
-                optimizer.step('text_encoder')
-                optimizer.step('text_aligner')
-                if epoch >= diff_epoch:
-                    optimizer.step('diffusion')
-
-            d_loss_slm, loss_gen_lm = 0, 0
-            if epoch >= joint_epoch:
-                if np.random.rand() < 0.5:
-                    use_ind = True
-                else:
-                    use_ind = False
-
-                if use_ind:
-                    ref_lengths = input_lengths
-                    ref_texts = texts
-                    
-                autocast_ctx = (
-                    torch.autocast(device_type="cuda", dtype=autocast_dtype)
-                    if autocast_enabled and autocast_dtype is not None
-                    else nullcontext()
-                )
-                with autocast_ctx:
-                    slm_out = slmadv(
-                        i,
-                        y_rec_gt,
-                        y_rec_gt_pred,
-                        waves,
-                        mel_input_length,
-                        ref_texts,
-                        ref_lengths,
-                        use_ind,
-                        s_trg.detach(),
-                        ref if multispeaker else None,
-                    )
-
-                if slm_out is not None:
-                    d_loss_slm, loss_gen_lm, y_pred = slm_out
-
-                    optimizer.zero_grad()
-                    if use_grad_scaler:
-                        scaler.scale(loss_gen_lm).backward()
-                    else:
-                        loss_gen_lm.backward()
-
-                    total_norm = {}
-                    for key in model.keys():
-                        total_norm[key] = 0
-                        parameters = [p for p in model[key].parameters() if p.grad is not None and p.requires_grad]
-                        for p in parameters:
-                            param_norm = p.grad.detach().data.norm(2)
-                            total_norm[key] += param_norm.item() ** 2
-                        total_norm[key] = total_norm[key] ** 0.5
-
-                    if total_norm['predictor'] > slmadv_params.thresh:
-                        for key in model.keys():
-                            for p in model[key].parameters():
-                                if p.grad is not None:
-                                    p.grad *= (1 / total_norm['predictor'])
-
-                    for p in model.predictor.duration_proj.parameters():
-                        if p.grad is not None:
-                            p.grad *= slmadv_params.scale
-
-                    for p in model.predictor.lstm.parameters():
-                        if p.grad is not None:
-                            p.grad *= slmadv_params.scale
-
-                    for p in model.diffusion.parameters():
-                        if p.grad is not None:
-                            p.grad *= slmadv_params.scale
-                    
-                    if use_grad_scaler:
-                        optimizer.step('bert_encoder', scaler=scaler)
-                        optimizer.step('bert', scaler=scaler)
-                        optimizer.step('predictor', scaler=scaler)
-                        optimizer.step('diffusion', scaler=scaler)
-                    else:
-                        optimizer.step('bert_encoder')
-                        optimizer.step('bert')
-                        optimizer.step('predictor')
-                        optimizer.step('diffusion')
-
-                    if d_loss_slm != 0:
-                        optimizer.zero_grad()
-                        if use_grad_scaler:
-                            scaler.scale(d_loss_slm).backward(retain_graph=True)
-                            optimizer.step('wd', scaler=scaler)
-                        else:
-                            d_loss_slm.backward(retain_graph=True)
-                            optimizer.step('wd')
-
-            iters = iters + 1
-
-            mlflow_logger.log_train(
-                epoch + 1,
-                iters,
-                {
-                    "epoch": epoch + 1,
-                    "step": i + 1,
-                    "time": time.time() - start_time,
-                    "mel_loss": loss_mel,
-                    "gen_loss": loss_gen_all,
-                    "d_loss": d_loss,
-                    "ce_loss": loss_ce,
-                    "dur_loss": loss_dur,
-                    "slm_loss": loss_lm,
-                    "norm_loss": loss_norm_rec,
-                    "F0_loss": loss_F0_rec,
-                    "sty_loss": loss_sty,
-                    "diff_loss": loss_diff,
-                    "d_loss_slm": d_loss_slm,
-                    "gen_loss_slm": loss_gen_lm,
-                    "s_loss": s_loss,
-                    "s2s_loss": loss_s2s,
-                    "mono_loss": loss_mono,
-                },
-                batches_per_epoch=max(1, len(train_dataloader)),
-                batch_in_epoch=i + 1,
-                schedule_epochs_total=int(epochs),
-                schedule_diff_epoch=int(diff_epoch),
-                schedule_joint_epoch=int(joint_epoch),
-            )
-            
-            if (i+1)%log_interval == 0:
-                logger.info ('Epoch [%d/%d], Step [%d/%d], Loss: %.5f, Disc Loss: %.5f, Dur Loss: %.5f, CE Loss: %.5f, Norm Loss: %.5f, F0 Loss: %.5f, LM Loss: %.5f, Gen Loss: %.5f, Sty Loss: %.5f, Diff Loss: %.5f, DiscLM Loss: %.5f, GenLM Loss: %.5f, SLoss: %.5f, S2S Loss: %.5f, Mono Loss: %.5f'
-                    %(epoch+1, epochs, i+1, len(train_list)//batch_size, running_loss / log_interval, d_loss, loss_dur, loss_ce, loss_norm_rec, loss_F0_rec, loss_lm, loss_gen_all, loss_sty, loss_diff, d_loss_slm, loss_gen_lm, s_loss, loss_s2s, loss_mono))
-                
-                running_loss = 0
-                
-                print('Time elasped:', time.time()-start_time)
-            
-        loss_test = 0
-        loss_align = 0
-        loss_f = 0
-        _ = [model[key].eval() for key in model]
-
-        val_sample_rows: list[dict[str, str]] | None = None
-        with torch.no_grad():
-            iters_test = 0
-            for batch_idx, batch in enumerate(val_dataloader):
-                check_cancel()
-                optimizer.zero_grad()
-
-                try:
-                    waves = batch[0]
-                    batch = [b.to(device) for b in batch[1:]]
-                    texts, input_lengths, ref_texts, ref_lengths, mels, mel_input_length, ref_mels = batch
-                    with torch.no_grad():
-                        autocast_ctx = (
-                            torch.autocast(device_type="cuda", dtype=autocast_dtype)
-                            if autocast_enabled and autocast_dtype is not None
-                            else nullcontext()
-                        )
-                        with autocast_ctx:
-                            mask = length_to_mask(mel_input_length // (2 ** n_down)).to('cuda')
-                            text_mask = length_to_mask(input_lengths).to(texts.device)
-                            _, _, s2s_attn = model.text_aligner(mels, mask, texts)
-                            s2s_attn = s2s_attn.transpose(-1, -2)
-                            s2s_attn = s2s_attn[..., 1:]
-                            s2s_attn = s2s_attn.transpose(-1, -2)
-                            mask_ST = mask_from_lens(s2s_attn, input_lengths, mel_input_length // (2 ** n_down))
-                            s2s_attn_mono = maximum_path(s2s_attn, mask_ST)
-                            t_en = model.text_encoder(texts, input_lengths, text_mask)
-                            asr = (t_en @ s2s_attn_mono)
-                            d_gt = s2s_attn_mono.sum(axis=-1).detach()
-
-                    with torch.no_grad():
-                        autocast_ctx = (
-                            torch.autocast(device_type="cuda", dtype=autocast_dtype)
-                            if autocast_enabled and autocast_dtype is not None
-                            else nullcontext()
-                        )
-                        with autocast_ctx:
-                            ss = []
-                            gs = []
-                            for bib in range(len(mel_input_length)):
-                                mel_length = int(mel_input_length[bib].item())
-                                mel = mels[bib, :, :mel_input_length[bib]]
-                                s = model.predictor_encoder(mel.unsqueeze(0).unsqueeze(1))
-                                ss.append(s)
-                                s = model.style_encoder(mel.unsqueeze(0).unsqueeze(1))
-                                gs.append(s)
-                            s = torch.stack(ss).squeeze(1)
-                            gs = torch.stack(gs).squeeze(1)
-                            s_trg = torch.cat([s, gs], dim=-1).detach()
-                            bert_dur = model.bert(texts, attention_mask=(~text_mask).int())
-                            d_en = model.bert_encoder(bert_dur).transpose(-1, -2)
-                            d, p = model.predictor(d_en, s, input_lengths, s2s_attn_mono, text_mask)
-                    mel_len = int(mel_input_length.min().item() / 2 - 1)
-                    en = []
-                    gt = []
-
-                    p_en = []
-                    wav = []
-
-                    for bib in range(len(mel_input_length)):
-                        mel_length = int(mel_input_length[bib].item() / 2)
-
-                        random_start = np.random.randint(0, mel_length - mel_len)
-                        en.append(asr[bib, :, random_start:random_start+mel_len])
-                        p_en.append(p[bib, :, random_start:random_start+mel_len])
-
-                        gt.append(mels[bib, :, (random_start * 2):((random_start+mel_len) * 2)])
-                        y = waves[bib][(random_start * 2) * 300:((random_start+mel_len) * 2) * 300]
-                        wav.append(torch.from_numpy(y).to(device))
-
-                    wav = torch.stack(wav).float().detach()
-
-                    en = torch.stack(en)
-                    p_en = torch.stack(p_en)
-                    gt = torch.stack(gt).detach()
-                    if gt.size(-1) < 80:
-                        raise ValueError(f"validation crop is too short: {gt.size(-1)}")
-                    with torch.no_grad():
-                        autocast_ctx = (
-                            torch.autocast(device_type="cuda", dtype=autocast_dtype)
-                            if autocast_enabled and autocast_dtype is not None
-                            else nullcontext()
-                        )
-                        with autocast_ctx:
-                            s = model.predictor_encoder(gt.unsqueeze(1))
-                            F0_fake, N_fake = model.predictor.F0Ntrain(p_en, s)
-
-                    loss_dur = 0
-                    for _s2s_pred, _text_input, _text_length in zip(d, (d_gt), input_lengths):
-                        _s2s_pred = _s2s_pred[:_text_length, :]
-                        _text_input = _text_input[:_text_length].long()
-                        _s2s_trg = torch.zeros_like(_s2s_pred)
-                        for bib in range(_s2s_trg.shape[0]):
-                            _s2s_trg[bib, :_text_input[bib]] = 1
-                        _dur_pred = torch.sigmoid(_s2s_pred).sum(axis=1)
-                        loss_dur += F.l1_loss(_dur_pred[1:_text_length-1], 
-                                               _text_input[1:_text_length-1])
-
-                    loss_dur /= texts.size(0)
-
-                    with torch.no_grad():
-                        autocast_ctx = (
-                            torch.autocast(device_type="cuda", dtype=autocast_dtype)
-                            if autocast_enabled and autocast_dtype is not None
-                            else nullcontext()
-                        )
-                        with autocast_ctx:
-                            s = model.style_encoder(gt.unsqueeze(1))
-                            F0_real, _, F0 = model.pitch_extractor(gt.unsqueeze(1))
-                            F0_real = F0_real.squeeze(-1)
-                            y_rec = model.decoder(en, F0_fake, N_fake, s)
-                            if val_sample_rows is None:
-                                val_sample_rows = export_finetune_val_wavs_for_studio(
-                                    log_dir,
-                                    sample_rate=int(sr),
-                                    epoch_1based=epoch + 1,
-                                    step=int(iters),
-                                    y_pred=y_rec,
-                                    y_gt=wav,
-                                )
-                            loss_mel = stft_loss(y_rec.squeeze(1), wav.detach().squeeze(1))
-                            loss_F0 = F.l1_loss(F0_real, F0_fake) / 10
-
-                    loss_test += (loss_mel).mean()
-                    loss_align += (loss_dur).mean()
-                    loss_f += (loss_F0).mean()
-
-                    iters_test += 1
-                except Exception:
-                    logger.exception("validation step failed at epoch=%s batch=%s", epoch + 1, batch_idx + 1)
-                    raise
-
-        print('Epochs:', epoch + 1)
-
-        if iters_test == 0:
-            raise ValueError("validation loader produced no batches")
-        denom = iters_test
-        val_mel = loss_test / denom
-        val_dur = loss_align / denom
-        val_f0 = loss_f / denom
-        if val_sample_rows:
-            mlflow_logger.log_val_samples(epoch + 1, iters, val_sample_rows, log_dir=log_dir)
-        mlflow_logger.log_val(
-            epoch + 1,
-            iters,
-            {"mel_loss": val_mel, "dur_loss": val_dur, "F0_loss": val_f0},
-        )
-
-        if (epoch + 1) % save_freq == 0 or epoch + 1 == epochs:
-            state_ckpt = {
-                "net": {key: model[key].state_dict() for key in model},
-                "optimizer": optimizer.state_dict(),
-                "iters": iters,
-                "val_loss": val_mel,
-                "epoch": epoch,
-            }
-            if model_params.diffusion.dist.estimate_sigma_data:
-                config["model_params"]["diffusion"]["dist"]["sigma_data"] = float(np.mean(running_std))
-            publish_finetune_epoch_bundle_from_training_config(
-                config,
-                training_state=state_ckpt,
-                epoch_1based=epoch + 1,
-                segment_slug=f"epoch_{epoch:05d}",
-            )

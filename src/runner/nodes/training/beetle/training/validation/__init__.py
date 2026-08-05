@@ -1,6 +1,6 @@
 from .artifacts import ArtifactQueue, ValidationArtifacts
 from .batch import merge_validation_recordings
-from .conditional import ConditionalValidationEvaluator, one_step_ema_latent
+from .conditional import ConditionalValidationEvaluator
 from .runtime import (
     ValidationCoordinator,
     ValidationRuntime,
@@ -31,7 +31,6 @@ __all__ = [
     "ValidationCoordinator",
     "aggregate_losses",
     "merge_validation_recordings",
-    "one_step_ema_latent",
     "validation_metrics",
     "trim_waveform_pair",
 ]

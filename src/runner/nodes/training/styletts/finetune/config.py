@@ -6,6 +6,8 @@ from typing import Any
 
 import yaml
 
+from .stages import TrainingStageSpec
+
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 BASE_YAML = DATA_DIR / "base.yaml"
@@ -30,33 +32,25 @@ def build_config(
     log_dir: Path,
     train_list: str,
     validation_list: str,
-    root_path: str,
-    stream_from_buckets: bool,
-    stream_plan_path: str,
-    cache_dir: str,
-    bucket_cache_budget_bytes: int,
-    ood_texts: str,
     pretrained_model: Path | None,
     asr_config: dict[str, Any],
     asr_path: Path | None,
     f0_path: Path | None,
     plbert_config: dict[str, Any],
     plbert_path: Path | None,
-    epochs: int,
-    batch_size: int,
+    total_steps: int,
+    seed: int,
     learning_rate: float,
-    max_len: int,
-    diff_epoch: int,
-    joint_epoch: int,
-    save_every_n_epochs: int,
+    training_stages: list[TrainingStageSpec],
+    validation_every_steps: int,
+    checkpoint_every_steps: int,
+    log_every_steps: int,
+    profiling_enabled: bool,
+    distributed_processes: int,
     load_optimizer: bool,
     generator_checkpointing: bool,
     discriminators_checkpointing: bool,
     precision: str,
-    slmadv_min_len: int,
-    slmadv_max_len: int,
-    slmadv_batch_samples: int,
-    slmadv_scale: float,
     architecture_path: Path | None,
     multispeaker: bool | None,
     decoder_type: str | None,
@@ -66,21 +60,17 @@ def build_config(
 ) -> dict[str, Any]:
     config = deepcopy(load_yaml(BASE_YAML))
     config["log_dir"] = str(log_dir.resolve())
-    config["epochs"] = int(epochs)
-    config["batch_size"] = int(batch_size)
-    config["max_len"] = int(max_len)
-    config["save_freq"] = max(1, int(save_every_n_epochs))
+    config["total_steps"] = int(total_steps)
+    config["seed"] = int(seed)
+    config["validation_every_steps"] = int(validation_every_steps)
+    config["checkpoint_every_steps"] = int(checkpoint_every_steps)
+    config["log_every_steps"] = int(log_every_steps)
+    config["profiling_enabled"] = profiling_enabled
+    config["distributed_processes"] = int(distributed_processes)
     config["load_only_params"] = not load_optimizer
     config["data_params"] = {
         "train_data": str(Path(train_list).resolve()),
         "val_data": str(Path(validation_list).resolve()),
-        "root_path": root_path,
-        "OOD_data": str(Path(ood_texts).resolve()),
-        "min_length": 50,
-        "stream_from_buckets": bool(stream_from_buckets),
-        "stream_plan_path": stream_plan_path,
-        "cache_dir": cache_dir,
-        "bucket_cache_budget_bytes": int(bucket_cache_budget_bytes),
     }
     config["pretrained_model"] = _path_str(pretrained_model)
     config["ASR_config"] = asr_config
@@ -89,11 +79,15 @@ def build_config(
     config["PLBERT_config"] = plbert_config
     config["PLBERT_path"] = _path_str(plbert_path)
     _apply_optimizer(config, learning_rate)
-    _apply_stages(config, diff_epoch, joint_epoch)
-    _apply_slm(config, slmadv_min_len, slmadv_max_len, slmadv_batch_samples, slmadv_scale)
+    config["training_stages"] = [
+        stage.model_dump(mode="json")
+        for stage in training_stages
+    ]
     if architecture_path is not None:
         merge_architecture(architecture_path, config)
     _apply_model_overrides(config, multispeaker, decoder_type, generator_checkpointing, discriminators_checkpointing, symbol_count)
+    languages = plbert_config.get("languages", [])
+    config["model_params"]["language_count"] = max(2, len(languages) + 1)
     if precision not in ("fp16", "bf16", "fp32"):
         raise ValueError("precision must be fp16, bf16, or fp32")
     config["precision"] = precision
@@ -120,20 +114,6 @@ def _apply_optimizer(config: dict[str, Any], learning_rate: float) -> None:
     optimizer["ft_lr"] = float(learning_rate)
 
 
-def _apply_stages(config: dict[str, Any], diff_epoch: int, joint_epoch: int) -> None:
-    losses = config["loss_params"]
-    losses["diff_epoch"] = int(diff_epoch)
-    losses["joint_epoch"] = int(joint_epoch)
-
-
-def _apply_slm(config: dict[str, Any], min_len: int, max_len: int, batch_samples: int, scale: float) -> None:
-    slm = config["slmadv_params"]
-    slm["min_len"] = int(min_len)
-    slm["max_len"] = int(max_len)
-    slm["batch_max_samples"] = int(batch_samples)
-    slm["scale"] = float(scale)
-
-
 def _apply_model_overrides(
     config: dict[str, Any],
     multispeaker: bool | None,
@@ -152,3 +132,12 @@ def _apply_model_overrides(
     params["decoder"]["gradient_checkpointing"] = bool(generator_checkpointing)
     params["discriminators_checkpointing"] = bool(discriminators_checkpointing)
     params["n_token"] = int(symbol_count)
+    params.setdefault(
+        "alpha_flow",
+        {
+            "transition_start": 1000,
+            "transition_end": 4000,
+            "temperature": 25.0,
+            "conditional_dropout": 0.1,
+        },
+    )

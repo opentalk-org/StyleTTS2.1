@@ -12,6 +12,7 @@ def merge_state_dict_with_dim0_resize(
     *,
     error_scope: str,
     on_incompatible_shape: str = "raise",
+    appended_source_index: int | None = None,
 ) -> dict[str, torch.Tensor]:
     if on_incompatible_shape not in {"raise", "keep_model"}:
         raise ValueError("on_incompatible_shape_invalid")
@@ -32,6 +33,8 @@ def merge_state_dict_with_dim0_resize(
             resized = model_tensor.clone()
             n = min(checkpoint_tensor.shape[0], model_tensor.shape[0])
             resized[:n] = checkpoint_tensor[:n]
+            if appended_source_index is not None and model_tensor.shape[0] > n:
+                resized[n:] = checkpoint_tensor[appended_source_index]
             merged[key] = resized
             continue
 

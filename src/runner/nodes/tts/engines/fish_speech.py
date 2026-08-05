@@ -7,6 +7,10 @@ import numpy as np
 
 from runner.nodes.tts.audio_out import samples_from_wav_bytes
 from runner.nodes.tts.engines.base import EngineRuntime, resolve_device
+from runner.nodes.tts.engines.fish_queue import (
+    FishQueueDependencies,
+    launch_memory_bounded_queue,
+)
 from runner.nodes.tts.voices import Voice
 
 FISH_REPO_ID = "fishaudio/s2-pro"
@@ -61,12 +65,26 @@ def load(checkpoint_dir: Path, device: str | None = None) -> FishSpeechRuntime:
     (package_dir.parent / ".project-root").touch(exist_ok=True)
     from fish_speech.inference_engine import TTSInferenceEngine
     from fish_speech.models.dac.inference import load_model as load_decoder
-    from fish_speech.models.text2semantic.inference import launch_thread_safe_queue
+    from fish_speech.models.text2semantic.inference import (
+        WrappedGenerateResponse,
+        generate_long,
+        init_model,
+    )
     from fish_speech.utils.schema import ServeReferenceAudio, ServeTTSRequest
 
     device = device or resolve_device()
     decoder_path = _codec_checkpoint(checkpoint_dir)
-    llama_queue = launch_thread_safe_queue(checkpoint_path=str(checkpoint_dir), device=device, precision=torch.bfloat16)
+    queue_dependencies = FishQueueDependencies(
+        init_model=init_model,
+        generate_long=generate_long,
+        wrapped_response=WrappedGenerateResponse,
+    )
+    llama_queue = launch_memory_bounded_queue(
+        checkpoint_path=str(checkpoint_dir),
+        device=device,
+        precision=torch.bfloat16,
+        dependencies=queue_dependencies,
+    )
     decoder = load_decoder(config_name="modded_dac_vq", checkpoint_path=str(decoder_path), device=device)
     engine = TTSInferenceEngine(llama_queue=llama_queue, decoder_model=decoder, precision=torch.bfloat16, compile=False)
     return FishSpeechRuntime(engine, ServeTTSRequest, ServeReferenceAudio)

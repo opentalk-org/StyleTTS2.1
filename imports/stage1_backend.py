@@ -15,6 +15,7 @@ from shared.db.audio import crud as audio_crud
 from shared.db.audio.schemas import AudioCreate
 from shared.db.datasets import crud as dataset_crud
 from shared.db.datasets.schemas import DatasetCreate
+from stage1_backend_verify import verify_stage_paths
 
 
 STAGE_ROOT = Path(__file__).resolve().parent / "stage1"
@@ -61,15 +62,21 @@ def _stage_paths(slugs: list[str]) -> list[Path]:
         missing = sorted(requested.difference(found))
         if missing:
             raise ValueError(f"staged datasets not found: {missing}")
-    return paths
+    eligible = []
+    for path in paths:
+        status_path = path.parent / "STATUS.md"
+        status = status_path.read_text(encoding="utf-8").splitlines()[0]
+        if status == "COMPLETE":
+            eligible.append(path)
+        elif slugs:
+            raise ValueError(f"{path.parent.name}: backend import requires COMPLETE, found {status}")
+    return eligible
 
 
 def _dataset(session, name: str):
-    matches = [item for item in dataset_crud.list_datasets(session) if item.name == name]
-    if len(matches) > 1:
-        raise ValueError(f"multiple backend datasets named {name!r}")
-    if matches:
-        return matches[0]
+    dataset = dataset_crud.get_dataset_by_name(session, name)
+    if dataset is not None:
+        return dataset
     return dataset_crud.create_dataset(session, DatasetCreate(name=name))
 
 
@@ -171,9 +178,27 @@ def import_stage(slugs: list[str], workers: int, batch_size: int, min_realtime: 
     for path in _stage_paths(slugs):
         payload = json.loads(path.read_text(encoding="utf-8"))
         records = payload["audio_files"]
-        duration = sum(float(record["duration"]) for record in records)
         with database_session() as session:
             dataset = _dataset(session, str(payload["dataset"]["name"]))
+            scoped_items = dataset_crud.list_dataset_audio_files_by_stage1_slug(
+                session,
+                dataset.id,
+                path.parent.name,
+            )
+            existing_sources = {
+                item.metadata_["stage1_source_id"]
+                for item in scoped_items
+            }
+        requested_sources = {record["source_id"] for record in records}
+        if not existing_sources.issubset(requested_sources):
+            raise ValueError(
+                f"{path.parent.name}: backend dataset contains incompatible existing audio"
+            )
+        records = [record for record in records if record["source_id"] not in existing_sources]
+        if not records:
+            print(f"SKIPPED {path.parent.name} records={len(requested_sources)} already imported", flush=True)
+            continue
+        duration = sum(float(record["duration"]) for record in records)
         batches = _batches(dataset.id, path, records, batch_size)
         imported = 0
         uploaded = 0
@@ -217,19 +242,7 @@ def clear_audio() -> None:
 
 
 def verify(slugs: list[str]) -> None:
-    staged = {
-        json.loads(path.read_text(encoding="utf-8"))["dataset"]["name"]: (
-            path.parent.name,
-            len(json.loads(path.read_text(encoding="utf-8"))["audio_files"]),
-        )
-        for path in _stage_paths(slugs)
-    }
-    with database_session() as session:
-        counts = {dataset.name: count for dataset, count in dataset_crud.list_dataset_file_counts(session)}
-    for name, (slug, expected) in staged.items():
-        actual = counts[name]
-        assert actual == expected, f"{slug}: backend={actual}, staged={expected}"
-        print(f"VERIFIED {slug} records={actual}")
+    verify_stage_paths(_stage_paths(slugs))
 
 
 def main() -> None:

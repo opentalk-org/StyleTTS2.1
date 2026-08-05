@@ -8,7 +8,9 @@ from pathlib import Path
 import boto3
 from botocore.client import BaseClient
 from botocore.config import Config
+from botocore.exceptions import ClientError, ReadTimeoutError
 
+RANGE_READ_ATTEMPTS = 3
 RANGE_READ_WORKERS = 10
 
 
@@ -101,12 +103,26 @@ class S3ObjectStore(ObjectStore):
 
     def read_range(self, request: ObjectRange) -> bytes:
         last_byte = request.byte_offset + request.byte_length - 1
-        response = self._client.get_object(
-            Bucket=self._bucket,
-            Key=self._key(request.path),
-            Range=f"bytes={request.byte_offset}-{last_byte}",
-        )
-        data = response["Body"].read()
+        for attempt in range(RANGE_READ_ATTEMPTS):
+            try:
+                response = self._client.get_object(
+                    Bucket=self._bucket,
+                    Key=self._key(request.path),
+                    Range=f"bytes={request.byte_offset}-{last_byte}",
+                )
+                data = response["Body"].read()
+                break
+            except (ClientError, ReadTimeoutError) as error:
+                retryable = (
+                    isinstance(error, ReadTimeoutError)
+                    or error.response["Error"]["Code"] == "NoSuchKey"
+                )
+                if not retryable or attempt == RANGE_READ_ATTEMPTS - 1:
+                    raise
+        else:
+            raise AssertionError(
+                "range read retry loop exhausted without returning or raising"
+            )
         if len(data) != request.byte_length:
             raise EOFError(
                 f"{request.path} returned {len(data)} bytes; "

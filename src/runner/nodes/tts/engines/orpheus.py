@@ -21,6 +21,31 @@ _END_TOKENS = (128009, 128260, 128261, 128257)
 _STOP_TOKEN_ID = 49158
 
 
+def decode_audio_tokens(
+    token_ids: list[int],
+    tokenizer: Any,
+    codec: Any,
+) -> bytes:
+    buffer: list[int] = []
+    audio = bytearray()
+    count = 0
+    for token_id in token_ids:
+        token = codec.turn_token_into_id(
+            tokenizer.decode([token_id]),
+            count,
+        )
+        if token is None or token <= 0 or token >= 4096:
+            continue
+        buffer.append(token)
+        count += 1
+        if count % 7 != 0 or count <= 27:
+            continue
+        chunk = codec.convert_to_audio(buffer[-28:], count)
+        if chunk is not None:
+            audio.extend(chunk)
+    return bytes(audio)
+
+
 class OrpheusRuntime(EngineRuntime):
     """Orpheus (Llama-3.2-3B → SNAC codec), driven through vLLM's offline LLM API.
 
@@ -31,11 +56,11 @@ class OrpheusRuntime(EngineRuntime):
 
     SAMPLE_RATE = ORPHEUS_SAMPLE_RATE
 
-    def __init__(self, llm: Any, tokenizer: Any, sampling_cls: Any, decode_tokens: Any):
+    def __init__(self, llm: Any, tokenizer: Any, sampling_cls: Any, codec: Any):
         self._llm = llm
         self._tokenizer = tokenizer
         self._sampling_cls = sampling_cls
-        self._decode_tokens = decode_tokens
+        self._codec = codec
 
     def synthesize(self, text: str, voice: Voice, language: str) -> tuple[np.ndarray, int]:
         result = self.synthesize_batch([EngineSynthesisRequest(text, voice, language)], lambda: None)[0]
@@ -61,7 +86,11 @@ class OrpheusRuntime(EngineRuntime):
 
     def _decode_output(self, output: Any) -> EngineSynthesisResult:
         token_ids = list(output.outputs[0].token_ids)
-        audio_bytes = b"".join(self._decode_tokens(self._token_text_stream(token_ids)))
+        audio_bytes = decode_audio_tokens(
+            token_ids,
+            self._tokenizer,
+            self._codec,
+        )
         if not audio_bytes:
             raise RuntimeError("orpheus_empty_audio")
         samples = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
@@ -76,17 +105,12 @@ class OrpheusRuntime(EngineRuntime):
         all_ids = torch.cat([start, prompt_ids, end], dim=1)
         return self._tokenizer.decode(all_ids[0])
 
-    def _token_text_stream(self, token_ids: list[int]):
-        for token_id in token_ids:
-            yield self._tokenizer.decode([token_id])
-
-
 def load(checkpoint_dir: Path, device: str | None = None) -> OrpheusRuntime:
     try:
         from transformers import AutoTokenizer
         from vllm import LLM, SamplingParams
 
-        from orpheus_tts.decoder import tokens_decoder_sync
+        from orpheus_tts import decoder as codec_decoder
     except ImportError as exc:
         raise RuntimeError("orpheus_not_installed") from exc
     # The Orpheus weights are a gated HF repo; vLLM/transformers read the token from the
@@ -104,4 +128,4 @@ def load(checkpoint_dir: Path, device: str | None = None) -> OrpheusRuntime:
     llm = LLM(model=str(checkpoint_dir), dtype="bfloat16", max_model_len=2048, gpu_memory_utilization=0.5)
     # The finetuned model bundles its own tokenizer; use it (the pretrained repo is also gated).
     tokenizer = AutoTokenizer.from_pretrained(str(checkpoint_dir))
-    return OrpheusRuntime(llm, tokenizer, SamplingParams, tokens_decoder_sync)
+    return OrpheusRuntime(llm, tokenizer, SamplingParams, codec_decoder)

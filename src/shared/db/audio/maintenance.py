@@ -53,25 +53,26 @@ def prune_fragmented_audio_packs(
     config: AudioPackConfig = AudioPackConfig(),
 ) -> PruneResult:
     candidates = _fragmented_packs(session, config)
-    if len(candidates) < 2:
+    empty = [pack for pack in candidates if pack.used_bytes == 0]
+    compact = [pack for pack in candidates if pack.used_bytes > 0]
+    if len(compact) < 2 and not empty:
         return PruneResult(pruned_paths=[], moved_audio_files=0)
     for pack in candidates:
         pack.sealed = True
-    live_items = _prune_live_audio_files(session, candidates)
-    pack_data = {
-        pack.id: store.download(pack.path)
-        for pack in candidates
-    }
-    writer = AudioPackWriter(session, store, config)
-    for item in live_items:
-        write = writer.append(_slice_from_pack_map(pack_data, item))
-        item.bucket_file_id = write.bucket_file.id
-        item.bucket_file = write.bucket_file
-        item.byte_offset = write.byte_offset
-        item.byte_length = write.byte_length
-    writer.flush()
-    pruned_paths = [pack.path for pack in candidates]
-    for pack in candidates:
+    live_items = _prune_live_audio_files(session, compact) if len(compact) >= 2 else []
+    if live_items:
+        pack_data = {pack.id: store.download(pack.path) for pack in compact}
+        writer = AudioPackWriter(session, store, config)
+        for item in live_items:
+            write = writer.append(_slice_from_pack_map(pack_data, item))
+            item.bucket_file_id = write.bucket_file.id
+            item.bucket_file = write.bucket_file
+            item.byte_offset = write.byte_offset
+            item.byte_length = write.byte_length
+        writer.flush()
+    removed = empty + (compact if len(compact) >= 2 else [])
+    pruned_paths = [pack.path for pack in removed]
+    for pack in removed:
         session.delete(pack)
     session.commit()
     for path in pruned_paths:

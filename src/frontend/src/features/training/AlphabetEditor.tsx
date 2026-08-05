@@ -27,7 +27,7 @@ export function AlphabetEditor({
   const [preset, setPreset] = useState(String(values.preset));
   const [saveName, setSaveName] = useState("");
 
-  const count = Array.from(alphabet.replace(/[\n\t]/g, "")).length;
+  const count = parseAlphabetSymbols(alphabet).length;
   const matches = baseSymbolCount !== null && count === baseSymbolCount;
   const selectedPreset = presets.find((item) => item.id === preset || item.metadata.preset === preset);
   const options = [
@@ -82,11 +82,18 @@ export function AlphabetEditor({
 
       <Textarea
         value={alphabet}
-        onChange={(event) => onChange({ ...values, symbols: event.target.value })}
+        onChange={(event) => {
+          setPreset("custom");
+          onChange({ ...values, preset: "custom", symbols: event.target.value });
+        }}
         spellCheck={false}
         rows={4}
-        className="resize-y break-all text-[15px] font-mono leading-[1.7]"
+        className="resize-y break-words text-[15px] font-mono leading-[1.7]"
       />
+
+      <div className="mt-2 text-xs font-semibold text-txt-mute">
+        Separate tokens with spaces or newlines. Use ␠ for the literal space token.
+      </div>
 
       {baseSymbolCount === null ? (
         <div className="mt-2.5 text-xs font-semibold text-txt-mute">
@@ -112,6 +119,18 @@ export function AlphabetEditor({
 
 function alphabetSymbols(config: TrainingConfig): string {
   const raw = config.metadata.symbols;
-  if (Array.isArray(raw)) return raw.map(String).join("");
+  if (Array.isArray(raw)) return formatAlphabetSymbols(raw.map(String));
   return String(raw ?? "");
+}
+
+export function parseAlphabetSymbols(value: string): string[] {
+  return value
+    .trim()
+    .split(/\s+/)
+    .map((symbol) => symbol === "␠" ? " " : symbol)
+    .filter(Boolean);
+}
+
+export function formatAlphabetSymbols(symbols: string[]): string {
+  return symbols.map((symbol) => symbol === " " ? "␠" : symbol).join(" ");
 }

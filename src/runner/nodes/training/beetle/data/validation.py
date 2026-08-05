@@ -2,7 +2,6 @@ import random
 from typing import Any
 from uuid import UUID
 
-from shared.audio_annotations import AudioAnnotations
 from shared.db.audio import crud as audio_crud
 from shared.db.audio.ranges.wav import WavTimeRange, slice_wav_ranges
 from shared.db.connection import database_session
@@ -87,6 +86,7 @@ class ValidationLoader:
             audio.mel_channels,
             audio.f_min,
             audio.f_max,
+            audio.jdc_f_max,
         )
 
     def load_source(
@@ -171,20 +171,19 @@ def _stored_audio(row: Any, segments: list[dict[str, Any]], payload: bytes) -> S
         voice_prompt=row.voice_prompt,
         virtual=bool(row.virtual),
         storage_kind=str(row.storage_kind),
-        segments=tuple(_segment(item) for item in segments),
+        segments=tuple(_segment(item, row.speaker_id) for item in segments),
         clip=clips[0],
     )
 
 
-def _segment(value: dict[str, Any]) -> ValidationSegment:
-    voice = AudioAnnotations.model_validate(value["annotations"]).speaker_id
+def _segment(value: dict[str, Any], speaker_id: str | None) -> ValidationSegment:
     return ValidationSegment(
         str(value["id"]),
         float(value["start"]),
         float(value["end"]),
         str(value["text"]),
         str(value["phon"]),
-        None if voice is None else str(voice),
+        speaker_id,
     )
 
 

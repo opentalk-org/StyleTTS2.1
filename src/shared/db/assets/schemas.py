@@ -81,6 +81,10 @@ class ConfigCreate(BaseModel):
     metadata: dict[str, Any]
 
 
+class ConfigUpdate(ConfigCreate):
+    pass
+
+
 class ConfigRead(ConfigCreate):
     id: UUID
     metadata: dict[str, Any] = Field(alias="metadata_")

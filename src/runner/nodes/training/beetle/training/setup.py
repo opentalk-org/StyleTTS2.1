@@ -58,7 +58,13 @@ def build_optimizers(
         *trainable_conditional_modules(conditional),
     )
     parameters = tuple(parameter for module in modules for parameter in module.parameters())
-    generator = _adamw(parameters, config.generator_optimizer)
+    flow_parameters = tuple(conditional.latent_flow.parameters())
+    generator = _generator_adamw(
+        parameters,
+        flow_parameters,
+        config.generator_optimizer,
+        config.latent_flow_weight_decay,
+    )
     discriminator = _adamw(
         tuple(acoustic.discriminators.parameters()),
         discriminator_config,
@@ -123,8 +129,9 @@ def prepare_training_modules(
     for module in trainable_acoustic:
         module.to(runtime.device).requires_grad_(True).train()
     acoustic.reconstruction_loss.to(runtime.device).train()
+    acoustic.jdc_transform.to(runtime.device).train()
     acoustic.discriminators.to(runtime.device).requires_grad_(True).train()
-    acoustic.f0_extractor.to(runtime.device).requires_grad_(False).eval()
+    acoustic.f0_extractor.to(runtime.device).requires_grad_(False).train()
     names = ("audio_encoder", "feature_linear", "decoder", "generator", "discriminators")
     for name in names:
         setattr(acoustic, name, runtime.prepare_module(getattr(acoustic, name)))
@@ -201,16 +208,16 @@ def tensor_metric(name: str, value: Tensor) -> TrainingMetric:
 
 def _acoustic_gradient_groups(models: AcousticModels) -> tuple[NamedGradientGroup, ...]:
     return (
-        NamedGradientGroup("audio_encoder", (models.audio_encoder,), GradientClipping.CLIP),
+        NamedGradientGroup("audio_encoder", (models.audio_encoder,), GradientClipping.OBSERVE),
         NamedGradientGroup("feature_linear", (models.feature_linear,), GradientClipping.OBSERVE),
-        NamedGradientGroup("decoder", (models.decoder,), GradientClipping.CLIP),
-        NamedGradientGroup("generator", (models.generator,), GradientClipping.OBSERVE),
+        NamedGradientGroup("decoder", (models.decoder,), GradientClipping.OBSERVE),
+        NamedGradientGroup("generator", (models.generator,), GradientClipping.CLIP),
     )
 
 
 def _conditional_gradient_groups(models: ConditionalModels) -> tuple[NamedGradientGroup, ...]:
     return tuple(
-        NamedGradientGroup(name, modules, GradientClipping.CLIP)
+        NamedGradientGroup(name, modules, GradientClipping.OBSERVE)
         for name, modules in (
             (
                 "phoneme_encoders",
@@ -250,4 +257,25 @@ def _adamw(
         betas=(config.beta1, config.beta2),
         eps=config.epsilon,
         weight_decay=config.weight_decay,
+    )
+
+
+def _generator_adamw(
+    parameters: tuple[nn.Parameter, ...],
+    flow_parameters: tuple[nn.Parameter, ...],
+    config: OptimizerConfig,
+    flow_weight_decay: float,
+) -> torch.optim.AdamW:
+    flow_ids = {id(parameter) for parameter in flow_parameters}
+    regular_parameters = tuple(
+        parameter for parameter in parameters if id(parameter) not in flow_ids
+    )
+    return torch.optim.AdamW(
+        (
+            {"params": regular_parameters, "weight_decay": config.weight_decay},
+            {"params": flow_parameters, "weight_decay": flow_weight_decay},
+        ),
+        lr=config.learning_rate,
+        betas=(config.beta1, config.beta2),
+        eps=config.epsilon,
     )

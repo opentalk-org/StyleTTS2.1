@@ -23,12 +23,14 @@ from shared.db.audio import crud as audio_crud
 from shared.db.audio.external import bulk_create_external_audio_files
 from shared.db.audio.models import AudioFile
 from shared.db.audio.schemas import AudioCreate, AudioUpdate
+from shared.db.datasets import crud as dataset_crud
 
 
 class SaveAudioRecordSettings(StrictSettings):
     storage_mode: Literal["stored", "external"] = "stored"
     virtual: bool = False
     bulk_import_packs: bool = False
+    dataset_id: UUID | None = None
 
 
 class SaveAudioSegmentsSettings(StrictSettings):
@@ -48,6 +50,10 @@ class SaveAudioRecordNode(Node):
     async def execute(self, batch, context):
         audios: list[Audio] = [inputs["audio"] for inputs in batch]
         if self.settings.storage_mode == "external":
+            if self.settings.dataset_id is not None:
+                raise ValueError(
+                    "SaveAudioRecord dataset_id requires stored mode"
+                )
             payloads = [external_payload(audio) for audio in context.cancellable(audios)]
             with database_session() as session:
                 inserted = bulk_create_external_audio_files(session, payloads)
@@ -65,7 +71,16 @@ class SaveAudioRecordNode(Node):
                 session,
                 payloads,
                 config=_audio_pack_config(self.settings),
+                commit=False,
             )
+            if self.settings.dataset_id is not None:
+                dataset_crud.bulk_add_audio_files_to_dataset(
+                    session,
+                    self.settings.dataset_id,
+                    [item.id for item in items],
+                    commit=False,
+                )
+            session.commit()
         context.check_cancel()
         return [_audio_writeback_output(item, audio, "created") for item, audio in zip(items, audios, strict=True)]
 
@@ -204,7 +219,11 @@ def _stored_payload(audio: Audio, virtual: bool) -> AudioCreate:
         language=_audio_language(audio),
         style_prompt=audio.style_prompt,
         voice_prompt=audio.voice_prompt,
-        segments=[],
+        segments=_new_group_segments(
+            _segment_group_from_audio(audio),
+            "replace",
+            [],
+        ),
         virtual=virtual,
     )
 

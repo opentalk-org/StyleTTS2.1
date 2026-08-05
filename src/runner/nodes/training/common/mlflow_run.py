@@ -25,6 +25,8 @@ class TrackerRun(Protocol):
 
     def log_artifact(self, path: Path, artifact_path: str) -> None: ...
 
+    def log_artifacts(self, path: Path, artifact_path: str) -> None: ...
+
     def close(self) -> None: ...
 
 
@@ -40,6 +42,8 @@ class TrackingClient(Protocol):
     def log_text(self, run_id: str, text: str, artifact_file: str) -> object: ...
 
     def log_artifact(self, run_id: str, local_path: str, artifact_path: str) -> object: ...
+
+    def log_artifacts(self, run_id: str, local_dir: str, artifact_path: str) -> object: ...
 
     def set_terminated(self, run_id: str, status: str) -> object: ...
 
@@ -99,6 +103,9 @@ class MlflowRun:
     def log_artifact(self, path: Path, artifact_path: str) -> None:
         self._client.log_artifact(self._run_id, str(path), artifact_path)
 
+    def log_artifacts(self, path: Path, artifact_path: str) -> None:
+        self._client.log_artifacts(self._run_id, str(path), artifact_path)
+
     def close(self) -> None:
         self._flush_pending()
         self._client.set_terminated(self._run_id, "FINISHED")
@@ -127,3 +134,16 @@ def start_mlflow_run(*, experiment: str, name: str, config: dict[str, object]) -
     client.log_dict(run.info.run_id, config, "config.json")
     logger.info("MLflow run started experiment=%s name=%s", experiment, name)
     return MlflowRun(client, run.info.run_id)
+
+
+def resume_mlflow_run(run_id: str) -> TrackerRun:
+    """Attach metric and artifact logging to an existing MLflow run."""
+    client = MlflowClient(tracking_uri=os.environ["MLFLOW_TRACKING_URI"])
+    run = client.get_run(run_id)
+    client.update_run(run_id, status="RUNNING")
+    logger.info(
+        "MLflow run resumed experiment_id=%s run_id=%s",
+        run.info.experiment_id,
+        run_id,
+    )
+    return MlflowRun(client, run_id)

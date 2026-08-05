@@ -4,6 +4,30 @@ import math
 from torch.nn import functional as F
 from torch.nn.utils import weight_norm, spectral_norm
 
+
+def mask_time(x, lengths):
+    positions = torch.arange(x.shape[-1], device=x.device)
+    mask = positions.unsqueeze(0) < lengths.unsqueeze(1)
+    return x * mask[:, None, None, :].to(x.dtype)
+
+
+def masked_half_pool(x, lengths):
+    if x.shape[-1] % 2:
+        x = F.pad(x, (0, 1))
+    odd = lengths % 2 == 1
+    batch_indices = torch.arange(x.shape[0], device=x.device)[odd]
+    last_indices = lengths[odd] - 1
+    duplicate_indices = lengths[odd]
+    x = x.clone()
+    x[batch_indices, :, :, duplicate_indices] = x[
+        batch_indices,
+        :,
+        :,
+        last_indices,
+    ]
+    return F.avg_pool2d(x, 2)
+
+
 class AdaIN1d(nn.Module):
     def __init__(self, style_dim, num_features):
         super().__init__()
@@ -103,6 +127,24 @@ class ResBlk(nn.Module):
     def forward(self, x):
         x = self._shortcut(x) + self._residual(x)
         return x / math.sqrt(2)
+
+    def forward_masked(self, x, lengths):
+        assert self.downsample.layer_type == "half"
+        assert not self.normalize
+        shortcut = x
+        if self.learned_sc:
+            shortcut = self.conv1x1(shortcut)
+        shortcut = masked_half_pool(shortcut, lengths)
+
+        residual = self.actv(x)
+        residual = mask_time(self.conv1(residual), lengths)
+        residual = self.downsample_res(residual)
+        output_lengths = (lengths + 1) // 2
+        residual = mask_time(residual, output_lengths)
+        residual = self.actv(residual)
+        residual = mask_time(self.conv2(residual), output_lengths)
+        output = (shortcut + residual) / math.sqrt(2)
+        return mask_time(output, output_lengths), output_lengths
 
 class AdainResBlk1d(nn.Module):
     def __init__(self, dim_in, dim_out, style_dim=64, actv=nn.LeakyReLU(0.2),

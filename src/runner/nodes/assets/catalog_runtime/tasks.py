@@ -7,7 +7,13 @@ from runner.nodes.assets.catalog_runtime.entries import CATALOG_ENTRIES, Catalog
 from runner.nodes.assets.catalog_runtime.persistence import checkpoint_payload, ensure_checkpoint_bundle, ensure_extra_file, extra_file_payload
 from runner.nodes.assets.catalog_runtime.specs import official_styletts_specs, papercup_plbert_spec, styletts2_utils_specs, vokan_styletts_spec
 from runner.nodes.assets.catalog_runtime.types import CatalogTask
-from runner.nodes.assets.model_downloads import download_hf_snapshot, download_nemo_snapshot, download_whisper_model_files, ensure_model_checkpoint
+from runner.nodes.assets.model_downloads import (
+    download_hf_snapshot,
+    download_nemo_snapshot,
+    download_raon_model_files,
+    download_whisper_model_files,
+    ensure_model_checkpoint,
+)
 
 
 _NEMO_ASR_KINDS = {"parakeet", "canary", "sortformer"}
@@ -142,7 +148,13 @@ def bootstrap_tts_model(item: str = "", *, logger: logging.Logger | None = None)
     engine, repo = _parse_tts_item(item)
     log.info("tts model download starting engine=%s repo=%s", engine, repo)
     filters = _TTS_DOWNLOAD_FILTERS.get(engine, {})
-    ref = ensure_model_checkpoint(engine, repo, lambda folder: download_hf_snapshot(repo, folder, **filters))
+    if engine == "raon_opentts":
+        download = lambda folder: download_raon_model_files(repo, folder)
+        validate = _raon_checkpoint_valid
+    else:
+        download = lambda folder: download_hf_snapshot(repo, folder, **filters)
+        validate = None
+    ref = ensure_model_checkpoint(engine, repo, download, validate)
     log.info("tts model download resolved engine=%s repo=%s checkpoint=%s", engine, repo, ref.checkpoint_id)
     return {
         "model_checkpoint": {
@@ -152,6 +164,15 @@ def bootstrap_tts_model(item: str = "", *, logger: logging.Logger | None = None)
             "name": ref.name,
         }
     }
+
+
+def _raon_checkpoint_valid(path: Path) -> bool:
+    return (
+        (path / "runtime" / "raon_f5_tts" / "infer" / "utils_infer.py").is_file()
+        and (path / "vocoder" / "generator.ckpt").is_file()
+        and (path / "config.yaml").is_file()
+        and (path / "vocab.txt").is_file()
+    )
 
 
 def bootstrap_mos_model(item: str = "", *, logger: logging.Logger | None = None) -> dict[str, Any]:

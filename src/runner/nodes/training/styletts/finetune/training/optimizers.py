@@ -18,6 +18,12 @@ class MultiOptimizer:
         for key, val in state_dict:
             try:
                 self.optimizers[key].load_state_dict(val)
+                dropped = _drop_resized_parameter_state(self.optimizers[key])
+                if dropped:
+                    print(
+                        f"Dropped resized optimizer state for {key}: "
+                        f"{dropped} parameter(s)"
+                    )
             except:
                 print("Unloaded %s" % key)
 
@@ -44,12 +50,26 @@ class MultiOptimizer:
         else:
             _ = [self.schedulers[key].step(*args) for key in self.keys]
 
+
+def _drop_resized_parameter_state(optimizer):
+    dropped = 0
+    for parameter, state in tuple(optimizer.state.items()):
+        incompatible = any(
+            isinstance(value, torch.Tensor)
+            and value.ndim > 0
+            and value.shape != parameter.shape
+            for value in state.values()
+        )
+        if incompatible:
+            del optimizer.state[parameter]
+            dropped += 1
+    return dropped
+
 def define_scheduler(optimizer, params):
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer,
         max_lr=params["max_lr"],
-        epochs=params["epochs"],
-        steps_per_epoch=params["steps_per_epoch"],
+        total_steps=params["total_steps"],
         pct_start=params["pct_start"],
         div_factor=1,
         final_div_factor=1)

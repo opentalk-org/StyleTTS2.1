@@ -61,8 +61,8 @@ left-padded and missing post-context is right-padded. Audio context is sliced
 from the full posterior. Text context uses phonemes selected by the full hard
 alignment. Shared two-layer CNNs and attentive pooling produce all four
 context vectors; a context with no real audio or no aligned phoneme is always
-dropped. The acoustic/GAN path remains a separate 19,200-sample,
-64-mel-frame crop: 0.8 seconds at 24 kHz.
+dropped. The acoustic/GAN path remains a separate 24,576-sample,
+96-mel-frame crop: 1.024 seconds at 24 kHz.
 
 The planner gathers
 `data.prefetch.window_size * training.batch_size * world_size` examples,
@@ -80,7 +80,7 @@ rates, AMP scales, gradient norms, throughput, ETA, queue occupancy, system
 metrics, full-recording validation metrics, and validation artifacts. The
 latent-to-audio path remains subject to the configured inference parameter and
 GFLOPs budgets. `runtime.compile_frame_count` must match the derived contextual
-encoder geometry; the default 0.8-second acoustic crop derives 196 input mel
+encoder geometry; the default 1.024-second acoustic crop derives 228 input mel
 frames.
 
 Each validation step writes two complete reports beneath

@@ -230,6 +230,7 @@ def build_data_pipeline(
         audio.mel_channels,
         audio.f_min,
         audio.f_max,
+        audio.jdc_f_max,
     )
     planner = ContinuousBatchPlanner(
         index=index,

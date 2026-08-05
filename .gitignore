@@ -12,6 +12,9 @@ dist/
 */.cache/
 .cache/
 /data/
+hiftnet/
+hiftnet
+src/runner/nodes/training/hiftnet
 
 # Deployment secrets — never commit. Templates (*.env.example) are tracked.
 .env

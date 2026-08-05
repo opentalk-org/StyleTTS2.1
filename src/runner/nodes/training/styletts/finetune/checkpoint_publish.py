@@ -28,11 +28,11 @@ def _checkpoint_tree_to_cpu(obj: Any) -> Any:
     return obj
 
 
-def publish_finetune_epoch_bundle_from_training_config(
+def publish_finetune_step_bundle_from_training_config(
     config: dict[str, Any],
     *,
     training_state: dict[str, Any],
-    epoch_1based: int,
+    step: int,
     segment_slug: str,
 ) -> None:
     _ = segment_slug
@@ -51,20 +51,20 @@ def publish_finetune_epoch_bundle_from_training_config(
     }
 
     run_seg = slugify_segment((run_name or "").strip(), max_len=64)
-    suffix = f"epoch {epoch_1based}"
+    suffix = f"step {step}"
     title = f"StyleTTS2 finetune {run_seg} {suffix}"
     run_name_opt = str(run_name).strip() if isinstance(run_name, str) else None
-    dest = log_dir / "published_checkpoints" / f"epoch_{epoch_1based:04d}"
+    dest = log_dir / "published_checkpoints" / f"step_{step:09d}"
     shutil.rmtree(dest, ignore_errors=True)
     dest.mkdir(parents=True, exist_ok=True)
 
-    target = dest / f"model_{epoch_1based}.pth"
-    logger.info("finetune_publish begin job_id=%s epoch=%s bundle=%s", job_id, epoch_1based, dest)
+    target = dest / f"model_{step}.pth"
+    logger.info("finetune_publish begin job_id=%s step=%s bundle=%s", job_id, step, dest)
     torch.save(_checkpoint_tree_to_cpu(training_state), target)
-    logger.info("finetune_publish saved weights job_id=%s epoch=%s bytes=%s", job_id, epoch_1based, target.stat().st_size)
+    logger.info("finetune_publish saved weights job_id=%s step=%s bytes=%s", job_id, step, target.stat().st_size)
 
     with open(dest / "config.yml", "w") as outfile:
-        yaml.dump(config, outfile, default_flow_style=True)
+        yaml.safe_dump(config, outfile, sort_keys=False, allow_unicode=True)
 
     with database_session() as session:
         checkpoint = asset_crud.create_checkpoint(
@@ -75,17 +75,17 @@ def publish_finetune_epoch_bundle_from_training_config(
                 type_="styletts2",
                 metadata={
                     **meta,
-                    "source": "finetune_epoch",
+                    "source": "finetune_step",
                     "finetune_job_id": job_id,
                     "finetune_run_name": run_name_opt if run_name_opt else None,
                     "parent_checkpoint_path": parent,
-                    "studio_stage": "epoch",
+                    "studio_stage": "step",
                     "state": {
-                        "source": "finetune_epoch",
+                        "source": "finetune_step",
                         "finetune_job_id": job_id,
                         "finetune_run_name": run_name_opt if run_name_opt else None,
                         "parent_checkpoint_path": parent,
-                        "studio_stage": "epoch",
+                        "studio_stage": "step",
                     },
                 },
                 job_id=job_id,

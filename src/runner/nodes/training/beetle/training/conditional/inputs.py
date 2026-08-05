@@ -111,7 +111,6 @@ class DefaultConditionalInputBuilder(ConditionalInputBuilder):
             core.window.posterior.latent,
             core.window.posterior.mask,
             self.config.architecture.latent_flow.minimum_steps,
-            self.config.architecture.latent_flow.base_case_probability,
             self._generator(loop, "flow"),
         )
         style_latent, style_mask = encode_view_latents(

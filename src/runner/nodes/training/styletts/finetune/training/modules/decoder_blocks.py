@@ -20,7 +20,8 @@ class AdaIN1d(nn.Module):
         h = self.fc(s)
         h = h.view(h.size(0), h.size(1), 1)
         gamma, beta = torch.chunk(h, chunks=2, dim=1)
-        return (1 + gamma) * self.norm(x) + beta
+        normalized = self.norm(x)
+        return normalized.mul_(1 + gamma).add_(beta)
 
 
 class AdaINResBlock1(nn.Module):
@@ -99,10 +100,10 @@ class AdaINResBlock1(nn.Module):
         self.convs2.apply(init_weights)
 
         self.adain1 = nn.ModuleList(
-            [AdaIN1d(style_dim, channels), AdaIN1d(style_dim, channels), AdaIN1d(style_dim, channels)]
+            [AdaIN1d(style_dim, channels) for _ in range(3)]
         )
         self.adain2 = nn.ModuleList(
-            [AdaIN1d(style_dim, channels), AdaIN1d(style_dim, channels), AdaIN1d(style_dim, channels)]
+            [AdaIN1d(style_dim, channels) for _ in range(3)]
         )
         self.alpha1 = nn.ParameterList(
             [nn.Parameter(torch.ones(1, channels, 1)) for _ in range(len(self.convs1))]
@@ -116,10 +117,10 @@ class AdaINResBlock1(nn.Module):
             self.convs1, self.convs2, self.adain1, self.adain2, self.alpha1, self.alpha2
         ):
             xt = n1(x, s)
-            xt = xt + (1 / a1) * (torch.sin(a1 * xt) ** 2)
+            xt = xt + torch.sin(a1 * xt).square() / a1
             xt = c1(xt)
             xt = n2(xt, s)
-            xt = xt + (1 / a2) * (torch.sin(a2 * xt) ** 2)
+            xt = xt + torch.sin(a2 * xt).square() / a2
             xt = c2(xt)
             x = xt + x
         return x
@@ -132,7 +133,15 @@ class AdaINResBlock1(nn.Module):
 
 
 class AdainResBlk1d(nn.Module):
-    def __init__(self, dim_in, dim_out, style_dim=64, actv=nn.LeakyReLU(0.2), upsample="none", dropout_p=0.0):
+    def __init__(
+        self,
+        dim_in,
+        dim_out,
+        style_dim=64,
+        actv=nn.LeakyReLU(0.2),
+        upsample="none",
+        dropout_p=0.0,
+    ):
         super().__init__()
         self.actv = actv
         self.upsample_type = upsample
@@ -161,7 +170,9 @@ class AdainResBlk1d(nn.Module):
         self.norm1 = AdaIN1d(style_dim, dim_in)
         self.norm2 = AdaIN1d(style_dim, dim_out)
         if self.learned_sc:
-            self.conv1x1 = weight_norm(nn.Conv1d(dim_in, dim_out, 1, 1, 0, bias=False))
+            self.conv1x1 = weight_norm(
+                nn.Conv1d(dim_in, dim_out, 1, 1, 0, bias=False)
+            )
 
     def _shortcut(self, x):
         x = self.upsample(x)
@@ -193,16 +204,35 @@ class DecoderBackbone(nn.Module):
         self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
         self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
         self.decode.append(AdainResBlk1d(1024 + 2 + 64, 1024, style_dim))
-        self.decode.append(AdainResBlk1d(1024 + 2 + 64, 512, style_dim, upsample=True))
-        self.F0_conv = weight_norm(nn.Conv1d(1, 1, kernel_size=3, stride=2, groups=1, padding=1))
-        self.N_conv = weight_norm(nn.Conv1d(1, 1, kernel_size=3, stride=2, groups=1, padding=1))
-        self.asr_res = nn.Sequential(weight_norm(nn.Conv1d(512, 64, kernel_size=1)))
+        self.decode.append(
+            AdainResBlk1d(1024 + 2 + 64, 512, style_dim, upsample=True)
+        )
+        self.F0_conv = weight_norm(
+            nn.Conv1d(1, 1, kernel_size=3, stride=2, groups=1, padding=1)
+        )
+        self.N_conv = weight_norm(
+            nn.Conv1d(1, 1, kernel_size=3, stride=2, groups=1, padding=1)
+        )
+        self.asr_res = nn.Sequential(
+            weight_norm(nn.Conv1d(512, 64, kernel_size=1))
+        )
 
     def _smooth_signal(self, signal, kernel_size):
         if not kernel_size:
             return signal
-        kernel = torch.ones(1, 1, kernel_size, device=signal.device, dtype=signal.dtype)
-        return F.conv1d(signal.unsqueeze(1), kernel, padding=kernel_size // 2).squeeze(1) / kernel_size
+        kernel = torch.ones(
+            1,
+            1,
+            kernel_size,
+            device=signal.device,
+            dtype=signal.dtype,
+        )
+        smoothed = F.conv1d(
+            signal.unsqueeze(1),
+            kernel,
+            padding=kernel_size // 2,
+        )
+        return smoothed.squeeze(1) / kernel_size
 
     def _prepare_inputs(self, f0_curve, n):
         if not self.training:

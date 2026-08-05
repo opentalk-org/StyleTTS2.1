@@ -109,26 +109,42 @@ class OptimizerSet:
         optimizer_step: int,
         diagnostics: bool,
     ) -> tuple[TrainingMetric, ...]:
+        return self._step(self.groups, optimizer_step, diagnostics)
+
+    def step_group(
+        self,
+        name: str,
+        optimizer_step: int,
+        diagnostics: bool,
+    ) -> tuple[TrainingMetric, ...]:
+        return self._step((self.group(name),), optimizer_step, diagnostics)
+
+    def _step(
+        self,
+        groups: tuple[ScheduledOptimizer, ...],
+        optimizer_step: int,
+        diagnostics: bool,
+    ) -> tuple[TrainingMetric, ...]:
         learning_rates = tuple(
-            group.prepare(optimizer_step) for group in self.groups
+            group.prepare(optimizer_step) for group in groups
         )
         gradient_norms = tuple(
-            gradient_norm(group.parameters()) for group in self.groups
+            gradient_norm(group.parameters()) for group in groups
         )
         invalid = tuple(
             group.name
-            for group, norm in zip(self.groups, gradient_norms, strict=True)
+            for group, norm in zip(groups, gradient_norms, strict=True)
             if not math.isfinite(norm)
         )
         if invalid:
-            for group in self.groups:
+            for group in groups:
                 group.discard()
             raise FloatingPointError(
                 f"non-finite optimizer gradients: {', '.join(invalid)}"
             )
         owned_parameter_ids = tuple(
             {id(parameter) for parameter in group.parameters()}
-            for group in self.groups
+            for group in groups
         )
         observations = tuple(
             tuple(
@@ -140,7 +156,7 @@ class OptimizerSet:
                 for gradient_group in group.gradient_groups
             )
             for group, owned_parameters in zip(
-                self.groups,
+                groups,
                 owned_parameter_ids,
                 strict=True,
             )
@@ -154,7 +170,7 @@ class OptimizerSet:
         optimizer_metrics = tuple(
             metric
             for group, learning_rate, gradient_norm_value, group_observations in zip(
-                self.groups,
+                groups,
                 learning_rates,
                 gradient_norms,
                 observations,

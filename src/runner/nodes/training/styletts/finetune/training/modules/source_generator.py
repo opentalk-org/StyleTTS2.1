@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-
+import torch.nn.functional as F
 
 class SineGenerator(torch.nn.Module):
     def __init__(
@@ -36,13 +36,13 @@ class SineGenerator(torch.nn.Module):
         phase_steps[:, 0, :] += initial_phase
 
         if not self.pulse:
-            phase_steps = torch.nn.functional.interpolate(
+            phase_steps = F.interpolate(
                 phase_steps.transpose(1, 2),
                 scale_factor=1 / self.upsample_scale,
                 mode="linear",
             ).transpose(1, 2)
             phase = torch.cumsum(phase_steps, dim=1) * 2 * np.pi
-            phase = torch.nn.functional.interpolate(
+            phase = F.interpolate(
                 phase.transpose(1, 2) * self.upsample_scale,
                 scale_factor=self.upsample_scale,
                 mode="linear",
@@ -103,4 +103,4 @@ class SourceModuleHnNSF(torch.nn.Module):
             sine_waves, voiced, _ = self.l_sin_gen(f0)
         sine_merge = self.l_tanh(self.l_linear(sine_waves))
         noise = torch.randn_like(voiced) * self.sine_amp / 3
-        return sine_merge, noise, voiced
+        return sine_merge

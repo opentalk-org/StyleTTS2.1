@@ -6,6 +6,7 @@ from scipy.signal import get_window
 from torch.nn import Conv1d, ConvTranspose1d
 from torch.nn.utils import remove_weight_norm, weight_norm
 
+from ..profiling import profiling_fn
 from .decoder_blocks import AdaINResBlock1, DecoderBackbone
 from .source_generator import SourceModuleHnNSF
 from .utils import checkpoint_with_mixed_precision, init_weights
@@ -44,10 +45,6 @@ class TorchSTFT(torch.nn.Module):
         return reconstruction
 
 
-def padDiff(x):
-    return F.pad(F.pad(x, (0,0,-1,1), 'constant', 0) - x, (0,0,0,-1), 'constant', 0)
-
-    
 class Generator(torch.nn.Module):
     def __init__(self, style_dim, resblock_kernel_sizes, upsample_rates, upsample_initial_channel, resblock_dilation_sizes, upsample_kernel_sizes, gen_istft_n_fft, gen_istft_hop_size, gradient_checkpointing=False):
         super(Generator, self).__init__()
@@ -102,29 +99,30 @@ class Generator(torch.nn.Module):
         with torch.no_grad():
             f0 = self.f0_upsamp(f0[:, None]).transpose(1, 2)
 
-            har_source, noi_source, uv = self.m_source(f0)
+            har_source = self.m_source(f0)
             har_source = har_source.transpose(1, 2).squeeze(1)
             har_spec, har_phase = self.stft.transform(har_source)
             har = torch.cat([har_spec, har_phase], dim=1)
         dummy = self.dummy_tensor
 
         for i in range(self.num_upsamples):
-            if self.gradient_checkpointing:
-                x, x_source = checkpoint_with_mixed_precision(
-                    self._pre_upsample_noise, x, har, s, i, dummy
-                )
-            else:
-                x, x_source = self._pre_upsample_noise(x, har, s, i, dummy)
+            with profiling_fn(f"decoder_stage_{i}"):
+                if self.gradient_checkpointing:
+                    x, x_source = checkpoint_with_mixed_precision(
+                        self._pre_upsample_noise, x, har, s, i, dummy
+                    )
+                else:
+                    x, x_source = self._pre_upsample_noise(x, har, s, i, dummy)
 
-            x = self.ups[i](x)
-            if i == self.num_upsamples - 1:
-                x = self.reflection_pad(x)
+                x = self.ups[i](x)
+                if i == self.num_upsamples - 1:
+                    x = self.reflection_pad(x)
 
-            x = x + x_source
-            if self.gradient_checkpointing:
-                x = checkpoint_with_mixed_precision(self._forward_res_block, x, s, i, dummy)
-            else:
-                x = self._forward_res_block(x, s, i, dummy)
+                x = x + x_source
+                if self.gradient_checkpointing:
+                    x = checkpoint_with_mixed_precision(self._forward_res_block, x, s, i, dummy)
+                else:
+                    x = self._forward_res_block(x, s, i, dummy)
 
         if self.gradient_checkpointing:
             return checkpoint_with_mixed_precision(self._output_forward, x, dummy)
@@ -191,7 +189,7 @@ class Decoder(DecoderBackbone):
                 gen_istft_n_fft=20, gen_istft_hop_size=5,
                 gradient_checkpointing=False):
         super().__init__(dim_in=dim_in, style_dim=style_dim)
-        self.generator = Generator(style_dim, resblock_kernel_sizes, upsample_rates, 
+        self.generator = Generator(style_dim, resblock_kernel_sizes, upsample_rates,
                                    upsample_initial_channel, resblock_dilation_sizes, 
                                    upsample_kernel_sizes, gen_istft_n_fft, gen_istft_hop_size, gradient_checkpointing)
         

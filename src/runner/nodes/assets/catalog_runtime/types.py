@@ -12,6 +12,7 @@ class CheckpointType(StrEnum):
     F0_MODEL = "f0_model"
     ASR_BUNDLE = "asr_bundle"
     PLBERT = "plbert"
+    PIPER = "piper"
 
 
 class ExtraFileType(StrEnum):

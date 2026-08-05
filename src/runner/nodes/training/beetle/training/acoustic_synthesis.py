@@ -22,14 +22,25 @@ from .state import LoopState
 
 @dataclass(frozen=True)
 class AcousticBackwardMetrics:
-    prediction_ratio: float
+    f0_prediction_ratio: float
     encoder_kl: Tensor
     f0: Tensor
     n: Tensor
     reconstruction: Tensor
     adversarial: Tensor
+    feature_period: Tensor
+    feature_resolution: Tensor
     feature_matching: Tensor
+    vocoder_total: Tensor
     total: Tensor
+
+
+@dataclass(frozen=True)
+class AcousticTrainingView:
+    target: AcousticFeatures
+    segment: AlignedSegments
+    synthesis: AcousticSynthesis
+    predicted_f0_ratio: float
 
 
 def batch_inputs(
@@ -68,12 +79,56 @@ def training_segment(
     lengths = frame_mask[:, 0].sum(dim=1).clamp_min(frame_count)
     positions = torch.arange(frame_mask.shape[-1], device=frame_mask.device)
     available = positions.view(1, 1, -1) < lengths.view(-1, 1, 1)
-    return AlignedSegments.random(
+    return AlignedSegments.reference_chunks(
         available,
         frame_count,
-        acoustic.latent_downsample_rate,
         acoustic.output_hop,
         generator,
+    )
+
+
+def build_acoustic_training_view(
+    acoustic: AcousticModels,
+    runtime_seed: int,
+    loop: LoopState,
+    device: torch.device,
+    segment_samples: int,
+    waveform: Tensor,
+    frame_mask: Tensor,
+    predicted_f0_ratio: float,
+) -> AcousticTrainingView:
+    segment = training_segment(
+        frame_mask,
+        segment_samples,
+        acoustic,
+        training_generator(runtime_seed, loop, device, "acoustic", "segment"),
+    )
+    real = segment.samples(waveform)
+    mel = acoustic.reconstruction_loss.transforms[0](real[:, 0])
+    jdc_mel = acoustic.jdc_transform(real[:, 0])
+    segment_frame_mask = torch.ones(
+        mel.shape[0],
+        1,
+        mel.shape[-1],
+        dtype=torch.bool,
+        device=mel.device,
+    )
+    target = acoustic.acoustic_targets(mel, jdc_mel, segment_frame_mask)
+    synthesis = synthesize_training_posterior(
+        acoustic,
+        mel,
+        segment_frame_mask,
+        target,
+        predicted_f0_ratio,
+        training_generator(runtime_seed, loop, device, "acoustic", "latent"),
+        training_generator(runtime_seed, loop, device, "acoustic", "f0-smoothing"),
+        training_generator(runtime_seed, loop, device, "acoustic", "source"),
+    )
+    return AcousticTrainingView(
+        target,
+        segment,
+        synthesis,
+        predicted_f0_ratio,
     )
 
 
@@ -83,25 +138,14 @@ def acoustic_backward(
     optimizer: ScheduledOptimizer,
     accumulation_steps: int,
     waveform: Tensor,
-    mel: Tensor,
-    frame_mask: Tensor,
-    target: AcousticFeatures,
-    segment: AlignedSegments,
-    predicted_ratio: float,
+    view: AcousticTrainingView,
     weights: AcousticLossWeights,
-    latent_generator: torch.Generator,
     completed_step: int,
 ) -> AcousticBackwardMetrics:
-    real = segment.samples(waveform)
-    segment_frame_mask = segment.frames(frame_mask)
+    real = view.segment.samples(waveform)
+    segment_frame_mask = view.synthesis.decoded.mask
     with runtime.autocast():
-        posterior = synthesize_training_posterior(
-            acoustic,
-            mel,
-            frame_mask,
-            segment,
-            latent_generator,
-        )
+        posterior = view.synthesis
         encoder_kl = masked_kl_standard_normal(
             posterior.posterior.mean,
             posterior.posterior.log_scale,
@@ -109,13 +153,13 @@ def acoustic_backward(
         )
         f0 = masked_f0_smooth_l1(
             posterior.acoustic.f0,
-            segment.frames(target.f0),
+            view.target.f0,
             segment_frame_mask,
             acoustic.feature_linear.config.f0_scale_hz,
         )
         n = masked_n_smooth_l1(
             posterior.acoustic.n,
-            segment.frames(target.n),
+            view.target.n,
             segment_frame_mask,
         )
         reconstruction = acoustic.reconstruction_loss(
@@ -129,23 +173,29 @@ def acoustic_backward(
             real,
             posterior.waveform,
         )
-        total = (
-            encoder_kl * weights.encoder_kl
-            + f0 * weights.f0
-            + n * weights.n
-            + reconstruction * weights.reconstruction
+        vocoder_total = (
+            reconstruction * weights.reconstruction
             + adversarial_view.adversarial * weights.generator_adversarial
             + adversarial_view.feature_matching * weights.feature_matching
         )
+        total = (
+            vocoder_total
+            + encoder_kl * weights.encoder_kl
+            + f0 * weights.f0
+            + n * weights.n
+        )
     optimizer.backward(total / accumulation_steps)
     return AcousticBackwardMetrics(
-        predicted_ratio,
+        view.predicted_f0_ratio,
         encoder_kl.detach(),
         f0.detach(),
         n.detach(),
         reconstruction.detach(),
         adversarial_view.adversarial.detach(),
+        adversarial_view.feature_period.detach(),
+        adversarial_view.feature_resolution.detach(),
         adversarial_view.feature_matching.detach(),
+        vocoder_total.detach(),
         total.detach(),
     )
 
@@ -154,49 +204,50 @@ def synthesize_training_posterior(
     acoustic_models: AcousticModels,
     mel: Tensor,
     frame_mask: Tensor,
-    segment: AlignedSegments,
+    target: AcousticFeatures,
+    predicted_f0_ratio: float,
     latent_generator: torch.Generator,
+    smoothing_generator: torch.Generator,
+    source_generator: torch.Generator,
 ) -> AcousticSynthesis:
-    segment_frame_mask = segment.frames(frame_mask)
-    encoder_mel = segment.context_frames(
+    posterior = acoustic_models.audio_encoder(
         mel,
-        acoustic_models.encoder_context_frames,
-    )
-    encoder_mask = segment.context_frames(
         frame_mask,
-        acoustic_models.encoder_context_frames,
-    )
-    posterior_window = acoustic_models.audio_encoder(
-        encoder_mel,
-        encoder_mask,
         latent_generator,
     )
-    posterior_start = (
-        acoustic_models.encoder_context_frames
-        // 2
-        // acoustic_models.latent_downsample_rate
-    )
-    posterior_count = segment.frame_count // acoustic_models.latent_downsample_rate
-    posterior = _slice_posterior(
-        posterior_window,
-        posterior_start,
-        posterior_start + posterior_count,
-    )
     acoustic = acoustic_models.feature_linear(
-        posterior.latent.detach(),
+        posterior.latent,
         posterior.mask,
-        segment_frame_mask,
+        frame_mask,
     )
+    decoder_acoustic = target.blend(acoustic, predicted_f0_ratio)
+    smoothing_kernels = (0, 3, 7)
+    smoothing_index = torch.randint(
+        len(smoothing_kernels),
+        (1,),
+        device=decoder_acoustic.f0.device,
+        generator=smoothing_generator,
+    ).item()
+    smoothing_kernel = smoothing_kernels[smoothing_index]
+    if smoothing_kernel:
+        smoothed_f0 = torch.nn.functional.avg_pool1d(
+            decoder_acoustic.f0.unsqueeze(1),
+            smoothing_kernel,
+            stride=1,
+            padding=smoothing_kernel // 2,
+            count_include_pad=True,
+        ).squeeze(1)
+        decoder_acoustic = AcousticFeatures(smoothed_f0, decoder_acoustic.n)
     decoded = acoustic_models.decoder(
         posterior.latent,
         posterior.mask,
-        segment_frame_mask,
+        frame_mask,
     )
     waveform = acoustic_models.generator(
         decoded.features,
         decoded.mask,
     )
-    sample_mask = segment_frame_mask.repeat_interleave(
+    sample_mask = frame_mask.repeat_interleave(
         acoustic_models.output_hop,
         dim=-1,
     )
@@ -206,17 +257,4 @@ def synthesize_training_posterior(
         decoded,
         waveform,
         sample_mask,
-    )
-
-
-def _slice_posterior(
-    posterior: AudioPosterior,
-    start: int,
-    end: int,
-) -> AudioPosterior:
-    return AudioPosterior(
-        posterior.mean[:, :, start:end],
-        posterior.log_scale[:, :, start:end],
-        posterior.latent[:, :, start:end],
-        posterior.mask[:, :, start:end],
     )

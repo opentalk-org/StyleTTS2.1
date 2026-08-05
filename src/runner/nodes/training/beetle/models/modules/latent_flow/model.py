@@ -1,211 +1,123 @@
-"""Conditional velocity model following the equations in ``papers/latent-flow.md``."""
-
-import math
-from dataclasses import dataclass
+"""Patch-based 1D DiT-S/2 latent velocity model."""
 
 import torch
 from torch import Tensor, nn
+from torch.nn import functional as F
 
 from ....config.architecture import LatentFlowConfig
-from ..conditioning import AdaLNZero1d, ProjectedConditions
-from ..conditioning_inputs import CONDITION_SOURCE_NAMES
+from ..conditioning import ProjectedConditions
+from .dit import DiTBlock, FinalLayer, ScalarEmbedding, position_embedding
+from .sampling import FlowTrainingSample, patch_mask, sample_flow_training_case
 
-
-@dataclass(frozen=True)
-class FlowTrainingSample:
-    state: Tensor
-    time: Tensor
-    step: Tensor
-    step_index: Tensor
-    velocity: Tensor
-    noise: Tensor
-
-
-def sample_flow_training_case(
-    latent: Tensor,
-    mask: Tensor,
-    minimum_steps: int,
-    base_case_probability: float,
-    generator: torch.Generator,
-) -> FlowTrainingSample:
-    numeric_mask = mask.to(dtype=latent.dtype)
-    scalar_shape = mask.shape
-    noise = (
-        torch.randn(
-            latent.shape,
-            dtype=latent.dtype,
-            device=latent.device,
-            generator=generator,
-        )
-        * numeric_mask
-    )
-    is_base = (
-        torch.rand(
-            scalar_shape,
-            device=latent.device,
-            generator=generator,
-        )
-        < base_case_probability
-    )
-    if 0 < base_case_probability < 1 and mask.sum() >= 2:
-        flat_mask = mask.flatten()
-        flat_base = is_base.flatten()
-        valid_indices = torch.nonzero(flat_mask, as_tuple=False).flatten()
-        valid_base = flat_base.masked_select(flat_mask)
-        if not torch.any(valid_base):
-            flat_base[valid_indices[0]] = True
-        if torch.all(valid_base):
-            flat_base[valid_indices[-1]] = False
-        is_base = flat_base.view_as(is_base)
-    maximum_index = int(math.log2(minimum_steps))
-    shortcut_index = torch.randint(
-        0,
-        maximum_index,
-        scalar_shape,
-        device=latent.device,
-        generator=generator,
-    )
-    step_index = torch.where(
-        is_base,
-        torch.full_like(shortcut_index, maximum_index),
-        shortcut_index,
-    )
-    step = torch.pow(2.0, -step_index.to(dtype=latent.dtype))
-    start_count = torch.pow(2.0, step_index.to(dtype=latent.dtype))
-    start_index = torch.floor(
-        torch.rand(
-            scalar_shape,
-            dtype=latent.dtype,
-            device=latent.device,
-            generator=generator,
-        )
-        * start_count
-    )
-    time = start_index * step * numeric_mask
-    step = step * numeric_mask
-    step_index = step_index * mask
-    state = ((1 - time) * noise + time * latent) * numeric_mask
-    velocity = (latent - noise) * numeric_mask
-    return FlowTrainingSample(state, time, step, step_index, velocity, noise)
-
-
-class ScalarEmbedding(nn.Module):
-    def __init__(self, embedding_channels: int, output_channels: int) -> None:
-        super().__init__()
-        self.layers = nn.Sequential(
-            nn.Conv1d(1, embedding_channels, 1),
-            nn.SiLU(),
-            nn.Conv1d(embedding_channels, output_channels, 1),
-        )
-
-    def forward(self, values: Tensor, mask: Tensor) -> Tensor:
-        return self.layers(values) * mask.to(dtype=values.dtype)
-
-
-class VelocityBlock(nn.Module):
-    def __init__(
-        self,
-        channels: int,
-        condition_channels: int,
-        kernel_size: int,
-        dilation: int,
-    ) -> None:
-        super().__init__()
-        padding = (kernel_size * dilation - dilation) // 2
-        self.adaln = AdaLNZero1d(channels, condition_channels)
-        self.convolution = nn.Conv1d(
-            channels,
-            channels * 2,
-            kernel_size,
-            padding=padding,
-            dilation=dilation,
-        )
-        self.projection = nn.Conv1d(channels, channels, 1)
-
-    def forward(
-        self,
-        features: Tensor,
-        condition: Tensor,
-        mask: Tensor,
-    ) -> Tensor:
-        numeric_mask = mask.to(dtype=features.dtype)
-        hidden = self.convolution(self.adaln(features, condition, mask))
-        activation, gate = hidden.chunk(2, dim=1)
-        residual = self.projection(torch.tanh(activation) * torch.sigmoid(gate))
-        return (features + residual) * (1 / math.sqrt(2)) * numeric_mask
+__all__ = [
+    "FlowTrainingSample",
+    "LatentFlowModel",
+    "sample_flow_training_case",
+]
 
 
 class LatentFlowModel(nn.Module):
-    def __init__(
-        self,
-        config: LatentFlowConfig,
-        concat_layers: tuple[int, ...],
-    ) -> None:
+    def __init__(self, config: LatentFlowConfig) -> None:
         super().__init__()
         self.config = config
         self.input_projection = nn.Conv1d(
             config.latent_channels,
             config.hidden_channels,
-            1,
+            config.patch_size,
+            stride=config.patch_size,
+        )
+        self.condition_projection = nn.Conv1d(
+            config.condition_channels,
+            config.hidden_channels,
+            config.patch_size,
+            stride=config.patch_size,
         )
         self.time_embedding = ScalarEmbedding(
             config.time_embedding_channels,
             config.hidden_channels,
         )
-        self.step_embedding = ScalarEmbedding(
+        self.step_level_embedding = ScalarEmbedding(
             config.time_embedding_channels,
             config.hidden_channels,
         )
         self.blocks = nn.ModuleList(
-            VelocityBlock(
+            DiTBlock(
                 config.hidden_channels,
-                config.condition_channels,
-                config.kernel_size,
-                config.dilation_cycle[index % len(config.dilation_cycle)],
+                config.attention_heads,
+                config.mlp_ratio,
             )
-            for index in range(config.layer_count)
+            for _ in range(config.layer_count)
         )
-        concat_channels = (
-            config.hidden_channels
-            + len(CONDITION_SOURCE_NAMES) * config.condition_channels
-        )
-        self.concat_projections = nn.ModuleDict(
-            {
-                str(index): nn.Conv1d(concat_channels, config.hidden_channels, 1)
-                for index in concat_layers
-            }
-        )
-        self.output_projection = nn.Conv1d(
+        self.final = FinalLayer(
             config.hidden_channels,
-            config.latent_channels,
-            1,
+            config.patch_size * config.latent_channels,
         )
-        nn.init.zeros_(self.output_projection.weight)
-        nn.init.zeros_(self.output_projection.bias)
+        self.apply(_initialize_projection)
+        self._initialize_dit()
 
     def forward(
         self,
         state: Tensor,
         time: Tensor,
-        step: Tensor,
+        step_level: Tensor,
         conditions: ProjectedConditions,
         mask: Tensor,
     ) -> Tensor:
-        scalar_shape = (state.shape[0], 1, state.shape[2])
+        frame_count = state.shape[-1]
+        padding = (-frame_count) % self.config.patch_size
         numeric_mask = mask.to(dtype=state.dtype)
-        combined = conditions.combined() * numeric_mask
-        concatenated = conditions.concatenated() * numeric_mask
-        features = self.input_projection(state * numeric_mask)
-        features = features + self.time_embedding(time, mask)
-        features = features + self.step_embedding(step, mask)
-        for index, block in enumerate(self.blocks):
-            key = str(index)
-            if key in self.concat_projections:
-                features = (
-                    self.concat_projections[key](
-                        torch.cat((features, concatenated), dim=1)
-                    )
-                    * numeric_mask
-                )
-            features = block(features, combined, mask)
-        return self.output_projection(features) * numeric_mask
+        padded_state = F.pad(state * numeric_mask, (0, padding))
+        padded_condition = F.pad(conditions.combined() * numeric_mask, (0, padding))
+        token_mask = patch_mask(mask, self.config.patch_size)[:, 0]
+        features = self.input_projection(padded_state).transpose(1, 2)
+        condition = self.condition_projection(padded_condition).transpose(1, 2)
+        time_tokens = time[:, 0, :: self.config.patch_size]
+        step_level_tokens = step_level[:, 0, :: self.config.patch_size].to(
+            dtype=state.dtype
+        )
+        condition = (
+            condition
+            + self.time_embedding(time_tokens)
+            + self.step_level_embedding(step_level_tokens)
+        )
+        features = features + position_embedding(
+            features.shape[1],
+            features.shape[2],
+            features.device,
+            features.dtype,
+        )
+        features = features * token_mask.unsqueeze(-1)
+        for block in self.blocks:
+            features = block(features, condition, token_mask)
+        patches = self.final(features, condition)
+        output = patches.view(
+            state.shape[0],
+            patches.shape[1],
+            self.config.patch_size,
+            self.config.latent_channels,
+        )
+        output = output.permute(0, 3, 1, 2).reshape(state.shape[0], state.shape[1], -1)
+        return output[..., :frame_count] * numeric_mask
+
+    def _initialize_dit(self) -> None:
+        for embedding in (self.time_embedding, self.step_level_embedding):
+            nn.init.normal_(embedding.layers[0].weight, std=0.02)
+            nn.init.normal_(embedding.layers[2].weight, std=0.02)
+        for block in self.blocks:
+            nn.init.zeros_(block.modulation[-1].weight)
+            nn.init.zeros_(block.modulation[-1].bias)
+        nn.init.zeros_(self.final.modulation[-1].weight)
+        nn.init.zeros_(self.final.modulation[-1].bias)
+        nn.init.zeros_(self.final.output.weight)
+        nn.init.zeros_(self.final.output.bias)
+
+
+def _initialize_projection(module: nn.Module) -> None:
+    if isinstance(module, nn.Conv1d):
+        nn.init.xavier_uniform_(module.weight.view(module.weight.shape[0], -1))
+        if module.bias is not None:
+            nn.init.zeros_(module.bias)
+    if isinstance(module, nn.Linear):
+        nn.init.xavier_uniform_(module.weight)
+        if module.bias is not None:
+            nn.init.zeros_(module.bias)

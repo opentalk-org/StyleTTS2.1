@@ -118,6 +118,7 @@ class FetchedBatch:
 class BeetleBatch:
     waveform: Tensor
     mel: Tensor
+    jdc_mel: Tensor
     phoneme_ids: Tensor
     text_input_ids: Tensor
     language_ids: Tensor

@@ -4,7 +4,7 @@ import torch
 from torch import Tensor, nn
 
 from ..config import BeetleConfig
-from ..losses.acoustic import MultiResolutionReconstructionLoss
+from ..losses.acoustic import HiFTNetReconstructionLoss, LogMelSpectrogram
 from .acoustic import log_mel_l2_energy
 from .modules.audio import (
     AcousticFeatures,
@@ -40,7 +40,8 @@ class AcousticModels(nn.Module):
         generator: Generator,
         f0_extractor: F0Extractor,
         discriminators: StyleTTSDiscriminators,
-        reconstruction_loss: MultiResolutionReconstructionLoss,
+        reconstruction_loss: HiFTNetReconstructionLoss,
+        jdc_transform: LogMelSpectrogram,
     ) -> None:
         super().__init__()
         self.audio_encoder = audio_encoder
@@ -50,6 +51,7 @@ class AcousticModels(nn.Module):
         self.f0_extractor = f0_extractor
         self.discriminators = discriminators
         self.reconstruction_loss = reconstruction_loss
+        self.jdc_transform = jdc_transform
         self.output_hop = generator.config.output_hop()
         self.latent_downsample_rate = audio_encoder.config.downsample_rate
         self.encoder_context_frames = audio_encoder.config.receptive_field_mel_frames()
@@ -58,6 +60,7 @@ class AcousticModels(nn.Module):
         self,
         mel: Tensor,
         frame_mask: Tensor,
+        decoder_acoustic: AcousticFeatures,
         latent_generator: torch.Generator,
     ) -> AcousticSynthesis:
         posterior = self.audio_encoder(mel, frame_mask, latent_generator)
@@ -69,6 +72,7 @@ class AcousticModels(nn.Module):
         return self._render(
             posterior,
             acoustic,
+            decoder_acoustic,
             frame_mask,
         )
 
@@ -99,9 +103,14 @@ class AcousticModels(nn.Module):
             sample_mask=sample_mask,
         )
 
-    def acoustic_targets(self, mel: Tensor, frame_mask: Tensor) -> AcousticFeatures:
+    def acoustic_targets(
+        self,
+        mel: Tensor,
+        jdc_mel: Tensor,
+        frame_mask: Tensor,
+    ) -> AcousticFeatures:
         return AcousticFeatures(
-            f0=self.f0_target(mel, frame_mask),
+            f0=self.f0_target(jdc_mel, frame_mask),
             n=self.n_target(mel, frame_mask),
         )
 
@@ -136,11 +145,22 @@ def build_acoustic_models(
         generator=Generator(architecture.generator),
         f0_extractor=f0_extractor,
         discriminators=build_styletts_discriminators(),
-        reconstruction_loss=MultiResolutionReconstructionLoss(
+        reconstruction_loss=HiFTNetReconstructionLoss(
             sample_rate=config.audio.sample_rate,
+            n_fft=config.audio.n_fft,
+            hop_length=config.audio.hop_length,
+            win_length=config.audio.win_length,
             mel_channels=config.audio.mel_channels,
-            complex_reconstruction_steps=(
-                config.training.complex_reconstruction_steps
-            ),
+            f_min=config.audio.f_min,
+            f_max=config.audio.f_max,
+        ),
+        jdc_transform=LogMelSpectrogram(
+            sample_rate=config.audio.sample_rate,
+            n_fft=config.audio.n_fft,
+            hop_length=config.audio.hop_length,
+            win_length=config.audio.win_length,
+            mel_channels=config.audio.mel_channels,
+            f_min=config.audio.f_min,
+            f_max=config.audio.jdc_f_max,
         ),
     )
