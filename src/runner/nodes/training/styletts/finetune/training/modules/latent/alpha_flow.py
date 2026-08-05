@@ -6,12 +6,13 @@ from torch import Tensor, nn
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from .denoiser import StyleDiffuser
-from .prosody import STYLE_TOKEN_COUNT, STYLE_TOKEN_DIM
+from .prosody import STYLE_TOKEN_COUNT
 
 
 class AlphaFlow(nn.Module):
     def __init__(
         self,
+        style_dim: int,
         text_dim: int = 768,
         style_scale: float = 1.0,
         transition_start: int = 1_000,
@@ -21,7 +22,12 @@ class AlphaFlow(nn.Module):
     ) -> None:
         super().__init__()
 
-        self.denoiser = StyleDiffuser(text_dim=text_dim)
+        self.denoiser = StyleDiffuser(
+            mel_dim=style_dim,
+            text_dim=text_dim,
+            style_dim=style_dim,
+        )
+        self.style_dim = style_dim
 
         self.register_buffer("style_scale", torch.tensor(float(style_scale)))
         self.register_buffer("style_scale_updates", torch.tensor(0, dtype=torch.long))
@@ -172,7 +178,7 @@ class AlphaFlow(nn.Module):
         if noise is None:
             noise = torch.randn(
                 embedding.size(0),
-                STYLE_TOKEN_DIM,
+                self.style_dim,
                 STYLE_TOKEN_COUNT,
                 device=embedding.device,
                 dtype=embedding.dtype,

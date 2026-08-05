@@ -13,6 +13,7 @@ from .stages import (
 def _validation(
     predicted_prosody: bool,
     alpha_flow: bool,
+    predicted_duration: bool = False,
 ) -> ValidationStageSpec:
     prosody_source = (
         ProsodySource.PREDICTED
@@ -22,7 +23,11 @@ def _validation(
     return ValidationStageSpec(
         f0_source=prosody_source,
         norm_source=prosody_source,
-        duration_source=ValidationDurationSource.GROUND_TRUTH,
+        duration_source=(
+            ValidationDurationSource.PREDICTED
+            if predicted_duration
+            else ValidationDurationSource.GROUND_TRUTH
+        ),
         alpha_flow=alpha_flow,
     )
 
@@ -35,23 +40,26 @@ def _loss_weights() -> TrainingLossWeights:
 
 def build_default_training_stages() -> list[TrainingStageSpec]:
     weights = _loss_weights()
-    acoustic_modules = [
+    mel_modules = [
         TrainableModule.TEXT_ENCODER,
         TrainableModule.VOICE_ENCODER,
         TrainableModule.DECODER,
     ]
     tma_modules = [
-        *acoustic_modules,
+        TrainableModule.TEXT_ENCODER,
+        TrainableModule.VOICE_ENCODER,
+        TrainableModule.DECODER,
         TrainableModule.TEXT_ALIGNER,
     ]
     prosody_modules = [
+        TrainableModule.BERT,
+        TrainableModule.BERT_ENCODER,
         TrainableModule.DURATION_PREDICTOR,
         TrainableModule.PROSODY_ENCODER,
         TrainableModule.PROSODY_PREDICTOR,
         TrainableModule.QUANTIZER,
         TrainableModule.POSITION_EMBEDDING,
     ]
-    mel_weights = weights.model_copy(update={"mel": 1})
     tma_weights = weights.model_copy(
         update={
             "mel": 5,
@@ -68,22 +76,28 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             "duration": 1,
             "duration_ce": 20,
             "prosody_adversarial": 1,
-            "rvq": 1,
         }
+    )
+    prosody_without_gan_weights = prosody_weights.model_copy(
+        update={"prosody_adversarial": 0}
     )
     return [
         TrainingStageSpec(
             name="StyleTTS2 train_first.py · mel pretraining",
-            steps=2_000,
+            steps=10_000,
+            max_audio_seconds=45,
+            max_decoder_seconds=3.75,
             style_source=StyleSource.CONTINUOUS,
             prosody_source=ProsodySource.GROUND_TRUTH,
-            trainable_modules=acoustic_modules,
-            loss_weights=mel_weights,
+            trainable_modules=mel_modules,
+            loss_weights=weights.model_copy(update={"mel": 1}),
             validation=_validation(False, False),
         ),
         TrainingStageSpec(
-            name="StyleTTS2 train_first.py · TMA acoustic training",
-            steps=2_000,
+            name="StyleTTS2 train_first.py · TMA acoustic GAN",
+            steps=10_000,
+            max_audio_seconds=45,
+            max_decoder_seconds=3.75,
             style_source=StyleSource.CONTINUOUS,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=tma_modules,
@@ -91,21 +105,36 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             validation=_validation(False, False),
         ),
         TrainingStageSpec(
-            name="small_rec.py · prosody/RVQ",
-            steps=2_000,
+            name="prosody autoencoder · continuous/RFSQ · no GAN",
+            steps=5_000,
+            max_audio_seconds=90,
+            max_decoder_seconds=3.75,
             style_source=StyleSource.QUANTIZED,
-            prosody_source=ProsodySource.GROUND_TRUTH,
+            prosody_source=ProsodySource.PREDICTED,
+            trainable_modules=prosody_modules,
+            loss_weights=prosody_without_gan_weights,
+            validation=_validation(True, False, predicted_duration=True),
+        ),
+        TrainingStageSpec(
+            name="prosody autoencoder · continuous/RFSQ · GAN",
+            steps=8_000,
+            max_audio_seconds=75,
+            max_decoder_seconds=3.75,
+            style_source=StyleSource.QUANTIZED,
+            prosody_source=ProsodySource.PREDICTED,
             trainable_modules=prosody_modules,
             loss_weights=prosody_weights,
-            validation=_validation(True, False),
+            validation=_validation(True, False, predicted_duration=True),
         ),
         TrainingStageSpec(
             name="v_diffusion.py · AlphaFlow",
-            steps=2_000,
+            steps=10_000,
+            max_audio_seconds=80,
+            max_decoder_seconds=3.75,
             style_source=StyleSource.QUANTIZED,
-            prosody_source=ProsodySource.GROUND_TRUTH,
+            prosody_source=ProsodySource.PREDICTED,
             trainable_modules=[TrainableModule.ALPHA_FLOW],
             loss_weights=weights.model_copy(update={"alpha_flow": 1}),
-            validation=_validation(True, True),
+            validation=_validation(True, True, predicted_duration=True),
         ),
     ]

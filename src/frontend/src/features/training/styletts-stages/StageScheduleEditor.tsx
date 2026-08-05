@@ -145,7 +145,7 @@ function StageEditor({
           <NumberInput
             value={stage.max_audio_seconds}
             min={1}
-            max={60}
+            max={120}
             step={0.5}
             onChange={(max_audio_seconds) => onChange({
               ...stage,
@@ -160,7 +160,7 @@ function StageEditor({
           <NumberInput
             value={stage.max_decoder_seconds}
             min={0.1}
-            max={60}
+            max={120}
             step={0.25}
             onChange={(max_decoder_seconds) => onChange({
               ...stage,
@@ -188,7 +188,7 @@ function StageEditor({
             value={stage.style_source}
             options={[
               { value: "continuous", label: "Continuous" },
-              { value: "quantized", label: "StyleTTS-ZS RVQ" },
+              { value: "quantized", label: "Continuous / RFSQ" },
             ]}
             onChange={(style_source) => onChange({
               ...stage,

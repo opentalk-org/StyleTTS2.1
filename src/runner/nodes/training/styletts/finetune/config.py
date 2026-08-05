@@ -24,7 +24,12 @@ def load_yaml(path: Path) -> dict[str, Any]:
 
 def merge_architecture(architecture_path: Path, config: dict[str, Any]) -> None:
     architecture = load_yaml(architecture_path)
-    config["model_params"] = deepcopy(architecture["model_params"])
+    model_params = deepcopy(architecture["model_params"])
+    if "prosody_quantizer" not in model_params:
+        model_params["prosody_quantizer"] = deepcopy(
+            config["model_params"]["prosody_quantizer"]
+        )
+    config["model_params"] = model_params
 
 
 def build_config(

@@ -2,7 +2,6 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange
 from torch import Tensor, nn
-from torch.nn.utils import weight_norm
 from torchaudio.models import Conformer
 
 from ..diffusion.modules import Attention, TimePositionalEmbedding
@@ -219,58 +218,3 @@ class ProsodyDiscriminator(nn.Module):
         text_return[:, :, : hidden.size(-1)] = hidden
         scores = self.F0_proj(text_return.transpose(-1, -2)).squeeze(-1)
         return scores, feature_maps
-
-
-def WNConv1d(*args, **kwargs) -> nn.Module:
-    return weight_norm(nn.Conv1d(*args, **kwargs))
-
-
-class VectorQuantize(nn.Module):
-    def __init__(self, input_dim: int, codebook_size: int, codebook_dim: int) -> None:
-        super().__init__()
-        self.in_proj = WNConv1d(input_dim, codebook_dim, kernel_size=1)
-        self.out_proj = WNConv1d(codebook_dim, input_dim, kernel_size=1)
-        self.codebook = nn.Embedding(codebook_size, codebook_dim)
-
-    def forward(self, values: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-        encoded = self.in_proj(values)
-        flat = F.normalize(rearrange(encoded, "b d t -> (b t) d"))
-        codebook = F.normalize(self.codebook.weight)
-        distance = flat.square().sum(1, keepdim=True) - 2 * flat @ codebook.t() + codebook.square().sum(1)[None]
-        indices = rearrange((-distance).max(1)[1], "(b t) -> b t", b=values.size(0))
-        quantized = self.codebook(indices).transpose(1, 2)
-        commitment = F.mse_loss(encoded, quantized.detach(), reduction="none").mean((1, 2))
-        codebook_loss = F.mse_loss(quantized, encoded.detach(), reduction="none").mean((1, 2))
-        quantized = encoded + (quantized - encoded).detach()
-        return self.out_proj(quantized), commitment, codebook_loss, indices
-
-    def embed_code(self, indices: Tensor) -> Tensor:
-        return self.out_proj(F.embedding(indices, self.codebook.weight).transpose(1, 2))
-
-
-class ResidualVectorQuantize(nn.Module):
-    def __init__(self, input_dim: int = 512, n_codebooks: int = 9, codebook_size: int = 1024, codebook_dim: int = 8) -> None:
-        super().__init__()
-        self.n_codebooks = n_codebooks
-        self.quantizers = nn.ModuleList(
-            VectorQuantize(input_dim, codebook_size, codebook_dim) for _ in range(n_codebooks)
-        )
-        self.register_buffer("_codebooks_initialized", torch.tensor(False))
-
-    def forward(self, values: Tensor, n_quantizers: int | Tensor | None = None) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-        quantized: Tensor | int = 0
-        residual = values
-        commitment: Tensor | int = 0
-        codebook_loss: Tensor | int = 0
-        indices = []
-        count = self.n_codebooks if n_quantizers is None else n_quantizers
-        for index, quantizer in enumerate(self.quantizers):
-            item, item_commitment, item_codebook, item_indices = quantizer(residual)
-            mask = torch.full((values.size(0),), index, device=values.device) < count
-            quantized = quantized + item * mask[:, None, None]
-            residual = residual - item
-            commitment = commitment + (item_commitment * mask).mean()
-            codebook_loss = codebook_loss + (item_codebook * mask).mean()
-            indices.append(item_indices)
-        assert isinstance(quantized, Tensor) and isinstance(commitment, Tensor) and isinstance(codebook_loss, Tensor)
-        return quantized, commitment, codebook_loss, torch.stack(indices, dim=1)

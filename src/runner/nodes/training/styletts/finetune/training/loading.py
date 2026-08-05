@@ -21,8 +21,10 @@ from runner.nodes.training.styletts.finetune.training.modules.latent.prosody imp
     DurationPredictor,
     ProsodyDiscriminator,
     ProsodyPredictor,
-    ResidualVectorQuantize,
     TVStyleEncoder,
+)
+from runner.nodes.training.styletts.finetune.training.modules.latent.rfsq import (
+    ResidualFiniteScalarQuantizer,
 )
 from runner.nodes.training.styletts.finetune.training.modules.latent.voice import VoiceEncoder
 from runner.nodes.training.styletts.finetune.training.state_dict_resize import merge_state_dict_with_dim0_resize
@@ -207,14 +209,16 @@ def build_model(args, text_aligner, pitch_extractor, bert):
     prosody_encoder = TVStyleEncoder(mel_dim=514)
     duration_predictor = DurationPredictor(max_dur=50)
     prosody_predictor = ProsodyPredictor()
-    quantizer = ResidualVectorQuantize(
+    quantizer = ResidualFiniteScalarQuantizer(
         input_dim=512,
-        n_codebooks=9,
-        codebook_size=1024,
-        codebook_dim=8,
+        latent_dim=args.prosody_quantizer.latent_dim,
+        stages=args.prosody_quantizer.stages,
+        levels=args.prosody_quantizer.levels,
+        stage_dropout=args.prosody_quantizer.stage_dropout,
     )
     alpha_flow = AlphaFlow(
         text_dim=bert.config.hidden_size,
+        style_dim=args.prosody_quantizer.latent_dim,
         style_scale=args.alpha_flow.get("style_scale", 1.0),
         transition_start=args.alpha_flow.transition_start,
         transition_end=args.alpha_flow.transition_end,
@@ -257,9 +261,21 @@ def build_model(args, text_aligner, pitch_extractor, bert):
 def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
     state = torch.load(path, map_location="cpu", weights_only=False)
     params = state["net"]
+    ignored = set(ignore_modules)
+    quantizer_state = params["quantizer"] if "quantizer" in params else {}
+    quantizer_keys = {
+        name.removeprefix("module.")
+        for name in quantizer_state
+    }
+    if "to_latent.weight" not in quantizer_keys:
+        ignored.update(("quantizer", "alpha_flow"))
+        logger.info(
+            "initialized residual FSQ and continuous AlphaFlow; "
+            "checkpoint contains a different prosody bottleneck"
+        )
     reinitialized = set()
     for key in model:
-        if key in ignore_modules:
+        if key in ignored:
             reinitialized.add(key)
             continue
         source_key = _voice_checkpoint_source(params) if key == "voice_encoder" else key
@@ -288,10 +304,6 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
             item for item in load_result.missing_keys
             if not item.endswith("dummy_tensor")
             and not (
-                key == "quantizer"
-                and item == "_codebooks_initialized"
-            )
-            and not (
                 key == "alpha_flow"
                 and item in {"style_scale", "style_scale_updates"}
             )
@@ -305,8 +317,6 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
                 f"checkpoint module {key} does not match: "
                 f"missing={missing_keys}, unexpected={unexpected_keys}"
             )
-        if key == "quantizer" and "_codebooks_initialized" in load_result.missing_keys:
-            model[key]._codebooks_initialized.fill_(True)
     for module in model.values():
         module.eval()
 
@@ -317,6 +327,8 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
             if item[0] not in reinitialized
         ]
         optimizer.load_state_dict(optimizer_state)
-        resume_step = int(state["step"])
+        # External base checkpoints use their own iteration counters. Only a
+        # Studio checkpoint's explicit step belongs to this stage schedule.
+        resume_step = int(state["step"]) if "step" in state else 0
 
     return model, optimizer, resume_step
