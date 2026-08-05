@@ -4,14 +4,14 @@ import numpy as np
 import torch
 from munch import Munch
 
-from .modules.triton_alignment import maximum_path as maximum_path_cuda
-
 def maximum_path(neg_cent, mask):
   """ Cython optimized version.
   neg_cent: [b, t_t, t_s]
   mask: [b, t_t, t_s]
   """
   if neg_cent.is_cuda:
+    from .modules.triton_alignment import maximum_path as maximum_path_cuda
+
     text_lengths = mask.sum(1)[:, 0].to(torch.int32)
     mel_lengths = mask.sum(2)[:, 0].to(torch.int32)
     return maximum_path_cuda(neg_cent, text_lengths, mel_lengths)
