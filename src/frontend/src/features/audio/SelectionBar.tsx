@@ -66,7 +66,7 @@ function Menu({ items, onPick }: { items: Item[]; onPick: () => void }) {
 }
 
 export function SelectionBar({ total }: { total: number }) {
-  const { query, dataset, selection, selectAllMatching, selectAllFiltered, clearSelection } = useAudio();
+  const { query, language, dataset, selection, selectAllMatching, selectAllFiltered, clearSelection } = useAudio();
   const { data: datasets = [] } = useDatasetsQuery();
   const deleteAudioFiles = useDeleteAudioFilesMutation();
   const addToDataset = useAddToDatasetMutation();
@@ -82,7 +82,7 @@ export function SelectionBar({ total }: { total: number }) {
     danger: true,
     label: "Delete files",
     onConfirm: () => {
-      const request = selectAllMatching ? { mode: "filter" as const, query, dataset } : { mode: "ids" as const, ids };
+      const request = selectAllMatching ? { mode: "filter" as const, query, language, dataset } : { mode: "ids" as const, ids };
       deleteAudioFiles.mutate(request, {
         onSuccess: () => {
           clearSelection();
@@ -97,7 +97,7 @@ export function SelectionBar({ total }: { total: number }) {
       return;
     }
     const request = selectAllMatching
-      ? { dataset_id: datasetId, mode: "filter" as const, query, dataset }
+      ? { dataset_id: datasetId, mode: "filter" as const, query, language, dataset }
       : { dataset_id: datasetId, mode: "ids" as const, audio_file_ids: ids };
     addToDataset.mutate(request, {
       onSuccess: () => {

@@ -56,7 +56,10 @@ def sample_target_prosody_input(
     current: Tensor,
 ) -> tuple[Tensor, Tensor]:
     current_lengths = batch.mel_lengths.to(current.device) // 2
-    if bool(random.getrandbits(1)):
+    augmentation = random.random()
+    if augmentation < 0.1:
+        return current, current_lengths
+    if augmentation < 0.55:
         return _random_mask_batch(current, current_lengths), current_lengths
 
     return _random_crops(current, current_lengths)

@@ -48,6 +48,7 @@ export type AudioFile = {
 
 export type AudioQuery = {
   query: string;
+  language: string;
   dataset: string;
   sort: AudioSort;
   limit: number;
@@ -75,11 +76,11 @@ export type AudioUploadProgress = {
 
 export type AudioDeleteRequest =
   | { mode: "ids"; ids: string[] }
-  | { mode: "filter"; query: string; dataset: string };
+  | { mode: "filter"; query: string; language: string; dataset: string };
 
 export type AddToDatasetRequest =
   | { dataset_id: string; mode: "ids"; audio_file_ids: string[] }
-  | { dataset_id: string; mode: "filter"; query: string; dataset: string };
+  | { dataset_id: string; mode: "filter"; query: string; language: string; dataset: string };
 
 export type WaveformRead = {
   duration: number;
@@ -97,6 +98,7 @@ export type WaveformStatus = {
 export function fetchAudioFiles(params: AudioQuery): Promise<AudioPage> {
   const search = new URLSearchParams({
     query: params.query,
+    language: params.language,
     dataset: params.dataset,
     sort: params.sort,
     limit: String(params.limit),
@@ -166,8 +168,8 @@ export async function deleteAudioFiles(ids: string[]): Promise<void> {
   await Promise.all(ids.map((id) => deleteAudioFile(id)));
 }
 
-export async function deleteMatchingAudioFiles(query: string, dataset: string): Promise<void> {
-  const search = new URLSearchParams({ query, dataset });
+export async function deleteMatchingAudioFiles(query: string, language: string, dataset: string): Promise<void> {
+  const search = new URLSearchParams({ query, language, dataset });
   const response = await backendFetch(`/audio-files?${search}`, { method: "DELETE" });
   if (!response.ok) throw new Error(`Backend request failed: ${response.status}`);
 }

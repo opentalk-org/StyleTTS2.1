@@ -97,7 +97,7 @@ function Popup({ onClose, children }: { onClose: () => void; children: ReactNode
 function AudioSearchList({ onPick, exclude }: { onPick: (audio: AudioFile) => void; exclude?: Set<string> }) {
   const [query, setQuery] = useState("");
   const debounced = useDebounced(query, 250);
-  const audio = useAudioFilesQuery({ query: debounced, dataset: "all", sort: "updated", limit: 40, offset: 0 });
+  const audio = useAudioFilesQuery({ query: debounced, language: "", dataset: "all", sort: "updated", limit: 40, offset: 0 });
   const rows = audio.data?.rows ?? [];
   const total = audio.data?.total ?? 0;
 

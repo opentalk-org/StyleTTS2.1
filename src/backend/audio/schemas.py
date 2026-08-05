@@ -63,6 +63,7 @@ class AddToDatasetRequest(BaseModel):
     mode: Literal["ids", "filter"]
     audio_file_ids: list[str] = []
     query: str = ""
+    language: str = ""
     dataset: str = "all"
 
 

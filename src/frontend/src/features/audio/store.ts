@@ -4,6 +4,7 @@ export type AudioSort = "updated" | "name" | "duration" | "speaker_id" | "segmen
 
 export type AudioFilters = {
   query: string;
+  language: string;
   dataset: string;
   sort: AudioSort;
 };
@@ -26,6 +27,7 @@ type AudioStore = AudioFilters & {
 
 export const useAudio = create<AudioStore>((set) => ({
   query: "",
+  language: "",
   dataset: "all",
   sort: "updated",
   limit: 100,

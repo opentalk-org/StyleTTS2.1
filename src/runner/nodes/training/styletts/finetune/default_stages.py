@@ -44,13 +44,9 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         TrainableModule.TEXT_ENCODER,
         TrainableModule.VOICE_ENCODER,
         TrainableModule.DECODER,
-    ]
-    tma_modules = [
-        TrainableModule.TEXT_ENCODER,
-        TrainableModule.VOICE_ENCODER,
-        TrainableModule.DECODER,
         TrainableModule.TEXT_ALIGNER,
     ]
+    tma_modules = list(mel_modules)
     prosody_modules = [
         TrainableModule.BERT,
         TrainableModule.BERT_ENCODER,
@@ -60,6 +56,13 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         TrainableModule.QUANTIZER,
         TrainableModule.POSITION_EMBEDDING,
     ]
+    mel_weights = weights.model_copy(
+        update={
+            "mel": 1,
+            "sequence_alignment": 1,
+            "monotonic_alignment": 10,
+        }
+    )
     tma_weights = weights.model_copy(
         update={
             "mel": 5,
@@ -90,7 +93,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             style_source=StyleSource.CONTINUOUS,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=mel_modules,
-            loss_weights=weights.model_copy(update={"mel": 1}),
+            loss_weights=mel_weights,
             validation=_validation(False, False),
         ),
         TrainingStageSpec(

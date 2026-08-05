@@ -47,7 +47,7 @@ export function useDeleteAudioFilesMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (request: AudioDeleteRequest) => {
-      if (request.mode === "filter") return deleteMatchingAudioFiles(request.query, request.dataset);
+      if (request.mode === "filter") return deleteMatchingAudioFiles(request.query, request.language, request.dataset);
       return deleteAudioFiles(request.ids);
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [AUDIO_FILES_KEY] }),

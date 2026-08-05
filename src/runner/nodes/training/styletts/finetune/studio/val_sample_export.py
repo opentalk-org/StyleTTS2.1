@@ -160,7 +160,12 @@ class ValidationArtifactRenderer:
             matrix = matrix[None, :]
         figure = Figure(figsize=(10, 4), layout="constrained")
         axis = figure.subplots()
-        axis.imshow(matrix, origin="lower", aspect="auto")
+        axis.imshow(
+            matrix,
+            origin="lower",
+            aspect="auto",
+            interpolation="nearest",
+        )
         axis.set_title(title)
         figure.savefig(path, dpi=120)
         return path
@@ -183,7 +188,12 @@ class ValidationArtifactRenderer:
             matrix = values.detach().float().cpu().squeeze().numpy()
             if matrix.ndim == 1:
                 matrix = matrix[None, :]
-            axis.imshow(matrix, origin="lower", aspect="auto")
+            axis.imshow(
+                matrix,
+                origin="lower",
+                aspect="auto",
+                interpolation="nearest",
+            )
             axis.set_title(f"{title}: {label}")
         figure.savefig(path, dpi=120)
         return path

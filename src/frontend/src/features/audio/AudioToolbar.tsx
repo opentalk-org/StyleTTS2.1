@@ -15,7 +15,7 @@ import { AUDIO_FILES_KEY } from "./query";
 import { type AudioSort, useAudio } from "./store";
 
 export function AudioToolbar() {
-  const { query, dataset, sort, limit, setFilters } = useAudio();
+  const { query, language, dataset, sort, limit, setFilters } = useAudio();
   const { data: datasets = [] } = useDatasetsQuery();
   const { data: speakers } = useSpeakersQuery({ query: "", limit: 200, offset: 0 });
   const queryClient = useQueryClient();
@@ -77,6 +77,11 @@ export function AudioToolbar() {
           value={query}
           onChange={(v) => setFilters({ query: v, offset: 0 })}
           placeholder="Search files or speakers…"
+        />
+        <SearchInput
+          value={language}
+          onChange={(value) => setFilters({ language: value, offset: 0 })}
+          placeholder="Language code…"
         />
         <Select variant="mini" value={dataset} onChange={(v) => setFilters({ dataset: v, offset: 0 })} options={datasetOptions(datasets)} />
         <div className="flex-1" />

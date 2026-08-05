@@ -39,8 +39,8 @@ function Header({ allSel, onToggleAll }: { allSel: boolean; onToggleAll: () => v
 }
 
 export function AudioScreen() {
-  const { query, dataset, sort, limit, offset, selection, selectAllMatching, selectVisible, clearSelection, setVisibleIds, setFilters } = useAudio();
-  const { data, isFetching, isError, refetch } = useAudioFilesQuery({ query, dataset, sort, limit, offset });
+  const { query, language, dataset, sort, limit, offset, selection, selectAllMatching, selectVisible, clearSelection, setVisibleIds, setFilters } = useAudio();
+  const { data, isFetching, isError, refetch } = useAudioFilesQuery({ query, language, dataset, sort, limit, offset });
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
   const page = Math.floor(offset / limit);

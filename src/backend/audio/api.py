@@ -23,13 +23,23 @@ router = APIRouter(prefix="/audio-files", tags=["audio-files"])
 @router.get("", response_model=AudioFilePage)
 async def list_audio_files(
     query: str = "",
+    language: str = "",
     dataset: str = "all",
     sort: AudioSort = "updated",
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> AudioFilePage:
     with database_session() as session:
-        rows, total = audio_crud.search_audio_files(session, query, dataset, sort, limit, offset, preview_limit=8)
+        rows, total = audio_crud.search_audio_files(
+            session,
+            query,
+            dataset,
+            sort,
+            limit,
+            offset,
+            preview_limit=8,
+            language=language,
+        )
         return AudioFilePage(
             rows=[audio_list_response(item, segment_count, segment_preview) for item, segment_count, segment_preview in rows],
             total=total,
@@ -75,7 +85,12 @@ async def add_audio_files_to_dataset(payload: AddToDatasetRequest) -> None:
         dataset_id = uuid.UUID(payload.dataset_id)
         with database_session() as session:
             if payload.mode == "filter":
-                ids = audio_crud.search_audio_file_ids(session, payload.query, payload.dataset)
+                ids = audio_crud.search_audio_file_ids(
+                    session,
+                    payload.query,
+                    payload.dataset,
+                    payload.language,
+                )
             else:
                 ids = [uuid.UUID(file_id) for file_id in payload.audio_file_ids]
             dataset_crud.bulk_add_audio_files_to_dataset(session, dataset_id, ids)
@@ -86,11 +101,12 @@ async def add_audio_files_to_dataset(payload: AddToDatasetRequest) -> None:
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_matching_audio_files(
     query: str = Query(min_length=0),
+    language: str = Query(default="", min_length=0),
     dataset: str = Query(min_length=1),
 ) -> None:
     try:
         with database_session() as session:
-            ids = audio_crud.search_audio_file_ids(session, query, dataset)
+            ids = audio_crud.search_audio_file_ids(session, query, dataset, language)
             audio_crud.bulk_delete_audio_files(session, ids)
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error

@@ -48,9 +48,10 @@ def search_audio_files(
     limit: int,
     offset: int,
     preview_limit: int = 8,
+    language: str = "",
 ) -> tuple[list[tuple[AudioFile, int, list[dict[str, Any]]]], int]:
     """List audio files without loading their potentially large segments column."""
-    filters = _audio_filters(query, dataset)
+    filters = _audio_filters(query, dataset, language)
     order = _audio_sort(sort)
     segment_count = func.coalesce(
         func.jsonb_array_length(AudioFile.segments),
@@ -98,9 +99,10 @@ def search_audio_file_ids(
     session: Session,
     query: str,
     dataset: str,
+    language: str = "",
 ) -> list[uuid.UUID]:
     statement = select(AudioFile.id)
-    for item in _audio_filters(query, dataset):
+    for item in _audio_filters(query, dataset, language):
         statement = statement.where(item)
     return list(session.execute(statement).scalars().all())
 
@@ -224,7 +226,7 @@ def list_audio_file_references_page(
     ]
 
 
-def _audio_filters(query: str, dataset: str) -> list[Any]:
+def _audio_filters(query: str, dataset: str, language: str = "") -> list[Any]:
     filters = []
     if query:
         pattern = f"%{query}%"
@@ -233,6 +235,10 @@ def _audio_filters(query: str, dataset: str) -> list[Any]:
                 AudioFile.name.ilike(pattern),
                 cast(AudioFile.metadata_, Text).ilike(pattern),
             )
+        )
+    if language.strip():
+        filters.append(
+            func.lower(AudioFile.language) == language.strip().lower()
         )
     if dataset == "unassigned":
         filters.append(~AudioFile.datasets.any())
