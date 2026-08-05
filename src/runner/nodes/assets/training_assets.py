@@ -138,8 +138,10 @@ def _asset_metadata(ref: AssetFileRef) -> dict[str, Any]:
 def _checkpoint_asset_path(folder: Path, role: str) -> Path:
     if role == "f0_model":
         return _single_file(folder, (".t7", ".pth", ".pt"))
-    if role in {"asr_bundle", "plbert"}:
+    if role == "asr_bundle":
         return _single_file(folder, (".pth", ".t7", ".pt"))
+    if role == "plbert":
+        return _single_file(folder, (".pth", ".t7", ".pt", ".safetensors"))
     return folder
 
 
