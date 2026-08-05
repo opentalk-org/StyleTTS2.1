@@ -132,7 +132,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         TrainingStageSpec(
             name="v_diffusion.py · AlphaFlow",
             steps=10_000,
-            max_audio_seconds=80,
+            max_audio_seconds=65,
             max_decoder_seconds=3.75,
             style_source=StyleSource.QUANTIZED,
             prosody_source=ProsodySource.PREDICTED,

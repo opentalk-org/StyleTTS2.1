@@ -227,6 +227,7 @@ def build_model(args, text_aligner, pitch_extractor, bert):
         transition_start=args.alpha_flow.transition_start,
         transition_end=args.alpha_flow.transition_end,
         temperature=args.alpha_flow.temperature,
+        flow_matching_ratio=args.alpha_flow.flow_matching_ratio,
         conditional_dropout=args.alpha_flow.conditional_dropout,
     )
 

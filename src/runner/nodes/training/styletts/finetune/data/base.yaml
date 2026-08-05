@@ -39,9 +39,10 @@ model_params:
     initial_channel: 64
   alpha_flow:
     style_scale: 1.0
-    transition_start: 1000
-    transition_end: 4000
+    transition_start: 0
+    transition_end: 10000
     temperature: 25.0
+    flow_matching_ratio: 0.5
     conditional_dropout: 0.1
   prosody_quantizer:
     latent_dim: 30

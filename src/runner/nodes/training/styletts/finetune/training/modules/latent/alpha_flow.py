@@ -15,9 +15,10 @@ class AlphaFlow(nn.Module):
         style_dim: int,
         text_dim: int = 768,
         style_scale: float = 1.0,
-        transition_start: int = 1_000,
-        transition_end: int = 4_000,
+        transition_start: int = 0,
+        transition_end: int = 10_000,
         temperature: float = 25.0,
+        flow_matching_ratio: float = 0.5,
         conditional_dropout: float = 0.1,
     ) -> None:
         super().__init__()
@@ -36,6 +37,7 @@ class AlphaFlow(nn.Module):
         self.transition_start = transition_start
         self.transition_end = transition_end
         self.temperature = temperature
+        self.flow_matching_ratio = flow_matching_ratio
         self.conditional_dropout = conditional_dropout
 
     def schedule(self, step: int) -> float:
@@ -77,6 +79,8 @@ class AlphaFlow(nn.Module):
         )
         t = torch.maximum(a, b)
         r = torch.minimum(a, b)
+        flow_matching = torch.rand(batch, device=target.device) < self.flow_matching_ratio
+        r = torch.where(flow_matching, t, r)
         noise = torch.randn_like(target)
         velocity = noise - target
         noisy = (1 - t[:, None, None]) * target + t[:, None, None] * noise
@@ -90,29 +94,39 @@ class AlphaFlow(nn.Module):
             features,
             embedding_mask_proba=self.conditional_dropout,
         )
-        if alpha == 0.0:
-            target_velocity = self._meanflow_target(
-                noisy,
-                r,
-                t,
-                velocity,
-                embedding,
-                features,
-                input_lengths,
-            )
-        else:
-            s = alpha * r + (1 - alpha) * t
-            shifted = noisy - (t - s)[:, None, None] * velocity
-            with torch.no_grad():
-                shifted_velocity = self.denoiser(
-                    shifted,
-                    r,
-                    s,
-                    input_lengths,
-                    embedding,
-                    features,
+        target_velocity = velocity.clone()
+        mean_flow = ~flow_matching
+        mean_flow_lengths = input_lengths[mean_flow.to(input_lengths.device)]
+        if mean_flow.any() and alpha < 1.0:
+            if alpha == 0.0:
+                mean_flow_target = self._meanflow_target(
+                    noisy[mean_flow],
+                    r[mean_flow],
+                    t[mean_flow],
+                    velocity[mean_flow],
+                    embedding[mean_flow],
+                    features[mean_flow],
+                    mean_flow_lengths,
                 )
-                target_velocity = alpha * velocity + (1 - alpha) * shifted_velocity
+            else:
+                s = alpha * r[mean_flow] + (1 - alpha) * t[mean_flow]
+                shifted = noisy[mean_flow] - (
+                    t[mean_flow] - s
+                )[:, None, None] * velocity[mean_flow]
+                with torch.no_grad():
+                    shifted_velocity = self.denoiser(
+                        shifted,
+                        r[mean_flow],
+                        s,
+                        mean_flow_lengths,
+                        embedding[mean_flow],
+                        features[mean_flow],
+                    )
+                    mean_flow_target = (
+                        alpha * velocity[mean_flow]
+                        + (1 - alpha) * shifted_velocity
+                    )
+            target_velocity[mean_flow] = mean_flow_target
         error = prediction - target_velocity.detach()
         with torch.no_grad():
             self.last_raw_mse.copy_(error.float().square().mean())
@@ -122,8 +136,10 @@ class AlphaFlow(nn.Module):
                 dim=1,
             ).mean()
             self.last_velocity_cosine.copy_(cosine)
-        squared = error.flatten(1).square().sum(1)
-        numerator = alpha if alpha > 0 else 1.0
+        squared = error.flatten(1).square().mean(1)
+        numerator = torch.ones_like(squared)
+        if alpha > 0:
+            numerator[mean_flow] = alpha
         weight = numerator / (squared.detach() + 1e-3)
         return (weight * squared).mean()
 
