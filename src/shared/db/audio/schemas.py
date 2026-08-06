@@ -99,6 +99,7 @@ class AudioFileReference(BaseModel):
     id: UUID
     name: str
     duration: float
+    language: str | None
     annotations: AudioAnnotations
     byte_length: int
     virtual: bool

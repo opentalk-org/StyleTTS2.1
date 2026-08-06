@@ -191,6 +191,7 @@ def list_audio_file_references_page(
         AudioFile.speaker_id,
         AudioFile.score,
         AudioFile.accuracy,
+        AudioFile.language,
         AudioFile.metadata_,
         AudioFile.byte_length,
         AudioFile.virtual,
@@ -211,6 +212,7 @@ def list_audio_file_references_page(
             id=row.id,
             name=row.name,
             duration=row.duration,
+            language=row.language,
             annotations=AudioAnnotations(
                 speaker_id=row.speaker_id,
                 score=row.score,

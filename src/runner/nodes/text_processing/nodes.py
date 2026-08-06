@@ -1,42 +1,111 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from typing import Literal
+import asyncio
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass, replace
+from itertools import chain
+from math import ceil
+from typing import Any, Literal
 
 from pydantic import Field
 
 from runflow.core.node import Node
 from runflow.core.settings import StrictSettings
+from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.datatypes import AudioPort
 from runner.nodes.models import Audio, AudioSegment
-from runner.nodes.text.runtime.phonemize import DEFAULT_PUNCTUATION_MARKS, phonemize_texts
+from runner.nodes.text.runtime.phonemize import (
+    DEFAULT_PUNCTUATION_MARKS,
+    phonemize_texts,
+    phonemizer_backend,
+)
 
 
 class PhonemizeSettings(StrictSettings):
-    language: str = "pl"
     punctuation_marks: str = Field(default=DEFAULT_PUNCTUATION_MARKS, min_length=1, max_length=512)
+    processes: int = Field(default=2, ge=2, le=16)
 
 
 class PhonemizeSegmentsSettings(PhonemizeSettings):
     mode: Literal["fill", "replace"] = "fill"
 
 
+@dataclass(frozen=True, slots=True)
+class PhonemizeJob:
+    texts: list[str]
+    language: str
+
+
 class PhonemizeSegmentsNode(Node):
     NODE_TYPE = "PhonemizeSegments"
-    DESCRIPTION = "Convert the text of each audio segment into eSpeak phonemes for the chosen language. Takes annotated audio and outputs the same audio with each segment's phoneme field populated; in fill mode only segments missing phonemes are processed, while replace mode re-phonemizes everything. Use it to prepare phoneme-level supervision for training or phoneme-based synthesis."
+    DESCRIPTION = "Convert segment text into language-aware phonemes using the language stored on each incoming audio record: OpenJTalk for Japanese, G2PW for Mandarin, Korean pronunciation rules plus eSpeak for Korean, dedicated eSpeak Cantonese, and eSpeak IPA for other supported languages. Missing languages are rejected. In fill mode only segments without phonemes are processed; replace mode re-phonemizes everything."
     CATEGORY = "Text"
     SETTINGS = PhonemizeSegmentsSettings
     INPUTS = {"audio": AudioPort()}
     OUTPUTS = {"audio": AudioPort()}
+    BATCH_POLICY = BatchPolicy(
+        BatchMode.MICRO_BATCH,
+        preferred_size=256,
+        max_size=512,
+        timeout_ms=25,
+    )
+    RESOURCE_POLICY = ResourcePolicy(resources={"cpu_workers": 2}, keep_loaded=True)
+    QUEUE_MAX_SIZE = 1_024
+
+    def __init__(self, node_id: str | None = None, **params: Any):
+        super().__init__(node_id=node_id, **params)
+        self._executor: ProcessPoolExecutor | None = None
+
+    async def setup(self, context: Any) -> None:
+        self._executor = ProcessPoolExecutor(
+            max_workers=self.settings.processes,
+            mp_context=multiprocessing.get_context("spawn"),
+        )
+
+    async def teardown(self, context: Any) -> None:
+        executor = self._executor
+        self._executor = None
+        if executor is not None:
+            await asyncio.to_thread(executor.shutdown, wait=True, cancel_futures=True)
 
     async def execute(self, batch, context):
-        outputs = []
+        if self._executor is None:
+            raise RuntimeError("PhonemizeSegments process pool is not loaded")
+        loop = asyncio.get_running_loop()
+        audios = []
         for inputs in batch:
             audio: Audio = inputs["audio"]
-            segments = _phonemized_segments(audio.segments, self.settings)
+            language = _audio_language(audio)
+            work_segments = [segment for segment in audio.segments if _should_phonemize_segment(segment, self.settings)]
+            job = PhonemizeJob(
+                texts=[segment.text for segment in work_segments],
+                language=language,
+            )
+            audios.append((audio, language, job))
+        chunk_size = ceil(len(audios) / (self.settings.processes * 2))
+        chunks = [
+            [entry[2] for entry in audios[start:start + chunk_size]]
+            for start in range(0, len(audios), chunk_size)
+        ]
+        futures = [
+            loop.run_in_executor(
+                self._executor,
+                _phonemize_chunk_worker,
+                chunk,
+                self.settings.punctuation_marks,
+            )
+            for chunk in chunks
+        ]
+        phoneme_batches = list(chain.from_iterable(await asyncio.gather(*futures)))
+        context.check_cancel()
+        outputs = []
+        for (audio, language, _job), phonemes in zip(audios, phoneme_batches, strict=True):
+            segments = _replace_phonemes(audio.segments, self.settings, phonemes)
             metadata = {
                 **audio.metadata,
-                "phoneme_language": self.settings.language,
+                "phoneme_language": language,
+                "phoneme_backend": phonemizer_backend(language),
                 "punctuation_marks": self.settings.punctuation_marks,
                 "phoneme_mode": self.settings.mode,
             }
@@ -44,9 +113,11 @@ class PhonemizeSegmentsNode(Node):
         return outputs
 
 
-def _phonemized_segments(segments: list[AudioSegment], settings: PhonemizeSegmentsSettings) -> list[AudioSegment]:
-    work_segments = [segment for segment in segments if _should_phonemize_segment(segment, settings)]
-    phonemes = _phonemize_texts([segment.text for segment in work_segments], settings)
+def _replace_phonemes(
+    segments: list[AudioSegment],
+    settings: PhonemizeSegmentsSettings,
+    phonemes: list[str],
+) -> list[AudioSegment]:
     phoneme_iter = iter(phonemes)
     return [
         replace(segment, phon=next(phoneme_iter))
@@ -60,9 +131,22 @@ def _should_phonemize_segment(segment: AudioSegment, settings: PhonemizeSegments
     return bool(segment.text.strip()) and (settings.mode == "replace" or not segment.phon.strip())
 
 
-def _phonemize_texts(texts: list[str], settings: PhonemizeSettings) -> list[str]:
-    return phonemize_texts(
-        texts,
-        language=settings.language,
-        punctuation_marks=settings.punctuation_marks,
-    )
+def _phonemize_chunk_worker(jobs: list[PhonemizeJob], punctuation_marks: str) -> list[list[str]]:
+    return [
+        phonemize_texts(
+            job.texts,
+            language=job.language,
+            punctuation_marks=punctuation_marks,
+        )
+        for job in jobs
+    ]
+
+
+def _audio_language(audio: Audio) -> str:
+    value = audio.language
+    if value is None or not str(value).strip():
+        raise ValueError(
+            f"phoneme_language_missing: audio {audio.audio_file_id} ({audio.name!r}) "
+            "has no catalog language"
+        )
+    return str(value).strip().lower().replace("_", "-")

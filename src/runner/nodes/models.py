@@ -59,6 +59,7 @@ class Audio(HasAudioAnnotations):
     annotations: AudioAnnotations
     id: str
     lineage_id: str
+    language: str | None = None
     byte_length: int = 0
     virtual: bool = False
     style_prompt: str | None = None

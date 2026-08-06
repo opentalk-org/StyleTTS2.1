@@ -9,6 +9,7 @@ from runner.nodes.asr import (
     WhisperXAlignNode,
 )
 from runner.nodes.audio_io import LoadAudioNode, SaveAudioArtifactNode
+from runner.nodes.audio_filters import FilterAudioLanguageNode, FilterProcessedAudioNode
 from runner.nodes.audio_processing import (
     CutAudioBySegmentsNode,
     SortformerDiarizationNode,
@@ -85,6 +86,8 @@ from runner.nodes.training.styletts3 import StyleTts3TrainingNode
 def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
     for node_cls in [
         AudioSourceNode,
+        FilterAudioLanguageNode,
+        FilterProcessedAudioNode,
         HetznerDsV1ParquetAudioSourceNode,
         HetznerDsV2SourceNode,
         LibriTtsSourceNode,

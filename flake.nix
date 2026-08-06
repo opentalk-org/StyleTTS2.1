@@ -35,9 +35,21 @@
 
       mkRustfs = pkgs: import ./nix/rustfs-package.nix { inherit pkgs; };
 
+      mkEspeakNg = pkgs: pkgs.espeak-ng.overrideAttrs (_: {
+        version = "1.52.0-unstable-2025-09-08";
+        patches = [];
+        src = pkgs.fetchFromGitHub {
+          owner = "espeak-ng";
+          repo = "espeak-ng";
+          rev = "0d451f8c1c6ae837418b823bd9c4cbc574ea9ff5";
+          hash = "sha256-wpPi+YjSLhsEWfE3KEbL4A7o48qtz9fLRZ/u4xGOM2g=";
+        };
+      });
+
       mkPythonRuntime = pkgs:
         let
           cudaNvcc = pkgs.cudaPackages.cuda_nvcc;
+          espeakNg = mkEspeakNg pkgs;
           nvidiaDriverDirs = [
             "/usr/local/nvidia/lib"
             "/usr/local/nvidia/lib64"
@@ -53,7 +65,7 @@
           python = pkgs.python312Full;
           inherit runtimeLibs;
           runtimeExecutableDeps = [
-            pkgs.espeak-ng
+            espeakNg
             pkgs.ffmpeg-headless
             pkgs.opusTools
             pkgs.gcc
@@ -66,7 +78,7 @@
           env = {
             CC = "${pkgs.gcc}/bin/gcc";
             SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
-            PHONEMIZER_ESPEAK_LIBRARY = "${pkgs.espeak-ng}/lib/libespeak-ng.so";
+            PHONEMIZER_ESPEAK_LIBRARY = "${espeakNg}/lib/libespeak-ng.so";
             PYTHONUNBUFFERED = "1";
             TRITON_PTXAS_PATH = "${cudaNvcc}/bin/ptxas";
             TRITON_PTXAS_BLACKWELL_PATH = "${cudaNvcc}/bin/ptxas";
@@ -289,13 +301,14 @@
         };
 
       pkgs = importPkgs imageSystem;
+      espeakNg = mkEspeakNg pkgs;
       pythonRuntime = mkPythonRuntime pkgs;
       pythonTools = [ pkgs.uv pythonRuntime.python ] ++ pythonRuntime.runtimeExecutableDeps;
       # Runtime-only ML deps for the slim runner image: keeps the triton/inductor
       # JIT toolchain (gcc host compiler + nvcc ptxas) and audio libs, but drops the
       # build-only compilers (rustc/cargo/patchelf) and uv, since the venv is prebaked.
       runnerRuntimeDeps = [
-        pkgs.espeak-ng
+        espeakNg
         pkgs.ffmpeg-headless
         pkgs.gcc
         pkgs.openssl

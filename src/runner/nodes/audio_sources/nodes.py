@@ -93,6 +93,7 @@ class AudioSourceNode(Node):
                     "sample_requested_count": requested,
                 },
             }),
+            language=item.language,
             id=stable_id("audio", item.id, item.name),
             lineage_id=stable_id("audio_ref", item.id),
             byte_length=item.byte_length,
