@@ -234,6 +234,8 @@
                         __pg_uid="$(id -u user)"
                         __pg_gid="$(id -g user)"
 
+                        chown -R "$__pg_uid:$__pg_gid" "$dir"
+
                         export DNVR_BOUNCER_DROPPED=1
                         echo "[pgbouncer] dropping privileges to user ..."
                         exec setpriv --reuid "$__pg_uid" --regid "$__pg_gid" \
