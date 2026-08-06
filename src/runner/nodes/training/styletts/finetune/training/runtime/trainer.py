@@ -131,6 +131,7 @@ class Trainer:
                 batch.texts,
                 batch.input_lengths,
                 text_mask,
+                batch.language_ids,
             )
             duration_required = (
                 weights.duration > 0

@@ -28,6 +28,8 @@ class StyleTtsSynthesisRuntime:
     sampler: Any
     model_params: Any
     symbols_list: list[str]
+    language_ids: dict[str, int]
+    modality_id: int
     device: Any
 
 
@@ -70,7 +72,20 @@ def load_synthesis_runtime(payload: dict[str, Any]) -> StyleTtsSynthesisRuntime:
         _prepare_model(model, device)
         sampler = _build_sampler(sampler_module, model)
 
-    return StyleTtsSynthesisRuntime(model, sampler, model_params, symbols, device)
+    languages = plbert_config.get("languages", [])
+    language_ids = {
+        str(language).lower(): index + 1
+        for index, language in enumerate(languages)
+    }
+    return StyleTtsSynthesisRuntime(
+        model,
+        sampler,
+        model_params,
+        symbols,
+        language_ids,
+        int(plbert_config.get("modality_id", 0)),
+        device,
+    )
 
 
 def run_synthesis_with_runtime(runtime: StyleTtsSynthesisRuntime, payload: dict[str, Any]) -> Path:
@@ -84,6 +99,12 @@ def run_synthesis_with_runtime(runtime: StyleTtsSynthesisRuntime, payload: dict[
         phoneme_tie=bool(payload["phoneme_tie"]),
     )
     tok = tokenize_ipa(ipa, runtime.symbols_list, runtime.device)
+    language = str(payload["phoneme_language"]).strip().lower().replace("_", "-")
+    language_id = 0
+    if runtime.language_ids:
+        language_id = runtime.language_ids[
+            language if language in runtime.language_ids else language.split("-", 1)[0]
+        ]
     ref_s = _decode_style_reference(payload["style_reference"], runtime.model, runtime.device)
     wav = _synthesize_wave(
         runtime=runtime,
@@ -93,6 +114,7 @@ def run_synthesis_with_runtime(runtime: StyleTtsSynthesisRuntime, payload: dict[
         embedding_scale=float(payload["embedding_scale"]),
         alpha=float(payload["alpha"]),
         beta=float(payload["beta"]),
+        language_id=language_id,
     )
     soundfile = importlib.import_module("soundfile")
     soundfile.write(str(out_wav), wav, 24000)
@@ -125,6 +147,7 @@ def _synthesize_wave(
     embedding_scale: float,
     alpha: float,
     beta: float,
+    language_id: int,
 ) -> Any:
     torch = importlib.import_module("torch")
     with torch.no_grad():
@@ -132,12 +155,19 @@ def _synthesize_wave(
         # which needs them on CPU (the training batch keeps them there too)
         input_lengths = torch.LongTensor([tok.shape[-1]])
         text_mask = length_to_mask(input_lengths).to(runtime.device)
-        bert_dur = runtime.model.bert(tok, attention_mask=(~text_mask).int())
+        language_ids = torch.LongTensor([language_id]).to(runtime.device)
+        modality_ids = torch.LongTensor([runtime.modality_id]).to(runtime.device)
+        bert_dur = runtime.model.bert(
+            tok,
+            attention_mask=(~text_mask).int(),
+            language_ids=language_ids,
+            modality_ids=modality_ids,
+        )
         t_en = runtime.model.text_encoder(
             tok,
             input_lengths,
             text_mask,
-            bert_dur,
+            language_ids,
         )
         d_en = runtime.model.bert_encoder(bert_dur).transpose(-1, -2)
         s_pred = runtime.sampler(

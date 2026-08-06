@@ -387,6 +387,7 @@ class Validator:
                 batch.texts,
                 batch.input_lengths,
                 text_mask,
+                batch.language_ids,
             )
             validate_predictions = _validates_predictions(stage)
             bert = batch.mels.new_zeros(

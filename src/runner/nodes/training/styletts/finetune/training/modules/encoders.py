@@ -12,10 +12,17 @@ class TextEncoder(nn.Module):
         kernel_size,
         depth,
         n_symbols,
+        language_count,
         actv=nn.LeakyReLU(0.2),
     ):
         super().__init__()
         self.embedding = nn.Embedding(n_symbols, channels)
+        self.language_embedding = nn.Embedding(
+            language_count,
+            channels,
+            padding_idx=0,
+        )
+        nn.init.zeros_(self.language_embedding.weight)
         padding = (kernel_size - 1) // 2
         self.cnn = nn.ModuleList()
         for _ in range(depth):
@@ -27,8 +34,8 @@ class TextEncoder(nn.Module):
             ))
         self.lstm = nn.LSTM(channels, channels//2, 1, batch_first=True, bidirectional=True)
 
-    def forward(self, x, input_lengths, m):
-        x = self.embedding(x)
+    def forward(self, x, input_lengths, m, language_ids):
+        x = self.embedding(x) + self.language_embedding(language_ids).unsqueeze(1)
         x = x.transpose(1, 2)
         m = m.unsqueeze(1)
         x.masked_fill_(m, 0.0)

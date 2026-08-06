@@ -183,6 +183,7 @@ def build_model(args, text_aligner, pitch_extractor, bert):
         kernel_size=5,
         depth=args.n_layer,
         n_symbols=reference_token_count,
+        language_count=args.language_count,
     )
     if args.n_token > reference_token_count:
         base_weight = text_encoder.embedding.weight.detach()
@@ -314,6 +315,10 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
         missing_keys = [
             item for item in load_result.missing_keys
             if not item.endswith("dummy_tensor")
+            and not (
+                key == "text_encoder"
+                and item == "language_embedding.weight"
+            )
             and not (
                 key == "alpha_flow"
                 and item in {"style_scale", "style_scale_updates"}
