@@ -120,6 +120,8 @@
             ++ (if pkgs.stdenv.isLinux then linuxDeps else [ ]);
 
             env = {
+              NIX_LD = "${pkgs.stdenv.cc.bintools.dynamicLinker}";
+              NIX_LD_LIBRARY_PATH = "${lib.makeLibraryPath runtimeLibs}";
               CC = lib.getExe pkgs.gcc;
               SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
               PHONEMIZER_ESPEAK_LIBRARY = "${pkgs.espeak-ng}/lib/libespeak-ng.so";
@@ -186,9 +188,10 @@
               database = "runflow";
               extraDatabases = [ "mlflow" ];
               runAsUser = "user";
-              # SUPERUSER because the preset creates databases owned by the
-              # `postgres` superuser, and both alembic migrations and MLflow's
-              # own schema bootstrap need to write into them.
+              initdbArgs = [
+                "--encoding=UTF8"
+                "--locale=C.UTF-8"
+              ];
               initialScript = ''
                 DO $$
                   BEGIN
