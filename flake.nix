@@ -218,6 +218,10 @@
                   pkgs.pgbouncer
                   pkgs.postgresql_16
                   pkgs.coreutils
+                ]
+                ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+                  pkgs.shadow
+                  pkgs.util-linux
                 ];
                 text =
                   let
