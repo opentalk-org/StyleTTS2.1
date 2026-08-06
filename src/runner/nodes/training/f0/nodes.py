@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from pydantic import Field
 
@@ -9,13 +10,11 @@ from runflow.core.ports import JoinMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
-from runner.nodes.datatypes import CheckpointRefPort, TrainingManifestPort, TrainingResultPort
-from runner.nodes.models import TrainingManifest
+from runner.nodes.datatypes import CheckpointRefPort, JsonPort, TrainingResultPort
 from runner.nodes.training.common.results import (
     checkpoint_weight,
     publish_training_result,
-    training_manifest_metadata,
-    training_output_dir,
+    database_training_output_dir,
 )
 from runner.nodes.training.common.mlflow_run import start_mlflow_run
 
@@ -36,12 +35,12 @@ class F0TrainingSettings(StrictSettings):
 
 class F0ModelTrainingNode(Node):
     NODE_TYPE = "F0ModelTraining"
-    DESCRIPTION = "Train an F0 (pitch) prediction model used by StyleTTS from a training manifest, starting from a pretrained checkpoint. Consumes a checkpoint and a training manifest, and produces a training result pointing at the trained F0 model. Use it to produce the pitch model that StyleTTS finetuning depends on for a given dataset."
+    DESCRIPTION = "Train an F0 pitch model directly from a stored dataset without an intermediate manifest."
     CATEGORY = "Training"
     SETTINGS = F0TrainingSettings
     INPUTS = {
         "checkpoint": CheckpointRefPort(join_mode=JoinMode.BROADCAST),
-        "training_manifest": TrainingManifestPort(),
+        "dataset_ref": JsonPort(),
     }
     OUTPUTS = {"training_result": TrainingResultPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 6}, exclusive_group="accelerator")
@@ -57,8 +56,12 @@ def _run_f0_training(settings: F0TrainingSettings, inputs: dict[str, Any], run_i
     from runner.nodes.training.f0.impl.checkpoint_publish import validate_f0_checkpoint_folder
     from runner.nodes.training.f0.impl.train import train_f0_model
 
-    manifest: TrainingManifest = inputs["training_manifest"]
-    output_dir = training_output_dir(settings.output_checkpoint_dir, manifest, "f0")
+    dataset_id = UUID(str(inputs["dataset_ref"]["dataset_id"]))
+    output_dir = database_training_output_dir(
+        settings.output_checkpoint_dir,
+        run_id,
+        "f0",
+    )
     tracker = start_mlflow_run(
         experiment="f0_training",
         name=f"{settings.display_name}-{run_id}",
@@ -67,8 +70,8 @@ def _run_f0_training(settings: F0TrainingSettings, inputs: dict[str, Any], run_i
     try:
         train_f0_model(
             run=tracker,
-            train_list_path=str(manifest.metadata["train_manifest_path"]),
-            val_list_path=str(manifest.metadata["validation_manifest_path"]),
+            dataset_id=dataset_id,
+            validation_samples=settings.validation_samples,
             run_dir=output_dir / "run",
             weights_dir=output_dir,
             epochs=settings.epochs,
@@ -90,6 +93,6 @@ def _run_f0_training(settings: F0TrainingSettings, inputs: dict[str, Any], run_i
         settings.display_name,
         "f0_model",
         str(output_dir),
-        training_manifest_metadata(inputs),
+        {"dataset_id": str(dataset_id)},
         run_id,
     )

@@ -45,7 +45,7 @@ from runner.nodes.dataset_writeback import AddAudioToDatasetNode, AssignSpeakerN
 from runner.nodes.datatypes import register_runner_types
 from runner.nodes.hetzner import HetznerDsV1ParquetAudioSourceNode, HetznerDsV2SourceNode
 from runner.nodes.libritts import LibriTtsSourceNode
-from runner.nodes.mos import BuildMosTrainingManifestNode, MosModelTrainingNode, PredictMosScoreNode
+from runner.nodes.mos import MosModelTrainingNode, PredictMosScoreNode
 from runner.nodes.smart_turn import SmartTurnPredictNode
 from runner.nodes.speaker_clustering import (
     ApplySpeakerClustersNode,
@@ -69,7 +69,6 @@ from runner.nodes.testing import (
     TestingTextSourceNode,
 )
 from runner.nodes.training.common.inputs import (
-    ListDatasetAudioIdsNode,
     PhonemeAlphabetNode,
     SelectCheckpointNode,
     SelectTrainingAssetsNode,
@@ -142,8 +141,6 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         SelectCheckpointNode,
         SelectTrainingAssetsNode,
         PhonemeAlphabetNode,
-        ListDatasetAudioIdsNode,
-        BuildMosTrainingManifestNode,
         StyleTtsFinetuneNode,
         StyleTts3TrainingNode,
         F0ModelTrainingNode,

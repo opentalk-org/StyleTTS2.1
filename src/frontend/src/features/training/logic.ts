@@ -17,7 +17,6 @@ export type TrainingNodeIds = {
   dataset: string;
   checkpoint: string;
   training: string;
-  manifest?: string;
   assets?: string;
   alphabet?: string;
 };
@@ -75,12 +74,7 @@ export function updateNodeParams(graph: WorkflowGraph, nodeId: string, params: S
 }
 
 export function updateTrainingParams(graph: WorkflowGraph, spec: TrainingWorkflowSpec, params: SchemaValues): WorkflowGraph {
-  let next = updateNodeParams(graph, spec.ids.training, params);
-  if ("validation_samples" in params && spec.ids.manifest) {
-    const manifest = trainingNode(next, spec.ids.manifest);
-    next = updateNodeParams(next, manifest.id, { ...manifest.params, validation_samples: params.validation_samples });
-  }
-  return next;
+  return updateNodeParams(graph, spec.ids.training, params);
 }
 
 export function assertTrainingNodes(schema: WorkflowSchema, spec: TrainingWorkflowSpec) {

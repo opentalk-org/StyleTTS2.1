@@ -23,11 +23,8 @@ export function MosModelForm({
   const training = trainingNode(graph, spec.ids.training);
   const dataset = trainingNode(graph, spec.ids.dataset);
   const checkpoint = trainingNode(graph, spec.ids.checkpoint);
-  if (!spec.ids.manifest) throw new Error("MOS manifest node is missing");
-  const manifest = trainingNode(graph, spec.ids.manifest);
   const trainingInfo = schema.nodes[training.type];
-  const manifestInfo = schema.nodes[manifest.type];
-  if (!trainingInfo || !manifestInfo) throw new Error("MOS training nodes are not registered");
+  if (!trainingInfo) throw new Error("MOS training node is not registered");
   const update = (nodeId: string, params: Record<string, unknown>) => onChange(updateNodeParams(graph, nodeId, params));
 
   return (
@@ -54,7 +51,7 @@ export function MosModelForm({
               options={checkpointOptions(checkpoints.data ?? [], "mos_base", "— select MOS base —")}
             />
           </Field>
-          <SettingField schema={manifestInfo.settings} values={manifest.params} name="validation_comparisons" onChange={(params) => update(manifest.id, params)} />
+          <SettingField schema={trainingInfo.settings} values={training.params} name="validation_comparisons" onChange={(params) => update(training.id, params)} />
         </div>
       </FormSection>
 

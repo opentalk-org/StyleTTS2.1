@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import numpy as np
 import torch
@@ -61,8 +62,8 @@ def save_f0_checkpoint(
 def train_f0_model(
     *,
     run: TrackerRun,
-    train_list_path: str,
-    val_list_path: str,
+    dataset_id: UUID,
+    validation_samples: int,
     run_dir: Path,
     weights_dir: Path,
     epochs: int,
@@ -85,8 +86,8 @@ def train_f0_model(
     weights_dir.mkdir(parents=True, exist_ok=True)
 
     train_loader, val_loader = build_f0_dataloaders(
-        train_list_path=train_list_path,
-        val_list_path=val_list_path,
+        dataset_id=dataset_id,
+        validation_samples=validation_samples,
         batch_size=batch_size,
         num_workers=num_workers,
         device_type=device_str,

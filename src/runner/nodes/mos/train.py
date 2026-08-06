@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import math
 from pathlib import Path
+from uuid import UUID
 
 import numpy as np
 import torch
 
-from runner.nodes.models import TrainingManifest
 from runner.nodes.mos.dataset import MosPairBatch, build_mos_dataloader
 from runner.nodes.mos.loss import MosLoss, mos_pair_loss
 from runner.nodes.mos.model import MosModelBundle, save_mos_bundle
@@ -31,7 +30,8 @@ class MosTrainMetrics:
 
 async def train_mos_model(
     bundle: MosModelBundle,
-    manifest: TrainingManifest,
+    dataset_id: UUID,
+    validation_comparisons: int,
     output_dir: Path,
     device: torch.device,
     epochs: int,
@@ -44,18 +44,18 @@ async def train_mos_model(
     context,
     node_id: str,
 ) -> MosTrainMetrics:
-    train_count = int(manifest.metadata["train_count"])
-    validation_count = int(manifest.metadata["validation_count"])
     train_loader = build_mos_dataloader(
-        Path(str(manifest.metadata["train_manifest_path"])),
-        train_count,
+        dataset_id,
+        validation_comparisons,
+        False,
         bundle.feature_extractor,
         batch_size,
         dataloader_workers,
     )
     validation_loader = build_mos_dataloader(
-        Path(str(manifest.metadata["validation_manifest_path"])),
-        validation_count,
+        dataset_id,
+        validation_comparisons,
+        True,
         bundle.feature_extractor,
         batch_size,
         dataloader_workers,
@@ -63,7 +63,7 @@ async def train_mos_model(
     optimizer = torch.optim.AdamW(bundle.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     amp_enabled = device.type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled)
-    steps_per_epoch = math.ceil(train_count / batch_size)
+    steps_per_epoch = len(train_loader)
     completed_steps = 0
     final_metrics: MosTrainMetrics | None = None
 

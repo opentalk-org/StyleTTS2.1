@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import numpy as np
 import torch
@@ -46,8 +47,8 @@ def save_asr_checkpoint(
 def train_asr_model(
     *,
     run: TrackerRun,
-    train_list_path: str,
-    val_list_path: str,
+    dataset_id: UUID,
+    validation_samples: int,
     run_dir: Path,
     weights_dir: Path,
     effective_config: dict[str, Any],
@@ -76,8 +77,8 @@ def train_asr_model(
     snapshots_dir.mkdir(parents=True, exist_ok=True)
 
     train_loader, val_loader = build_asr_dataloaders(
-        train_list_path=train_list_path,
-        val_list_path=val_list_path,
+        dataset_id=dataset_id,
+        validation_samples=validation_samples,
         effective_config=effective_config,
         batch_size=batch_size,
         num_workers=num_workers,

@@ -70,6 +70,20 @@ def training_output_dir(configured: str, manifest: TrainingManifest, name: str) 
     return output_dir
 
 
+def database_training_output_dir(
+    configured: str,
+    run_id: str,
+    name: str,
+) -> Path:
+    output_dir = (
+        Path(configured)
+        if configured
+        else Path("data/training/runs") / run_id / name
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
+
+
 def checkpoint_weight(ref: CheckpointRef) -> str | None:
     weights = sorted(ref.path.rglob("*.pth"), key=lambda path: path.stat().st_mtime, reverse=True)
     if not weights:

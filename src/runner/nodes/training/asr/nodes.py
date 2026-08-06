@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 import yaml
 from pydantic import Field
@@ -9,13 +10,11 @@ from runflow.core.node import Node
 from runflow.core.ports import JoinMode
 from runflow.policies import ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
-from runner.nodes.datatypes import CheckpointRefPort, JsonPort, TrainingManifestPort, TrainingResultPort
-from runner.nodes.models import TrainingManifest
+from runner.nodes.datatypes import CheckpointRefPort, JsonPort, TrainingResultPort
 from runner.nodes.training.common.results import (
     checkpoint_weight,
     publish_training_result,
-    training_manifest_metadata,
-    training_output_dir,
+    database_training_output_dir,
 )
 from runner.nodes.training.common.mlflow_run import start_mlflow_run
 from runner.nodes.training.f0.nodes import F0TrainingSettings
@@ -28,13 +27,13 @@ class AsrTrainingSettings(F0TrainingSettings):
 
 class AsrModelTrainingNode(Node):
     NODE_TYPE = "AsrModelTraining"
-    DESCRIPTION = "Train an ASR (text aligner) model used by StyleTTS from a training manifest, starting from a pretrained checkpoint and a phoneme alphabet. Consumes a checkpoint, phoneme alphabet, and a training manifest, and produces a training result pointing at the trained ASR bundle. Use it to produce the ASR model that StyleTTS finetuning depends on for a given dataset and symbol set."
+    DESCRIPTION = "Train an ASR text-aligner model directly from a stored dataset without an intermediate manifest."
     CATEGORY = "Training"
     SETTINGS = AsrTrainingSettings
     INPUTS = {
         "checkpoint": CheckpointRefPort(join_mode=JoinMode.BROADCAST),
         "phoneme_alphabet": JsonPort(join_mode=JoinMode.BROADCAST),
-        "training_manifest": TrainingManifestPort(),
+        "dataset_ref": JsonPort(),
     }
     OUTPUTS = {"training_result": TrainingResultPort()}
     RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, exclusive_group="accelerator")
@@ -51,8 +50,12 @@ def _run_asr_training(settings: AsrTrainingSettings, inputs: dict[str, Any], run
     from runner.nodes.training.asr.impl.config_load import build_effective_training_config, load_asr_reference_yaml
     from runner.nodes.training.asr.impl.train import train_asr_model
 
-    manifest: TrainingManifest = inputs["training_manifest"]
-    output_dir = training_output_dir(settings.output_checkpoint_dir, manifest, "asr")
+    dataset_id = UUID(str(inputs["dataset_ref"]["dataset_id"]))
+    output_dir = database_training_output_dir(
+        settings.output_checkpoint_dir,
+        run_id,
+        "asr",
+    )
     symbols = _symbols(inputs["phoneme_alphabet"])
     effective = build_effective_training_config(load_asr_reference_yaml(), symbols=symbols)
     config_path = output_dir / "effective_asr_config.yml"
@@ -66,8 +69,8 @@ def _run_asr_training(settings: AsrTrainingSettings, inputs: dict[str, Any], run
     try:
         train_asr_model(
             run=tracker,
-            train_list_path=str(manifest.metadata["train_manifest_path"]),
-            val_list_path=str(manifest.metadata["validation_manifest_path"]),
+            dataset_id=dataset_id,
+            validation_samples=settings.validation_samples,
             run_dir=output_dir / "run",
             weights_dir=output_dir,
             effective_config=effective,
@@ -88,7 +91,7 @@ def _run_asr_training(settings: AsrTrainingSettings, inputs: dict[str, Any], run
         settings.display_name,
         "asr_bundle",
         str(output_dir),
-        training_manifest_metadata(inputs),
+        {"dataset_id": str(dataset_id)},
         run_id,
     )
 

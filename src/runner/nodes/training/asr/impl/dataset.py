@@ -1,27 +1,24 @@
 from __future__ import annotations
 
-from pathlib import Path
+import io
+from uuid import UUID
 
 import numpy as np
 import soundfile as sf
 import torch
 import torch.nn.functional as F
 import torchaudio
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
 from runner.nodes.text.runtime.symbols import TextCleaner, build_word_index_dictionary
+from runner.nodes.training.common.database_dataset import DatabaseAudioDataset
+from shared.db import database_session
+from shared.db.audio import crud as audio_crud
 
 
-def load_manifest_lines(train_list_path: str) -> list[str]:
-    p = Path(train_list_path)
-    raw = p.read_text(encoding="utf-8").splitlines()
-    return [ln + "\n" for ln in raw if ln.strip()]
-
-
-class AsrPhonemeMelDataset(Dataset):
+class AsrPhonemeMelProcessor:
     def __init__(
         self,
-        data_list: list[str],
         *,
         phoneme_symbols: list[str],
         mel_params: dict,
@@ -29,8 +26,6 @@ class AsrPhonemeMelDataset(Dataset):
         data_augmentation: bool = False,
         ctc_blank_character: str = " ",
     ) -> None:
-        _data_list = [l[:-1].split("|") for l in data_list]
-        self.data_list = [data[:3] if len(data) >= 3 else (*data, "default") for data in _data_list]
         self.sr = sr
         sym = build_word_index_dictionary(list(phoneme_symbols))
         self.text_cleaner = TextCleaner(sym)
@@ -39,12 +34,9 @@ class AsrPhonemeMelDataset(Dataset):
         self.mean, self.std = -4.0, 4.0
         self.data_augmentation = data_augmentation
 
-    def __len__(self) -> int:
-        return len(self.data_list)
-
-    def _load_wave(self, wav_path: str) -> np.ndarray:
-        path = Path(wav_path)
-        wave, file_sr = sf.read(str(path.resolve()))
+    def _load_wave(self, wave_bytes: bytes) -> np.ndarray:
+        with io.BytesIO(wave_bytes) as source:
+            wave, file_sr = sf.read(source)
         if wave.ndim > 1:
             wave = wave.mean(axis=1)
         wave_f = wave.astype(np.float32)
@@ -54,13 +46,11 @@ class AsrPhonemeMelDataset(Dataset):
             wave_f = t.numpy().astype(np.float32)
         return wave_f
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.LongTensor]:
-        row = self.data_list[idx]
-        wav_path, ph_field = row[0], row[1]
-        wave = self._load_wave(wav_path)
+    def process(self, row, wave_bytes: bytes) -> tuple[torch.Tensor, torch.Tensor, torch.LongTensor]:
+        wave = self._load_wave(wave_bytes)
         wave_t = torch.from_numpy(wave).float()
         mel = self.to_melspec(wave_t)
-        ph_str = str(ph_field).strip()
+        ph_str = DatabaseAudioDataset.phoneme_text(row)
         text_ix = self.text_cleaner(ph_str)
         text_ix.insert(0, self._blank_edge)
         text_ix.append(self._blank_edge)
@@ -82,12 +72,20 @@ class AsrPhonemeMelDataset(Dataset):
 
 
 class AsrCollater:
-    def __init__(self) -> None:
+    def __init__(self, processor: AsrPhonemeMelProcessor) -> None:
         self.text_pad_index = 0
+        self.processor = processor
 
     def __call__(
-        self, batch: list[tuple[torch.Tensor, torch.Tensor, torch.LongTensor]]
+        self, rows
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        audio_ids = [row.audio_id for row in rows]
+        with database_session() as session:
+            audio_bytes = audio_crud.bulk_read_audio_files(session, audio_ids)
+        batch = [
+            self.processor.process(row, audio_bytes[row.audio_id])
+            for row in rows
+        ]
         batch_size = len(batch)
         lengths = [b[1].shape[1] for b in batch]
         order = np.argsort(lengths)[::-1]
@@ -115,8 +113,8 @@ class AsrCollater:
 
 def build_asr_dataloaders(
     *,
-    train_list_path: str,
-    val_list_path: str,
+    dataset_id: UUID,
+    validation_samples: int,
     effective_config: dict,
     batch_size: int,
     num_workers: int,
@@ -130,42 +128,39 @@ def build_asr_dataloaders(
     mel_params = dict(effective_config.get("mel_params") or {})
     dp = effective_config.get("data_params") or {}
     blank_ch = str(dp.get("ctc_blank_character") or " ")[:1]
-    train_lines = load_manifest_lines(train_list_path)
-    val_lines = load_manifest_lines(val_list_path)
     pin = device_type != "cpu"
-    train_ds = AsrPhonemeMelDataset(
-        train_lines,
+    train_processor = AsrPhonemeMelProcessor(
         phoneme_symbols=symbols,
         mel_params=mel_params,
         sr=sr,
         data_augmentation=True,
         ctc_blank_character=blank_ch,
     )
-    val_ds = AsrPhonemeMelDataset(
-        val_lines,
+    val_processor = AsrPhonemeMelProcessor(
         phoneme_symbols=symbols,
         mel_params=mel_params,
         sr=sr,
         data_augmentation=False,
         ctc_blank_character=blank_ch,
     )
-    collate = AsrCollater()
+    train_ds = DatabaseAudioDataset(dataset_id, validation_samples, False, True)
+    val_ds = DatabaseAudioDataset(dataset_id, validation_samples, True, True)
+    train_collate = AsrCollater(train_processor)
+    val_collate = AsrCollater(val_processor)
     train_loader = DataLoader(
         train_ds,
         batch_size=batch_size,
-        shuffle=True,
         num_workers=num_workers,
         drop_last=True,
-        collate_fn=collate,
+        collate_fn=train_collate,
         pin_memory=pin,
     )
     val_loader = DataLoader(
         val_ds,
         batch_size=batch_size,
-        shuffle=False,
         num_workers=max(0, num_workers // 2),
         drop_last=False,
-        collate_fn=collate,
+        collate_fn=val_collate,
         pin_memory=pin,
     )
     return train_loader, val_loader

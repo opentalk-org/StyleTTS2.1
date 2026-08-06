@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import logging
 import random
 from pathlib import Path
+from uuid import UUID
 
 import numpy as np
 import pyworld as pw
 import soundfile as sf
 import torch
 import torchaudio
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
+
+from runner.nodes.training.common.database_dataset import DatabaseAudioDataset
+from shared.db import database_session
+from shared.db.audio import crud as audio_crud
 
 logger = logging.getLogger(__name__)
 
@@ -25,16 +31,9 @@ MEL_PARAMS = {
 }
 
 
-def load_manifest_lines(train_list_path: str) -> list[str]:
-    p = Path(train_list_path)
-    raw = p.read_text(encoding="utf-8").splitlines()
-    return [ln + "\n" for ln in raw if ln.strip()]
-
-
-class MelF0Dataset(Dataset):
+class MelF0Processor:
     def __init__(
         self,
-        data_list: list[str],
         *,
         sr: int = 24000,
         data_augmentation: bool = False,
@@ -42,8 +41,6 @@ class MelF0Dataset(Dataset):
         verbose: bool = False,
         f0_cache_dir: Path | None = None,
     ) -> None:
-        _data_list = [l[:-1].split("|") for l in data_list]
-        self.data_list = [d[0] for d in _data_list]
         self.sr = sr
         self.to_melspec = torchaudio.transforms.MelSpectrogram(sample_rate=sr, **MEL_PARAMS)
         self.mean, self.std = -4.0, 4.0
@@ -54,23 +51,20 @@ class MelF0Dataset(Dataset):
         self.bad_F0 = 5
         self._f0_cache_root = f0_cache_dir
 
-    def __len__(self) -> int:
-        return len(self.data_list)
-
-    def _f0_cache_path(self, wav_path: str) -> Path:
+    def _f0_cache_path(self, audio_id: UUID) -> Path:
         if self._f0_cache_root is not None:
-            h = hashlib.sha256(wav_path.encode("utf-8")).hexdigest()[:24]
+            h = hashlib.sha256(str(audio_id).encode("utf-8")).hexdigest()[:24]
             return self._f0_cache_root / f"f0_{h}.npy"
-        return Path(wav_path + "_f0.npy")
+        raise ValueError("F0 cache directory is required")
 
-    def path_to_mel_and_label(self, path: str) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        wave_tensor = self._load_tensor(path)
-        out_file = self._f0_cache_path(path)
+    def process(self, audio_id: UUID, wave_bytes: bytes) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        wave_tensor = self._load_tensor(wave_bytes)
+        out_file = self._f0_cache_path(audio_id)
         if out_file.is_file():
             f0 = np.load(str(out_file))
         else:
             if self.verbose:
-                logger.info("Computing F0 for %s", path)
+                logger.info("Computing F0 for %s", audio_id)
             x = wave_tensor.numpy().astype(np.float64)
             frame_period = MEL_PARAMS["hop_length"] * 1000 / self.sr
             _f0, t = pw.harvest(x, self.sr, frame_period=frame_period)
@@ -106,12 +100,9 @@ class MelF0Dataset(Dataset):
 
         return mel_tensor, f0, is_silence
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        data = self.data_list[idx]
-        return self.path_to_mel_and_label(data)
-
-    def _load_tensor(self, data: str) -> torch.Tensor:
-        wave, sr = sf.read(data)
+    def _load_tensor(self, wave_bytes: bytes) -> torch.Tensor:
+        with io.BytesIO(wave_bytes) as source:
+            wave, sr = sf.read(source)
         if wave.ndim > 1:
             wave = wave.mean(axis=1)
         wave_tensor = torch.from_numpy(wave.astype(np.float32)).float()
@@ -124,6 +115,7 @@ class F0Collater:
     def __init__(
         self,
         *,
+        processor: MelF0Processor,
         max_mel_length: int = 192,
         min_mel_length: int = 192,
         mel_length_step: int = 16,
@@ -133,8 +125,16 @@ class F0Collater:
         self.max_mel_length = max_mel_length
         self.mel_length_step = mel_length_step
         self.random_time_crop = random_time_crop
+        self.processor = processor
 
-    def __call__(self, batch: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __call__(self, rows) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        audio_ids = [row.audio_id for row in rows]
+        with database_session() as session:
+            audio_bytes = audio_crud.bulk_read_audio_files(session, audio_ids)
+        batch = [
+            self.processor.process(audio_id, audio_bytes[audio_id])
+            for audio_id in audio_ids
+        ]
         batch_size = len(batch)
         nmels = batch[0][0].size(0)
         mels = torch.zeros((batch_size, nmels, self.max_mel_length), dtype=torch.float32)
@@ -169,24 +169,23 @@ class F0Collater:
 
 def build_f0_dataloaders(
     *,
-    train_list_path: str,
-    val_list_path: str,
+    dataset_id: UUID,
+    validation_samples: int,
     batch_size: int,
     num_workers: int,
     device_type: str,
     f0_cache_dir: Path | None = None,
 ) -> tuple[DataLoader, DataLoader]:
-    train_lines = load_manifest_lines(train_list_path)
-    val_lines = load_manifest_lines(val_list_path)
     pin = device_type != "cpu"
-    train_collate = F0Collater(random_time_crop=True)
-    val_collate = F0Collater(random_time_crop=False)
-    train_ds = MelF0Dataset(train_lines, data_augmentation=True, validation=False, f0_cache_dir=f0_cache_dir)
-    val_ds = MelF0Dataset(val_lines, data_augmentation=False, validation=True, f0_cache_dir=f0_cache_dir)
+    train_processor = MelF0Processor(data_augmentation=True, validation=False, f0_cache_dir=f0_cache_dir)
+    val_processor = MelF0Processor(data_augmentation=False, validation=True, f0_cache_dir=f0_cache_dir)
+    train_collate = F0Collater(random_time_crop=True, processor=train_processor)
+    val_collate = F0Collater(random_time_crop=False, processor=val_processor)
+    train_ds = DatabaseAudioDataset(dataset_id, validation_samples, False, False)
+    val_ds = DatabaseAudioDataset(dataset_id, validation_samples, True, False)
     train_loader = DataLoader(
         train_ds,
         batch_size=batch_size,
-        shuffle=True,
         num_workers=num_workers,
         drop_last=True,
         collate_fn=train_collate,
@@ -195,7 +194,6 @@ def build_f0_dataloaders(
     val_loader = DataLoader(
         val_ds,
         batch_size=batch_size,
-        shuffle=False,
         num_workers=max(0, num_workers // 2),
         drop_last=False,
         collate_fn=val_collate,

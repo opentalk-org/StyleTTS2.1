@@ -58,6 +58,25 @@ def iter_dataset_training_audio(
         yield DatasetTrainingAudio(*row)
 
 
+def count_dataset_training_audio(
+    session: Session,
+    dataset_id: uuid.UUID,
+) -> int:
+    statement = (
+        select(func.count())
+        .select_from(AudioFile)
+        .join(
+            dataset_audio_files,
+            dataset_audio_files.c.audio_file_id == AudioFile.id,
+        )
+        .where(
+            dataset_audio_files.c.dataset_id == dataset_id,
+            AudioFile.virtual.is_(False),
+        )
+    )
+    return int(session.scalar(statement))
+
+
 def dataset_training_duration_totals(
     session: Session,
     dataset_id: uuid.UUID,

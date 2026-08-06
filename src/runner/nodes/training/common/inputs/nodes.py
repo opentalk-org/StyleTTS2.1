@@ -15,9 +15,6 @@ from runner.nodes.text.runtime.symbols import (
     DEFAULT_STYLETTS_SYMBOLS,
     MODEL_BERT_STYLETTS_SYMBOLS,
 )
-from shared.db import database_session
-from shared.db.common import one
-from shared.db.datasets.models import Dataset
 
 
 class AlphabetPreset(str, Enum):
@@ -62,10 +59,6 @@ class SelectTrainingAssetsSettings(StrictSettings):
 class PhonemeAlphabetSettings(StrictSettings):
     preset: AlphabetPreset = Field(default=AlphabetPreset.IPA, title="Alphabet preset")
     symbols: str = Field(default=DEFAULT_ALPHABET, title="Symbols")
-
-
-class ListDatasetAudioIdsSettings(StrictSettings):
-    include_virtual: bool = False
 
 
 class TrainingRunInputNode(Node):
@@ -114,7 +107,6 @@ class SelectTrainingDatasetNode(Node):
             }
             for inputs in batch
         ]
-
 
 class SelectCheckpointNode(Node):
     NODE_TYPE = "SelectCheckpoint"
@@ -179,33 +171,3 @@ class PhonemeAlphabetNode(Node):
             }
             for inputs in batch
         ]
-
-
-class ListDatasetAudioIdsNode(Node):
-    NODE_TYPE = "ListDatasetAudioIds"
-    DESCRIPTION = "Expand a selected dataset into the list of audio file ids to train on. Consumes a dataset reference and outputs the audio file ids belonging to that dataset. Optionally include virtual audio files; feed the output into manifest building. Fails if the dataset has no matching audio."
-    CATEGORY = "Training"
-    SETTINGS = ListDatasetAudioIdsSettings
-    INPUTS = {"dataset_ref": JsonPort()}
-    OUTPUTS = {"audio_file_ids": JsonPort()}
-    RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
-
-    async def execute(self, batch, context):
-        outputs = []
-        with database_session() as session:
-            for inputs in batch:
-                dataset_ref = inputs["dataset_ref"]
-                dataset_id = UUID(str(dataset_ref["dataset_id"]))
-                dataset = one(session, Dataset, dataset_id)
-                ids = [str(item.id) for item in dataset.audio_files if self.settings.include_virtual or not item.virtual]
-                if not ids:
-                    raise ValueError(f"training dataset has no audio files: {dataset_id}")
-                outputs.append({
-                    "audio_file_ids": {
-                        "source": dataset_ref,
-                        "dataset_id": str(dataset_id),
-                        "include_virtual": self.settings.include_virtual,
-                        "ids": ids,
-                    }
-                })
-        return outputs

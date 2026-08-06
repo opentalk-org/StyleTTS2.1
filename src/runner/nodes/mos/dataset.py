@@ -1,35 +1,77 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Iterator
+from uuid import UUID
 
+from pydantic import BaseModel, Field
 import torch
 from torch.utils.data import DataLoader, IterableDataset, get_worker_info
 
 from runner.nodes.mos.audio import MosFeatureExtractor, MosInputs, prepare_audio_batch
-from runner.nodes.mos.manifest import MosManifestRow
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
+from shared.db.mos import crud as mos_crud
+from shared.db.mos.models import MosComparison
 
 
-class MosPairIterableDataset(IterableDataset[MosManifestRow]):
-    def __init__(self, path: Path, count: int):
+class MosPairRow(BaseModel):
+    comparison_id: UUID
+    audio_a_id: UUID
+    audio_b_id: UUID
+    score_a: float = Field(allow_inf_nan=False)
+    score_b: float = Field(allow_inf_nan=False)
+    preferred_audio_id: UUID
+
+    @property
+    def preferred_sign(self) -> float:
+        if self.preferred_audio_id == self.audio_a_id:
+            return 1.0
+        if self.preferred_audio_id == self.audio_b_id:
+            return -1.0
+        raise ValueError(
+            f"MOS preference is outside pair: {self.comparison_id}"
+        )
+
+
+class MosPairIterableDataset(IterableDataset[MosPairRow]):
+    def __init__(
+        self,
+        dataset_id: UUID,
+        validation_comparisons: int,
+        validation: bool,
+    ):
         super().__init__()
-        self.path = path
-        self.count = count
+        self.dataset_id = dataset_id
+        self.validation = validation
+        with database_session() as session:
+            comparison_count = mos_crud.count_comparisons(session, dataset_id)
+        if comparison_count < 2:
+            raise ValueError(
+                f"MOS training requires at least two comparisons: {dataset_id}"
+            )
+        self.validation_count = min(
+            validation_comparisons,
+            comparison_count - 1,
+        )
+        self.train_count = comparison_count - self.validation_count
+        self.count = self.validation_count if validation else self.train_count
 
     def __len__(self) -> int:
         return self.count
 
-    def __iter__(self) -> Iterator[MosManifestRow]:
+    def __iter__(self) -> Iterator[MosPairRow]:
         worker = get_worker_info()
         worker_id = worker.id if worker is not None else 0
         worker_count = worker.num_workers if worker is not None else 1
-        with self.path.open("r", encoding="utf-8") as source:
-            for index, line in enumerate(source):
+        with database_session() as session:
+            rows = mos_crud.iter_comparisons(session, self.dataset_id)
+            for index, comparison in enumerate(rows):
+                selected = index >= self.train_count
+                if selected != self.validation:
+                    continue
                 if index % worker_count == worker_id:
-                    yield MosManifestRow.model_validate_json(line)
+                    yield _pair_row(comparison)
 
 
 @dataclass(frozen=True)
@@ -54,7 +96,7 @@ class MosPairCollator:
     def __init__(self, feature_extractor: MosFeatureExtractor):
         self.feature_extractor = feature_extractor
 
-    def __call__(self, rows: list[MosManifestRow]) -> MosPairBatch:
+    def __call__(self, rows: list[MosPairRow]) -> MosPairBatch:
         audio_ids = list(dict.fromkeys(
             [row.audio_a_id for row in rows] + [row.audio_b_id for row in rows]
         ))
@@ -75,17 +117,33 @@ class MosPairCollator:
 
 
 def build_mos_dataloader(
-    path: Path,
-    count: int,
+    dataset_id: UUID,
+    validation_comparisons: int,
+    validation: bool,
     feature_extractor: MosFeatureExtractor,
     batch_size: int,
     workers: int,
 ) -> DataLoader[MosPairBatch]:
     return DataLoader(
-        MosPairIterableDataset(path, count),
+        MosPairIterableDataset(
+            dataset_id,
+            validation_comparisons,
+            validation,
+        ),
         batch_size=batch_size,
         num_workers=workers,
         collate_fn=MosPairCollator(feature_extractor),
         pin_memory=torch.cuda.is_available(),
         persistent_workers=workers > 0,
+    )
+
+
+def _pair_row(comparison: MosComparison) -> MosPairRow:
+    return MosPairRow(
+        comparison_id=comparison.id,
+        audio_a_id=comparison.audio_a_id,
+        audio_b_id=comparison.audio_b_id,
+        score_a=comparison.score_a,
+        score_b=comparison.score_b,
+        preferred_audio_id=comparison.preferred_audio_id,
     )
