@@ -25,3 +25,6 @@ result-*
 *.wav
 *.log
 docs/superpowers
+.direnv/
+.dnvr/
+.envrc
