@@ -8,8 +8,6 @@ import pyopenjtalk
 from phonemizer.backend import EspeakBackend
 
 DEFAULT_PUNCTUATION_MARKS = ';:,.!?¡¿—…\\"«»\\"\\"'
-ESPEAK_TEXT_CHUNK_SIZE = 1_250
-ESPEAK_CHUNK_BOUNDARIES = frozenset(" \t\r\n;:,.!?¡¿—…။၊。！？")
 
 
 def phonemize_texts(
@@ -145,32 +143,9 @@ def _phonemize_with_phonemizer(
             preserve_punctuation=True,
             punctuation_marks=punctuation_marks,
             with_stress=True,
+            tie=True,
             language_switch="remove-flags",
         )
     backend = _PHONEMIZER_BACKENDS[backend_key]
-    chunks_by_text = [_espeak_text_chunks(text) for text in texts]
-    if all(len(chunks) == 1 for chunks in chunks_by_text):
-        return [str(line).strip() for line in backend.phonemize(texts, strip=True)]
-    return [
-        " ".join(
-            str(backend.phonemize([chunk], strip=True)[0]).strip()
-            for chunk in chunks
-        ).strip()
-        for chunks in chunks_by_text
-    ]
-
-
-def _espeak_text_chunks(text: str) -> list[str]:
-    chunks = []
-    remaining = text.strip()
-    while len(remaining) > ESPEAK_TEXT_CHUNK_SIZE:
-        split_at = ESPEAK_TEXT_CHUNK_SIZE
-        for index in range(ESPEAK_TEXT_CHUNK_SIZE, ESPEAK_TEXT_CHUNK_SIZE // 2, -1):
-            if remaining[index - 1] in ESPEAK_CHUNK_BOUNDARIES:
-                split_at = index
-                break
-        chunks.append(remaining[:split_at].strip())
-        remaining = remaining[split_at:].strip()
-    if remaining:
-        chunks.append(remaining)
-    return chunks
+    phonemized = backend.phonemize(texts, strip=True)
+    return [str(line).strip() for line in phonemized]

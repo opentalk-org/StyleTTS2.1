@@ -13,6 +13,7 @@ from pydantic import Field
 from runflow.core.node import Node
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
+from runflow.runtime.output_router import INPUT_INDEX_OUTPUT
 from runner.nodes.datatypes import AudioPort
 from runner.nodes.models import Audio, AudioSegment
 from runner.nodes.text.runtime.phonemize import (
@@ -20,6 +21,8 @@ from runner.nodes.text.runtime.phonemize import (
     phonemize_texts,
     phonemizer_backend,
 )
+
+MAX_PHONEMIZE_SEGMENT_CHARACTERS = 2_048
 
 
 class PhonemizeSettings(StrictSettings):
@@ -74,18 +77,22 @@ class PhonemizeSegmentsNode(Node):
             raise RuntimeError("PhonemizeSegments process pool is not loaded")
         loop = asyncio.get_running_loop()
         audios = []
-        for inputs in batch:
+        for input_index, inputs in enumerate(batch):
             audio: Audio = inputs["audio"]
             language = _audio_language(audio)
             work_segments = [segment for segment in audio.segments if _should_phonemize_segment(segment, self.settings)]
+            if any(len(segment.text) > MAX_PHONEMIZE_SEGMENT_CHARACTERS for segment in work_segments):
+                continue
             job = PhonemizeJob(
                 texts=[segment.text for segment in work_segments],
                 language=language,
             )
-            audios.append((audio, language, job))
+            audios.append((input_index, audio, language, job))
+        if not audios:
+            return []
         chunk_size = ceil(len(audios) / (self.settings.processes * 2))
         chunks = [
-            [entry[2] for entry in audios[start:start + chunk_size]]
+            [entry[3] for entry in audios[start:start + chunk_size]]
             for start in range(0, len(audios), chunk_size)
         ]
         futures = [
@@ -100,7 +107,7 @@ class PhonemizeSegmentsNode(Node):
         phoneme_batches = list(chain.from_iterable(await asyncio.gather(*futures)))
         context.check_cancel()
         outputs = []
-        for (audio, language, _job), phonemes in zip(audios, phoneme_batches, strict=True):
+        for (input_index, audio, language, _job), phonemes in zip(audios, phoneme_batches, strict=True):
             segments = _replace_phonemes(audio.segments, self.settings, phonemes)
             metadata = {
                 **audio.metadata,
@@ -109,7 +116,14 @@ class PhonemizeSegmentsNode(Node):
                 "punctuation_marks": self.settings.punctuation_marks,
                 "phoneme_mode": self.settings.mode,
             }
-            outputs.append({"audio": replace(audio, segments=segments, annotations=audio.annotations.model_copy(update={"metadata": metadata}))})
+            outputs.append({
+                INPUT_INDEX_OUTPUT: input_index,
+                "audio": replace(
+                    audio,
+                    segments=segments,
+                    annotations=audio.annotations.model_copy(update={"metadata": metadata}),
+                ),
+            })
         return outputs
 
 

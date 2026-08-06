@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text as sql_text, update
 from sqlalchemy.orm import Session
 
 from shared.db.audio.models import AudioFile
@@ -12,6 +12,27 @@ from shared.db.common import one
 
 
 SegmentPayload = SegmentCreate | dict[str, Any]
+
+CLEAR_PHONEMES_BATCH = sql_text("""
+WITH targets AS (
+    SELECT audio_files.id
+    FROM audio_files
+    WHERE EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(audio_files.segments) AS segment
+        WHERE COALESCE(segment->>'phon', '') <> ''
+    )
+    LIMIT :batch_size
+)
+UPDATE audio_files
+SET segments = (
+    SELECT jsonb_agg(jsonb_set(segment, '{phon}', '\"\"'::jsonb) ORDER BY ordinal)
+    FROM jsonb_array_elements(audio_files.segments) WITH ORDINALITY AS item(segment, ordinal)
+), updated_at = NOW()
+FROM targets
+WHERE audio_files.id = targets.id
+RETURNING audio_files.id
+""")
 
 
 def list_audio_segments(session: Session, audio_file_id: uuid.UUID) -> list[dict[str, Any]]:
@@ -35,6 +56,12 @@ def list_audio_segments_bulk(
         select(AudioFile.id, AudioFile.segments).where(AudioFile.id.in_(unique_ids))
     ).all()
     return {row.id: list(row.segments) for row in rows}
+
+
+def clear_audio_segment_phonemes_batch(session: Session, batch_size: int) -> int:
+    cleared = len(session.execute(CLEAR_PHONEMES_BATCH, {"batch_size": batch_size}).all())
+    session.commit()
+    return cleared
 
 
 def create_segment(session: Session, audio_file_id: uuid.UUID, payload: SegmentCreate) -> dict[str, Any]:

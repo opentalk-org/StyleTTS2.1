@@ -40,6 +40,7 @@ from shared.db.audio.segment_catalog import (
 )
 from shared.db.audio.segments import (
     bulk_replace_audio_segments,
+    clear_audio_segment_phonemes_batch,
     create_segment,
     delete_segment,
     list_audio_segments,
