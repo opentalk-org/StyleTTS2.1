@@ -598,10 +598,10 @@ class Validator:
                         : batch.input_lengths[index],
                         : batch.mel_lengths[index] // (2**n_down),
                     ],
-                    hard_attention=decode_alignment[
+                    hard_attention=monotonic[
                         index,
                         : batch.input_lengths[index],
-                        : decode_lengths[index],
+                        : batch.mel_lengths[index] // (2**n_down),
                     ],
                 )
                 for index in range(sample_count)

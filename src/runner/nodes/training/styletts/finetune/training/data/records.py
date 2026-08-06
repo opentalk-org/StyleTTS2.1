@@ -11,6 +11,11 @@ from ...studio.val_sample_export import ValidationSampleArtifacts
 class TrainingBatch:
     waves: tuple[np.ndarray, ...]
     audio_durations: tuple[float, ...]
+    bucket_fetch_seconds: float
+    bucket_fetch_bytes: int
+    bucket_request_seconds: float
+    bucket_request_count: int
+    bucket_error_count: int
     speaker_ids: Tensor
     language_ids: Tensor
     modality_ids: Tensor

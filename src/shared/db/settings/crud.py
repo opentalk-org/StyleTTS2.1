@@ -2,7 +2,12 @@ from sqlalchemy.orm import Session
 
 from shared.db.settings.models import IntegrationSettings, StorageSettings
 from shared.db.settings.schemas import IntegrationSettingsPayload, StorageSettingsPayload
-from shared.storage import ObjectStore, ObjectStoreConfig, S3ObjectStore
+from shared.storage import (
+    ObjectStore,
+    ObjectStoreConfig,
+    S3ObjectStore,
+    S3RequestMetrics,
+)
 
 
 def get_storage_settings(session: Session) -> StorageSettings:
@@ -62,5 +67,8 @@ def object_store_config(session: Session) -> ObjectStoreConfig:
     )
 
 
-def object_store(session: Session) -> ObjectStore:
-    return S3ObjectStore(object_store_config(session))
+def object_store(
+    session: Session,
+    request_metrics: S3RequestMetrics | None = None,
+) -> ObjectStore:
+    return S3ObjectStore(object_store_config(session), request_metrics)

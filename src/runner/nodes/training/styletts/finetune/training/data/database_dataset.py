@@ -42,16 +42,23 @@ class DatabaseBatchDataset(IterableDataset):
         self.modality_id = int(plbert_modality_id)
         self.text_cleaner = TextCleaner(symbols)
         self.boundary_token_id = self.text_cleaner.symbol_index[PAD_SYMBOL]
+        self._cached_validation_ids = None
+        self._cached_training_plan = None
 
     def __iter__(self):
         validation_ids = self._validation_ids()
-        randomizer = random.Random(self.seed + self.epoch)
-        self.epoch += int(not self.validation)
-        batches = (
-            self._validation_batches(validation_ids, randomizer)
-            if self.validation
-            else self._training_batches(validation_ids, randomizer)
-        )
+        if self.validation:
+            randomizer = random.Random(self.seed)
+            batches = self._validation_batches(validation_ids, randomizer)
+            yield from self._sharded(batches)
+            return
+        while True:
+            randomizer = random.Random(self.seed + self.epoch)
+            self.epoch += 1
+            batches = self._training_batches(validation_ids, randomizer)
+            yield from self._sharded(batches)
+
+    def _sharded(self, batches):
         for index, batch in enumerate(batches):
             if index % self.process_count == self.process_index:
                 yield batch
@@ -61,6 +68,8 @@ class DatabaseBatchDataset(IterableDataset):
         self.process_count = process_count
 
     def _validation_ids(self) -> set[UUID]:
+        if self._cached_validation_ids is not None:
+            return self._cached_validation_ids
         selected = set()
         with database_session() as session:
             rows = dataset_crud.iter_dataset_training_audio(
@@ -72,6 +81,7 @@ class DatabaseBatchDataset(IterableDataset):
                 if self._has_usable_segments(item):
                     selected.add(item.audio_id)
                 if len(selected) == self.validation_samples:
+                    self._cached_validation_ids = selected
                     return selected
         raise ValueError("training dataset has fewer usable rows than validation_samples")
 
@@ -121,10 +131,8 @@ class DatabaseBatchDataset(IterableDataset):
             and source_speaker[2:].isdigit()
         ):
             speaker = source_speaker
-        speaker_id = int.from_bytes(
-            hashlib.blake2b(speaker.encode(), digest_size=8).digest(),
-            "big",
-        ) % (2**63 - 1)
+        digest = hashlib.blake2b(speaker.encode(), digest_size=8).digest()
+        speaker_id = int.from_bytes(digest, "big") % (2**63 - 1)
         return (
             speaker_id,
             self._resolve_language_id(item.language),
@@ -154,25 +162,8 @@ class DatabaseBatchDataset(IterableDataset):
             yield [rows[index] for index in indices]
 
     def _training_batches(self, validation_ids, randomizer):
-        with database_session() as session:
-            minimum_duration = dataset_crud.dataset_training_minimum_duration(
-                session,
-                self.dataset_id,
-                self.max_audio_seconds,
-                validation_ids,
-            )
-            cardinality_bounds = self._duration_upper_bounds(minimum_duration)
-            stats = dataset_crud.dataset_training_duration_totals(
-                session,
-                self.dataset_id,
-                cardinality_bounds,
-                validation_ids,
-            )
-        upper_bounds, weights = self._merge_duration_bins(
-            cardinality_bounds,
-            stats.total_seconds,
-            stats.file_count,
-        )
+        upper_bounds, base_weights = self._training_plan(validation_ids)
+        weights = list(base_weights)
         iterators = [
             iter(self._selected_rows(
                 validation_ids,
@@ -196,15 +187,37 @@ class DatabaseBatchDataset(IterableDataset):
                 k=1,
             )[0]
             batch = self._sample_training_batch(
-                buffers[bin_index],
-                iterators[bin_index],
-                randomizer,
+                buffers[bin_index], iterators[bin_index], randomizer
             )
             if batch:
                 produced += 1
                 yield batch
             else:
                 weights[bin_index] = 0.0
+
+    def _training_plan(self, validation_ids):
+        if self._cached_training_plan is not None:
+            return self._cached_training_plan
+        with database_session() as session:
+            minimum_duration = dataset_crud.dataset_training_minimum_duration(
+                session,
+                self.dataset_id,
+                self.max_audio_seconds,
+                validation_ids,
+            )
+            cardinality_bounds = self._duration_upper_bounds(minimum_duration)
+            stats = dataset_crud.dataset_training_duration_totals(
+                session,
+                self.dataset_id,
+                cardinality_bounds,
+                validation_ids,
+            )
+        self._cached_training_plan = self._merge_duration_bins(
+            cardinality_bounds,
+            stats.total_seconds,
+            stats.file_count,
+        )
+        return self._cached_training_plan
 
     def _sample_training_batch(self, buffer, rows, randomizer):
         self._fill_buffer(buffer, rows)
@@ -245,8 +258,7 @@ class DatabaseBatchDataset(IterableDataset):
     @staticmethod
     def _merge_duration_bins(upper_bounds, weights, file_count):
         target_bin_count = min(
-            len(upper_bounds),
-            math.ceil(math.log2(file_count) + 1),
+            len(upper_bounds), math.ceil(math.log2(file_count) + 1)
         )
         if target_bin_count == len(upper_bounds):
             return upper_bounds, list(weights)
@@ -259,9 +271,8 @@ class DatabaseBatchDataset(IterableDataset):
         ):
             accumulated += weight
             last = index == len(upper_bounds) - 1
-            full = (
-                accumulated >= target_seconds
-                and len(merged_bounds) < target_bin_count - 1
+            full = accumulated >= target_seconds and (
+                len(merged_bounds) < target_bin_count - 1
             )
             if full or last:
                 merged_bounds.append(upper_bound)
@@ -279,9 +290,7 @@ class DatabaseBatchDataset(IterableDataset):
         for candidate in candidates:
             if candidate in self.language_ids:
                 return self.language_ids[candidate]
-        raise ValueError(
-            f"training audio language {language!r} is unsupported by PLBERT"
-        )
+        raise ValueError(f"training audio language {language!r} is unsupported by PLBERT")
 
     def _text_to_tensor(self, text: str) -> torch.LongTensor:
         tokens = self.text_cleaner(text)

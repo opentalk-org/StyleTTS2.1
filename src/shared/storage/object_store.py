@@ -1,4 +1,6 @@
 import os
+import threading
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -45,6 +47,32 @@ class ObjectRange:
     byte_offset: int
     byte_length: int
 
+
+class S3RequestMetrics:
+    def __init__(self) -> None:
+        self.request_count = 0
+        self.error_count = 0
+        self.response_seconds = 0.0
+        self.fetch_seconds = 0.0
+        self.fetch_bytes = 0
+        self._lock = threading.Lock()
+
+    def before_call(self, context, **_kwargs) -> None:
+        context["runflow_request_started"] = time.monotonic()
+
+    def after_call(self, context, http_response, **_kwargs) -> None:
+        self._record(context, http_response.status_code >= 300)
+
+    def after_call_error(self, context, **_kwargs) -> None:
+        self._record(context, True)
+
+    def _record(self, context, failed: bool) -> None:
+        started = context.get("runflow_request_started", time.monotonic())
+        with self._lock:
+            self.request_count += 1
+            self.error_count += int(failed)
+            self.response_seconds += time.monotonic() - started
+
 class ObjectStore(ABC):
     @abstractmethod
     def upload(self, path: str, data: bytes) -> None:
@@ -76,7 +104,11 @@ class ObjectStore(ABC):
 
 
 class S3ObjectStore(ObjectStore):
-    def __init__(self, config: ObjectStoreConfig) -> None:
+    def __init__(
+        self,
+        config: ObjectStoreConfig,
+        request_metrics: S3RequestMetrics | None = None,
+    ) -> None:
         self._bucket = config.bucket
         self._folder = _normalize_folder(config.folder)
         self._client: BaseClient = boto3.client(
@@ -87,6 +119,14 @@ class S3ObjectStore(ObjectStore):
             aws_secret_access_key=config.secret_access_key,
             config=Config(response_checksum_validation="when_required"),
         )
+        if request_metrics is not None:
+            events = self._client.meta.events
+            events.register("before-call.s3.GetObject", request_metrics.before_call)
+            events.register("after-call.s3.GetObject", request_metrics.after_call)
+            events.register(
+                "after-call-error.s3.GetObject",
+                request_metrics.after_call_error,
+            )
 
     def upload(self, path: str, data: bytes) -> None:
         self._client.put_object(Bucket=self._bucket, Key=self._key(path), Body=data)

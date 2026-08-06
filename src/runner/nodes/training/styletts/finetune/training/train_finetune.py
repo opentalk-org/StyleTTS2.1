@@ -139,6 +139,17 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
             timing.audio_seconds_trained += reduced_totals[1].item()
             metrics = dict(step_metrics)
             metrics.update(timing.metrics(step))
+            fetch_mib = batch.bucket_fetch_bytes / (1024 * 1024)
+            metrics.update({
+                "performance/bucket_fetch_seconds": batch.bucket_fetch_seconds,
+                "performance/bucket_fetch_mib": fetch_mib,
+                "performance/bucket_fetch_mib_per_second": (
+                    fetch_mib / max(batch.bucket_fetch_seconds, 1e-9)
+                ),
+                "performance/bucket_request_seconds": batch.bucket_request_seconds,
+                "performance/bucket_request_count": batch.bucket_request_count,
+                "performance/bucket_error_count": batch.bucket_error_count,
+            })
             if accelerator.is_main_process:
                 assert telemetry is not None
                 reporting_started = time.monotonic()

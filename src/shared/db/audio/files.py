@@ -1,4 +1,5 @@
 import uuid
+import time
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
 
@@ -20,7 +21,7 @@ from shared.db.audio.storage_locations import audio_storage_locations
 from shared.db.datasets.models import dataset_audio_files
 from shared.db.settings import crud as settings_crud
 from shared.db.waveforms import crud as waveform_crud
-from shared.storage import ObjectRange
+from shared.storage import ObjectRange, S3RequestMetrics
 
 
 def create_audio_file(
@@ -89,6 +90,7 @@ def read_audio_part(
 def bulk_read_audio_files(
     session: Session,
     audio_file_ids: Iterable[uuid.UUID],
+    request_metrics: S3RequestMetrics | None = None,
 ) -> dict[uuid.UUID, bytes]:
     ids = list(dict.fromkeys(audio_file_ids))
     locations = audio_storage_locations(session, ids)
@@ -100,7 +102,12 @@ def bulk_read_audio_files(
         )
         for audio_file_id in ids
     ]
-    payloads = settings_crud.object_store(session).read_ranges(ranges)
+    store = settings_crud.object_store(session, request_metrics)
+    started = time.monotonic()
+    payloads = store.read_ranges(ranges)
+    if request_metrics is not None:
+        request_metrics.fetch_seconds = time.monotonic() - started
+        request_metrics.fetch_bytes = sum(len(payload) for payload in payloads)
     return dict(zip(ids, payloads, strict=True))
 
 

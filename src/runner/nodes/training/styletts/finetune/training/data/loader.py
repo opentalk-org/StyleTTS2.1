@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
+from shared.storage import S3RequestMetrics
 
 from .database_dataset import DatabaseBatchDataset
 from .pipeline import PrefetchedDataPipeline
@@ -90,10 +91,12 @@ class Collater:
         batch_size = len(batch)
         audio_ids = [row[3] for row in batch]
 
+        request_metrics = S3RequestMetrics()
         with database_session() as session:
             audio_bytes = audio_crud.bulk_read_audio_files(
                 session,
                 list(dict.fromkeys(audio_ids)),
+                request_metrics,
             )
         cache = self._load_batch_audio(audio_bytes)
         batch = sorted(
@@ -138,6 +141,11 @@ class Collater:
         return TrainingBatch(
             waves=tuple(waves),
             audio_durations=tuple(row[5] for row in batch),
+            bucket_fetch_seconds=request_metrics.fetch_seconds,
+            bucket_fetch_bytes=request_metrics.fetch_bytes,
+            bucket_request_seconds=request_metrics.response_seconds,
+            bucket_request_count=request_metrics.request_count,
+            bucket_error_count=request_metrics.error_count,
             speaker_ids=labels,
             language_ids=language_ids,
             modality_ids=modality_ids,

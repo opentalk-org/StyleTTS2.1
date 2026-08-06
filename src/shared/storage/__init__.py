@@ -3,6 +3,7 @@ from shared.storage.object_store import (
     ObjectStore,
     ObjectStoreConfig,
     S3ObjectStore,
+    S3RequestMetrics,
 )
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "ObjectStore",
     "ObjectStoreConfig",
     "S3ObjectStore",
+    "S3RequestMetrics",
 ]
