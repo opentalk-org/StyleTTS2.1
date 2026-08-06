@@ -14,7 +14,6 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
-    rustfs.url = "github:rustfs/rustfs/1.0.0-beta.8";
     flake-parts.url = "github:hercules-ci/flake-parts";
     dnvr.url = "github:dialohq/dnvr";
   };
@@ -22,7 +21,6 @@
   outputs =
     {
       nixpkgs,
-      rustfs,
       flake-parts,
       dnvr,
       ...
@@ -103,7 +101,7 @@
 
           dnvr.shells.default = { config, ... }: {
             packages = [
-              rustfs.packages.${system}.default
+              (import ./nix/rustfs.nix { inherit pkgs; })
               python
 
               pkgs.awscli2
