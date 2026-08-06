@@ -15,7 +15,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
     flake-parts.url = "github:hercules-ci/flake-parts";
-    dnvr.url = "github:dialohq/dnvr";
+    dnvr.url = "github:adamchol/dnvr/postgres-as-unprivileged";
   };
 
   outputs =
@@ -184,6 +184,7 @@
               package = pkgs.postgresql_16;
               database = "runflow";
               extraDatabases = [ "mlflow" ];
+              runAsUser = "user";
               # SUPERUSER because the preset creates databases owned by the
               # `postgres` superuser, and both alembic migrations and MLflow's
               # own schema bootstrap need to write into them.
@@ -218,56 +219,74 @@
                   pkgs.postgresql_16
                   pkgs.coreutils
                 ];
-                text = ''
-                  dir="$DNVR_STATE/pgbouncer"
-                  mkdir -p "$dir"
-                  printf '"runflow" "runflow"\n' > "$dir/userlist.txt"
+                text =
+                  let
+                    dropPrivPrefix = lib.optionalString (pkgs.stdenv.hostPlatform.isLinux) ''
+                      if [ "$(id -u)" = 0 ] && [ -z "''${DNVR_BOUNCER_DROPPED:-}" ]; then
+                        if ! id -u user >/dev/null 2>&1; then
+                          echo "[pgbouncer] creating system user user ..."
+                          useradd --system --user-group --shell ${pkgs.shadow}/bin/nologin user
+                        fi
+                        __pg_uid="$(id -u user)"
+                        __pg_gid="$(id -g user)"
 
-                  cat > "$dir/pgbouncer.ini" <<EOF
-                  [databases]
-                  runflow = host=''${PGB_SOCKET_DIR} port=''${PGB_PORT} dbname=''${PGB_DATABASE}
+                        export DNVR_BOUNCER_DROPPED=1
+                        echo "[pgbouncer] dropping privileges to user ..."
+                        exec setpriv --reuid "$__pg_uid" --regid "$__pg_gid" \
+                          --init-groups --inh-caps=-all -- "$0" "$@"
+                      fi
+                    '';
+                  in
+                  ''
+                    dir="$DNVR_STATE/pgbouncer"
+                    mkdir -p "$dir"
+                    printf '"runflow" "runflow"\n' > "$dir/userlist.txt"
 
-                  [pgbouncer]
-                  listen_addr = 127.0.0.1
-                  listen_port = 6432
-                  unix_socket_dir = $dir
-                  auth_type = plain
-                  auth_file = $dir/userlist.txt
-                  pool_mode = transaction
-                  max_client_conn = 200
-                  default_pool_size = 20
-                  reserve_pool_size = 5
-                  ignore_startup_parameters = extra_float_digits
-                  pidfile = $dir/pgbouncer.pid
-                  EOF
+                    cat > "$dir/pgbouncer.ini" <<EOF
+                    [databases]
+                    runflow = host=''${PGB_SOCKET_DIR} port=''${PGB_PORT} dbname=''${PGB_DATABASE}
 
-                  rm -f "$dir/pgbouncer.pid"
+                    [pgbouncer]
+                    listen_addr = 127.0.0.1
+                    listen_port = 6432
+                    unix_socket_dir = $dir
+                    auth_type = plain
+                    auth_file = $dir/userlist.txt
+                    pool_mode = transaction
+                    max_client_conn = 200
+                    default_pool_size = 20
+                    reserve_pool_size = 5
+                    ignore_startup_parameters = extra_float_digits
+                    pidfile = $dir/pgbouncer.pid
+                    EOF
 
-                  echo "[pgbouncer] starting on 6432 (transaction pooling) ..."
-                  pgbouncer "$dir/pgbouncer.ini" &
-                  PGB_PID=$!
-                  trap '
-                    kill -TERM $PGB_PID 2>/dev/null || true
-                    wait $PGB_PID 2>/dev/null || true
-                  ' EXIT INT TERM
+                    rm -f "$dir/pgbouncer.pid"
 
-                  until pg_isready -h 127.0.0.1 -p 6432 -d runflow -U runflow >/dev/null 2>&1; do
-                    if ! kill -0 $PGB_PID 2>/dev/null; then
-                      echo "[pgbouncer] exited before becoming ready" >&2
-                      exit 1
-                    fi
-                    sleep 0.2
-                  done
+                    echo "[pgbouncer] starting on 6432 (transaction pooling) ..."
+                    ${dropPrivPrefix}pgbouncer "$dir/pgbouncer.ini" &
+                    PGB_PID=$!
+                    trap '
+                      kill -TERM $PGB_PID 2>/dev/null || true
+                      wait $PGB_PID 2>/dev/null || true
+                    ' EXIT INT TERM
 
-                  # Refs carry whole values only, so the pooled DSN is composed
-                  # here rather than by each consumer.
-                  dnvr-state set url "postgresql+psycopg://runflow:runflow@127.0.0.1:6432/runflow"
-                  dnvr-state set port 6432
-                  dnvr-state set database runflow
-                  echo "[pgbouncer] ready"
+                    until pg_isready -h 127.0.0.1 -p 6432 -d runflow -U runflow >/dev/null 2>&1; do
+                      if ! kill -0 $PGB_PID 2>/dev/null; then
+                        echo "[pgbouncer] exited before becoming ready" >&2
+                        exit 1
+                      fi
+                      sleep 0.2
+                    done
 
-                  wait $PGB_PID
-                '';
+                    # Refs carry whole values only, so the pooled DSN is composed
+                    # here rather than by each consumer.
+                    dnvr-state set url "postgresql+psycopg://runflow:runflow@127.0.0.1:6432/runflow"
+                    dnvr-state set port 6432
+                    dnvr-state set database runflow
+                    echo "[pgbouncer] ready"
+
+                    wait $PGB_PID
+                  '';
               };
             };
 
