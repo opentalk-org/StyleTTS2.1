@@ -234,6 +234,8 @@
                         __pg_uid="$(id -u user)"
                         __pg_gid="$(id -g user)"
 
+                        mkdir -p "$DNVR_STATE/runtime/pgbouncer"
+                        chown -R "$__pg_uid:$__pg_gid" "$DNVR_STATE/runtime/pgbouncer"
                         chown -R "$__pg_uid:$__pg_gid" "$dir"
 
                         export DNVR_BOUNCER_DROPPED=1
