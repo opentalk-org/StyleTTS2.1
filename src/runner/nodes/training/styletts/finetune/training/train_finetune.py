@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from torch.profiler import ProfilerActivity, profile
 
 from runflow.runtime.cancellation import check_cancel
 from runner.nodes.training.common.mlflow_run import TrackerRun
@@ -102,8 +103,26 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
             timing.data_wait_seconds += time.monotonic() - data_wait_started
             check_cancel()
             compute_started = time.monotonic()
-            with profiling_fn("train_step"):
-                step_metrics = trainer.train_step(batch)
+            if (
+                config.profiling_enabled
+                and accelerator.is_main_process
+                and trainer.step == 20
+            ):
+                configure_profiling(False)
+                try:
+                    with profile(
+                        activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                    ) as torch_profile:
+                        step_metrics = trainer.train_step(batch)
+                finally:
+                    configure_profiling(True)
+                trace_path = log_dir / "training_step_000000021_trace.json"
+                torch_profile.export_chrome_trace(str(trace_path))
+                if run is not None:
+                    run.log_artifact(trace_path, "profiling")
+            else:
+                with profiling_fn("train_step"):
+                    step_metrics = trainer.train_step(batch)
             timing.compute_seconds += time.monotonic() - compute_started
             trainer.step += 1
             step = trainer.step

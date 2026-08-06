@@ -19,7 +19,7 @@ from ..losses import (
     waveform_generator_losses,
     wavlm_feature_loss,
 )
-from ..profiling import set_profiling_step
+from ..profiling import profiling_fn, set_profiling_step
 from ..setup import TrainingRuntime
 from ..utils import length_to_mask, log_norm, mask_from_lens, maximum_path
 from ...stages import (
@@ -79,6 +79,9 @@ class Trainer:
         stage = stage_for_step(self.config.training_stages, self.step)
         weights = stage.loss_weights
         trainable = tuple(module.value for module in stage.trainable_modules)
+        measure_gradient_norms = (
+            (self.step + 1) % self.config.log_every_steps == 0
+        )
 
         for name, module in modules.items():
             module.requires_grad_(name in trainable)
@@ -439,9 +442,10 @@ class Trainer:
                     )
                 accelerator.backward(loss)
                 synchronize_gradients(accelerator, modules, (name,))
-                gradient_metrics.update(
-                    gradient_norm_metrics(accelerator, modules, (name,))
-                )
+                if measure_gradient_norms:
+                    gradient_metrics.update(
+                        gradient_norm_metrics(accelerator, modules, (name,))
+                    )
                 accelerator.clip_grad_norm_(
                     discriminator.parameters(),
                     self.config.optimizer_params.gradient_clip_norm,
@@ -488,9 +492,10 @@ class Trainer:
                 )
                 accelerator.backward(loss)
                 synchronize_gradients(accelerator, modules, (name,))
-                gradient_metrics.update(
-                    gradient_norm_metrics(accelerator, modules, (name,))
-                )
+                if measure_gradient_norms:
+                    gradient_metrics.update(
+                        gradient_norm_metrics(accelerator, modules, (name,))
+                    )
                 accelerator.clip_grad_norm_(
                     discriminator.parameters(),
                     self.config.optimizer_params.gradient_clip_norm,
@@ -523,9 +528,10 @@ class Trainer:
                 )
             accelerator.backward(slm_discriminator_loss)
             synchronize_gradients(accelerator, modules, ("wd",))
-            gradient_metrics.update(
-                gradient_norm_metrics(accelerator, modules, ("wd",))
-            )
+            if measure_gradient_norms:
+                gradient_metrics.update(
+                    gradient_norm_metrics(accelerator, modules, ("wd",))
+                )
             accelerator.clip_grad_norm_(
                 modules.wd.parameters(),
                 self.config.optimizer_params.gradient_clip_norm,
@@ -765,9 +771,11 @@ class Trainer:
             unbiased=False,
         ).mean()
         total = self._weighted_total(losses, weights)
-        finite = bool(torch.isfinite(total).item())
+        with profiling_fn("loss_finite_check"):
+            finite = bool(torch.isfinite(total).item())
         if finite:
-            accelerator.backward(total)
+            with profiling_fn("generator_backward"):
+                accelerator.backward(total)
         else:
             self.skipped_steps += 1
             logger.warning("non-finite generator loss at step=%s", self.step)
@@ -775,27 +783,32 @@ class Trainer:
                 for parameter in modules[name].parameters():
                     if parameter.requires_grad:
                         parameter.grad = torch.zeros_like(parameter)
-        synchronize_gradients(accelerator, modules, trainable)
-        gradient_metrics.update(
-            gradient_norm_metrics(
-                accelerator,
-                modules,
-                trainable,
-                group_name="generator",
-            )
-        )
+        with profiling_fn("generator_gradient_sync"):
+            synchronize_gradients(accelerator, modules, trainable)
+        with profiling_fn("generator_gradient_metrics"):
+            if measure_gradient_norms:
+                gradient_metrics.update(
+                    gradient_norm_metrics(
+                        accelerator,
+                        modules,
+                        trainable,
+                        group_name="generator",
+                    )
+                )
         trainable_parameters = [
             parameter
             for name in trainable
             for parameter in modules[name].parameters()
             if parameter.requires_grad
         ]
-        accelerator.clip_grad_norm_(
-            trainable_parameters,
-            self.config.optimizer_params.gradient_clip_norm,
-        )
-        for name in trainable:
-            optimizer.step(name)
+        with profiling_fn("generator_gradient_clip"):
+            accelerator.clip_grad_norm_(
+                trainable_parameters,
+                self.config.optimizer_params.gradient_clip_norm,
+            )
+        with profiling_fn("generator_optimizer_step"):
+            for name in trainable:
+                optimizer.step(name)
         metrics = self._reported_metrics(
             voice,
             style_target,

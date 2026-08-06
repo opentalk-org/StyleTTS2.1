@@ -61,16 +61,34 @@ def build_training_runtime(
     device = accelerator.device
     parameters = recursive_munch(config.model_params)
     modules = _build_models(config, parameters, device)
+    if device.type == "cuda":
+        for block in (modules.decoder.encode, *modules.decoder.decode):
+            block.forward = torch.compile(
+                block.forward,
+                dynamic=True,
+                mode="default",
+            )
+        generator = modules.decoder.generator
+        for name in (
+            "_pre_upsample_noise",
+            "_forward_res_block",
+            "_output_forward",
+        ):
+            setattr(
+                generator,
+                name,
+                torch.compile(
+                    getattr(generator, name),
+                    dynamic=True,
+                    mode="default",
+                ),
+            )
     optimizer = _build_optimizer(config, modules)
     modules, optimizer, initial_step = _load_base_checkpoint(
         config,
         modules,
         optimizer,
     )
-    if not config.profiling_enabled:
-        modules.text_aligner.asr_s2s = torch.jit.script(
-            modules.text_aligner.asr_s2s
-        )
     modules, optimizer = _prepare_training(
         accelerator,
         modules,

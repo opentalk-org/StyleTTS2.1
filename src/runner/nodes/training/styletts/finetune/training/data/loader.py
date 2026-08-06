@@ -174,11 +174,16 @@ def build_dataloader(
         max_audio_seconds=max_seconds,
         **dataset_config,
     )
+    collater = Collater(AUDIO_PREPROCESS_WORKERS)
     loader = DataLoader(
         dataset,
         batch_size=None,
         num_workers=num_workers,
-        collate_fn=Collater(AUDIO_PREPROCESS_WORKERS),
+        collate_fn=_identity,
         pin_memory=(device != 'cpu'),
     )
-    return PrefetchedDataPipeline(loader)
+    return PrefetchedDataPipeline(loader, collater)
+
+
+def _identity(value):
+    return value

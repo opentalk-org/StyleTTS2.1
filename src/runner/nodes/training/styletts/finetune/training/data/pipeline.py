@@ -1,8 +1,10 @@
 import queue
 import threading
+from collections import deque
 from collections.abc import Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Callable, Generic, TypeVar
 
 from torch.utils.data import DataLoader
 
@@ -32,9 +34,17 @@ _QueueItem = _LoadedBatch[Batch] | _LoadFailure | _EndOfEpoch
 class PrefetchedDataPipeline(Generic[Batch]):
     """Overlap database reads, audio decoding, and collation with GPU training."""
 
-    def __init__(self, loader: DataLoader, queued_batches: int = 8) -> None:
+    def __init__(
+        self,
+        loader: DataLoader,
+        load_batch: Callable[[object], Batch],
+        queued_batches: int = 8,
+        load_workers: int = 2,
+    ) -> None:
         self.loader = loader
+        self.load_batch = load_batch
         self.queued_batches = queued_batches
+        self.load_workers = load_workers
 
     def __len__(self) -> int:
         return len(self.loader)
@@ -78,12 +88,31 @@ class PrefetchedDataPipeline(Generic[Batch]):
         stopped: threading.Event,
     ) -> None:
         try:
-            for batch in self.loader:
-                if not self._put(items, _LoadedBatch(batch), stopped):
-                    return
+            pending: deque[Future[Batch]] = deque()
+            with ThreadPoolExecutor(
+                max_workers=self.load_workers,
+                thread_name_prefix="batch-loader",
+            ) as executor:
+                for batch in self.loader:
+                    pending.append(executor.submit(self.load_batch, batch))
+                    if len(pending) >= self.load_workers:
+                        if not self._deliver(pending.popleft(), items, stopped):
+                            return
+                while pending:
+                    if not self._deliver(pending.popleft(), items, stopped):
+                        return
             self._put(items, _EndOfEpoch(), stopped)
         except BaseException as error:
             self._put(items, _LoadFailure(error), stopped)
+
+    @classmethod
+    def _deliver(
+        cls,
+        future: Future[Batch],
+        items: queue.Queue[_QueueItem],
+        stopped: threading.Event,
+    ) -> bool:
+        return cls._put(items, _LoadedBatch(future.result()), stopped)
 
     @staticmethod
     def _put(
