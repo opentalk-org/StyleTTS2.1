@@ -52,6 +52,7 @@
             espeakNg
             pkgs.ffmpeg-headless
             pkgs.opusTools
+            pkgs.cmake
             pkgs.gcc
             pkgs.cargo
             pkgs.openssl
