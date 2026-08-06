@@ -74,6 +74,24 @@
         {
           formatter = pkgs.nixfmt;
 
+          _module.args.pkgs = import inputs.nixpkgs {
+            inherit system;
+            overlays = [
+              (final: prev: {
+                espeak-ng = prev.espeak-ng.overrideAttrs (_: {
+                  version = "1.52.0-unstable-2025-09-08";
+                  patches = [ ];
+                  src = final.fetchFromGitHub {
+                    owner = "espeak-ng";
+                    repo = "espeak-ng";
+                    rev = "0d451f8c1c6ae837418b823bd9c4cbc574ea9ff5";
+                    hash = "sha256-wpPi+YjSLhsEWfE3KEbL4A7o48qtz9fLRZ/u4xGOM2g=";
+                  };
+                });
+              })
+            ];
+          };
+
           dnvr.specialArgs = { inherit inputs system; };
           dnvr.presets.rustfs = ./nix/presets/rustfs.nix;
 
