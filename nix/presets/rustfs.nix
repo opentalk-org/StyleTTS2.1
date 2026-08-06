@@ -65,7 +65,7 @@ in
     };
     package = mkOption {
       type = types.package;
-      default = inputs.rustfs.packages.${system}.default;
+      default = pkgs.rustfs;
     };
     awscli = mkOption {
       type = types.package;

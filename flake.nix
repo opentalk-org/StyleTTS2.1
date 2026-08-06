@@ -77,6 +77,7 @@
             config.allowUnfree = true;
             overlays = [
               (final: prev: {
+                rustfs = (import ./nix/rustfs.nix { inherit pkgs; });
                 espeak-ng = prev.espeak-ng.overrideAttrs (_: {
                   version = "1.52.0-unstable-2025-09-08";
                   patches = [ ];
@@ -101,9 +102,9 @@
 
           dnvr.shells.default = { config, ... }: {
             packages = [
-              (import ./nix/rustfs.nix { inherit pkgs; })
               python
 
+              pkgs.rustfs
               pkgs.awscli2
               pkgs.nodejs_22
               pkgs.openssh
