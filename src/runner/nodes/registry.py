@@ -77,7 +77,6 @@ from runner.nodes.training.common.inputs import (
     TrainingRunInputNode,
 )
 from runner.nodes.training.asr import AsrModelTrainingNode
-from runner.nodes.training.common.manifest import BuildTrainingManifestNode
 from runner.nodes.training.f0 import F0ModelTrainingNode
 from runner.nodes.training.styletts import StyleTtsFinetuneNode
 from runner.nodes.training.styletts3 import StyleTts3TrainingNode
@@ -144,7 +143,6 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         SelectTrainingAssetsNode,
         PhonemeAlphabetNode,
         ListDatasetAudioIdsNode,
-        BuildTrainingManifestNode,
         BuildMosTrainingManifestNode,
         StyleTtsFinetuneNode,
         StyleTts3TrainingNode,

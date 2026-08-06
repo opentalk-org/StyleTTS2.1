@@ -19,7 +19,6 @@ from .runtime import Trainer, Validator
 from .setup import build_accelerator, build_training_runtime
 from ..stages import TrainableModule, stage_for_step
 from .telemetry_metrics import TrainingTelemetry
-from .utils import get_data_path_list
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +33,6 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
     log_dir = Path(config.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy(config_path, log_dir / Path(config_path).name)
-    train_list, validation_list = get_data_path_list(
-        config.data_params.train_data,
-        config.data_params.val_data,
-    )
     accelerator = build_accelerator(config)
     owns_run = run is None and accelerator.is_main_process
     if owns_run:
@@ -71,7 +66,8 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
                 "plbert_modality_id": config.PLBERT_config.get("modality_id", 0),
             }
             train_batches = build_dataloader(
-                train_list,
+                config.data_params.dataset_id,
+                config.data_params.validation_samples,
                 max_seconds=stage.max_audio_seconds,
                 num_workers=0,
                 dataset_config=dataset_config,
@@ -79,7 +75,8 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
                 seed=config.seed,
             ).prepare(accelerator)
             validation_batches = build_dataloader(
-                validation_list,
+                config.data_params.dataset_id,
+                config.data_params.validation_samples,
                 max_seconds=stage.max_audio_seconds,
                 validation=True,
                 num_workers=0,

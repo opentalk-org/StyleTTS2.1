@@ -36,8 +36,8 @@ def merge_architecture(architecture_path: Path, config: dict[str, Any]) -> None:
 def build_config(
     *,
     log_dir: Path,
-    train_list: str,
-    validation_list: str,
+    dataset_id: str,
+    validation_samples: int,
     pretrained_model: Path | None,
     asr_config: dict[str, Any],
     asr_path: Path | None,
@@ -75,8 +75,8 @@ def build_config(
     config["distributed_processes"] = int(distributed_processes)
     config["load_only_params"] = not load_optimizer
     config["data_params"] = {
-        "train_data": str(Path(train_list).resolve()),
-        "val_data": str(Path(validation_list).resolve()),
+        "dataset_id": dataset_id,
+        "validation_samples": validation_samples,
     }
     config["pretrained_model"] = _path_str(pretrained_model)
     config["ASR_config"] = asr_config

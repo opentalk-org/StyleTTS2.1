@@ -1,6 +1,6 @@
 import io
 import logging
-from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from uuid import UUID
 
 import librosa
@@ -10,13 +10,12 @@ import torch
 import torchaudio
 from torch.utils.data import DataLoader
 
-from runner.nodes.text.runtime.symbols import PAD_SYMBOL, TextCleaner
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 
+from .database_dataset import DatabaseBatchDataset
 from .pipeline import PrefetchedDataPipeline
 from .records import TrainingBatch
-from .sampling import DurationBatchSampler
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +28,7 @@ SPECT_PARAMS = {
     "hop_length": 300,
 }
 MIN_WAVE_SAMPLES = 24_600
+AUDIO_PREPROCESS_WORKERS = 8
 MEL_PARAMS = {
     "n_mels": 80,
 }
@@ -44,95 +44,13 @@ def preprocess(wave):
     return mel_tensor
 
 
-class FilePathDataset(torch.utils.data.Dataset):
-    def __init__(
-        self,
-        data_list,
-        max_audio_seconds,
-        max_text_tokens,
-        symbols=None,
-        plbert_languages=None,
-        plbert_modality_id=0,
-    ):
-        _data_list = [l.strip().split('|') for l in data_list]
-        rows = [data if len(data) == 3 else (*data, 0) for data in _data_list]
-        audio_ids = [UUID(Path(row[0]).stem) for row in rows]
-        with database_session() as session:
-            audio_files = audio_crud.get_audio_files_bulk(session, audio_ids)
-        self.language_ids = {
-            language.lower(): index + 1
-            for index, language in enumerate(plbert_languages or ())
-        }
-        self.audio_language_ids = {
-            audio_id: self._resolve_language_id(audio_files[audio_id].language)
-            for audio_id in audio_ids
-        }
-        self.modality_id = int(plbert_modality_id)
-        self.text_cleaner = TextCleaner(symbols)
-        self.boundary_token_id = self.text_cleaner.symbol_index[PAD_SYMBOL]
-        accepted = [
-            (row, audio_files[audio_id].duration)
-            for row, audio_id in zip(rows, audio_ids, strict=True)
-            if 0 < audio_files[audio_id].duration <= max_audio_seconds
-            and len(self._text_to_tensor(row[1])) <= max_text_tokens
-        ]
-        self.data_list = [row for row, _ in accepted]
-        self.durations = tuple(duration for _, duration in accepted)
-        skipped = len(rows) - len(self.data_list)
-        logger.info(
-            "training data filter max_audio_seconds=%s max_text_tokens=%s "
-            "accepted=%s skipped=%s",
-            max_audio_seconds,
-            max_text_tokens,
-            len(self.data_list),
-            skipped,
-        )
-        if not self.data_list:
-            raise ValueError(
-                "no audio remains after applying max_audio_seconds="
-                f"{max_audio_seconds} and max_text_tokens={max_text_tokens}; "
-                f"skipped={skipped}"
-        )
-    def __len__(self):
-        return len(self.data_list)
-
-    def __getitem__(self, idx):
-        data_path, text, speaker_id_text = self.data_list[idx]
-        audio_id = self._audio_id(data_path)
-        return (
-            int(speaker_id_text),
-            self.audio_language_ids[audio_id],
-            self.modality_id,
-            audio_id,
-            self._text_to_tensor(text),
-            self.durations[idx],
-        )
-
-    def _resolve_language_id(self, language: str | None) -> int:
-        if not self.language_ids:
-            return 0
-        if language is None:
-            raise ValueError("training audio is missing its language")
-        normalized = language.strip().lower().replace("_", "-")
-        candidates = (normalized, normalized.split("-", 1)[0])
-        for candidate in candidates:
-            if candidate in self.language_ids:
-                return self.language_ids[candidate]
-        raise ValueError(
-            f"training audio language {language!r} is unsupported by PLBERT"
-        )
-
-    def _audio_id(self, wave_path: str) -> UUID:
-        return UUID(Path(wave_path).stem)
-
-    def _text_to_tensor(self, text: str) -> torch.LongTensor:
-        tokens = self.text_cleaner(text)
-        tokens.insert(0, self.boundary_token_id)
-        tokens.append(self.boundary_token_id)
-        return torch.LongTensor(tokens)
-
-
 class Collater:
+    def __init__(self, preprocess_workers: int) -> None:
+        self._preprocess_pool = ThreadPoolExecutor(
+            max_workers=preprocess_workers,
+            thread_name_prefix="audio-preprocess",
+        )
+
     def _read_wave(self, wave_bytes: bytes) -> np.ndarray:
         with io.BytesIO(wave_bytes) as source:
             wave, sr = sf.read(source)
@@ -150,13 +68,23 @@ class Collater:
         length_feature = mel_tensor.size(1)
         return mel_tensor[:, :(length_feature - length_feature % 2)]
 
-    def _load_batch_audio(self, audio_bytes: dict[UUID, bytes]) -> dict[UUID, tuple[np.ndarray, torch.Tensor]]:
-        cached: dict[UUID, tuple[np.ndarray, torch.Tensor]] = {}
-        for audio_id, wave_bytes in audio_bytes.items():
-            wave = self._read_wave(wave_bytes)
-            mel = self._load_mel(wave)
-            cached[audio_id] = (wave, mel)
-        return cached
+    def _load_batch_audio(
+        self,
+        audio_bytes: dict[UUID, bytes],
+    ) -> dict[UUID, tuple[np.ndarray, torch.Tensor]]:
+        audio_ids = list(audio_bytes)
+        processed = self._preprocess_pool.map(
+            self._preprocess_audio,
+            audio_bytes.values(),
+        )
+        return dict(zip(audio_ids, processed, strict=True))
+
+    def _preprocess_audio(
+        self,
+        wave_bytes: bytes,
+    ) -> tuple[np.ndarray, torch.Tensor]:
+        wave = self._read_wave(wave_bytes)
+        return wave, self._load_mel(wave)
 
     def __call__(self, batch):
         batch_size = len(batch)
@@ -221,7 +149,8 @@ class Collater:
 
 
 def build_dataloader(
-    path_list,
+    dataset_id,
+    validation_samples,
     validation=False,
     max_seconds=15.0,
     num_workers=1,
@@ -229,23 +158,19 @@ def build_dataloader(
     dataset_config={},
     seed=1,
 ):
-    dataset = FilePathDataset(
-        path_list,
+    dataset = DatabaseBatchDataset(
+        dataset_id,
+        validation_samples,
+        validation,
+        seed,
         max_audio_seconds=max_seconds,
         **dataset_config,
     )
-    collate_fn = Collater()
-    batch_sampler = DurationBatchSampler(
-        dataset.durations,
-        max_seconds,
-        shuffle=not validation,
-        seed=seed,
-    )
     loader = DataLoader(
         dataset,
-        batch_sampler=batch_sampler,
+        batch_size=None,
         num_workers=num_workers,
-        collate_fn=collate_fn,
+        collate_fn=Collater(AUDIO_PREPROCESS_WORKERS),
         pin_memory=(device != 'cpu'),
     )
     return PrefetchedDataPipeline(loader)

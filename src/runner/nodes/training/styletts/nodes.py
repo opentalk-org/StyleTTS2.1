@@ -19,9 +19,9 @@ from runflow.core.ports import JoinMode
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.accelerator_memory import release_accelerator_memory
-from runner.nodes.datatypes import AssetBundlePort, CheckpointRefPort, TrainingManifestPort, TrainingResultPort
-from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingManifest, TrainingResult, stable_id, typed_assets, typed_checkpoint
-from runner.nodes.training.common.manifest.cleanup import claim_run_dir, remove_run_dir
+from runner.nodes.datatypes import AssetBundlePort, CheckpointRefPort, JsonPort, TrainingResultPort
+from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingResult, stable_id, typed_assets, typed_checkpoint
+from runner.nodes.training.common.run_directory import claim_run_dir, remove_run_dir
 from runner.nodes.training.common.mlflow_run import TrackerRun, start_mlflow_run
 from runflow.runtime.cancellation import check_cancel
 from runner.nodes.training.styletts.finetune.node_config import build_node_config
@@ -49,7 +49,7 @@ class StyleTtsFinetuneSettings(StrictSettings):
     mlflow_run_id: str = Field(default="", title="Existing MLflow run ID")
     seed: int = Field(default=1, title="Random seed", ge=0)
     output_checkpoint_dir: str = Field(default="", title="External output checkpoint folder")
-    validation_samples: int = Field(default=32, title="Validation samples", ge=0, le=512)
+    validation_samples: int = Field(default=32, title="Validation samples", ge=1, le=512)
     learning_rate: float = Field(default=1e-4, title="Learning rate", gt=0)
     numeric_precision: NumericPrecision = Field(default=NumericPrecision.FP32, title="Numeric precision")
     training_stages: list[TrainingStageSpec] = Field(
@@ -85,11 +85,12 @@ class StyleTtsFinetuneSettings(StrictSettings):
 
 class StyleTtsFinetuneNode(Node):
     NODE_TYPE = "StyleTtsFinetune"
-    DESCRIPTION = "Finetune a StyleTTS2 voice model with step-driven base, diffusion, and joint stages. Consumes a training manifest, base checkpoint, and pretrained assets; validates and publishes checkpoints at configured step intervals."
+    DESCRIPTION = "Finetune StyleTTS2 directly from a stored dataset. Metadata, phonemes, and audio are streamed from the database without an intermediate manifest."
     CATEGORY = "Training"
     SETTINGS = StyleTtsFinetuneSettings
     INPUTS = {
-        "training_manifest": TrainingManifestPort(),
+        "dataset_ref": JsonPort(),
+        "phoneme_alphabet": JsonPort(join_mode=JoinMode.BROADCAST),
         "checkpoint": CheckpointRefPort(join_mode=JoinMode.BROADCAST),
         "assets": AssetBundlePort(join_mode=JoinMode.BROADCAST),
     }
@@ -103,14 +104,23 @@ class StyleTtsFinetuneNode(Node):
     async def execute(self, batch, context):
         outputs = []
         for inputs in batch:
-            manifest = inputs["training_manifest"]
+            dataset_id = str(inputs["dataset_ref"]["dataset_id"])
+            phoneme_alphabet = [
+                str(symbol)
+                for symbol in inputs["phoneme_alphabet"]["symbol_list"]
+            ]
+            run_dir = _config_output_dir(
+                self.settings.config_output_dir,
+                str(context.run_id),
+            )
             training_config = build_styletts_finetune_config(
-                manifest=manifest,
+                dataset_id=dataset_id,
+                phoneme_alphabet=phoneme_alphabet,
                 base_checkpoint=typed_checkpoint(inputs["checkpoint"]),
                 pretrained_assets=typed_assets(inputs["assets"]),
                 settings=self.settings,
+                output_dir=run_dir / "configs",
             )
-            run_dir = _manifest_run_dir(manifest)
             with claim_run_dir(run_dir):
                 config_path = _prepare_styletts_config(training_config, str(context.run_id))
                 try:
@@ -123,15 +133,18 @@ class StyleTtsFinetuneNode(Node):
 
 
 def build_styletts_finetune_config(
-    manifest: TrainingManifest,
+    dataset_id: str,
+    phoneme_alphabet: list[str],
     base_checkpoint: CheckpointRef,
     pretrained_assets: AssetBundleRef | None,
     settings: StyleTtsFinetuneSettings,
+    output_dir: Path,
 ) -> dict[str, Any]:
-    output_dir = _config_output_dir(manifest, settings.config_output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     config_path, styletts_yaml = build_node_config(
-        manifest=manifest,
+        dataset_id=dataset_id,
+        validation_samples=settings.validation_samples,
+        phoneme_alphabet=phoneme_alphabet,
         base_checkpoint=base_checkpoint,
         pretrained_assets=pretrained_assets,
         settings=settings,
@@ -141,7 +154,10 @@ def build_styletts_finetune_config(
         "version": 2,
         "node_type": StyleTtsFinetuneNode.NODE_TYPE,
         "config_path": str(config_path),
-        "manifest": _manifest_payload(manifest),
+        "dataset": {
+            "dataset_id": dataset_id,
+            "validation_samples": settings.validation_samples,
+        },
         "base_checkpoint": _checkpoint_payload(base_checkpoint),
         "pretrained_assets": _assets_payload(pretrained_assets),
         "training": settings.model_dump(mode="json"),
@@ -287,34 +303,10 @@ def _latest_step_result(run_id: str) -> TrainingResult:
     )
 
 
-def _manifest_run_dir(manifest: TrainingManifest) -> Path:
-    """The per-run manifest dir holding lists, cache, and materialized wavs.
-
-    ``train_manifest_path`` is ``<run_dir>/lists/train.txt``, so the run dir is
-    two levels up. Removing it drops all data the run prepared on disk."""
-    return Path(str(manifest.metadata["train_manifest_path"])).parent.parent
-
-
-def _config_output_dir(manifest: TrainingManifest, configured: str) -> Path:
+def _config_output_dir(configured: str, run_id: str) -> Path:
     if configured:
         return Path(configured)
-    train_path = Path(str(manifest.metadata["train_manifest_path"]))
-    return train_path.parent.parent / "configs"
-
-
-def _manifest_payload(manifest: TrainingManifest) -> dict[str, Any]:
-    return {
-        "id": manifest.id,
-        "lineage_id": manifest.lineage_id,
-        "dataset_id": str(manifest.dataset_id),
-        "audio_file_ids": [str(audio_id) for audio_id in manifest.audio_file_ids],
-        "train_manifest_path": manifest.metadata["train_manifest_path"],
-        "validation_manifest_path": manifest.metadata["validation_manifest_path"],
-        "train_count": manifest.metadata["train_count"],
-        "validation_count": manifest.metadata["validation_count"],
-        "segment_count": manifest.metadata["segment_count"],
-        "root_path": manifest.metadata["root_path"],
-    }
+    return Path("data/training/styletts") / run_id
 
 
 def _checkpoint_payload(ref: CheckpointRef) -> dict[str, Any]:

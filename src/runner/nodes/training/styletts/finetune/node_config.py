@@ -6,7 +6,7 @@ from typing import Any
 from safetensors import safe_open
 
 from runner.nodes.assets.checkpoints import is_scratch_checkpoint
-from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingManifest
+from runner.nodes.models import AssetBundleRef, CheckpointRef
 from runner.nodes.text.runtime.symbols import DEFAULT_STYLETTS_SYMBOLS
 from runner.nodes.training.styletts.finetune import config as styletts_config
 from runner.nodes.training.styletts.finetune import layout as styletts_layout
@@ -33,14 +33,16 @@ def resolve_symbol_list(alphabet: list[str] | None) -> list[str]:
 
 def build_node_config(
     *,
-    manifest: TrainingManifest,
+    dataset_id: str,
+    validation_samples: int,
+    phoneme_alphabet: list[str],
     base_checkpoint: CheckpointRef,
     pretrained_assets: AssetBundleRef | None,
     settings: Any,
     output_dir: Path,
 ) -> tuple[Path, dict[str, Any]]:
     config_path = output_dir / "config.yaml"
-    symbol_list = resolve_symbol_list(manifest.phoneme_alphabet)
+    symbol_list = resolve_symbol_list(phoneme_alphabet)
     symbol_count = len(symbol_list)
     symbols = symbol_list
     scratch = is_scratch_checkpoint(base_checkpoint)
@@ -55,8 +57,8 @@ def build_node_config(
         architecture_path = styletts_layout.architecture_yaml(base_root)
     styletts_yaml = styletts_config.build_config(
         log_dir=output_dir / "run",
-        train_list=str(manifest.metadata["train_manifest_path"]),
-        validation_list=str(manifest.metadata["validation_manifest_path"]),
+        dataset_id=dataset_id,
+        validation_samples=validation_samples,
         pretrained_model=pretrained_model,
         asr_config=_asr_config(symbol_count),
         asr_path=asset_paths["asr_bundle"],

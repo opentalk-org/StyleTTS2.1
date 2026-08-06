@@ -1,18 +1,125 @@
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from shared.db.audio.models import AudioFile
 from shared.db.common import many, one
 from shared.db.datasets.models import Dataset, dataset_audio_files
-from shared.db.datasets.schemas import DatasetCreate
+from shared.db.datasets.schemas import (
+    DatasetCreate,
+    DatasetDurationBins,
+    DatasetTrainingAudio,
+)
 
 
 def list_datasets(session: Session) -> Sequence[Dataset]:
     return many(session, Dataset)
+
+
+def iter_dataset_training_audio(
+    session: Session,
+    dataset_id: uuid.UUID,
+    descending: bool = False,
+    duration_above: float | None = None,
+    duration_at_most: float | None = None,
+    excluded_audio_ids: set[uuid.UUID] | None = None,
+):
+    order = AudioFile.id.desc() if descending else AudioFile.id
+    statement = (
+        select(
+            AudioFile.id,
+            AudioFile.duration,
+            AudioFile.speaker_id,
+            AudioFile.language,
+            AudioFile.segments,
+            AudioFile.metadata_,
+        )
+        .join(
+            dataset_audio_files,
+            dataset_audio_files.c.audio_file_id == AudioFile.id,
+        )
+        .where(
+            dataset_audio_files.c.dataset_id == dataset_id,
+            AudioFile.virtual.is_(False),
+        )
+        .order_by(order)
+        .execution_options(yield_per=2_000)
+    )
+    if duration_above is not None:
+        statement = statement.where(AudioFile.duration > duration_above)
+    if duration_at_most is not None:
+        statement = statement.where(AudioFile.duration <= duration_at_most)
+    if excluded_audio_ids:
+        statement = statement.where(AudioFile.id.not_in(excluded_audio_ids))
+    for row in session.execute(statement):
+        yield DatasetTrainingAudio(*row)
+
+
+def dataset_training_duration_totals(
+    session: Session,
+    dataset_id: uuid.UUID,
+    upper_bounds: tuple[float, ...],
+    excluded_audio_ids: set[uuid.UUID],
+) -> DatasetDurationBins:
+    bin_index = case(
+        *((AudioFile.duration <= boundary, index)
+          for index, boundary in enumerate(upper_bounds)),
+    )
+    statement = (
+        select(bin_index, func.sum(AudioFile.duration), func.count())
+        .join(
+            dataset_audio_files,
+            dataset_audio_files.c.audio_file_id == AudioFile.id,
+        )
+        .where(
+            dataset_audio_files.c.dataset_id == dataset_id,
+            AudioFile.virtual.is_(False),
+            AudioFile.duration > 0,
+            AudioFile.duration <= upper_bounds[-1],
+        )
+        .group_by(bin_index)
+    )
+    if excluded_audio_ids:
+        statement = statement.where(AudioFile.id.not_in(excluded_audio_ids))
+    rows = session.execute(statement).all()
+    totals_by_bin = {int(index): float(total) for index, total, _ in rows}
+    return DatasetDurationBins(
+        total_seconds=tuple(
+            totals_by_bin.get(index, 0.0)
+            for index in range(len(upper_bounds))
+        ),
+        file_count=sum(int(count) for _, _, count in rows),
+    )
+
+
+def dataset_training_minimum_duration(
+    session: Session,
+    dataset_id: uuid.UUID,
+    max_duration: float,
+    excluded_audio_ids: set[uuid.UUID],
+) -> float:
+    statement = (
+        select(func.min(AudioFile.duration))
+        .join(
+            dataset_audio_files,
+            dataset_audio_files.c.audio_file_id == AudioFile.id,
+        )
+        .where(
+            dataset_audio_files.c.dataset_id == dataset_id,
+            AudioFile.virtual.is_(False),
+            AudioFile.duration > 0,
+            AudioFile.duration <= max_duration,
+        )
+    )
+    if excluded_audio_ids:
+        statement = statement.where(AudioFile.id.not_in(excluded_audio_ids))
+    minimum = session.scalar(statement)
+    if minimum is None:
+        raise ValueError("training dataset has no audio within the duration limit")
+    return float(minimum)
 
 
 def get_dataset_by_name(session: Session, name: str) -> Dataset | None:

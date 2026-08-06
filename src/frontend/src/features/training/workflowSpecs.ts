@@ -5,12 +5,10 @@ import type { TrainTab } from "./store";
 const STYLE_TTS_NODES = [
   { id: "run", type: "TrainingRunInput", x: -160, y: 620 },
   { id: "dataset", type: "SelectTrainingDataset", x: 64, y: 220 },
-  { id: "audio_ids", type: "ListDatasetAudioIds", x: 330, y: 220 },
   { id: "base_checkpoint", type: "SelectCheckpoint", x: 64, y: 420 },
   { id: "assets", type: "SelectTrainingAssets", x: 64, y: 620 },
   { id: "alphabet", type: "PhonemeAlphabet", x: 64, y: 820 },
-  { id: "manifest", type: "BuildTrainingManifest", x: 620, y: 380, params: { stream_from_buckets: true } },
-  { id: "styletts", type: "StyleTtsFinetune", x: 860, y: 560 },
+  { id: "styletts", type: "StyleTtsFinetune", x: 620, y: 520 },
 ];
 
 const STYLE_TTS_EDGES: WorkflowEdge[] = [
@@ -18,12 +16,8 @@ const STYLE_TTS_EDGES: WorkflowEdge[] = [
   { source_node: "run", source_port: "run", target_node: "base_checkpoint", target_port: "run" },
   { source_node: "run", source_port: "run", target_node: "assets", target_port: "run" },
   { source_node: "run", source_port: "run", target_node: "alphabet", target_port: "run" },
-  { source_node: "dataset", source_port: "dataset_ref", target_node: "audio_ids", target_port: "dataset_ref" },
-  { source_node: "audio_ids", source_port: "audio_file_ids", target_node: "manifest", target_port: "audio_file_ids" },
-  { source_node: "base_checkpoint", source_port: "checkpoint", target_node: "manifest", target_port: "checkpoint" },
-  { source_node: "assets", source_port: "assets", target_node: "manifest", target_port: "assets" },
-  { source_node: "alphabet", source_port: "phoneme_alphabet", target_node: "manifest", target_port: "phoneme_alphabet" },
-  { source_node: "manifest", source_port: "training_manifest", target_node: "styletts", target_port: "training_manifest" },
+  { source_node: "dataset", source_port: "dataset_ref", target_node: "styletts", target_port: "dataset_ref" },
+  { source_node: "alphabet", source_port: "phoneme_alphabet", target_node: "styletts", target_port: "phoneme_alphabet" },
   { source_node: "base_checkpoint", source_port: "checkpoint", target_node: "styletts", target_port: "checkpoint" },
   { source_node: "assets", source_port: "assets", target_node: "styletts", target_port: "assets" },
 ];
@@ -93,7 +87,7 @@ export const TRAINING_WORKFLOWS: Record<TrainTab, TrainingWorkflowSpec> = {
     label: "StyleTTS finetune",
     nodes: STYLE_TTS_NODES,
     edges: STYLE_TTS_EDGES,
-    ids: { dataset: "dataset", checkpoint: "base_checkpoint", assets: "assets", alphabet: "alphabet", manifest: "manifest", training: "styletts" },
+    ids: { dataset: "dataset", checkpoint: "base_checkpoint", assets: "assets", alphabet: "alphabet", training: "styletts" },
   },
   f0: {
     value: "f0",

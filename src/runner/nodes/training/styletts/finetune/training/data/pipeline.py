@@ -32,7 +32,7 @@ _QueueItem = _LoadedBatch[Batch] | _LoadFailure | _EndOfEpoch
 class PrefetchedDataPipeline(Generic[Batch]):
     """Overlap database reads, audio decoding, and collation with GPU training."""
 
-    def __init__(self, loader: DataLoader, queued_batches: int = 2) -> None:
+    def __init__(self, loader: DataLoader, queued_batches: int = 8) -> None:
         self.loader = loader
         self.queued_batches = queued_batches
 
@@ -40,10 +40,11 @@ class PrefetchedDataPipeline(Generic[Batch]):
         return len(self.loader)
 
     def prepare(self, accelerator) -> "PrefetchedDataPipeline[Batch]":
-        return PrefetchedDataPipeline(
-            accelerator.prepare(self.loader),
-            self.queued_batches,
+        self.loader.dataset.configure_shard(
+            accelerator.process_index,
+            accelerator.num_processes,
         )
+        return self
 
     def __iter__(self) -> Iterator[Batch]:
         items: queue.Queue[_QueueItem] = queue.Queue(self.queued_batches)

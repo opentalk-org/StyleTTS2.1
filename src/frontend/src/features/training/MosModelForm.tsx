@@ -23,6 +23,7 @@ export function MosModelForm({
   const training = trainingNode(graph, spec.ids.training);
   const dataset = trainingNode(graph, spec.ids.dataset);
   const checkpoint = trainingNode(graph, spec.ids.checkpoint);
+  if (!spec.ids.manifest) throw new Error("MOS manifest node is missing");
   const manifest = trainingNode(graph, spec.ids.manifest);
   const trainingInfo = schema.nodes[training.type];
   const manifestInfo = schema.nodes[manifest.type];

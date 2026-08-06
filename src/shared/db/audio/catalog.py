@@ -118,11 +118,16 @@ def get_audio_files_bulk(
     ids = list(dict.fromkeys(audio_file_ids))
     if not ids:
         return {}
-    statement = select(AudioFile).where(AudioFile.id.in_(ids))
-    loaded = {
-        item.id: item
-        for item in session.execute(statement).unique().scalars().all()
-    }
+    loaded = {}
+    for start in range(0, len(ids), AUDIO_LOCATION_QUERY_BATCH_SIZE):
+        batch = ids[start : start + AUDIO_LOCATION_QUERY_BATCH_SIZE]
+        statement = select(AudioFile).where(AudioFile.id.in_(batch))
+        loaded.update(
+            {
+                item.id: item
+                for item in session.execute(statement).unique().scalars().all()
+            }
+        )
     missing_ids = set(ids).difference(loaded)
     if missing_ids:
         missing = sorted(str(audio_file_id) for audio_file_id in missing_ids)

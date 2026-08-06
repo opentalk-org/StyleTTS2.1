@@ -12,8 +12,8 @@ class StrictConfigModel(BaseModel):
 
 
 class DataConfig(StrictConfigModel):
-    train_data: str
-    val_data: str
+    dataset_id: str
+    validation_samples: int = Field(gt=0)
 
 
 class SpectrogramConfig(StrictConfigModel):
