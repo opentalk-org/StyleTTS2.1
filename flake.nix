@@ -370,6 +370,20 @@
               };
             };
 
+            processes.alembic = {
+              env = {
+                RUNFLOW_PGBOUNCER_DATABASE_URL = "dnvr://pgbouncer/url";
+              };
+              command = pkgs.writeShellApplication {
+                name = "alembic-migrations";
+                text = ''
+                  cd "$DNVR_ROOT"
+                  alembic upgrade head
+                  echo "[alembic] DB migrated"
+                '';
+              };
+            };
+
             scripts.rclone-s3 = {
               description = "Serve the Hetzner storage box as S3 on :8002";
               runtimeInputs = [
