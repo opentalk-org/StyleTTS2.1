@@ -100,7 +100,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             name="StyleTTS2 train_first.py · TMA acoustic GAN",
             steps=10_000,
             max_audio_seconds=90,
-            max_decoder_seconds=3.0,
+            max_decoder_seconds=6.0,
             style_source=StyleSource.CONTINUOUS,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=tma_modules,
