@@ -63,13 +63,6 @@ def _load_checkpoint(
     return int(checkpoint.get("global_step", 0))
 
 
-def _lr_multiplier(step: int, total_steps: int, warmup_steps: int) -> float:
-    if warmup_steps and step < warmup_steps:
-        return max(1, step + 1) / warmup_steps
-    decay_steps = max(1, total_steps - warmup_steps)
-    return max(0.0, (total_steps - step) / decay_steps)
-
-
 def _batch_loss(
     model: ASRCNN,
     batch,
@@ -254,9 +247,12 @@ def train_asr_model(
         betas=(0.9, 0.98),
         eps=1e-9,
     )
-    scheduler = torch.optim.lr_scheduler.LambdaLR(
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer,
-        lambda step: _lr_multiplier(step, total_steps, warmup_steps),
+        max_lr=learning_rate,
+        total_steps=total_steps,
+        pct_start=0.0,
+        final_div_factor=5.0,
     )
     step = (
         _load_checkpoint(pretrained_weights_path, model, optimizer, scheduler)
@@ -308,9 +304,7 @@ def train_asr_model(
                 sequence_loss,
             )
             loss.backward()
-            gradient_norm = torch.nn.utils.clip_grad_norm_(
-                model.parameters(), gradient_clip_norm
-            )
+            torch.nn.utils.clip_grad_value_(model.parameters(), gradient_clip_norm)
             optimizer.step()
             scheduler.step()
             step += 1
@@ -318,7 +312,6 @@ def train_asr_model(
                 "train/loss": float(loss.item()),
                 "train/ctc_loss": float(ctc.item()),
                 "train/sequence_loss": float(sequence.item()),
-                "train/gradient_norm/text_aligner": float(gradient_norm.item()),
                 "train/lr": float(optimizer.param_groups[0]["lr"]),
                 "performance/items_per_step": float(len(batch.audio_durations)),
                 "performance/audio_seconds_per_step": float(sum(batch.audio_durations)),

@@ -48,8 +48,8 @@ def create_bucket_file(session: Session, payload: BucketFileCreate) -> BucketFil
 def create_checkpoint(session: Session, payload: CheckpointCreate) -> Checkpoint:
     item_id = uuid.uuid4()
     path = f"checkpoints/{item_id}.tar"
-    stored = checkpoint_tar(payload.folder_path)
-    settings_crud.object_store(session).upload(path, stored.data)
+    with checkpoint_tar(payload.folder_path) as stored:
+        settings_crud.object_store(session).upload_path(path, stored.path)
     item = Checkpoint(
         id=item_id,
         name=payload.name,
@@ -125,10 +125,10 @@ def update_checkpoint(
     item.metadata_ = payload.metadata
     item.job_id = payload.job_id
     if payload.folder_path is not None:
-        stored = checkpoint_tar(payload.folder_path)
-        settings_crud.object_store(session).upload(item.path, stored.data)
-        item.size = stored.size
-        item.content_hash = stored.content_hash
+        with checkpoint_tar(payload.folder_path) as stored:
+            settings_crud.object_store(session).upload_path(item.path, stored.path)
+            item.size = stored.size
+            item.content_hash = stored.content_hash
     session.commit()
     session.refresh(item)
     return item

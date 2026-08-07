@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import io
@@ -26,21 +27,27 @@ class StoredPath:
     content_hash: str
 
 
-def checkpoint_tar(folder_path: Path) -> StoredBytes:
+@contextmanager
+def checkpoint_tar(folder_path: Path):
     assert folder_path.is_dir(), f"checkpoint path must be a folder: {folder_path}"
-    buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w") as archive:
-        for file_path in _folder_files(folder_path):
-            relative_path = file_path.relative_to(folder_path).as_posix()
-            info = archive.gettarinfo(str(file_path), arcname=relative_path)
-            info.uid = 0
-            info.gid = 0
-            info.uname = ""
-            info.gname = ""
-            info.mtime = 0
-            with file_path.open("rb") as file:
-                archive.addfile(info, file)
-    return stored_bytes(buffer.getvalue())
+    descriptor, temporary_name = tempfile.mkstemp(prefix="checkpoint-", suffix=".tar")
+    os.close(descriptor)
+    temporary_path = Path(temporary_name)
+    try:
+        with tarfile.open(temporary_path, mode="w") as archive:
+            for file_path in _folder_files(folder_path):
+                relative_path = file_path.relative_to(folder_path).as_posix()
+                info = archive.gettarinfo(str(file_path), arcname=relative_path)
+                info.uid = 0
+                info.gid = 0
+                info.uname = ""
+                info.gname = ""
+                info.mtime = 0
+                with file_path.open("rb") as file:
+                    archive.addfile(info, file)
+        yield stored_path(temporary_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def stored_bytes(data: bytes) -> StoredBytes:
