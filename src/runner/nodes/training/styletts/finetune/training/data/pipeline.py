@@ -39,7 +39,7 @@ class PrefetchedDataPipeline(Generic[Batch]):
         loader: DataLoader,
         load_batch: Callable[[object], Batch],
         queued_batches: int = 16,
-        load_workers: int = 4,
+        load_workers: int = 2,
     ) -> None:
         self.loader = loader
         self.load_batch = load_batch

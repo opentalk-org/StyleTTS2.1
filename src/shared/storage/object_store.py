@@ -13,7 +13,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError, ReadTimeoutError
 
 RANGE_READ_ATTEMPTS = 3
-RANGE_READ_WORKERS = 10
+RANGE_READ_WORKERS = 20
 
 
 @dataclass(frozen=True)
@@ -117,7 +117,10 @@ class S3ObjectStore(ObjectStore):
             region_name=config.region_name,
             aws_access_key_id=config.access_key_id,
             aws_secret_access_key=config.secret_access_key,
-            config=Config(response_checksum_validation="when_required"),
+            config=Config(
+                response_checksum_validation="when_required",
+                max_pool_connections=RANGE_READ_WORKERS,
+            ),
         )
         if request_metrics is not None:
             events = self._client.meta.events

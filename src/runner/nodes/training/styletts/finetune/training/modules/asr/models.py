@@ -7,6 +7,18 @@ from ...profiling import profiling_fn
 from .layers import MFCC, Attention, LinearNorm, ConvNorm, ConvBlock
 
 
+class CheckpointCompatibleLSTM(nn.LSTM):
+    """cuDNN LSTM with the parameter names used by the original LSTMCell."""
+
+    def __init__(self, input_size: int, hidden_size: int) -> None:
+        super().__init__(input_size, hidden_size)
+        names = ("weight_ih", "weight_hh", "bias_ih", "bias_hh")
+        for current, checkpoint in zip(tuple(self._flat_weights_names), names):
+            self.register_parameter(checkpoint, self._parameters.pop(current))
+        self._flat_weights_names = list(names)
+        self._init_flat_weights()
+
+
 class ASRCNN(nn.Module):
     def __init__(
         self,
@@ -115,7 +127,7 @@ class ASRS2S(nn.Module):
             n_location_filters,
             location_kernel_size,
         )
-        self.decoder_rnn = nn.LSTMCell(
+        self.decoder_rnn = CheckpointCompatibleLSTM(
             self.decoder_rnn_dim + embedding_dim, self.decoder_rnn_dim
         )
         self.project_to_hidden = nn.Sequential(
@@ -159,21 +171,9 @@ class ASRS2S(nn.Module):
             (1, batch_size, self.decoder_rnn_dim)
         )
         initial_cell = torch.zeros_like(initial_hidden)
-        recurrent, _, _ = torch._VF.lstm(
+        recurrent, _ = self.decoder_rnn(
             recurrent_inputs,
             (initial_hidden, initial_cell),
-            [
-                self.decoder_rnn.weight_ih,
-                self.decoder_rnn.weight_hh,
-                self.decoder_rnn.bias_ih,
-                self.decoder_rnn.bias_hh,
-            ],
-            True,
-            1,
-            0.0,
-            self.training,
-            False,
-            False,
         )
         recurrent = recurrent.transpose(0, 1)
         queries = self.attention_layer.query_layer(recurrent)

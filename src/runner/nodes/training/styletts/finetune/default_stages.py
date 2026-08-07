@@ -88,8 +88,8 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         TrainingStageSpec(
             name="StyleTTS2 train_first.py · mel pretraining",
             steps=10_000,
-            max_audio_seconds=65,
-            max_decoder_seconds=3.0,
+            max_audio_seconds=150,
+            max_decoder_seconds=9.0,
             style_source=StyleSource.CONTINUOUS,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=mel_modules,
