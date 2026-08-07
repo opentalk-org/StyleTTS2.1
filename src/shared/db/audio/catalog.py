@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import Text, cast, desc, func, or_, select, text
-from sqlalchemy.orm import Session, defer
+from sqlalchemy.orm import Session, defer, lazyload, selectinload
 
 from shared.audio_annotations import AudioAnnotations
 from shared.db.audio.models import AudioFile
@@ -68,20 +68,28 @@ def search_audio_files(
             AudioFile,
             segment_count,
             segment_preview,
-        ).options(defer(AudioFile.segments))
+        ).options(
+            defer(AudioFile.segments),
+            lazyload(AudioFile.bucket_file),
+            selectinload(AudioFile.datasets),
+        )
         for item in filters:
             statement = statement.where(item)
-        statement = statement.order_by(order).limit(limit).offset(offset)
+        statement = statement.order_by(*order).limit(limit).offset(offset)
     else:
         page = select(AudioFile.id)
         for item in filters:
             page = page.where(item)
-        page = page.order_by(order).limit(limit).offset(offset).subquery()
+        page = page.order_by(*order).limit(limit).offset(offset).subquery()
         statement = (
             select(AudioFile, segment_count, segment_preview)
             .join(page, AudioFile.id == page.c.id)
-            .options(defer(AudioFile.segments))
-            .order_by(order)
+            .options(
+                defer(AudioFile.segments),
+                lazyload(AudioFile.bucket_file),
+                selectinload(AudioFile.datasets),
+            )
+            .order_by(*order)
         )
 
     count_statement = select(func.count()).select_from(AudioFile)
@@ -257,14 +265,14 @@ def _audio_filters(query: str, dataset: str, language: str = "") -> list[Any]:
 
 def _audio_sort(sort: str):
     if sort == "name":
-        return AudioFile.name
+        return AudioFile.name, AudioFile.id
     if sort == "duration":
-        return desc(AudioFile.duration)
+        return desc(AudioFile.duration), AudioFile.id
     if sort == "segments":
-        return desc(func.jsonb_array_length(AudioFile.segments))
+        return desc(func.jsonb_array_length(AudioFile.segments)), AudioFile.id
     if sort == "speaker_id":
-        return AudioFile.speaker_id
-    return desc(AudioFile.updated_at)
+        return AudioFile.speaker_id, AudioFile.id
+    return desc(AudioFile.updated_at), AudioFile.id
 
 
 def _scoped_statement(

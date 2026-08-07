@@ -14,6 +14,23 @@ class AudioFile(Base):
     __tablename__ = "audio_files"
     __table_args__ = (
         Index(
+            "ix_audio_files_updated_at_id",
+            text("updated_at DESC"),
+            text("id"),
+        ),
+        Index("ix_audio_files_name_id", text("name"), text("id")),
+        Index(
+            "ix_audio_files_duration_id",
+            text("duration DESC"),
+            text("id"),
+        ),
+        Index("ix_audio_files_speaker_id_id", text("speaker_id"), text("id")),
+        Index(
+            "ix_audio_files_segment_count_id",
+            text("jsonb_array_length(segments) DESC"),
+            text("id"),
+        ),
+        Index(
             "ix_audio_files_split_operation",
             text("(metadata ->> 'source_audio_id')"),
             text("(metadata ->> 'split_operation_id')"),
