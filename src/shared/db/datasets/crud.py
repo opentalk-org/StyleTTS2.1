@@ -26,6 +26,8 @@ def iter_dataset_training_audio(
     duration_above: float | None = None,
     duration_at_most: float | None = None,
     excluded_audio_ids: set[uuid.UUID] | None = None,
+    audio_id_after: uuid.UUID | None = None,
+    audio_id_at_most: uuid.UUID | None = None,
 ):
     order = AudioFile.id.desc() if descending else AudioFile.id
     statement = (
@@ -54,6 +56,10 @@ def iter_dataset_training_audio(
         statement = statement.where(AudioFile.duration <= duration_at_most)
     if excluded_audio_ids:
         statement = statement.where(AudioFile.id.not_in(excluded_audio_ids))
+    if audio_id_after is not None:
+        statement = statement.where(AudioFile.id > audio_id_after)
+    if audio_id_at_most is not None:
+        statement = statement.where(AudioFile.id <= audio_id_at_most)
     for row in session.execute(statement):
         yield DatasetTrainingAudio(*row)
 

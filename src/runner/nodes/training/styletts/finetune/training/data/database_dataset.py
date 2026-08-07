@@ -1,4 +1,5 @@
 import hashlib
+import itertools
 import math
 import random
 from uuid import UUID
@@ -164,20 +165,31 @@ class DatabaseBatchDataset(IterableDataset):
     def _training_batches(self, validation_ids, randomizer):
         upper_bounds, base_weights = self._training_plan(validation_ids)
         weights = list(base_weights)
+        starts = [UUID(int=randomizer.getrandbits(128)) for _ in upper_bounds]
         iterators = [
-            iter(self._selected_rows(
-                validation_ids,
-                duration_above=lower_bound,
-                duration_at_most=upper_bound,
-                excluded_audio_ids=validation_ids,
-            ))
-            for lower_bound, upper_bound in zip(
-                (0.0, *upper_bounds[:-1]),
-                upper_bounds,
-                strict=True,
+            iter(
+                itertools.chain(
+                    self._selected_rows(
+                        validation_ids,
+                        duration_above=lower_bound,
+                        duration_at_most=upper_bound,
+                        excluded_audio_ids=validation_ids,
+                        audio_id_after=start,
+                    ),
+                    self._selected_rows(
+                        validation_ids,
+                        duration_above=lower_bound,
+                        duration_at_most=upper_bound,
+                        excluded_audio_ids=validation_ids,
+                        audio_id_at_most=start,
+                    ),
+                )
+            )
+            for lower_bound, upper_bound, start in zip(
+                (0.0, *upper_bounds[:-1]), upper_bounds, starts, strict=True
             )
         ]
-        buffers = [[] for _ in upper_bounds]
+        pending = [None for _ in upper_bounds]
         batch_count = max(1, math.ceil(sum(weights) / self.max_audio_seconds))
         produced = 0
         while produced < batch_count and sum(weights) > 0:
@@ -187,7 +199,7 @@ class DatabaseBatchDataset(IterableDataset):
                 k=1,
             )[0]
             batch = self._sample_training_batch(
-                buffers[bin_index], iterators[bin_index], randomizer
+                iterators[bin_index], pending, bin_index
             )
             if batch:
                 produced += 1
@@ -219,31 +231,22 @@ class DatabaseBatchDataset(IterableDataset):
         )
         return self._cached_training_plan
 
-    def _sample_training_batch(self, buffer, rows, randomizer):
-        self._fill_buffer(buffer, rows)
+    def _sample_training_batch(self, rows, pending, bin_index):
         batch = []
         remaining = self.max_audio_seconds
         while True:
-            eligible = [row for row in buffer if row[5] <= remaining]
-            if not eligible:
+            row = pending[bin_index]
+            if row is None:
+                try:
+                    row = next(rows)
+                except StopIteration:
+                    return batch
+            if row[5] > remaining:
+                pending[bin_index] = row
                 return batch
-            selected = randomizer.choices(
-                eligible,
-                weights=[row[5] for row in eligible],
-                k=1,
-            )[0]
-            batch.append(selected)
-            remaining -= selected[5]
-            buffer.remove(selected)
-            self._fill_buffer(buffer, rows)
-
-    @staticmethod
-    def _fill_buffer(buffer, rows):
-        while len(buffer) < 2_048:
-            try:
-                buffer.append(next(rows))
-            except StopIteration:
-                return
+            pending[bin_index] = None
+            batch.append(row)
+            remaining -= row[5]
 
     def _duration_upper_bounds(self, minimum_duration):
         maximum_batch_size = max(
