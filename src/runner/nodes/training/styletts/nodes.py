@@ -78,7 +78,7 @@ class StyleTtsFinetuneSettings(StrictSettings):
     decoder: DecoderBackend = Field(default=DecoderBackend.HIFIGAN, title="Decoder")
     multispeaker: bool = Field(default=True, title="Multi-speaker mode")
     checkpoint_decoder_gradients: bool = Field(default=True, title="Checkpoint decoder gradients")
-    checkpoint_discriminator_gradients: bool = Field(default=True, title="Checkpoint discriminator gradients")
+    checkpoint_discriminator_gradients: bool = Field(default=False, title="Checkpoint discriminator gradients")
     profiling_enabled: bool = Field(default=False, title="Training profiler")
     config_output_dir: str = Field(default="", title="Config output folder")
 
