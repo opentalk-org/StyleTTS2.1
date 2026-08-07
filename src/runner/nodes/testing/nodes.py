@@ -126,7 +126,7 @@ def _speaker_style_references(speaker_ids: list[str], alpha: float, beta: float)
 
 
 def _speaker_reference_audio_id(session, speaker_id: str) -> UUID:
-    rows, total = audio_crud.search_audio_files(session, speaker_id, "all", "duration", 1, 0)
-    if total == 0 or rows[0][0].speaker_id != speaker_id:
+    rows, _, _ = audio_crud.search_audio_files(session, speaker_id, "all", "duration", 1, None)
+    if not rows or rows[0][0].speaker_id != speaker_id:
         raise KeyError(f"Speaker has no audio reference: {speaker_id}")
     return rows[0][0].id

@@ -2,11 +2,12 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import Text, cast, desc, func, or_, select, text
+from sqlalchemy import Text, cast, desc, func, literal_column, or_, select, text
 from sqlalchemy.orm import Session, defer, lazyload, selectinload
 
 from shared.audio_annotations import AudioAnnotations
 from shared.db.audio.models import AudioFile
+from shared.db.audio.catalog_pagination import AudioCursor, cursor_filter, cursor_for_row
 from shared.db.audio.schemas import (
     AudioBucketLocation,
     AudioFileReference,
@@ -46,10 +47,10 @@ def search_audio_files(
     dataset: str,
     sort: str,
     limit: int,
-    offset: int,
+    cursor: str | None,
     preview_limit: int = 8,
     language: str = "",
-) -> tuple[list[tuple[AudioFile, int, list[dict[str, Any]]]], int]:
+) -> tuple[list[tuple[AudioFile, int, list[dict[str, Any]], int | None]], str | None, bool]:
     """List audio files without loading their potentially large segments column."""
     filters = _audio_filters(query, dataset, language)
     order = _audio_sort(sort)
@@ -58,49 +59,60 @@ def search_audio_files(
         0,
     ).label("segment_count")
     preview_path = text(f"'$[0 to {max(preview_limit - 1, 0)}]'::jsonpath")
-    segment_preview = func.jsonb_path_query_array(
-        AudioFile.segments,
-        preview_path,
+    segment_preview = literal_column(
+        "(SELECT coalesce(jsonb_agg((segment - 'alignment' - 'annotations' - 'text' - 'phon') || "
+        "jsonb_build_object('alignment', 'null'::jsonb, "
+        "'annotations', (segment -> 'annotations') - 'metadata', "
+        "'text', left(segment ->> 'text', 500), 'phon', left(segment ->> 'phon', 500))), '[]'::jsonb) "
+        f"FROM jsonb_array_elements(jsonb_path_query_array(audio_files.segments, {preview_path.text})) AS preview(segment))"
     ).label("segment_preview")
+    sample_rate = AudioFile.metadata_["sample_rate"].astext.label("sample_rate")
+    page_cursor = AudioCursor.decode(cursor, sort) if cursor is not None else None
 
     if sort == "segments":
         statement = select(
             AudioFile,
             segment_count,
             segment_preview,
+            sample_rate,
         ).options(
             defer(AudioFile.segments),
+            defer(AudioFile.metadata_),
             lazyload(AudioFile.bucket_file),
             selectinload(AudioFile.datasets),
         )
         for item in filters:
             statement = statement.where(item)
-        statement = statement.order_by(*order).limit(limit).offset(offset)
+        if page_cursor is not None:
+            statement = statement.where(cursor_filter(page_cursor))
+        statement = statement.order_by(*order).limit(limit + 1)
     else:
         page = select(AudioFile.id)
         for item in filters:
             page = page.where(item)
-        page = page.order_by(*order).limit(limit).offset(offset).subquery()
+        if page_cursor is not None:
+            page = page.where(cursor_filter(page_cursor))
+        page = page.order_by(*order).limit(limit + 1).subquery()
         statement = (
-            select(AudioFile, segment_count, segment_preview)
+            select(AudioFile, segment_count, segment_preview, sample_rate)
             .join(page, AudioFile.id == page.c.id)
             .options(
                 defer(AudioFile.segments),
+                defer(AudioFile.metadata_),
                 lazyload(AudioFile.bucket_file),
                 selectinload(AudioFile.datasets),
             )
             .order_by(*order)
         )
 
-    count_statement = select(func.count()).select_from(AudioFile)
-    for item in filters:
-        count_statement = count_statement.where(item)
     rows = [
-        (row[0], row[1], list(row[2] or []))
+        (row[0], row[1], list(row[2] or []), int(row[3]) if row[3] is not None else None)
         for row in session.execute(statement).all()
     ]
-    total = session.execute(count_statement).scalar_one()
-    return rows, total
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = cursor_for_row(sort, rows[-1][0], rows[-1][1]).encode() if has_more else None
+    return rows, next_cursor, has_more
 
 
 def search_audio_file_ids(

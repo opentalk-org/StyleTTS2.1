@@ -97,9 +97,8 @@ function Popup({ onClose, children }: { onClose: () => void; children: ReactNode
 function AudioSearchList({ onPick, exclude }: { onPick: (audio: AudioFile) => void; exclude?: Set<string> }) {
   const [query, setQuery] = useState("");
   const debounced = useDebounced(query, 250);
-  const audio = useAudioFilesQuery({ query: debounced, language: "", dataset: "all", sort: "updated", limit: 40, offset: 0 });
+  const audio = useAudioFilesQuery({ query: debounced, language: "", dataset: "all", sort: "updated", limit: 40, cursor: null });
   const rows = audio.data?.rows ?? [];
-  const total = audio.data?.total ?? 0;
 
   return (
     <div className="grid gap-2">
@@ -130,9 +129,9 @@ function AudioSearchList({ onPick, exclude }: { onPick: (audio: AudioFile) => vo
           <div className="px-2.5 py-3 text-[12px] text-txt-mute">{audio.isLoading ? "Searching…" : "No matching audio."}</div>
         )}
       </div>
-      {total > rows.length ? (
+      {audio.data?.has_more ? (
         <div className="px-1 text-[11px] text-txt-mute">
-          Showing {rows.length} of {total.toLocaleString()} — refine your search.
+          Showing the first {rows.length} matches — refine your search.
         </div>
       ) : null}
     </div>

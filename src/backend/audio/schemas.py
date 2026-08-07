@@ -88,7 +88,8 @@ class AudioFileListItem(BaseModel):
 
 class AudioFilePage(BaseModel):
     rows: list[AudioFileListItem]
-    total: int
+    next_cursor: str | None
+    has_more: bool
 
 
 class WaveformStatusRead(BaseModel):

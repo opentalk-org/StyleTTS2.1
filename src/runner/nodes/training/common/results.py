@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from runner.nodes.assets.checkpoints import is_scratch_checkpoint
 from runner.nodes.models import CheckpointRef, TrainingManifest, TrainingResult, stable_id
 from shared.db.assets import crud as asset_crud
 from shared.db.assets.schemas import CheckpointCreate
@@ -85,6 +86,8 @@ def database_training_output_dir(
 
 
 def checkpoint_weight(ref: CheckpointRef) -> str | None:
+    if is_scratch_checkpoint(ref):
+        return None
     weights = sorted(ref.path.rglob("*.pth"), key=lambda path: path.stat().st_mtime, reverse=True)
     if not weights:
         return None

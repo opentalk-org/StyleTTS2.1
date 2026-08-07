@@ -11,12 +11,16 @@ export type AudioFilters = {
 
 type AudioStore = AudioFilters & {
   limit: number;
-  offset: number;
+  cursor: string | null;
+  cursorHistory: (string | null)[];
+  page: number;
   selection: Record<string, true>;
   selectAllMatching: boolean;
   visibleIds: string[];
   expanded: Record<string, true>;
-  setFilters: (patch: Partial<AudioFilters> & Partial<Pick<AudioStore, "limit" | "offset">>) => void;
+  setFilters: (patch: Partial<AudioFilters> & Partial<Pick<AudioStore, "limit">>) => void;
+  nextPage: (cursor: string) => void;
+  previousPage: () => void;
   setVisibleIds: (ids: string[]) => void;
   toggleSelect: (id: string) => void;
   selectVisible: () => void;
@@ -31,12 +35,30 @@ export const useAudio = create<AudioStore>((set) => ({
   dataset: "all",
   sort: "updated",
   limit: 100,
-  offset: 0,
+  cursor: null,
+  cursorHistory: [],
+  page: 0,
   selection: {},
   selectAllMatching: false,
   visibleIds: [],
   expanded: {},
-  setFilters: (patch) => set({ ...patch, selectAllMatching: false }),
+  setFilters: (patch) => set({
+    ...patch,
+    cursor: null,
+    cursorHistory: [],
+    page: 0,
+    selectAllMatching: false,
+  }),
+  nextPage: (cursor) => set((state) => ({
+    cursor,
+    cursorHistory: [...state.cursorHistory, state.cursor],
+    page: state.page + 1,
+  })),
+  previousPage: () => set((state) => ({
+    cursor: state.cursorHistory[state.cursorHistory.length - 1] ?? null,
+    cursorHistory: state.cursorHistory.slice(0, -1),
+    page: Math.max(0, state.page - 1),
+  })),
   setVisibleIds: (ids) => set({ visibleIds: ids }),
   toggleSelect: (id) =>
     set((s) => {

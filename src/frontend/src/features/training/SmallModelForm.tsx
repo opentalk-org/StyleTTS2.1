@@ -74,17 +74,35 @@ export function SmallModelForm({
       </FormSection>
 
       <FormSection title="Optimization" tag="Optimizer">
-        <div className={isAsr ? "grid grid-cols-4 gap-3.5" : "grid grid-cols-3 gap-3.5"}>
-          <SettingField schema={settingsSchema} values={values} name="batch_size" onChange={updateTraining} />
-          <SettingField schema={settingsSchema} values={values} name="learning_rate" onChange={updateTraining} />
-          <SettingField schema={settingsSchema} values={values} name="epochs" onChange={updateTraining} />
-          {isAsr ? <SettingField schema={settingsSchema} values={values} name="dataloader_workers" onChange={updateTraining} /> : null}
-        </div>
-        <div className="h-3.5" />
-        <div className="grid grid-cols-2 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="save_interval_epochs" onChange={updateTraining} />
-          <div />
-        </div>
+        {isAsr ? (
+          <>
+            <div className="grid grid-cols-4 gap-3.5">
+              <SettingField schema={settingsSchema} values={values} name="max_audio_seconds" onChange={updateTraining} />
+              <SettingField schema={settingsSchema} values={values} name="learning_rate" onChange={updateTraining} />
+              <SettingField schema={settingsSchema} values={values} name="total_steps" onChange={updateTraining} />
+              <SettingField schema={settingsSchema} values={values} name="dataloader_workers" onChange={updateTraining} />
+            </div>
+            <div className="h-3.5" />
+            <div className="grid grid-cols-3 gap-3.5">
+              <SettingField schema={settingsSchema} values={values} name="validation_every_steps" onChange={updateTraining} />
+              <SettingField schema={settingsSchema} values={values} name="checkpoint_every_steps" onChange={updateTraining} />
+              <SettingField schema={settingsSchema} values={values} name="warmup_steps" onChange={updateTraining} />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-3.5">
+              <SettingField schema={settingsSchema} values={values} name="batch_size" onChange={updateTraining} />
+              <SettingField schema={settingsSchema} values={values} name="learning_rate" onChange={updateTraining} />
+              <SettingField schema={settingsSchema} values={values} name="epochs" onChange={updateTraining} />
+            </div>
+            <div className="h-3.5" />
+            <div className="grid grid-cols-2 gap-3.5">
+              <SettingField schema={settingsSchema} values={values} name="save_interval_epochs" onChange={updateTraining} />
+              <div />
+            </div>
+          </>
+        )}
       </FormSection>
 
       {alphabet ? (

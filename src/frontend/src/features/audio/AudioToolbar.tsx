@@ -75,21 +75,21 @@ export function AudioToolbar() {
       <div className="flex flex-wrap items-center gap-2.5">
         <SearchInput
           value={query}
-          onChange={(v) => setFilters({ query: v, offset: 0 })}
+          onChange={(v) => setFilters({ query: v })}
           placeholder="Search files or speakers…"
         />
         <SearchInput
           value={language}
-          onChange={(value) => setFilters({ language: value, offset: 0 })}
+          onChange={(value) => setFilters({ language: value })}
           placeholder="Language code…"
         />
-        <Select variant="mini" value={dataset} onChange={(v) => setFilters({ dataset: v, offset: 0 })} options={datasetOptions(datasets)} />
+        <Select variant="mini" value={dataset} onChange={(v) => setFilters({ dataset: v })} options={datasetOptions(datasets)} />
         <div className="flex-1" />
-        <Select variant="mini" value={sort} onChange={(v) => setFilters({ sort: v as AudioSort, offset: 0 })} options={sortOptions()} />
+        <Select variant="mini" value={sort} onChange={(v) => setFilters({ sort: v as AudioSort })} options={sortOptions()} />
         <Select
           variant="mini"
           value={String(limit)}
-          onChange={(v) => setFilters({ limit: Number(v), offset: 0 })}
+          onChange={(v) => setFilters({ limit: Number(v) })}
           options={[
             { value: "50", label: "50 per page" },
             { value: "100", label: "100 per page" },

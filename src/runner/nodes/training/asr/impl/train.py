@@ -1,23 +1,24 @@
 from __future__ import annotations
 
 import logging
+import random
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 import numpy as np
 import torch
-import torch.nn as nn
-from tqdm import tqdm
+from matplotlib.figure import Figure
+from torch import nn
 
 from runflow.runtime.cancellation import check_cancel
-from runner.nodes.training.asr.impl.config_load import blank_index_from_config
-from runner.nodes.training.asr.impl.dataset import build_asr_dataloaders
-from runner.nodes.training.asr.impl.optimizer import build_asr_optimizer
 from runner.nodes.training.common.mlflow_run import TrackerRun
-from runner.nodes.training.styletts.finetune.training.asr_train_models import init_ASR_model_from_config, load_ASR_models
-from runner.nodes.text.runtime.symbols import build_word_index_dictionary
-from runner.nodes.training.styletts.finetune.studio.finetune_mlflow_logger import FinetuneMlflowLogger
+from runner.nodes.training.styletts.finetune.training.data import build_dataloader
+from runner.nodes.training.styletts.finetune.training.modules.asr.models import ASRCNN
+from runner.nodes.training.styletts.finetune.training.utils import (
+    mask_from_lens,
+    maximum_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +29,7 @@ def save_asr_checkpoint(
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.LRScheduler,
-    epoch: int,
-    global_step: int,
+    step: int,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
@@ -37,11 +37,171 @@ def save_asr_checkpoint(
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
             "scheduler": scheduler.state_dict(),
-            "epoch": epoch,
-            "global_step": global_step,
+            "global_step": step,
         },
         path,
     )
+
+
+def _load_checkpoint(
+    path: str,
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler.LRScheduler,
+) -> int:
+    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+    if not isinstance(checkpoint, dict) or "model" not in checkpoint:
+        raise ValueError("asr_checkpoint_invalid")
+    try:
+        model.load_state_dict(checkpoint["model"], strict=True)
+    except RuntimeError as error:
+        raise ValueError("asr_checkpoint_is_not_compatible") from error
+    if "optimizer" in checkpoint:
+        optimizer.load_state_dict(checkpoint["optimizer"])
+    if "scheduler" in checkpoint:
+        scheduler.load_state_dict(checkpoint["scheduler"])
+    return int(checkpoint.get("global_step", 0))
+
+
+def _lr_multiplier(step: int, total_steps: int, warmup_steps: int) -> float:
+    if warmup_steps and step < warmup_steps:
+        return max(1, step + 1) / warmup_steps
+    decay_steps = max(1, total_steps - warmup_steps)
+    return max(0.0, (total_steps - step) / decay_steps)
+
+
+def _batch_loss(
+    model: ASRCNN,
+    batch,
+    device: torch.device,
+    ctc_loss: nn.CTCLoss,
+    sequence_loss: nn.CrossEntropyLoss,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    mel_lengths = batch.mel_lengths.to(device)
+    text_lengths = batch.input_lengths.to(device)
+    encoded_lengths = mel_lengths // (2**model.n_down)
+    logits, sequence_logits, attention = model(
+        batch.mels,
+        src_key_padding_mask=model.length_to_mask(encoded_lengths),
+        text_input=batch.texts,
+    )
+    ctc = ctc_loss(
+        logits.log_softmax(dim=2).transpose(0, 1),
+        batch.texts,
+        encoded_lengths,
+        text_lengths,
+    )
+    sequence = logits.new_zeros(())
+    for prediction, target, length in zip(
+        sequence_logits,
+        batch.texts,
+        text_lengths,
+        strict=True,
+    ):
+        sequence = sequence + sequence_loss(
+            prediction[:length],
+            target[:length],
+        )
+    sequence = sequence / batch.texts.size(0)
+    return ctc + sequence, ctc, sequence, attention
+
+
+def _save_alignment(path: Path, values: torch.Tensor, title: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    figure = Figure(figsize=(10, 4), layout="constrained")
+    axis = figure.subplots()
+    axis.imshow(
+        values.detach().float().cpu().numpy(),
+        origin="lower",
+        aspect="auto",
+        interpolation="nearest",
+        vmin=0.0,
+        vmax=1.0,
+    )
+    axis.set_xlabel("mel frame")
+    axis.set_ylabel("phoneme")
+    axis.set_title(title)
+    figure.savefig(path, dpi=120)
+
+
+def _log_alignment_artifacts(
+    run: TrackerRun,
+    output_dir: Path,
+    step: int,
+    soft_alignment: torch.Tensor,
+    hard_alignment: torch.Tensor,
+    batch,
+    n_down: int,
+) -> None:
+    for index in range(min(4, soft_alignment.size(0))):
+        phone_steps = int(batch.input_lengths[index])
+        mel_steps = int(batch.mel_lengths[index]) // (2**n_down)
+        directory = output_dir / f"step_{step:09d}" / f"sample_{index}"
+        for filename, values, title in (
+            ("soft_attention.png", soft_alignment[index, :phone_steps, :mel_steps], "Soft attention"),
+            ("hard_attention.png", hard_alignment[index, :phone_steps, :mel_steps], "Hard attention"),
+        ):
+            path = directory / filename
+            _save_alignment(path, values, title)
+            run.log_artifact(
+                path,
+                f"validation/step_{step:09d}/alignment/sample_{index}",
+            )
+
+
+@torch.no_grad()
+def _validate(
+    model: ASRCNN,
+    batches,
+    device: torch.device,
+    ctc_loss: nn.CTCLoss,
+    sequence_loss: nn.CrossEntropyLoss,
+    run: TrackerRun,
+    step: int,
+    artifact_dir: Path,
+) -> dict[str, float]:
+    model.eval()
+    losses = []
+    ctc_losses = []
+    sequence_losses = []
+    for batch_index, batch in enumerate(batches):
+        check_cancel()
+        batch = batch.to(device)
+        loss, ctc, sequence, alignment = _batch_loss(
+            model,
+            batch,
+            device,
+            ctc_loss,
+            sequence_loss,
+        )
+        losses.append(float(loss.item()))
+        ctc_losses.append(float(ctc.item()))
+        sequence_losses.append(float(sequence.item()))
+        if batch_index == 0:
+            soft_alignment = alignment[:, 1:]
+            alignment_mask = mask_from_lens(
+                soft_alignment,
+                batch.input_lengths,
+                batch.mel_lengths // (2**model.n_down),
+            )
+            soft_alignment = soft_alignment.masked_fill(~alignment_mask.bool(), 0.0)
+            hard_alignment = maximum_path(soft_alignment, alignment_mask)
+            _log_alignment_artifacts(
+                run,
+                artifact_dir,
+                step,
+                soft_alignment,
+                hard_alignment,
+                batch,
+                model.n_down,
+            )
+    if not losses:
+        raise ValueError("asr_val_no_batches")
+    return {
+        "val/loss": float(np.mean(losses)),
+        "val/ctc_loss": float(np.mean(ctc_losses)),
+        "val/sequence_loss": float(np.mean(sequence_losses)),
+    }
 
 
 def train_asr_model(
@@ -49,232 +209,173 @@ def train_asr_model(
     run: TrackerRun,
     dataset_id: UUID,
     validation_samples: int,
-    run_dir: Path,
     weights_dir: Path,
     effective_config: dict[str, Any],
-    effective_config_path: Path,
-    epochs: int,
-    batch_size: int,
+    total_steps: int,
+    validation_every_steps: int,
+    checkpoint_every_steps: int,
+    max_audio_seconds: float,
+    max_text_tokens: int,
     learning_rate: float,
-    checkpoint_save_interval_epochs: int,
+    warmup_steps: int,
+    weight_decay: float,
+    gradient_clip_norm: float,
     pretrained_weights_path: str | None,
-    num_workers: int = 2,
+    num_workers: int = 0,
+    seed: int = 1,
 ) -> None:
-    device_str = "cuda" if torch.cuda.is_available() else "cpu"
-    device = torch.device(device_str)
-    torch.backends.cudnn.benchmark = True
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch.backends.cudnn.benchmark = device.type == "cuda"
 
-    symbols = list(effective_config.get("data_params", {}).get("phoneme_symbols") or [])
-    sym_dict = build_word_index_dictionary(symbols)
-    blank_idx = blank_index_from_config(effective_config, symbol_to_idx=sym_dict)
-    ctc_loss_fn = nn.CTCLoss(blank=blank_idx, zero_infinity=True)
-    ce_loss_fn = nn.CrossEntropyLoss()
+    symbols = list(effective_config["data_params"]["phoneme_symbols"])
+    model_params = effective_config["model_params"]
+    model = ASRCNN(
+        input_dim=int(model_params["input_dim"]),
+        n_token=len(symbols),
+        hidden_dim=int(model_params["hidden_dim"]),
+        n_layers=int(model_params["n_layers"]),
+        token_embedding_dim=int(model_params["token_embedding_dim"]),
+    ).to(device)
+    blank_symbol = str(effective_config["data_params"]["ctc_blank_character"])
+    try:
+        blank_index = symbols.index(blank_symbol)
+    except ValueError as error:
+        raise ValueError("asr_ctc_blank_not_in_vocab") from error
+    ctc_loss = nn.CTCLoss(blank=blank_index, zero_infinity=True)
+    sequence_loss = nn.CrossEntropyLoss()
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=learning_rate,
+        weight_decay=weight_decay,
+        betas=(0.9, 0.98),
+        eps=1e-9,
+    )
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer,
+        lambda step: _lr_multiplier(step, total_steps, warmup_steps),
+    )
+    step = (
+        _load_checkpoint(pretrained_weights_path, model, optimizer, scheduler)
+        if pretrained_weights_path
+        else 0
+    )
+    if step >= total_steps:
+        raise ValueError("asr_checkpoint_already_reached_total_steps")
 
-    run_dir.mkdir(parents=True, exist_ok=True)
-    weights_dir = weights_dir.resolve()
+    dataset_config = {
+        "symbols": symbols,
+        "max_text_tokens": max_text_tokens,
+    }
+    train_batches = build_dataloader(
+        dataset_id,
+        validation_samples,
+        max_seconds=max_audio_seconds,
+        num_workers=num_workers,
+        device=device.type,
+        dataset_config=dataset_config,
+        seed=seed,
+    )
+    validation_batches = build_dataloader(
+        dataset_id,
+        validation_samples,
+        validation=True,
+        max_seconds=max_audio_seconds,
+        num_workers=num_workers,
+        device=device.type,
+        dataset_config=dataset_config,
+        seed=seed,
+    )
+
     weights_dir.mkdir(parents=True, exist_ok=True)
     snapshots_dir = weights_dir / "snapshots"
-    snapshots_dir.mkdir(parents=True, exist_ok=True)
-
-    train_loader, val_loader = build_asr_dataloaders(
-        dataset_id=dataset_id,
-        validation_samples=validation_samples,
-        effective_config=effective_config,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        device_type=device_str,
-    )
-    if len(train_loader) < 1:
-        raise ValueError("asr_train_no_batches")
-    if len(val_loader) < 1:
-        raise ValueError("asr_val_no_batches")
-
-    steps_per_epoch = len(train_loader)
-    mlflow_metrics = FinetuneMlflowLogger(
-        run,
-        schedule_epochs_total=epochs,
-        batches_per_epoch=steps_per_epoch,
-        diff_epoch=0,
-        joint_epoch=epochs,
-    )
-
-    cfg_path_s = str(effective_config_path.resolve())
-    n_sym = len(symbols)
-    if pretrained_weights_path:
-        model = load_ASR_models(
-            pretrained_weights_path,
-            cfg_path_s,
-            target_n_token=n_sym,
-        )
-        logger.info("Loaded ASR pretrained weights from %s", pretrained_weights_path)
-    else:
-        model = init_ASR_model_from_config(cfg_path_s, target_n_token=n_sym)
-    model.to(device)
-
-    opt_params = effective_config.get("optimizer_params") or {}
-    sch_params = effective_config.get("scheduler_params") or {}
-    optimizer, scheduler = build_asr_optimizer(
-        list(model.parameters()),
-        learning_rate=learning_rate,
-        optimizer_params=opt_params,
-        epochs=epochs,
-        steps_per_epoch=steps_per_epoch,
-        scheduler_params=sch_params,
-    )
-
-    grad_clip = float((effective_config.get("training") or {}).get("grad_clip") or 5.0)
-
-    global_step = 0
-    last_epoch_completed = 0
     final_path = weights_dir / "final.pth"
     final_saved = False
-
-    n_down = int(getattr(model, "n_down", 1))
-
     try:
-        epoch_pbar = tqdm(range(epochs), desc="ASR train", unit="epoch")
-        for epoch in epoch_pbar:
+        model.train()
+        for batch in train_batches:
             check_cancel()
-            model.train()
-            train_losses: dict[str, list[float]] = {"loss": [], "ctc": [], "s2s": []}
-            batch_pbar = tqdm(
-                train_loader,
-                desc=f"train {epoch + 1}/{epochs}",
-                leave=False,
-                total=steps_per_epoch,
+            batch = batch.to(device)
+            optimizer.zero_grad(set_to_none=True)
+            loss, ctc, sequence, _ = _batch_loss(
+                model,
+                batch,
+                device,
+                ctc_loss,
+                sequence_loss,
             )
-            for batch_idx, batch in enumerate(batch_pbar, start=1):
-                check_cancel()
-                batch_d = [b.to(device, non_blocking=True) for b in batch]
-                text_input, text_input_length, mel_input, mel_input_length = batch_d
-                mel_enc_len = mel_input_length // (2**n_down)
-                mel_mask = model.length_to_mask(mel_enc_len)
-                optimizer.zero_grad(set_to_none=True)
-                ppgs, s2s_pred, _s2s_attn = model(
-                    mel_input, src_key_padding_mask=mel_mask, text_input=text_input
-                )
-                loss_ctc = ctc_loss_fn(
-                    ppgs.log_softmax(dim=2).transpose(0, 1),
-                    text_input,
-                    mel_enc_len,
-                    text_input_length,
-                )
-                loss_s2s = torch.tensor(0.0, device=device)
-                for _s2s_pred, _text_input, _text_length in zip(
-                    s2s_pred, text_input, text_input_length, strict=True
-                ):
-                    loss_s2s = loss_s2s + ce_loss_fn(
-                        _s2s_pred[: int(_text_length)], _text_input[: int(_text_length)]
-                    )
-                loss_s2s = loss_s2s / float(text_input.size(0))
-                loss = loss_ctc + loss_s2s
-                loss.backward()
-                torch.nn.utils.clip_grad_value_(model.parameters(), grad_clip)
-                optimizer.step()
-                scheduler.step()
-
-                train_losses["loss"].append(float(loss.item()))
-                train_losses["ctc"].append(float(loss_ctc.item()))
-                train_losses["s2s"].append(float(loss_s2s.item()))
-                global_step += 1
-                lr = optimizer.param_groups[0]["lr"]
-                batch_pbar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{lr:.2e}")
-
-                mlflow_metrics.log_train(
-                    epoch + 1,
-                    global_step,
-                    {
-                        "loss": loss.item(),
-                        "ctc_loss": loss_ctc.item(),
-                        "s2s_loss": loss_s2s.item(),
-                        "lr": lr,
-                    },
-                    batches_per_epoch=steps_per_epoch,
-                    batch_in_epoch=batch_idx,
-                    schedule_epochs_total=epochs,
-                    schedule_diff_epoch=0,
-                    schedule_joint_epoch=epochs,
-                )
-
-            model.eval()
-            eval_losses: dict[str, list[float]] = {"loss": [], "ctc": [], "s2s": []}
-            with torch.no_grad():
-                for vb in tqdm(val_loader, desc=f"val {epoch + 1}/{epochs}", leave=False, total=len(val_loader)):
-                    check_cancel()
-                    vb = [b.to(device, non_blocking=True) for b in vb]
-                    text_input, text_input_length, mel_input, mel_input_length = vb
-                    mel_enc_len = mel_input_length // (2**n_down)
-                    mel_mask = model.length_to_mask(mel_enc_len)
-                    ppgs, s2s_pred, _s2s_attn = model(
-                        mel_input, src_key_padding_mask=mel_mask, text_input=text_input
-                    )
-                    loss_ctc = ctc_loss_fn(
-                        ppgs.log_softmax(dim=2).transpose(0, 1),
-                        text_input,
-                        mel_enc_len,
-                        text_input_length,
-                    )
-                    loss_s2s = torch.tensor(0.0, device=device)
-                    for _s2s_pred, _text_input, _text_length in zip(
-                        s2s_pred, text_input, text_input_length, strict=True
-                    ):
-                        loss_s2s = loss_s2s + ce_loss_fn(
-                            _s2s_pred[: int(_text_length)], _text_input[: int(_text_length)]
-                        )
-                    loss_s2s = loss_s2s / float(text_input.size(0))
-                    loss = loss_ctc + loss_s2s
-                    eval_losses["loss"].append(float(loss.item()))
-                    eval_losses["ctc"].append(float(loss_ctc.item()))
-                    eval_losses["s2s"].append(float(loss_s2s.item()))
-
-            val_metrics = {f"val_{k}": float(np.mean(v)) for k, v in eval_losses.items()}
-            val_metrics["val_lr"] = optimizer.param_groups[0]["lr"]
-            mlflow_metrics.log_val(epoch + 1, global_step, val_metrics)
-
-            tr_l = float(np.mean(train_losses["loss"]))
-            logger.info(
-                "epoch %d/%d train loss=%.4f ctc=%.4f s2s=%.4f | val loss=%.4f",
-                epoch + 1,
-                epochs,
-                tr_l,
-                float(np.mean(train_losses["ctc"])),
-                float(np.mean(train_losses["s2s"])),
-                val_metrics["val_loss"],
+            loss.backward()
+            gradient_norm = torch.nn.utils.clip_grad_norm_(
+                model.parameters(), gradient_clip_norm
             )
-            epoch_pbar.set_postfix(train=f"{tr_l:.4f}", val=f"{val_metrics['val_loss']:.4f}")
+            optimizer.step()
+            scheduler.step()
+            step += 1
+            metrics = {
+                "train/loss": float(loss.item()),
+                "train/ctc_loss": float(ctc.item()),
+                "train/sequence_loss": float(sequence.item()),
+                "train/gradient_norm/text_aligner": float(gradient_norm.item()),
+                "train/lr": float(optimizer.param_groups[0]["lr"]),
+                "performance/items_per_step": float(len(batch.audio_durations)),
+                "performance/audio_seconds_per_step": float(sum(batch.audio_durations)),
+                "job_progress": 100.0 * step / total_steps,
+            }
+            run.track_metrics(metrics, step=step)
 
-            if (epoch + 1) % max(1, checkpoint_save_interval_epochs) == 0:
-                ckpt_path = snapshots_dir / f"epoch_{epoch + 1:05d}.pth"
+            if step % validation_every_steps == 0 or step == total_steps:
+                run.track_metrics(
+                    _validate(
+                        model,
+                        validation_batches,
+                        device,
+                        ctc_loss,
+                        sequence_loss,
+                        run,
+                        step,
+                        weights_dir / "validation",
+                    ),
+                    step=step,
+                )
+                model.train()
+            if step % checkpoint_every_steps == 0 or step == total_steps:
                 save_asr_checkpoint(
-                    ckpt_path,
+                    snapshots_dir / f"step_{step:09d}.pth",
                     model=model,
                     optimizer=optimizer,
                     scheduler=scheduler,
-                    epoch=epoch + 1,
-                    global_step=global_step,
+                    step=step,
                 )
-                logger.info("Saved %s", ckpt_path)
-
-            last_epoch_completed = epoch + 1
+            if step % 10 == 0:
+                logger.info(
+                    "ASR step=%d/%d loss=%.5f ctc=%.5f sequence=%.5f lr=%.3e",
+                    step,
+                    total_steps,
+                    loss.item(),
+                    ctc.item(),
+                    sequence.item(),
+                    optimizer.param_groups[0]["lr"],
+                )
+            if step >= total_steps:
+                break
 
         save_asr_checkpoint(
             final_path,
             model=model,
             optimizer=optimizer,
             scheduler=scheduler,
-            epoch=epochs,
-            global_step=global_step,
+            step=step,
         )
         final_saved = True
-        logger.info("Training finished; wrote %s", final_path)
     finally:
-        if not final_saved and global_step > 0:
+        if not final_saved and step > 0:
             save_asr_checkpoint(
                 final_path,
                 model=model,
                 optimizer=optimizer,
                 scheduler=scheduler,
-                epoch=last_epoch_completed,
-                global_step=global_step,
+                step=step,
             )
-            logger.warning("Saved interrupted checkpoint to %s", final_path)

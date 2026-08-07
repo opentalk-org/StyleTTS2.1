@@ -21,29 +21,36 @@ router = APIRouter(prefix="/audio-files", tags=["audio-files"])
 
 
 @router.get("", response_model=AudioFilePage)
-async def list_audio_files(
+def list_audio_files(
     query: str = "",
     language: str = "",
     dataset: str = "all",
     sort: AudioSort = "updated",
     limit: int = Query(100, ge=1, le=200),
-    offset: int = Query(0, ge=0),
+    cursor: str | None = None,
 ) -> AudioFilePage:
-    with database_session() as session:
-        rows, total = audio_crud.search_audio_files(
-            session,
-            query,
-            dataset,
-            sort,
-            limit,
-            offset,
-            preview_limit=8,
-            language=language,
-        )
-        return AudioFilePage(
-            rows=[audio_list_response(item, segment_count, segment_preview) for item, segment_count, segment_preview in rows],
-            total=total,
-        )
+    try:
+        with database_session() as session:
+            rows, next_cursor, has_more = audio_crud.search_audio_files(
+                session,
+                query,
+                dataset,
+                sort,
+                limit,
+                cursor,
+                preview_limit=8,
+                language=language,
+            )
+            return AudioFilePage(
+                rows=[
+                    audio_list_response(item, segment_count, segment_preview, preview_sample_rate)
+                    for item, segment_count, segment_preview, preview_sample_rate in rows
+                ],
+                next_cursor=next_cursor,
+                has_more=has_more,
+            )
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
 
 
 @router.post("/upload", response_model=AudioFileListItem, status_code=status.HTTP_201_CREATED)

@@ -52,12 +52,13 @@ export type AudioQuery = {
   dataset: string;
   sort: AudioSort;
   limit: number;
-  offset: number;
+  cursor: string | null;
 };
 
 export type AudioPage = {
   rows: AudioFile[];
-  total: number;
+  next_cursor: string | null;
+  has_more: boolean;
 };
 
 export type AudioUploadOptions = {
@@ -102,8 +103,8 @@ export function fetchAudioFiles(params: AudioQuery): Promise<AudioPage> {
     dataset: params.dataset,
     sort: params.sort,
     limit: String(params.limit),
-    offset: String(params.offset),
   });
+  if (params.cursor) search.set("cursor", params.cursor);
   return backendRequest<AudioPage>(`/audio-files?${search}`);
 }
 

@@ -65,17 +65,19 @@ function Menu({ items, onPick }: { items: Item[]; onPick: () => void }) {
   );
 }
 
-export function SelectionBar({ total }: { total: number }) {
+export function SelectionBar() {
   const { query, language, dataset, selection, selectAllMatching, selectAllFiltered, clearSelection } = useAudio();
   const { data: datasets = [] } = useDatasetsQuery();
   const deleteAudioFiles = useDeleteAudioFilesMutation();
   const addToDataset = useAddToDatasetMutation();
   const [menu, setMenu] = useState<MenuName | null>(null);
   const ids = Object.keys(selection);
-  const selCount = selectAllMatching ? total : ids.length;
+  const selCount = selectAllMatching ? undefined : ids.length;
   const toggle = (name: MenuName) => setMenu((m) => (m === name ? null : name));
   const count = selCount;
-  const label = `${count.toLocaleString()} file${count === 1 ? "" : "s"}`;
+  const label = count === undefined
+    ? "all matching files"
+    : `${count.toLocaleString()} file${count === 1 ? "" : "s"}`;
   const deleteSelectedFiles = () => askDeleteConfirm({
     title: "Delete files?",
     desc: `Permanently delete ${label} and all of their segments. This cannot be undone.`,
@@ -120,11 +122,11 @@ export function SelectionBar({ total }: { total: number }) {
   return (
     <div className="relative mb-3 flex items-center gap-2.5 rounded-[9px] bg-gray-900 py-2.5 pl-4 pr-3">
       <div className="flex items-center gap-2.5">
-        <span className="text-[13px] font-bold text-white">{selCount.toLocaleString()} selected</span>
+        <span className="text-[13px] font-bold text-white">{label} selected</span>
       </div>
       {!selectAllMatching ? (
         <button onClick={selectAllFiltered} className="text-xs font-semibold text-blue-300">
-          · Select all {total.toLocaleString()} matching filter
+          · Select all matching filter
         </button>
       ) : null}
       <div className="flex-1" />

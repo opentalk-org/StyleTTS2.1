@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 
-import { Pager } from "@/shared/data/Pager";
 import { Icon } from "@/shared/icons";
 import { Button } from "@/shared/ui/Button";
 import { Card } from "@/shared/ui/Card";
@@ -39,13 +38,9 @@ function Header({ allSel, onToggleAll }: { allSel: boolean; onToggleAll: () => v
 }
 
 export function AudioScreen() {
-  const { query, language, dataset, sort, limit, offset, selection, selectAllMatching, selectVisible, clearSelection, setVisibleIds, setFilters } = useAudio();
-  const { data, isFetching, isError, refetch } = useAudioFilesQuery({ query, language, dataset, sort, limit, offset });
+  const { query, language, dataset, sort, limit, cursor, page, selection, selectAllMatching, selectVisible, clearSelection, setVisibleIds, nextPage, previousPage } = useAudio();
+  const { data, isFetching, isError, refetch } = useAudioFilesQuery({ query, language, dataset, sort, limit, cursor });
   const rows = data?.rows ?? [];
-  const total = data?.total ?? 0;
-  const page = Math.floor(offset / limit);
-  const pages = Math.max(1, Math.ceil(total / limit));
-  const visibleEnd = Math.min(offset + rows.length, total);
   const hasSelection = selectAllMatching || Object.keys(selection).length > 0;
   const visibleKey = rows.map((r) => r.id).join(",");
   const allSel = selectAllMatching || (rows.length > 0 && rows.every((r) => selection[r.id]));
@@ -57,7 +52,7 @@ export function AudioScreen() {
   return (
     <div className="mx-auto flex h-full max-w-[1240px] flex-col px-7 pb-6 pt-5">
       <AudioToolbar />
-      {hasSelection ? <SelectionBar total={total} /> : null}
+      {hasSelection ? <SelectionBar /> : null}
       {isFetching ? (
         <Card className="p-6 text-sm text-txt-mute">Loading audio files...</Card>
       ) : isError ? (
@@ -76,16 +71,21 @@ export function AudioScreen() {
       ) : (
         <>
           <div className="mb-2.5 flex items-center gap-3 text-xs tabular-nums text-txt-mute">
-            <span>
-              {total ? `${(offset + 1).toLocaleString()}-${visibleEnd.toLocaleString()}` : "0"} of {total.toLocaleString()} files
-            </span>
-            <Pager page={page} pages={pages} onChange={(next) => setFilters({ offset: next * limit })} />
+            <span>{rows.length ? `Page ${page + 1} · ${rows.length} files` : "0 files"}</span>
+            <Button variant="secondary" onClick={previousPage} disabled={page === 0}>Previous</Button>
+            <Button
+              variant="secondary"
+              onClick={() => data?.next_cursor && nextPage(data.next_cursor)}
+              disabled={!data?.has_more || !data.next_cursor}
+            >
+              Next
+            </Button>
           </div>
           {rows.length ? (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-line bg-panel">
               <Header allSel={allSel} onToggleAll={allSel ? clearSelection : selectVisible} />
               <div className="min-h-0 flex-1 overflow-y-auto">
-                {rows.map((file, index) => <AudioRow key={file.id} file={file} index={offset + index} />)}
+                {rows.map((file, index) => <AudioRow key={file.id} file={file} index={page * limit + index} />)}
               </div>
             </div>
           ) : (
