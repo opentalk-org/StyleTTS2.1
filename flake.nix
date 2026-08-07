@@ -65,10 +65,26 @@
             pkgs.glibc
             cuda
           ];
-          nvidiaDriverPath = pkgs.lib.concatStringsSep ":" [
+          nvidiaDriverDirs = [
             "/usr/local/nvidia/lib"
             "/usr/local/nvidia/lib64"
+            "/usr/lib/x86_64-linux-gnu"
+            "/usr/lib64"
           ];
+          nvidiaDriverPath = pkgs.lib.concatStringsSep ":" nvidiaDriverDirs;
+
+          resolveTritonLibcuda = lib.optionalString pkgs.stdenv.isLinux ''
+            for __d in ${lib.concatStringsSep " " nvidiaDriverDirs}; do
+              if [ -e "$__d/libcuda.so.1" ]; then
+                export TRITON_LIBCUDA_PATH="$__d"
+                break
+              fi
+            done
+            unset __d
+            if [ -z "''${TRITON_LIBCUDA_PATH:-}" ]; then
+              echo "[cuda] no libcuda.so.1 found - training will fall back to CPU" >&2
+            fi
+          '';
         in
         {
           formatter = pkgs.nixfmt;
@@ -165,11 +181,13 @@
 
               TRITON_PTXAS_PATH = "${cuda}/bin/ptxas";
               TRITON_PTXAS_BLACKWELL_PATH = "${cuda}/bin/ptxas";
-              TRITON_LIBCUDA_PATH = "/usr/local/nvidia/lib";
             };
 
             shellHook = ''
               unset NIX_CFLAGS_COMPILE CFLAGS CXXFLAGS
+            ''
+            + resolveTritonLibcuda
+            + ''
               if [ -f .env ]; then
                 set -a
                 . ./.env
@@ -363,6 +381,7 @@
                 runtimeInputs = [ pkgs.coreutils ];
                 text = ''
                   cd "$DNVR_ROOT"
+                  ${resolveTritonLibcuda}
                   runner_id="''${RUNNER_ID:-runner-1}"
                   echo "[runner] starting $runner_id"
                   exec python -m runner.cli --runner-id "$runner_id"
