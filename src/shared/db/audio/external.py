@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from shared.db.audio.models import AudioFile
 from shared.db.audio.schemas import ExternalAudioCreate
+from shared.db.audio.segments import bulk_replace_audio_segments
 
 
 def bulk_create_external_audio_files(
@@ -23,11 +24,9 @@ def bulk_create_external_audio_files(
             "duration": payload.duration,
             "speaker_id": payload.annotations.speaker_id,
             "score": payload.annotations.score,
-            "accuracy": payload.annotations.accuracy,
             "language": payload.language,
             "style_prompt": payload.style_prompt,
             "voice_prompt": payload.voice_prompt,
-            "segments": payload.segments,
             "metadata": payload.annotations.metadata,
             "virtual": True,
             "storage_kind": "external",
@@ -42,5 +41,15 @@ def bulk_create_external_audio_files(
         .returning(AudioFile.id)
     )
     inserted_ids = set(session.execute(statement).scalars())
+    inserted = {payload.id: payload for payload in payloads if payload.id in inserted_ids}
+    bulk_replace_audio_segments(
+        session,
+        {audio_id: payload.segments for audio_id, payload in inserted.items()},
+        commit=False,
+        fallback_accuracy={
+            audio_id: payload.annotations.accuracy
+            for audio_id, payload in inserted.items()
+        },
+    )
     session.commit()
     return len(inserted_ids)

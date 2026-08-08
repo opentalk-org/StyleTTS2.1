@@ -17,6 +17,7 @@ from shared.db.audio.packed import (
 from shared.db.audio.maintenance import prune_fragmented_audio_packs
 from shared.db.audio.pack_store import AudioPackConfig
 from shared.db.audio.schemas import AudioCreate, AudioPartRead, AudioUpdate
+from shared.db.audio.segments import bulk_replace_audio_segments
 from shared.db.audio.storage_locations import audio_storage_locations
 from shared.db.datasets.models import dataset_audio_files
 from shared.db.settings import crud as settings_crud
@@ -162,6 +163,18 @@ def bulk_update_audio_files(
             item = metadata_items[audio_file_id]
             _update_audio_metadata(item, payload)
             items[audio_file_id] = item
+        bulk_replace_audio_segments(
+            session,
+            {
+                audio_file_id: payload.segments
+                for audio_file_id, payload in metadata_payloads.items()
+            },
+            commit=False,
+            fallback_accuracy={
+                audio_file_id: payload.annotations.accuracy
+                for audio_file_id, payload in metadata_payloads.items()
+            },
+        )
     if items:
         session.commit()
     if binary_payloads:
@@ -206,14 +219,12 @@ def _update_audio_metadata(item: AudioFile, payload: AudioUpdate) -> None:
     item.duration = payload.duration
     item.speaker_id = payload.annotations.speaker_id
     item.score = payload.annotations.score
-    item.accuracy = payload.annotations.accuracy
     if "language" in payload.model_fields_set:
         item.language = payload.language
     if "style_prompt" in payload.model_fields_set:
         item.style_prompt = payload.style_prompt
     if "voice_prompt" in payload.model_fields_set:
         item.voice_prompt = payload.voice_prompt
-    item.segments = payload.segments
     item.metadata_ = payload.annotations.metadata
     item.virtual = payload.virtual
     item.updated_at = datetime.now(UTC)

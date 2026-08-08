@@ -31,14 +31,7 @@ def iter_dataset_training_audio(
 ):
     order = AudioFile.id.desc() if descending else AudioFile.id
     statement = (
-        select(
-            AudioFile.id,
-            AudioFile.duration,
-            AudioFile.speaker_id,
-            AudioFile.language,
-            AudioFile.segments,
-            AudioFile.metadata_,
-        )
+        select(AudioFile)
         .join(
             dataset_audio_files,
             dataset_audio_files.c.audio_file_id == AudioFile.id,
@@ -60,8 +53,15 @@ def iter_dataset_training_audio(
         statement = statement.where(AudioFile.id > audio_id_after)
     if audio_id_at_most is not None:
         statement = statement.where(AudioFile.id <= audio_id_at_most)
-    for row in session.execute(statement):
-        yield DatasetTrainingAudio(*row)
+    for item in session.scalars(statement):
+        yield DatasetTrainingAudio(
+            item.id,
+            item.duration,
+            item.speaker_id,
+            item.language,
+            item.segments,
+            item.metadata_,
+        )
 
 
 def count_dataset_training_audio(

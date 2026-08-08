@@ -1,12 +1,12 @@
 import uuid
 from collections.abc import Iterator, Sequence
 
-from sqlalchemy import String, Text, bindparam, cast, func, select, update
+from sqlalchemy import Float, String, Text, bindparam, cast, func, literal, select, update
 from sqlalchemy.dialects.postgresql import aggregate_order_by, array
 from sqlalchemy.orm import Session
 
 from shared.db.audio.annotations.schemas import AudioAnnotationRow, AudioAnnotationUpdate
-from shared.db.audio.models import AudioFile
+from shared.db.audio.models import Alignment, AudioFile, AudioSegment
 from shared.db.datasets.models import Dataset, dataset_audio_files
 
 
@@ -18,7 +18,6 @@ def audio_annotation_update_statement():
             style_prompt=bindparam("new_style_prompt"),
             voice_prompt=bindparam("new_voice_prompt"),
             score=bindparam("new_score"),
-            accuracy=bindparam("new_accuracy"),
         )
     )
 
@@ -38,6 +37,38 @@ def iter_audio_annotations(session: Session, batch_size: int = 2_000) -> Iterato
         .scalar_subquery()
     )
     last_id: uuid.UUID | None = None
+    segments_hash = (
+        select(
+            func.md5(
+                func.coalesce(
+                    cast(func.jsonb_agg(
+                        aggregate_order_by(
+                            func.jsonb_build_object(
+                                "id", AudioSegment.source_id,
+                                "position", AudioSegment.position,
+                                "start", AudioSegment.start_seconds,
+                                "end", AudioSegment.end_seconds,
+                                "text", AudioSegment.text,
+                                "phon", AudioSegment.phon,
+                                "kind", AudioSegment.kind,
+                                "accuracy", AudioSegment.accuracy,
+                                "speaker_id", AudioSegment.speaker_id,
+                                "metadata", AudioSegment.metadata_,
+                                "alignment", Alignment.data,
+                            ),
+                            AudioSegment.position,
+                        )
+                    ), String),
+                    "[]",
+                )
+            )
+        )
+        .select_from(AudioSegment)
+        .join(Alignment, Alignment.segment_id == AudioSegment.id)
+        .where(AudioSegment.audio_file_id == AudioFile.id)
+        .correlate(AudioFile)
+        .scalar_subquery()
+    )
     while True:
         statement = (
             select(
@@ -46,10 +77,10 @@ def iter_audio_annotations(session: Session, batch_size: int = 2_000) -> Iterato
                 AudioFile.style_prompt,
                 AudioFile.voice_prompt,
                 AudioFile.score,
-                AudioFile.accuracy,
+                literal(None, Float).label("accuracy"),
                 AudioFile.metadata_.label("metadata"),
                 func.md5(cast(AudioFile.metadata_, String)).label("metadata_hash"),
-                func.md5(cast(AudioFile.segments, String)).label("segments_hash"),
+                segments_hash.label("segments_hash"),
             )
             .order_by(AudioFile.id)
             .limit(batch_size)
@@ -82,6 +113,12 @@ def bulk_update_audio_annotations(
         for item in updates
     ]
     session.execute(audio_annotation_update_statement(), payloads)
+    session.execute(
+        update(AudioSegment)
+        .where(AudioSegment.audio_file_id == bindparam("audio_id"))
+        .values(accuracy=bindparam("new_accuracy")),
+        payloads,
+    )
     if commit:
         session.commit()
 

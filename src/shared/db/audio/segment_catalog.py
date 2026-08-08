@@ -2,10 +2,10 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select, true, tuple_
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.orm import Session
 
-from shared.db.audio.models import AudioFile
+from shared.db.audio.models import AudioFile, AudioSegment
 from shared.db.common import one
 from shared.db.datasets.models import Dataset, dataset_audio_files
 from shared.audio_annotations import AudioAnnotations
@@ -40,11 +40,11 @@ class SegmentReference:
 def count_segment_references(session: Session, dataset_id: UUID) -> int:
     one(session, Dataset, dataset_id)
     statement = (
-        select(func.coalesce(func.sum(func.jsonb_array_length(AudioFile.segments)), 0))
-        .select_from(AudioFile)
+        select(func.count(AudioSegment.id))
+        .select_from(AudioSegment)
         .join(
             dataset_audio_files,
-            dataset_audio_files.c.audio_file_id == AudioFile.id,
+            dataset_audio_files.c.audio_file_id == AudioSegment.audio_file_id,
         )
         .where(dataset_audio_files.c.dataset_id == dataset_id)
     )
@@ -66,7 +66,7 @@ def list_segment_references_page(
             annotations=AudioAnnotations(
                 speaker_id=row.speaker_id,
                 score=row.score,
-                accuracy=row.accuracy,
+                accuracy=None,
                 metadata=dict(row.audio_metadata),
             ),
             audio_byte_length=row.audio_byte_length,
@@ -76,7 +76,7 @@ def list_segment_references_page(
             style_prompt=row.style_prompt,
             voice_prompt=row.voice_prompt,
             segment_index=row.segment_index,
-            segment=row.segment,
+            segment=row.AudioSegment.as_payload(),
         )
         for row in rows
     ]
@@ -87,13 +87,7 @@ def segment_references_statement(
     after: SegmentCursor | None,
     limit: int,
 ):
-    expanded = (
-        func.jsonb_array_elements(AudioFile.segments)
-        .table_valued("segment", with_ordinality="ordinality")
-        .render_derived()
-        .lateral()
-    )
-    segment_index = (expanded.c.ordinality - 1).label("segment_index")
+    segment_index = AudioSegment.position.label("segment_index")
     statement = (
         select(
             AudioFile.id.label("audio_file_id"),
@@ -101,7 +95,6 @@ def segment_references_statement(
             AudioFile.duration.label("audio_duration"),
             AudioFile.speaker_id,
             AudioFile.score,
-            AudioFile.accuracy,
             AudioFile.metadata_.label("audio_metadata"),
             AudioFile.byte_length.label("audio_byte_length"),
             AudioFile.virtual.label("audio_virtual"),
@@ -110,19 +103,19 @@ def segment_references_statement(
             AudioFile.style_prompt,
             AudioFile.voice_prompt,
             segment_index,
-            expanded.c.segment,
+            AudioSegment,
         )
         .select_from(AudioFile)
         .join(
             dataset_audio_files,
             dataset_audio_files.c.audio_file_id == AudioFile.id,
         )
-        .join(expanded, true())
+        .join(AudioSegment, AudioSegment.audio_file_id == AudioFile.id)
         .where(dataset_audio_files.c.dataset_id == dataset_id)
     )
     if after is not None:
         statement = statement.where(
-            tuple_(AudioFile.id, expanded.c.ordinality - 1)
+            tuple_(AudioFile.id, AudioSegment.position)
             > tuple_(after.audio_file_id, after.segment_index)
         )
-    return statement.order_by(AudioFile.id, segment_index).limit(limit)
+    return statement.order_by(AudioFile.id, AudioSegment.position).limit(limit)

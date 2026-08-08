@@ -1,11 +1,14 @@
 import { fmtClock } from "@/shared/format";
 import { Icon } from "@/shared/icons";
-import type { AudioFile } from "./api";
+import type { AudioFile, AudioSegment } from "./api";
 
 const CAP = 8;
 
-export function InlineSegments({ file }: { file: AudioFile }) {
-  const segs = file.segment_preview;
+export function InlineSegments({ file, preview, loading }: { file: AudioFile; preview: AudioSegment[] | undefined; loading: boolean }) {
+  if (loading)
+    return <div className="border-b border-line bg-gray-50 py-3 pl-[66px] text-[12.5px] text-txt-dim">Loading segments...</div>;
+
+  const segs = preview ?? [];
 
   if (segs.length === 0)
     return (

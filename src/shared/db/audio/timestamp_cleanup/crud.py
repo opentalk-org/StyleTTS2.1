@@ -14,9 +14,14 @@ from shared.db.datasets.models import dataset_audio_files
 
 
 PARAKEET_TIMESTAMPS = """
-jsonb_path_query_first(
-    audio_files.segments,
-    '$[*] ? (@.type_ == "parakeet").annotations.metadata.text_timestamps'
+(
+    SELECT segments.metadata -> 'text_timestamps'
+    FROM segments
+    WHERE segments.audio_file_id = audio_files.id
+      AND segments.kind = 'parakeet'
+      AND segments.metadata ? 'text_timestamps'
+    ORDER BY segments.position
+    LIMIT 1
 )
 """
 

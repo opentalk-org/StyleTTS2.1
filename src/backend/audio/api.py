@@ -9,8 +9,9 @@ from backend.audio.responses import (
     audio_list_response,
     audio_payload,
     audio_response,
+    segment_response,
 )
-from backend.audio.schemas import AddToDatasetRequest, AudioFileListItem, AudioFilePage, AudioLanguagePayload, AudioRenamePayload, AudioScorePayload, AudioSegmentWrite, AudioSort, AudioStylePromptPayload, AudioVoicePromptPayload
+from backend.audio.schemas import AddToDatasetRequest, AudioFileListItem, AudioFilePage, AudioLanguagePayload, AudioRenamePayload, AudioScorePayload, AudioSegmentRead, AudioSegmentWrite, AudioSort, AudioStylePromptPayload, AudioVoicePromptPayload
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 from shared.db.audio.schemas import AudioCreate, AudioUpdate
@@ -43,8 +44,8 @@ def list_audio_files(
             )
             return AudioFilePage(
                 rows=[
-                    audio_list_response(item, segment_count, segment_preview, preview_sample_rate)
-                    for item, segment_count, segment_preview, preview_sample_rate in rows
+                    audio_list_response(item, segment_count, preview_sample_rate)
+                    for item, segment_count, preview_sample_rate in rows
                 ],
                 next_cursor=next_cursor,
                 has_more=has_more,
@@ -132,6 +133,18 @@ async def delete_audio_file(audio_file_id: uuid.UUID) -> None:
 async def list_audio_files_by_run(run_id: str) -> list[AudioFileListItem]:
     with database_session() as session:
         return [audio_response(item, 0) for item in audio_crud.list_audio_files_by_run(session, run_id)]
+
+
+@router.get("/{audio_file_id}/segment-preview", response_model=list[AudioSegmentRead])
+def get_audio_segment_preview(
+    audio_file_id: uuid.UUID,
+    limit: int = Query(8, ge=1, le=32),
+) -> list[AudioSegmentRead]:
+    with database_session() as session:
+        return [
+            segment_response(segment)
+            for segment in audio_crud.list_audio_segment_previews(session, audio_file_id, limit)
+        ]
 
 
 @router.get("/{audio_file_id}", response_model=AudioFileListItem)

@@ -1,10 +1,9 @@
 from collections.abc import Sequence
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from shared.audio_annotations import AudioAnnotations
-from shared.db.audio.models import AudioFile
+from shared.db.audio.models import AudioFile, AudioSegment
 from shared.db.datasets.models import dataset_audio_files
 from shared.db.speakers.schemas import SpeakerRead
 
@@ -22,7 +21,7 @@ def search_speakers(
         select(
             AudioFile.speaker_id,
             func.count(AudioFile.id).label("audio_files"),
-            func.sum(func.jsonb_array_length(AudioFile.segments)).label("segments"),
+            func.sum(AudioFile.segment_count).label("segments"),
         )
         .where(speaker_filter)
         .group_by(AudioFile.speaker_id)
@@ -88,37 +87,23 @@ def _replace_speaker(
     replacement: str | None,
     commit: bool = True,
 ) -> None:
-    segment_match = AudioFile.segments.contains([
-        {"annotations": {"speaker_id": speaker_id}},
-    ])
-    rows = session.scalars(
-        select(AudioFile).where(or_(AudioFile.speaker_id == speaker_id, segment_match))
-    ).unique().all()
-    if not rows:
+    audio_ids = set(session.scalars(
+        select(AudioFile.id).where(AudioFile.speaker_id == speaker_id)
+    ))
+    segment_audio_ids = set(session.scalars(
+        select(AudioSegment.audio_file_id).where(AudioSegment.speaker_id == speaker_id)
+    ))
+    if not audio_ids and not segment_audio_ids:
         raise KeyError(f"speaker not found: {speaker_id}")
-    for row in rows:
-        if row.speaker_id == speaker_id:
-            row.speaker_id = replacement
-        row.segments = _replace_segment_speakers(row.segments, speaker_id, replacement)
+    session.execute(
+        update(AudioFile)
+        .where(AudioFile.id.in_(audio_ids))
+        .values(speaker_id=replacement)
+    )
+    session.execute(
+        update(AudioSegment)
+        .where(AudioSegment.speaker_id == speaker_id)
+        .values(speaker_id=replacement)
+    )
     if commit:
         session.commit()
-
-
-def _replace_segment_speakers(
-    segments: list[dict],
-    speaker_id: str,
-    replacement: str | None,
-) -> list[dict]:
-    updated = []
-    for segment in segments:
-        annotations = AudioAnnotations.model_validate(segment["annotations"])
-        if annotations.speaker_id != speaker_id:
-            updated.append(segment)
-            continue
-        updated.append({
-            **segment,
-            "annotations": annotations.model_copy(
-                update={"speaker_id": replacement},
-            ).model_dump(mode="json"),
-        })
-    return updated

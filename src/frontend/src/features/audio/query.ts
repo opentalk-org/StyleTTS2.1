@@ -12,6 +12,7 @@ import {
   ensureWaveform,
   fetchAudioFile,
   fetchAudioFiles,
+  fetchAudioSegmentPreview,
   fetchWaveform,
   renameAudioFile,
 } from "./api";
@@ -40,6 +41,15 @@ export function useAudioFileQuery(id: string | null) {
     queryKey: [AUDIO_FILES_KEY, id],
     queryFn: () => fetchAudioFile(id!),
     enabled: id !== null,
+  });
+}
+
+export function useAudioSegmentPreviewQuery(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: [AUDIO_FILES_KEY, "segment-preview", id],
+    queryFn: () => fetchAudioSegmentPreview(id),
+    enabled,
+    staleTime: 60_000,
   });
 }
 

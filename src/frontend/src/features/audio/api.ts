@@ -112,6 +112,10 @@ export function fetchAudioFile(id: string): Promise<AudioFile> {
   return backendRequest<AudioFile>(`/audio-files/${encodeURIComponent(id)}`);
 }
 
+export function fetchAudioSegmentPreview(id: string): Promise<AudioSegment[]> {
+  return backendRequest<AudioSegment[]>(`/audio-files/${encodeURIComponent(id)}/segment-preview?limit=8`);
+}
+
 export function saveAudioSegments(id: string, segments: Segment[]): Promise<AudioFile> {
   return backendRequest<AudioFile>(`/audio-files/${encodeURIComponent(id)}/segments`, {
     method: "PUT",

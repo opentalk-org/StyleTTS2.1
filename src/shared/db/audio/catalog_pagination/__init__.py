@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, or_
 
 from shared.db.audio.models import AudioFile
 
@@ -64,7 +64,7 @@ def _sort_column(sort: str):
     if sort == "duration":
         return AudioFile.duration, True
     if sort == "segments":
-        return func.jsonb_array_length(AudioFile.segments), True
+        return AudioFile.segment_count, True
     if sort == "speaker_id":
         return AudioFile.speaker_id, False
     return AudioFile.updated_at, True

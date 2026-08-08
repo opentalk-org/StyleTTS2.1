@@ -23,7 +23,6 @@ def audio_response(item: AudioFile, segment_limit: int | None) -> AudioFileListI
 def audio_list_response(
     item: AudioFile,
     segment_count: int,
-    segment_preview: list[dict[str, Any]],
     preview_sample_rate: int | None,
 ) -> AudioFileListItem:
     return AudioFileListItem(
@@ -32,7 +31,7 @@ def audio_list_response(
         annotations=AudioAnnotations(
             speaker_id=item.speaker_id,
             score=item.score,
-            accuracy=item.accuracy,
+            accuracy=None,
             metadata={},
         ),
         duration=item.duration,
@@ -43,7 +42,7 @@ def audio_list_response(
         byte_length=item.byte_length,
         size_mb=f"{item.byte_length / 1024 / 1024:.1f}",
         segments=segment_count,
-        segment_preview=[segment_response(segment) for segment in segment_preview],
+        segment_preview=[],
         dataset_ids=[dataset.id for dataset in item.datasets],
         virtual=item.virtual,
         storage_kind=item.storage_kind,

@@ -6,10 +6,11 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from shared.db.assets.models import BucketFile
-from shared.db.audio.models import AudioFile
+from shared.db.audio.models import Alignment, AudioFile, AudioSegment
 from shared.db.audio.pack_store import AudioPackConfig, AudioPackWriter
 from shared.db.audio.catalog import get_audio_files_bulk
 from shared.db.audio.schemas import AudioCreate, AudioUpdate
+from shared.db.audio.segments import bulk_replace_audio_segments
 from shared.storage import ObjectStore
 
 
@@ -35,6 +36,15 @@ def bulk_create_packed_audio_files(
     writer.flush()
     session.add_all(items)
     session.flush()
+    bulk_replace_audio_segments(
+        session,
+        {item.id: payload.segments for item, payload in zip(items, payloads, strict=True)},
+        commit=False,
+        fallback_accuracy={
+            item.id: payload.annotations.accuracy
+            for item, payload in zip(items, payloads, strict=True)
+        },
+    )
     if commit:
         session.commit()
     return items
@@ -53,6 +63,15 @@ def bulk_update_packed_audio_files(
         _decrease_used_bytes(item)
         _replace_item_from_write(item, writer, payloads[audio_file_id])
     writer.flush()
+    bulk_replace_audio_segments(
+        session,
+        {audio_file_id: payload.segments for audio_file_id, payload in payloads.items()},
+        commit=False,
+        fallback_accuracy={
+            audio_file_id: payload.annotations.accuracy
+            for audio_file_id, payload in payloads.items()
+        },
+    )
     if commit:
         session.commit()
     return items
@@ -92,6 +111,9 @@ def bulk_delete_packed_audio_files(
             .values(used_bytes=BucketFile.used_bytes - removed_bytes)
         )
         assert result.rowcount == 1, f"audio pack used bytes would go negative: {pack_id}"
+    segment_ids = select(AudioSegment.id).where(AudioSegment.audio_file_id.in_(ids))
+    session.execute(delete(Alignment).where(Alignment.segment_id.in_(segment_ids)))
+    session.execute(delete(AudioSegment).where(AudioSegment.audio_file_id.in_(ids)))
     session.execute(delete(AudioFile).where(AudioFile.id.in_(ids)))
     if commit:
         session.commit()
@@ -107,11 +129,9 @@ def _create_item_from_write(writer: AudioPackWriter, payload: AudioCreate) -> Au
         duration=payload.duration,
         speaker_id=payload.annotations.speaker_id,
         score=payload.annotations.score,
-        accuracy=payload.annotations.accuracy,
         language=payload.language,
         style_prompt=payload.style_prompt,
         voice_prompt=payload.voice_prompt,
-        segments=payload.segments,
         metadata_=payload.annotations.metadata,
         virtual=payload.virtual,
         storage_kind="packed",
@@ -131,14 +151,12 @@ def _replace_item_from_write(item: AudioFile, writer: AudioPackWriter, payload: 
     item.duration = payload.duration
     item.speaker_id = payload.annotations.speaker_id
     item.score = payload.annotations.score
-    item.accuracy = payload.annotations.accuracy
     if "language" in payload.model_fields_set:
         item.language = payload.language
     if "style_prompt" in payload.model_fields_set:
         item.style_prompt = payload.style_prompt
     if "voice_prompt" in payload.model_fields_set:
         item.voice_prompt = payload.voice_prompt
-    item.segments = payload.segments
     item.metadata_ = payload.annotations.metadata
     item.virtual = payload.virtual
     item.storage_kind = "packed"

@@ -38,6 +38,7 @@ from shared.db.audio.segment_catalog import (
     count_segment_references,
     list_segment_references_page,
 )
+from shared.db.audio.segment_previews import list_audio_segment_previews
 from shared.db.audio.segments import (
     bulk_replace_audio_segments,
     clear_audio_segment_phonemes_batch,

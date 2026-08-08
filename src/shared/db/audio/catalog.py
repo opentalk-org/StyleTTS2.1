@@ -2,8 +2,8 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import Text, cast, desc, func, literal_column, or_, select, text
-from sqlalchemy.orm import Session, defer, lazyload, selectinload
+from sqlalchemy import Text, cast, desc, func, or_, select
+from sqlalchemy.orm import Session, defer, lazyload, noload, selectinload
 
 from shared.audio_annotations import AudioAnnotations
 from shared.db.audio.models import AudioFile
@@ -23,7 +23,7 @@ def audio_file_annotations(item: AudioFile) -> AudioAnnotations:
     return AudioAnnotations(
         speaker_id=item.speaker_id,
         score=item.score,
-        accuracy=item.accuracy,
+        accuracy=None,
         metadata=dict(item.metadata_),
     )
 
@@ -50,22 +50,11 @@ def search_audio_files(
     cursor: str | None,
     preview_limit: int = 8,
     language: str = "",
-) -> tuple[list[tuple[AudioFile, int, list[dict[str, Any]], int | None]], str | None, bool]:
+) -> tuple[list[tuple[AudioFile, int, int | None]], str | None, bool]:
     """List audio files without loading their potentially large segments column."""
     filters = _audio_filters(query, dataset, language)
     order = _audio_sort(sort)
-    segment_count = func.coalesce(
-        func.jsonb_array_length(AudioFile.segments),
-        0,
-    ).label("segment_count")
-    preview_path = text(f"'$[0 to {max(preview_limit - 1, 0)}]'::jsonpath")
-    segment_preview = literal_column(
-        "(SELECT coalesce(jsonb_agg((segment - 'alignment' - 'annotations' - 'text' - 'phon') || "
-        "jsonb_build_object('alignment', 'null'::jsonb, "
-        "'annotations', (segment -> 'annotations') - 'metadata', "
-        "'text', left(segment ->> 'text', 500), 'phon', left(segment ->> 'phon', 500))), '[]'::jsonb) "
-        f"FROM jsonb_array_elements(jsonb_path_query_array(audio_files.segments, {preview_path.text})) AS preview(segment))"
-    ).label("segment_preview")
+    segment_count = AudioFile.segment_count.label("segment_count")
     sample_rate = AudioFile.metadata_["sample_rate"].astext.label("sample_rate")
     page_cursor = AudioCursor.decode(cursor, sort) if cursor is not None else None
 
@@ -73,11 +62,10 @@ def search_audio_files(
         statement = select(
             AudioFile,
             segment_count,
-            segment_preview,
             sample_rate,
         ).options(
-            defer(AudioFile.segments),
             defer(AudioFile.metadata_),
+            noload(AudioFile.segment_rows),
             lazyload(AudioFile.bucket_file),
             selectinload(AudioFile.datasets),
         )
@@ -94,20 +82,21 @@ def search_audio_files(
             page = page.where(cursor_filter(page_cursor))
         page = page.order_by(*order).limit(limit + 1).subquery()
         statement = (
-            select(AudioFile, segment_count, segment_preview, sample_rate)
+            select(AudioFile, segment_count, sample_rate)
             .join(page, AudioFile.id == page.c.id)
             .options(
-                defer(AudioFile.segments),
                 defer(AudioFile.metadata_),
+                noload(AudioFile.segment_rows),
                 lazyload(AudioFile.bucket_file),
                 selectinload(AudioFile.datasets),
             )
             .order_by(*order)
         )
 
+    result_rows = session.execute(statement).all()
     rows = [
-        (row[0], row[1], list(row[2] or []), int(row[3]) if row[3] is not None else None)
-        for row in session.execute(statement).all()
+        (row[0], row[1], int(row[2]) if row[2] is not None else None)
+        for row in result_rows
     ]
     has_more = len(rows) > limit
     rows = rows[:limit]
@@ -215,7 +204,6 @@ def list_audio_file_references_page(
         AudioFile.duration,
         AudioFile.speaker_id,
         AudioFile.score,
-        AudioFile.accuracy,
         AudioFile.language,
         AudioFile.metadata_,
         AudioFile.byte_length,
@@ -241,7 +229,7 @@ def list_audio_file_references_page(
             annotations=AudioAnnotations(
                 speaker_id=row.speaker_id,
                 score=row.score,
-                accuracy=row.accuracy,
+                accuracy=None,
                 metadata=dict(row.metadata_),
             ),
             byte_length=row.byte_length,
@@ -281,7 +269,7 @@ def _audio_sort(sort: str):
     if sort == "duration":
         return desc(AudioFile.duration), AudioFile.id
     if sort == "segments":
-        return desc(func.jsonb_array_length(AudioFile.segments)), AudioFile.id
+        return desc(AudioFile.segment_count), AudioFile.id
     if sort == "speaker_id":
         return AudioFile.speaker_id, AudioFile.id
     return desc(AudioFile.updated_at), AudioFile.id
