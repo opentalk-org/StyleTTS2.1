@@ -49,7 +49,7 @@
             pkgs.zlib
           ];
           runtimeExecutableDeps = [
-            espeakNg
+            pkgs.espeak-ng
             pkgs.ffmpeg-headless
             pkgs.opusTools
             pkgs.cmake
