@@ -40,8 +40,8 @@ dependencies = [
     "munch>=4.0",
     "nemo-toolkit[asr]>=2.0",
     "numba>=0.60",
-    "onnxruntime>=1.23,<1.24",
-    "onnxruntime-gpu>=1.23,<1.24",
+    "onnxruntime>=1.23,<1.24;sys_platform == 'darwin'",
+    "onnxruntime-gpu>=1.23,<1.24;sys_platform == 'linux' and platform_machine == 'x86_64'",
     "openai-whisper>=20240930",
     "pandas>=2.2",
     "phaseaug==1.0.1",
@@ -85,9 +85,9 @@ dependencies = [
 [tool.uv]
 override-dependencies = [
     "numpy>=2.1,<2.5",
-    "torch>=2.11",
-    "torchaudio>=2.11",
-    "torchvision>=0.26",
+    "torch>=2.11,<2.12",
+    "torchaudio>=2.11,<2.12",
+    "torchvision>=0.26,<0.27",
     "transformers>=4.45,<5",
     "nemo-toolkit>=2.7",
     "onnx>=1.19",
@@ -103,6 +103,12 @@ override-dependencies = [
     "pydantic>=2.12.0",
     # descript-audiotools (via fish's descript-audio-codec) caps protobuf<3.20; nemo needs 5.29.x. Force up.
     "protobuf>=5.29.5,<5.30",
+
+    "nvidia-cudnn-frontend>=1.18; sys_platform == 'linux'",
+    "tokenspeed-mla>=0.1.2; sys_platform == 'linux'",
+    "cuda-tile>=1.5.0; sys_platform == 'linux'",
+    "nvidia-cutlass-dsl-libs-base>=4.4.2; sys_platform == 'linux'",
+    "pyaudio>=0.2.14; sys_platform == 'linux'"
 ]
 
 [tool.uv.sources]
