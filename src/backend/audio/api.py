@@ -60,7 +60,6 @@ async def upload_audio_file(
     duration: float = Form(),
     sample_rate: int = Form(),
     dataset_id: str = Form(""),
-    speaker_id: str = Form(""),
 ) -> AudioFileListItem:
     data = await file.read()
     if not data:
@@ -72,7 +71,7 @@ async def upload_audio_file(
     if file.filename is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Audio filename is required")
     try:
-        payload = audio_payload(file, data, duration, sample_rate, speaker_id)
+        payload = audio_payload(file, data, duration, sample_rate)
         return await run_in_threadpool(_persist_uploaded_audio, payload, dataset_id)
     except (KeyError, ValueError) as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error

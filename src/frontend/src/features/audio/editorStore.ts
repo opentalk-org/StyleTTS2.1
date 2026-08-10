@@ -1,11 +1,11 @@
 import { create } from "zustand";
 
-import type { Segment } from "./api";
+import type { AudioSegment } from "./api";
 
 const MIN_SPAN = 2;
 const DEFAULT_SPAN = 45;
 
-function sortSegs(segs: Segment[]): Segment[] {
+function sortSegs(segs: AudioSegment[]): AudioSegment[] {
   return [...segs].sort((a, b) => a.start - b.start || a.end - b.end);
 }
 
@@ -18,7 +18,7 @@ function clampView(start: number, end: number, dur: number): { viewStart: number
 type EditorStore = {
   fileId: string | null;
   dur: number;
-  segs: Segment[];
+  segs: AudioSegment[];
   playPos: number;
   playing: boolean;
   speed: number;
@@ -30,7 +30,7 @@ type EditorStore = {
   segSel: string | null;
   segChecked: string[];
   segQuery: string;
-  load: (fileId: string, dur: number, segs: Segment[]) => void;
+  load: (fileId: string, dur: number, segs: AudioSegment[]) => void;
   seek: (playPos: number) => void;
   togglePlay: () => void;
   setSpeed: (speed: number) => void;
@@ -49,6 +49,7 @@ type EditorStore = {
   setSegText: (id: string, text: string) => void;
   setSegPhon: (id: string, phon: string) => void;
   setSegSpeakerId: (id: string, speaker_id: string) => void;
+  setSegAccuracy: (id: string, accuracy: number | null) => void;
   deleteSeg: (id: string) => void;
   mergeNext: (id: string) => void;
   addSeg: () => void;
@@ -127,6 +128,10 @@ export const useEditor = create<EditorStore>((set) => ({
     set((s) => ({ segs: s.segs.map((g) => (
       g.id === id ? { ...g, annotations: { ...g.annotations, speaker_id } } : g
     )), dirty: true })),
+  setSegAccuracy: (id, accuracy) =>
+    set((s) => ({ segs: s.segs.map((g) => (
+      g.id === id ? { ...g, annotations: { ...g.annotations, accuracy } } : g
+    )), dirty: true })),
   deleteSeg: (id) =>
     set((s) => ({ segs: s.segs.filter((g) => g.id !== id), segChecked: s.segChecked.filter((x) => x !== id), dirty: true })),
   mergeNext: (id) =>
@@ -136,7 +141,7 @@ export const useEditor = create<EditorStore>((set) => ({
       const cur = s.segs[i]!;
       const next = s.segs[i + 1]!;
       const mergedAlignment = cur.alignment || next.alignment ? [...(cur.alignment ?? []), ...(next.alignment ?? [])] : null;
-      const merged: Segment = { ...cur, end: next.end, text: `${cur.text} ${next.text}`.trim(), phon: `${cur.phon} ${next.phon}`.trim(), alignment: mergedAlignment };
+      const merged: AudioSegment = { ...cur, end: next.end, text: `${cur.text} ${next.text}`.trim(), phon: `${cur.phon} ${next.phon}`.trim(), alignment: mergedAlignment };
       const segs = [...s.segs];
       segs.splice(i, 2, merged);
       return { segs, dirty: true, segSel: merged.id };
@@ -144,7 +149,7 @@ export const useEditor = create<EditorStore>((set) => ({
   addSeg: () =>
     set((s) => {
       const start = s.playPos;
-      const seg: Segment = {
+      const seg: AudioSegment = {
         id: `seg_${Date.now()}`,
         start,
         end: Math.min(s.dur, start + 2),
@@ -152,6 +157,7 @@ export const useEditor = create<EditorStore>((set) => ({
         phon: "",
         annotations: { speaker_id: null, score: null, accuracy: null, metadata: {} },
         type_: "manual",
+        alignment: null,
       };
       return { segs: sortSegs([...s.segs, seg]), dirty: true, segSel: seg.id };
     }),

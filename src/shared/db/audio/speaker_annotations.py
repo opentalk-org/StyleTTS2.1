@@ -1,6 +1,6 @@
 import math
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 
 from shared.audio_annotations import AudioAnnotations
 from shared.db.audio.catalog import get_audio_files_bulk
-from shared.db.audio.models import AudioFile
+from shared.db.audio.models import AudioFile, AudioSegment
 from shared.db.audio.segments import bulk_replace_audio_segments
+from shared.db.datasets.models import dataset_audio_files
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,44 @@ class AcceptedSpeakerAssignment:
 class SpeakerAssignmentWriteCounts:
     accepted_assignment_count: int
     updated_audio_count: int
+
+
+def iter_dataset_audio_scores(
+    session: Session,
+    dataset_id: UUID,
+) -> Iterator[tuple[UUID, float]]:
+    statement = (
+        select(AudioFile.id, AudioFile.score)
+        .join(dataset_audio_files, dataset_audio_files.c.audio_file_id == AudioFile.id)
+        .where(
+            dataset_audio_files.c.dataset_id == dataset_id,
+            AudioFile.score.is_not(None),
+        )
+        .order_by(AudioFile.id)
+        .execution_options(yield_per=50_000)
+    )
+    for audio_file_id, score in session.execute(statement):
+        yield audio_file_id, float(score)
+
+
+def list_audio_segment_accuracies(
+    session: Session,
+    audio_file_ids: list[UUID],
+) -> dict[UUID, list[tuple[int, str, float | None]]]:
+    statement = (
+        select(
+            AudioSegment.audio_file_id,
+            AudioSegment.position,
+            AudioSegment.kind,
+            AudioSegment.accuracy,
+        )
+        .where(AudioSegment.audio_file_id.in_(audio_file_ids))
+        .order_by(AudioSegment.audio_file_id, AudioSegment.position)
+    )
+    result = {audio_file_id: [] for audio_file_id in audio_file_ids}
+    for audio_file_id, position, kind, accuracy in session.execute(statement):
+        result[audio_file_id].append((position, kind, accuracy))
+    return result
 
 
 def bulk_apply_speaker_assignments(

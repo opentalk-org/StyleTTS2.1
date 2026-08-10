@@ -2,7 +2,6 @@ import { useState } from "react";
 
 import { useQueryClient } from "@tanstack/react-query";
 import { DATASETS_KEY, useDatasetsQuery } from "@/features/datasets/query";
-import { useSpeakersQuery } from "@/features/speakers/query";
 import { openParamModal, type ParamValues } from "@/shared/feedback/ParamModal";
 import { ProgressBar } from "@/shared/feedback/ProgressBar";
 import { showToast } from "@/shared/feedback/Toast";
@@ -17,7 +16,6 @@ import { type AudioSort, useAudio } from "./store";
 export function AudioToolbar() {
   const { query, language, dataset, sort, limit, setFilters } = useAudio();
   const { data: datasets = [] } = useDatasetsQuery();
-  const { data: speakers } = useSpeakersQuery({ query: "", limit: 200, offset: 0 });
   const queryClient = useQueryClient();
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<AudioUploadProgress | null>(null);
@@ -40,7 +38,6 @@ export function AudioToolbar() {
     try {
       const uploaded = await uploadAudioFiles(files, {
         datasetId: String(values.target),
-        speaker_id: String(values.speaker_id),
       }, setProgress);
       await queryClient.invalidateQueries({ queryKey: [AUDIO_FILES_KEY] });
       await queryClient.invalidateQueries({ queryKey: [DATASETS_KEY] });
@@ -62,7 +59,6 @@ export function AudioToolbar() {
       fields: [
         { key: "files", type: "drop", label: "Drop audio files here or click to browse", hint: "WAV, FLAC, MP3, OGG, M4A", accept: "audio/*,.wav,.flac,.mp3,.ogg,.m4a", multiple: true },
         { key: "target", type: "select", label: "Add to dataset", default: target, options: [{ value: "", label: "No dataset" }, ...datasets.map((d) => ({ value: d.id, label: `${d.name} (${d.files})` }))] },
-        { key: "speaker_id", type: "select", label: "Assign speaker", default: "", options: [{ value: "", label: "None" }, ...(speakers?.rows ?? []).map((speaker) => ({ value: speaker.id, label: speaker.id }))] },
       ],
       onSubmit: (values) => {
         void submitUpload(values);

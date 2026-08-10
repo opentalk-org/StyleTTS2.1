@@ -1,4 +1,5 @@
 from typing import Any
+from pathlib import Path
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -93,6 +94,31 @@ class AudioBucketLocation(BaseModel):
     audio_file_id: UUID
     bucket_file_id: UUID
     byte_length: int
+
+
+class AudioBucketObject(BaseModel):
+    id: UUID
+    path: str
+    size: int
+
+
+class AudioRecoveryReference(BaseModel):
+    id: UUID
+    bucket_file_id: UUID
+    byte_length: int
+    source_parquet_path: str
+    source_row_index: int
+
+
+class AudioRecoveryPlacement(BaseModel):
+    audio_file_id: UUID
+    byte_offset: int
+    byte_length: int
+
+
+class AudioRecoveryPack(BaseModel):
+    local_path: Path
+    placements: list[AudioRecoveryPlacement]
 
 
 class AudioFileReference(BaseModel):

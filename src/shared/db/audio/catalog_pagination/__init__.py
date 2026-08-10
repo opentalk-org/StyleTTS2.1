@@ -38,12 +38,8 @@ class AudioCursor:
 
 def cursor_filter(cursor: AudioCursor):
     column, descending = _sort_column(cursor.sort)
-    if cursor.sort == "speaker_id" and cursor.value is None:
-        return and_(column.is_(None), AudioFile.id > cursor.audio_file_id)
     comparison = column < cursor.value if descending else column > cursor.value
     clauses = [comparison, and_(column == cursor.value, AudioFile.id > cursor.audio_file_id)]
-    if cursor.sort == "speaker_id":
-        clauses.append(column.is_(None))
     return or_(*clauses)
 
 
@@ -52,7 +48,6 @@ def cursor_for_row(sort: str, item: AudioFile, segment_count: int) -> AudioCurso
         "updated": item.updated_at,
         "name": item.name,
         "duration": item.duration,
-        "speaker_id": item.speaker_id,
         "segments": segment_count,
     }
     return AudioCursor(sort=sort, value=values[sort], audio_file_id=item.id)
@@ -65,6 +60,4 @@ def _sort_column(sort: str):
         return AudioFile.duration, True
     if sort == "segments":
         return AudioFile.segment_count, True
-    if sort == "speaker_id":
-        return AudioFile.speaker_id, False
     return AudioFile.updated_at, True

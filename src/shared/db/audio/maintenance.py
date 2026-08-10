@@ -1,14 +1,18 @@
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
-from uuid import UUID
+from collections.abc import Sequence
+from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import bindparam, delete, select, update
 from sqlalchemy.orm import Session
 
 from shared.db.assets.models import BucketFile
 from shared.db.audio.models import AudioFile
 from shared.db.audio.pack_store import AudioPackConfig, AudioPackWriter
+from shared.db.audio.schemas import AudioRecoveryPack
+from shared.db.pack_folders import PackFolderAllocator
 from shared.db.settings import crud as settings_crud
+from shared.db.staged_objects import register_staged_object
 from shared.storage import ObjectStore
 
 
@@ -25,6 +29,70 @@ class CompactResult:
     live_bytes: int
     moved_audio_files: int
     replacement_packs: int
+
+
+@dataclass(frozen=True)
+class RecoveryResult:
+    moved_audio_files: int
+    removed_missing_packs: int
+    replacement_paths: list[str]
+
+
+def recover_missing_audio_packs(
+    session: Session,
+    missing_bucket_ids: Sequence[UUID],
+    recovered_packs: Sequence[AudioRecoveryPack],
+    config: AudioPackConfig = AudioPackConfig(),
+) -> RecoveryResult:
+    store = settings_crud.object_store(session)
+    missing_ids = set(missing_bucket_ids)
+    source_packs = list(session.execute(
+        select(BucketFile).where(BucketFile.id.in_(missing_ids)).with_for_update()
+    ).scalars())
+    assert {pack.id for pack in source_packs} == missing_ids
+    assert all(not store.exists(pack.path) for pack in source_packs)
+    source_rows = session.execute(
+        select(AudioFile.id, AudioFile.bucket_file_id, AudioFile.byte_length)
+        .where(AudioFile.bucket_file_id.in_(missing_ids)).with_for_update()
+    ).all()
+    source = {row.id: row for row in source_rows}
+    placements = [item for pack in recovered_packs for item in pack.placements]
+    assert len(placements) == len(source) == len({item.audio_file_id for item in placements})
+    assert {item.audio_file_id for item in placements} == set(source)
+    allocator = PackFolderAllocator(session, BucketFile, config.path_prefix, config.folder_target_files)
+    replacement_paths = []
+    update_rows = []
+    for recovered in recovered_packs:
+        size = recovered.local_path.stat().st_size
+        cursor = 0
+        for item in sorted(recovered.placements, key=lambda value: value.byte_offset):
+            assert item.byte_offset == cursor
+            assert item.byte_length == source[item.audio_file_id].byte_length
+            cursor += item.byte_length
+        assert cursor == size and 0 < size <= config.target_pack_bytes
+        replacement_id = uuid4()
+        replacement = BucketFile(
+            id=replacement_id,
+            path=allocator.path_for(replacement_id),
+            size=size,
+            used_bytes=size,
+            sealed=True,
+        )
+        session.add(replacement)
+        session.flush()
+        register_staged_object(session, store, replacement.path)
+        store.upload_path(replacement.path, recovered.local_path)
+        assert store.exists(replacement.path)
+        replacement_paths.append(replacement.path)
+        update_rows.extend({"audio_id": item.audio_file_id, "bucket_id": replacement.id,
+                            "byte_offset": item.byte_offset} for item in recovered.placements)
+    statement = update(AudioFile.__table__).where(
+        AudioFile.__table__.c.id == bindparam("audio_id")
+    ).values(bucket_file_id=bindparam("bucket_id"), byte_offset=bindparam("byte_offset"))
+    session.execute(statement, update_rows)
+    session.execute(delete(BucketFile).where(BucketFile.id.in_(missing_ids)))
+    session.commit()
+    return RecoveryResult(len(source), len(source_packs), replacement_paths)
 
 
 def purge_orphaned_audio_packs(

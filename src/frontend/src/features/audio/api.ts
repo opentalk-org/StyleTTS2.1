@@ -22,10 +22,8 @@ export type AudioSegment = {
   phon: string;
   annotations: AudioAnnotations;
   type_: string;
-  alignment?: WordAlignment[] | null;
+  alignment: WordAlignment[] | null;
 };
-
-export type Segment = AudioSegment;
 
 export type AudioFile = {
   id: string;
@@ -63,7 +61,6 @@ export type AudioPage = {
 
 export type AudioUploadOptions = {
   datasetId: string;
-  speaker_id: string;
 };
 
 export type AudioUploadProgress = {
@@ -116,7 +113,7 @@ export function fetchAudioSegmentPreview(id: string): Promise<AudioSegment[]> {
   return backendRequest<AudioSegment[]>(`/audio-files/${encodeURIComponent(id)}/segment-preview?limit=8`);
 }
 
-export function saveAudioSegments(id: string, segments: Segment[]): Promise<AudioFile> {
+export function saveAudioSegments(id: string, segments: AudioSegment[]): Promise<AudioFile> {
   return backendRequest<AudioFile>(`/audio-files/${encodeURIComponent(id)}/segments`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -239,7 +236,6 @@ function uploadAudioFile(
   body.append("duration", String(duration));
   body.append("sample_rate", String(sampleRate));
   body.append("dataset_id", options.datasetId);
-  body.append("speaker_id", options.speaker_id);
   return uploadForm<AudioFile>("/audio-files/upload", body, onProgress);
 }
 

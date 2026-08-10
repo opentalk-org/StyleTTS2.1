@@ -64,7 +64,7 @@ def list_segment_references_page(
             audio_name=row.audio_name,
             audio_duration=row.audio_duration,
             annotations=AudioAnnotations(
-                speaker_id=row.speaker_id,
+                speaker_id=row.AudioSegment.speaker_id,
                 score=row.score,
                 accuracy=None,
                 metadata=dict(row.audio_metadata),
@@ -93,7 +93,6 @@ def segment_references_statement(
             AudioFile.id.label("audio_file_id"),
             AudioFile.name.label("audio_name"),
             AudioFile.duration.label("audio_duration"),
-            AudioFile.speaker_id,
             AudioFile.score,
             AudioFile.metadata_.label("audio_metadata"),
             AudioFile.byte_length.label("audio_byte_length"),

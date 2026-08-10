@@ -69,7 +69,6 @@ export function EditorHeader({
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-3 py-2.5">
           <div className="flex min-w-0 flex-1 basis-[280px] flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] tabular-nums text-txt-mute">
-            <span className="max-w-[220px] truncate rounded-full bg-panel-2 px-2 py-0.5 font-semibold text-txt-dim" title={file.annotations.speaker_id ?? ""}>{file.annotations.speaker_id}</span>
             <span>{fmtDur(duration)}</span>
             <span>{file.sample_rate ? `${file.sample_rate / 1000}kHz` : "unknown rate"}</span>
             <span>{file.size_mb} MB</span>

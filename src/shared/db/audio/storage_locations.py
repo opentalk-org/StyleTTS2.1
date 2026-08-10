@@ -6,7 +6,45 @@ from sqlalchemy.orm import Session
 
 from shared.db.assets.models import BucketFile
 from shared.db.audio.models import AudioFile
-from shared.db.audio.schemas import AudioStorageLocation
+from shared.db.audio.schemas import (
+    AudioBucketObject,
+    AudioRecoveryReference,
+    AudioStorageLocation,
+)
+from shared.db.datasets.models import dataset_audio_files
+
+
+def list_dataset_audio_bucket_objects(
+    session: Session,
+    dataset_id: uuid.UUID,
+) -> list[AudioBucketObject]:
+    statement = (
+        select(BucketFile.id, BucketFile.path, BucketFile.size)
+        .join(AudioFile, AudioFile.bucket_file_id == BucketFile.id)
+        .join(dataset_audio_files, dataset_audio_files.c.audio_file_id == AudioFile.id)
+        .where(dataset_audio_files.c.dataset_id == dataset_id)
+        .distinct()
+        .order_by(BucketFile.id)
+    )
+    return [AudioBucketObject.model_validate(row._mapping) for row in session.execute(statement)]
+
+
+def list_audio_recovery_references(
+    session: Session,
+    bucket_file_ids: Sequence[uuid.UUID],
+) -> list[AudioRecoveryReference]:
+    statement = (
+        select(
+            AudioFile.id,
+            AudioFile.bucket_file_id,
+            AudioFile.byte_length,
+            AudioFile.metadata_["source_parquet_path"].astext.label("source_parquet_path"),
+            AudioFile.metadata_["source_row_index"].as_integer().label("source_row_index"),
+        )
+        .where(AudioFile.bucket_file_id.in_(bucket_file_ids))
+        .order_by("source_parquet_path", "source_row_index")
+    )
+    return [AudioRecoveryReference.model_validate(row._mapping) for row in session.execute(statement)]
 
 
 def audio_storage_locations(

@@ -87,6 +87,10 @@ class ObjectStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def exists(self, path: str) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
     def download(self, path: str) -> bytes:
         raise NotImplementedError
 
@@ -139,6 +143,16 @@ class S3ObjectStore(ObjectStore):
 
     def test_connection(self) -> None:
         self._client.head_bucket(Bucket=self._bucket)
+
+    def exists(self, path: str) -> bool:
+        try:
+            self._client.head_object(Bucket=self._bucket, Key=self._key(path))
+            return True
+        except ClientError as error:
+            code = error.response["Error"]["Code"]
+            if code in {"404", "NoSuchKey", "NotFound"}:
+                return False
+            raise
 
     def download(self, path: str) -> bytes:
         response = self._client.get_object(Bucket=self._bucket, Key=self._key(path))

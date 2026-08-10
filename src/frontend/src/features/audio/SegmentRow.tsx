@@ -2,7 +2,7 @@ import { useSpeakersQuery } from "@/features/speakers/query";
 import { fmtClock } from "@/shared/format";
 import { Icon } from "@/shared/icons";
 import { cn } from "@/shared/ui/cn";
-import type { Segment } from "./api";
+import type { AudioSegment } from "./api";
 import { activeAlignment } from "./editor/alignment";
 import { useEditor } from "./editorStore";
 
@@ -23,9 +23,9 @@ function IconBtn({ icon, title, danger, onClick }: { icon: "play" | "merge" | "t
   );
 }
 
-export function SegmentRow({ seg, index, isLast }: { seg: Segment; index: number; isLast: boolean }) {
+export function SegmentRow({ seg, index, isLast }: { seg: AudioSegment; index: number; isLast: boolean }) {
   const { data: speakers } = useSpeakersQuery({ query: "", limit: 200, offset: 0 });
-  const { segSel, segChecked, playPos, select, toggleCheck, seek, playing, togglePlay, setSegText, setSegPhon, setSegSpeakerId, deleteSeg, mergeNext } = useEditor();
+  const { segSel, segChecked, playPos, select, toggleCheck, seek, playing, togglePlay, setSegText, setSegPhon, setSegSpeakerId, setSegAccuracy, deleteSeg, mergeNext } = useEditor();
   const sel = seg.id === segSel;
   const checked = segChecked.includes(seg.id);
   const currentWord = activeAlignment(seg.alignment, playPos);
@@ -77,9 +77,23 @@ export function SegmentRow({ seg, index, isLast }: { seg: Segment; index: number
               <Icon name="chevron-down" size={11} strokeWidth={2.4} />
             </span>
           </div>
-          <span className="truncate px-1 text-[10.5px] font-semibold uppercase tracking-wide text-txt-mute">
-            {segmentTypeLabel(seg.type_)}
-          </span>
+          <div className="flex min-w-0 items-center gap-1 px-1">
+            <span className="min-w-0 flex-1 truncate text-[10.5px] font-semibold uppercase tracking-wide text-txt-mute">
+              {segmentTypeLabel(seg.type_)}
+            </span>
+            <input
+              type="number"
+              min="0"
+              max="1"
+              step="0.01"
+              value={seg.annotations.accuracy ?? ""}
+              placeholder="Accuracy"
+              aria-label="Segment accuracy"
+              title="Segment accuracy"
+              onChange={(e) => setSegAccuracy(seg.id, e.target.value === "" ? null : e.target.valueAsNumber)}
+              className="h-5 w-12 shrink-0 rounded bg-panel-2 px-1 text-right font-mono text-[10px] font-semibold tabular-nums text-txt outline-none placeholder:text-[9px] placeholder:text-txt-mute focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
         </div>
         <div onClick={(e) => e.stopPropagation()} className="flex min-w-0 flex-col gap-1">
           <input

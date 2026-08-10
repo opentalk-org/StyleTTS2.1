@@ -16,7 +16,6 @@ class AudioFile(Base):
         Index("ix_audio_files_updated_at_id", text("updated_at DESC"), text("id")),
         Index("ix_audio_files_name_id", text("name"), text("id")),
         Index("ix_audio_files_duration_id", text("duration DESC"), text("id")),
-        Index("ix_audio_files_speaker_id_id", text("speaker_id"), text("id")),
         Index("ix_audio_files_segment_count_id", text("segment_count DESC"), text("id")),
         Index(
             "ix_audio_files_split_operation",
@@ -31,7 +30,6 @@ class AudioFile(Base):
     byte_offset: Mapped[int] = mapped_column(BigInteger, nullable=False)
     byte_length: Mapped[int] = mapped_column(BigInteger, nullable=False)
     duration: Mapped[float] = mapped_column(Float, nullable=False)
-    speaker_id: Mapped[str | None] = mapped_column(Text)
     score: Mapped[float | None] = mapped_column(Float)
     segment_count: Mapped[int] = mapped_column(
         Integer,
@@ -59,7 +57,6 @@ class AudioFile(Base):
     @property
     def segments(self) -> list[dict[str, Any]]:
         return [segment.as_payload() for segment in self.segment_rows]
-
 
 class AudioSegment(Base):
     __tablename__ = "segments"

@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from shared.db.audio.models import AudioFile, AudioSegment
+from shared.db.audio.models import AudioSegment
 from shared.db.datasets.models import dataset_audio_files
 from shared.db.speakers.schemas import SpeakerRead
 
@@ -14,18 +14,18 @@ def search_speakers(
     limit: int,
     offset: int,
 ) -> tuple[list[SpeakerRead], int]:
-    speaker_filter = AudioFile.speaker_id.is_not(None)
+    speaker_filter = AudioSegment.speaker_id.is_not(None)
     if query:
-        speaker_filter = speaker_filter & AudioFile.speaker_id.ilike(f"%{query}%")
+        speaker_filter = speaker_filter & AudioSegment.speaker_id.ilike(f"%{query}%")
     statement = (
         select(
-            AudioFile.speaker_id,
-            func.count(AudioFile.id).label("audio_files"),
-            func.sum(AudioFile.segment_count).label("segments"),
+            AudioSegment.speaker_id,
+            func.count(func.distinct(AudioSegment.audio_file_id)).label("audio_files"),
+            func.count(AudioSegment.id).label("segments"),
         )
         .where(speaker_filter)
-        .group_by(AudioFile.speaker_id)
-        .order_by(AudioFile.speaker_id)
+        .group_by(AudioSegment.speaker_id)
+        .order_by(AudioSegment.speaker_id)
         .limit(limit)
         .offset(offset)
     )
@@ -33,7 +33,7 @@ def search_speakers(
     speaker_ids = [row.speaker_id for row in rows]
     datasets = _speaker_datasets(session, speaker_ids)
     total = session.scalar(
-        select(func.count(func.distinct(AudioFile.speaker_id))).where(speaker_filter)
+        select(func.count(func.distinct(AudioSegment.speaker_id))).where(speaker_filter)
     )
     return [
         SpeakerRead(
@@ -71,9 +71,9 @@ def _speaker_datasets(session: Session, speaker_ids: Sequence[str]) -> dict[str,
     if not speaker_ids:
         return datasets
     statement = (
-        select(AudioFile.speaker_id, dataset_audio_files.c.dataset_id)
-        .join(dataset_audio_files, dataset_audio_files.c.audio_file_id == AudioFile.id)
-        .where(AudioFile.speaker_id.in_(speaker_ids))
+        select(AudioSegment.speaker_id, dataset_audio_files.c.dataset_id)
+        .join(dataset_audio_files, dataset_audio_files.c.audio_file_id == AudioSegment.audio_file_id)
+        .where(AudioSegment.speaker_id.in_(speaker_ids))
         .distinct()
     )
     for speaker_id, dataset_id in session.execute(statement):
@@ -87,19 +87,11 @@ def _replace_speaker(
     replacement: str | None,
     commit: bool = True,
 ) -> None:
-    audio_ids = set(session.scalars(
-        select(AudioFile.id).where(AudioFile.speaker_id == speaker_id)
-    ))
     segment_audio_ids = set(session.scalars(
         select(AudioSegment.audio_file_id).where(AudioSegment.speaker_id == speaker_id)
     ))
-    if not audio_ids and not segment_audio_ids:
+    if not segment_audio_ids:
         raise KeyError(f"speaker not found: {speaker_id}")
-    session.execute(
-        update(AudioFile)
-        .where(AudioFile.id.in_(audio_ids))
-        .values(speaker_id=replacement)
-    )
     session.execute(
         update(AudioSegment)
         .where(AudioSegment.speaker_id == speaker_id)

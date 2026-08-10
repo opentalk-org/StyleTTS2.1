@@ -54,10 +54,14 @@ def iter_dataset_training_audio(
     if audio_id_at_most is not None:
         statement = statement.where(AudioFile.id <= audio_id_at_most)
     for item in session.scalars(statement):
+        speaker_ids = {
+            segment["annotations"]["speaker_id"]
+            for segment in item.segments
+        }
         yield DatasetTrainingAudio(
             item.id,
             item.duration,
-            item.speaker_id,
+            speaker_ids.pop() if len(speaker_ids) == 1 else None,
             item.language,
             item.segments,
             item.metadata_,

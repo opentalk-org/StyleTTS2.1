@@ -1,6 +1,8 @@
 from shared.db.audio.speaker_annotations import (
     bulk_apply_speaker_assignments,
     bulk_update_audio_scores,
+    iter_dataset_audio_scores,
+    list_audio_segment_accuracies,
 )
 from shared.db.audio.annotations.crud import (
     replace_audio_language as replace_audio_language,
@@ -17,7 +19,11 @@ from shared.db.audio.catalog import (
     search_audio_file_ids,
     search_audio_files,
 )
-from shared.db.audio.storage_locations import audio_storage_locations
+from shared.db.audio.storage_locations import (
+    audio_storage_locations,
+    list_audio_recovery_references,
+    list_dataset_audio_bucket_objects,
+)
 from shared.db.audio.files import (
     bulk_create_audio_files,
     bulk_delete_audio_files,
@@ -32,6 +38,7 @@ from shared.db.audio.files import (
 from shared.db.audio.maintenance import (
     prune_audio_packs,
     purge_orphaned_audio_packs,
+    recover_missing_audio_packs,
 )
 from shared.db.audio.pack_store import AudioPackConfig
 from shared.db.audio.segment_catalog import (

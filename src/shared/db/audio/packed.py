@@ -127,7 +127,6 @@ def _create_item_from_write(writer: AudioPackWriter, payload: AudioCreate) -> Au
         byte_offset=write.byte_offset,
         byte_length=write.byte_length,
         duration=payload.duration,
-        speaker_id=payload.annotations.speaker_id,
         score=payload.annotations.score,
         language=payload.language,
         style_prompt=payload.style_prompt,
@@ -149,7 +148,6 @@ def _replace_item_from_write(item: AudioFile, writer: AudioPackWriter, payload: 
     item.byte_offset = write.byte_offset
     item.byte_length = write.byte_length
     item.duration = payload.duration
-    item.speaker_id = payload.annotations.speaker_id
     item.score = payload.annotations.score
     if "language" in payload.model_fields_set:
         item.language = payload.language

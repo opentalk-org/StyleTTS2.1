@@ -14,7 +14,6 @@ export function sortOptions(): Option[] {
     { value: "updated", label: "Sort: Recent" },
     { value: "name", label: "Sort: Name" },
     { value: "duration", label: "Sort: Duration" },
-    { value: "speaker_id", label: "Sort: Speaker" },
     { value: "segments", label: "Sort: Segments" },
   ];
 }

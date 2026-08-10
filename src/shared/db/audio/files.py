@@ -217,7 +217,6 @@ def bulk_delete_audio_files(
 def _update_audio_metadata(item: AudioFile, payload: AudioUpdate) -> None:
     item.name = payload.name
     item.duration = payload.duration
-    item.speaker_id = payload.annotations.speaker_id
     item.score = payload.annotations.score
     if "language" in payload.model_fields_set:
         item.language = payload.language

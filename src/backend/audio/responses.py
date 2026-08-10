@@ -29,7 +29,6 @@ def audio_list_response(
         id=item.id,
         name=item.name,
         annotations=AudioAnnotations(
-            speaker_id=item.speaker_id,
             score=item.score,
             accuracy=None,
             metadata={},
@@ -55,7 +54,6 @@ def audio_payload(
     data: bytes,
     duration: float,
     sample_rate: int,
-    speaker_id: str,
 ) -> AudioCreate:
     metadata: dict[str, Any] = {"sample_rate": sample_rate}
     if file.content_type is not None:
@@ -65,7 +63,7 @@ def audio_payload(
         name=file.filename,
         wav_bytes=data,
         duration=duration,
-        annotations=AudioAnnotations(speaker_id=speaker_id or None, metadata=metadata),
+        annotations=AudioAnnotations(metadata=metadata),
         segments=[],
         virtual=False,
     )

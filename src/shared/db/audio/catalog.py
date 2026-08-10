@@ -6,7 +6,7 @@ from sqlalchemy import Text, cast, desc, func, or_, select
 from sqlalchemy.orm import Session, defer, lazyload, noload, selectinload
 
 from shared.audio_annotations import AudioAnnotations
-from shared.db.audio.models import AudioFile
+from shared.db.audio.models import AudioFile, AudioSegment
 from shared.db.audio.catalog_pagination import AudioCursor, cursor_filter, cursor_for_row
 from shared.db.audio.schemas import (
     AudioBucketLocation,
@@ -20,8 +20,9 @@ AUDIO_LOCATION_QUERY_BATCH_SIZE = 50_000
 
 
 def audio_file_annotations(item: AudioFile) -> AudioAnnotations:
+    speaker_ids = {segment.speaker_id for segment in item.segment_rows}
     return AudioAnnotations(
-        speaker_id=item.speaker_id,
+        speaker_id=speaker_ids.pop() if len(speaker_ids) == 1 else None,
         score=item.score,
         accuracy=None,
         metadata=dict(item.metadata_),
@@ -198,11 +199,20 @@ def list_audio_file_references_page(
     after_id: uuid.UUID | None,
     limit: int,
 ) -> list[AudioFileReference]:
+    speaker_id = (
+        select(AudioSegment.speaker_id)
+        .where(AudioSegment.audio_file_id == AudioFile.id)
+        .order_by(AudioSegment.position)
+        .limit(1)
+        .correlate(AudioFile)
+        .scalar_subquery()
+        .label("speaker_id")
+    )
     statement = select(
         AudioFile.id,
         AudioFile.name,
         AudioFile.duration,
-        AudioFile.speaker_id,
+        speaker_id,
         AudioFile.score,
         AudioFile.language,
         AudioFile.metadata_,
@@ -270,8 +280,6 @@ def _audio_sort(sort: str):
         return desc(AudioFile.duration), AudioFile.id
     if sort == "segments":
         return desc(AudioFile.segment_count), AudioFile.id
-    if sort == "speaker_id":
-        return AudioFile.speaker_id, AudioFile.id
     return desc(AudioFile.updated_at), AudioFile.id
 
 

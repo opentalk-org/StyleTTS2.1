@@ -3,7 +3,7 @@ import { type PointerEvent, useRef } from "react";
 import { fmtDur } from "@/shared/format";
 import { WaveformBars } from "@/shared/media/WaveformBars";
 import { cn } from "@/shared/ui/cn";
-import type { Segment } from "./api";
+import type { AudioSegment } from "./api";
 import { activeAlignment, placeAlignmentRows } from "./editor/alignment";
 import { WaveformPeaks } from "./WaveformPeaks";
 
@@ -21,7 +21,7 @@ type Drag = { id: string; mode: DragMode; startX: number; s0: number; e0: number
  * whose last segment has already ended, else a new lane. Overlapping segments
  * land in different lanes. Expects `segs` pre-sorted by start.
  */
-function assignLanes(segs: Segment[]): { placed: { seg: Segment; lane: number }[]; lanes: number } {
+function assignLanes(segs: AudioSegment[]): { placed: { seg: AudioSegment; lane: number }[]; lanes: number } {
   const laneEnds: number[] = [];
   const placed = segs.map((seg) => {
     let lane = laneEnds.findIndex((end) => seg.start >= end - 1e-6);
@@ -59,7 +59,7 @@ export function SegmentTimeline({
   minimapPeaks,
   viewPeaks,
 }: {
-  segs: Segment[];
+  segs: AudioSegment[];
   dur: number;
   playPos: number;
   selId: string | null;
@@ -97,7 +97,7 @@ export function SegmentTimeline({
     onSeek(viewStart + ((e.clientX - r.left) / r.width) * span);
   };
 
-  const onBlockDown = (e: PointerEvent<HTMLDivElement>, seg: Segment) => {
+  const onBlockDown = (e: PointerEvent<HTMLDivElement>, seg: AudioSegment) => {
     e.stopPropagation();
     const width = bodyRef.current?.getBoundingClientRect().width ?? 1;
     const mode = ((e.target as HTMLElement).dataset.handle as DragMode) ?? "move";
@@ -120,7 +120,7 @@ export function SegmentTimeline({
       onSegTime(d.id, d.s0, Math.max(d.s0 + MIN_SEG, Math.min(dur, d.e0 + dt)));
     }
   };
-  const onBlockUp = (seg: Segment) => {
+  const onBlockUp = (seg: AudioSegment) => {
     const d = drag.current;
     drag.current = null;
     if (d && !d.moved) onSeek(seg.start);

@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from shared.audio_annotations import AudioAnnotations
 
 
-AudioSort = Literal["updated", "name", "duration", "speaker_id", "segments"]
+AudioSort = Literal["updated", "name", "duration", "segments"]
 
 
 class WordAlignment(BaseModel):
