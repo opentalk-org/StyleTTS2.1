@@ -10,6 +10,7 @@ import { QueueCard } from "./QueueCard";
 import { MosModelForm } from "./MosModelForm";
 import { SmallModelForm } from "./SmallModelForm";
 import { StyleTtsForm } from "./StyleTtsForm";
+import { TrainingPresetCard } from "./presets/TrainingPresetCard";
 import { useTraining } from "./store";
 import type { TrainTab } from "./store";
 
@@ -53,6 +54,7 @@ export function TrainingScreen() {
           ) : null}
         </div>
         <div className="sticky top-0 flex flex-col gap-3.5">
+          {graph ? <TrainingPresetCard key={trainTab} tab={trainTab} graph={graph} onLoad={updateGraph} /> : null}
           <QueueCard schema={schemaQuery.data ?? null} graph={graph ?? null} />
         </div>
       </div>
