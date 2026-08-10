@@ -68,8 +68,8 @@
           nvidiaDriverDirs = [
             "/usr/local/nvidia/lib"
             "/usr/local/nvidia/lib64"
-            "/usr/lib/x86_64-linux-gnu"
-            "/usr/lib64"
+            #"/usr/lib/x86_64-linux-gnu"
+            # "/usr/lib64"
           ];
           nvidiaDriverPath = pkgs.lib.concatStringsSep ":" nvidiaDriverDirs;
 
