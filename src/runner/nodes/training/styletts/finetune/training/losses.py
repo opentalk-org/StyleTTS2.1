@@ -1,7 +1,28 @@
+from dataclasses import dataclass
+
 import torch
 import torch.nn.functional as F
 import torchaudio
 from torch import Tensor, nn
+
+
+@dataclass(frozen=True)
+class WaveformDiscriminatorLosses:
+    total: Tensor
+    real_lsgan: Tensor
+    generated_lsgan: Tensor
+    tprls: Tensor
+    real_accuracy: Tensor
+    generated_accuracy: Tensor
+    accuracy: Tensor
+
+
+@dataclass(frozen=True)
+class WaveformGeneratorLosses:
+    total: Tensor
+    feature_matching: Tensor
+    lsgan: Tensor
+    tprls: Tensor
 
 
 class STFTLoss(nn.Module):
@@ -78,13 +99,34 @@ def generator_tprls_loss(real_scores, generated_scores) -> Tensor:
     return loss
 
 
-def waveform_discriminator_loss(real_scores, generated_scores) -> Tensor:
-    adversarial = real_scores[0].new_zeros(())
+def waveform_discriminator_losses(
+    real_scores,
+    generated_scores,
+) -> WaveformDiscriminatorLosses:
+    real_lsgan = real_scores[0].new_zeros(())
+    generated_lsgan = real_scores[0].new_zeros(())
+    real_accuracy = real_scores[0].new_zeros(())
+    generated_accuracy = real_scores[0].new_zeros(())
     for real, generated in zip(real_scores, generated_scores, strict=True):
-        adversarial = adversarial + torch.mean((1 - real) ** 2)
-        adversarial = adversarial + torch.mean(generated**2)
-    relative = discriminator_tprls_loss(real_scores, generated_scores)
-    return (adversarial + relative).mean()
+        real_lsgan = real_lsgan + torch.mean((1 - real) ** 2)
+        generated_lsgan = generated_lsgan + torch.mean(generated**2)
+        real_accuracy = real_accuracy + (real > 0.5).float().mean()
+        generated_accuracy = (
+            generated_accuracy + (generated < 0.5).float().mean()
+        )
+    discriminator_count = len(real_scores)
+    real_accuracy = real_accuracy / discriminator_count
+    generated_accuracy = generated_accuracy / discriminator_count
+    tprls = discriminator_tprls_loss(real_scores, generated_scores)
+    return WaveformDiscriminatorLosses(
+        total=(real_lsgan + generated_lsgan + tprls).mean(),
+        real_lsgan=real_lsgan.mean(),
+        generated_lsgan=generated_lsgan.mean(),
+        tprls=tprls.mean(),
+        real_accuracy=real_accuracy,
+        generated_accuracy=generated_accuracy,
+        accuracy=(real_accuracy + generated_accuracy) / 2,
+    )
 
 
 def waveform_generator_losses(
@@ -92,7 +134,7 @@ def waveform_generator_losses(
     generated_scores,
     real_features,
     generated_features,
-) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+) -> WaveformGeneratorLosses:
     feature = generated_scores[0].new_zeros(())
     for real_maps, generated_maps in zip(
         real_features,
@@ -102,10 +144,14 @@ def waveform_generator_losses(
         for real, generated in zip(real_maps, generated_maps, strict=True):
             feature = feature + torch.mean(torch.abs(real - generated))
     feature = feature * 2
-    adversarial = sum(torch.mean((1 - score) ** 2) for score in generated_scores)
-    relative = generator_tprls_loss(real_scores, generated_scores)
-    total = feature + adversarial + relative
-    return total.mean(), feature.mean(), adversarial.mean(), relative.mean()
+    lsgan = sum(torch.mean((1 - score) ** 2) for score in generated_scores)
+    tprls = generator_tprls_loss(real_scores, generated_scores)
+    return WaveformGeneratorLosses(
+        total=(feature + lsgan + tprls).mean(),
+        feature_matching=feature.mean(),
+        lsgan=lsgan.mean(),
+        tprls=tprls.mean(),
+    )
 
 
 def wavlm_feature_loss(real_features, generated_features) -> Tensor:

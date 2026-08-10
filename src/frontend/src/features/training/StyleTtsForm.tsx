@@ -20,6 +20,7 @@ import { stageTemplates, type TrainingStageSpec } from "./styletts-stages/templa
 const MODEL_RUNTIME_TOGGLES = [
   { key: "multispeaker", sub: "Per-speaker style encoder" },
   { key: "load_optimizer", sub: "Resume optimizer state from the base checkpoint." },
+  { key: "reset_training_step", sub: "Keep optimizer state but start a new stage at step zero." },
   { key: "checkpoint_decoder_gradients", sub: "Uses less VRAM; reduces training speed." },
   { key: "checkpoint_discriminator_gradients", sub: "Uses less VRAM; reduces training speed." },
   { key: "profiling_enabled", sub: "CUDA-synchronized timing and VRAM event logging." },

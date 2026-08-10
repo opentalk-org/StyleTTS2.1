@@ -28,3 +28,4 @@ docs/superpowers
 .direnv/
 .dnvr/
 .envrc
+backups/

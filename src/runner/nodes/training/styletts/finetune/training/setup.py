@@ -201,6 +201,8 @@ def _load_base_checkpoint(
         load_only_params=config.load_only_params,
         ignore_modules=ignored,
     )
+    if config.reset_training_step:
+        initial_step = 0
     settings = config.optimizer_params
     for name, module_optimizer in optimizer.optimizers.items():
         learning_rate = settings.bert_lr if name == "bert" else settings.lr

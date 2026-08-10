@@ -54,6 +54,7 @@ def build_config(
     profiling_enabled: bool,
     distributed_processes: int,
     load_optimizer: bool,
+    reset_training_step: bool,
     generator_checkpointing: bool,
     discriminators_checkpointing: bool,
     precision: str,
@@ -74,6 +75,7 @@ def build_config(
     config["profiling_enabled"] = profiling_enabled
     config["distributed_processes"] = int(distributed_processes)
     config["load_only_params"] = not load_optimizer
+    config["reset_training_step"] = reset_training_step
     config["data_params"] = {
         "dataset_id": dataset_id,
         "validation_samples": validation_samples,

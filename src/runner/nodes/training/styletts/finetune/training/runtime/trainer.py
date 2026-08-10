@@ -15,7 +15,7 @@ from ..losses import (
     slm_generator_loss,
     speaker_losses,
     reconstruction_loss,
-    waveform_discriminator_loss,
+    waveform_discriminator_losses,
     waveform_generator_losses,
     wavlm_feature_loss,
 )
@@ -420,7 +420,7 @@ class Trainer:
                     decoder_energy,
                     decoder_voice,
                 )
-        discriminator_loss = reconstructed.new_zeros(())
+        gan_metrics: dict[str, torch.Tensor | float] = {}
         prosody_discriminator_total = reconstructed.new_zeros(())
         slm_discriminator_loss = reconstructed.new_zeros(())
 
@@ -436,23 +436,41 @@ class Trainer:
                         reconstructed.detach().float(),
                         return_features=False,
                     )
-                    loss = waveform_discriminator_loss(
+                    discriminator_losses = waveform_discriminator_losses(
                         real_scores,
                         generated_scores,
                     )
-                accelerator.backward(loss)
+                    prefix = f"gan/{name}/discriminator"
+                    gan_metrics.update(
+                        {
+                            f"{prefix}/real_lsgan": (
+                                discriminator_losses.real_lsgan.detach()
+                            ),
+                            f"{prefix}/generated_lsgan": (
+                                discriminator_losses.generated_lsgan.detach()
+                            ),
+                            f"{prefix}/tprls": (
+                                discriminator_losses.tprls.detach()
+                            ),
+                            f"{prefix}/real_accuracy": (
+                                discriminator_losses.real_accuracy.detach()
+                            ),
+                            f"{prefix}/generated_accuracy": (
+                                discriminator_losses.generated_accuracy.detach()
+                            ),
+                            f"{prefix}/accuracy": (
+                                discriminator_losses.accuracy.detach()
+                            ),
+                        }
+                    )
+                accelerator.backward(discriminator_losses.total)
                 synchronize_gradients(accelerator, modules, (name,))
                 if measure_gradient_norms:
                     gradient_metrics.update(
                         gradient_norm_metrics(accelerator, modules, (name,))
                     )
-                accelerator.clip_grad_norm_(
-                    discriminator.parameters(),
-                    self.config.optimizer_params.gradient_clip_norm,
-                )
                 optimizer.step(name)
                 discriminator.requires_grad_(False)
-                discriminator_loss = discriminator_loss + loss.detach()
 
         if prosody_adversarial:
             prosody_items = (
@@ -496,10 +514,6 @@ class Trainer:
                     gradient_metrics.update(
                         gradient_norm_metrics(accelerator, modules, (name,))
                     )
-                accelerator.clip_grad_norm_(
-                    discriminator.parameters(),
-                    self.config.optimizer_params.gradient_clip_norm,
-                )
                 optimizer.step(name)
                 modules[name].requires_grad_(False)
                 prosody_discriminator_total += loss.detach()
@@ -532,10 +546,6 @@ class Trainer:
                 gradient_metrics.update(
                     gradient_norm_metrics(accelerator, modules, ("wd",))
                 )
-            accelerator.clip_grad_norm_(
-                modules.wd.parameters(),
-                self.config.optimizer_params.gradient_clip_norm,
-            )
             optimizer.step("wd")
             modules.wd.requires_grad_(False)
             slm_discriminator_loss = slm_discriminator_loss.detach()
@@ -645,10 +655,21 @@ class Trainer:
                         reconstructed.float(),
                     )
                 )
-                losses["adversarial"] = period[0] + scale[0]
-                losses["feature_matching"] = period[1] + scale[1]
-                losses["generator_adversarial"] = period[2] + scale[2]
-                losses["relative_adversarial"] = period[3] + scale[3]
+                losses["adversarial"] = period.total + scale.total
+                gan_metrics.update(
+                    {
+                        "gan/mpd/generator/feature_matching": (
+                            period.feature_matching.detach()
+                        ),
+                        "gan/mpd/generator/lsgan": period.lsgan.detach(),
+                        "gan/mpd/generator/tprls": period.tprls.detach(),
+                        "gan/msd/generator/feature_matching": (
+                            scale.feature_matching.detach()
+                        ),
+                        "gan/msd/generator/lsgan": scale.lsgan.detach(),
+                        "gan/msd/generator/tprls": scale.tprls.detach(),
+                    }
+                )
             if weights.wavlm > 0 or slm_adversarial:
                 real_features = None
                 if weights.wavlm > 0:
@@ -795,17 +816,6 @@ class Trainer:
                         group_name="generator",
                     )
                 )
-        trainable_parameters = [
-            parameter
-            for name in trainable
-            for parameter in modules[name].parameters()
-            if parameter.requires_grad
-        ]
-        with profiling_fn("generator_gradient_clip"):
-            accelerator.clip_grad_norm_(
-                trainable_parameters,
-                self.config.optimizer_params.gradient_clip_norm,
-            )
         with profiling_fn("generator_optimizer_step"):
             for name in trainable:
                 optimizer.step(name)
@@ -815,12 +825,12 @@ class Trainer:
             losses,
             weights,
             total,
-            discriminator_loss,
             prosody_discriminator_total,
             slm_discriminator_loss,
             style_batch_std,
             finite,
             gradient_metrics,
+            gan_metrics,
         )
         metrics.update(dual_metrics)
         if style_required and stage.style_source is StyleSource.QUANTIZED:
@@ -836,28 +846,22 @@ class Trainer:
         losses: dict[str, torch.Tensor],
         weights,
         total: torch.Tensor,
-        discriminator_loss: torch.Tensor,
         prosody_discriminator_loss: torch.Tensor,
         slm_discriminator_loss: torch.Tensor,
         style_batch_std: torch.Tensor,
         finite: bool,
         gradient_metrics: dict[str, torch.Tensor | float],
+        gan_metrics: dict[str, torch.Tensor | float],
     ) -> dict[str, torch.Tensor | float]:
         metrics: dict[str, torch.Tensor | float] = {
             item.value: losses[item.value]
             for item in TrainingLoss
             if getattr(weights, item.value) > 0
+            and item is not TrainingLoss.ADVERSARIAL
         }
         metrics["total"] = total.detach()
         if weights.adversarial > 0:
-            metrics["discriminator"] = discriminator_loss
-            metrics["feature_matching"] = losses["feature_matching"]
-            metrics["generator_adversarial"] = losses[
-                "generator_adversarial"
-            ]
-            metrics["relative_adversarial"] = losses[
-                "relative_adversarial"
-            ]
+            metrics.update(gan_metrics)
         if weights.prosody_adversarial > 0:
             metrics["prosody_discriminator"] = prosody_discriminator_loss
             metrics["prosody_generator_adversarial"] = losses[

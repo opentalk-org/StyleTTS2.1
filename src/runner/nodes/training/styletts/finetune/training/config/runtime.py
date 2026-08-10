@@ -31,10 +31,6 @@ class OptimizerConfig(StrictConfigModel):
     lr: float = Field(gt=0)
     bert_lr: float = Field(gt=0)
     ft_lr: float = Field(gt=0)
-    gradient_clip_norm: float = Field(
-        gt=0,
-        description="Global gradient norm limit applied before optimizer updates",
-    )
 
 
 class TrainingConfig(StrictConfigModel):
@@ -48,6 +44,7 @@ class TrainingConfig(StrictConfigModel):
     distributed_processes: int = Field(gt=0)
     device: str
     load_only_params: bool
+    reset_training_step: bool
     precision: Literal["fp16", "bf16", "fp32"]
     pretrained_model: str | None
     ASR_config: dict[str, Any]

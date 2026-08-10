@@ -75,6 +75,10 @@ class StyleTtsFinetuneSettings(StrictSettings):
         le=8,
     )
     load_optimizer: bool = Field(default=False, title="Load optimizer state")
+    reset_training_step: bool = Field(
+        default=False,
+        title="Reset training step after loading checkpoint",
+    )
     decoder: DecoderBackend = Field(default=DecoderBackend.HIFIGAN, title="Decoder")
     multispeaker: bool = Field(default=True, title="Multi-speaker mode")
     checkpoint_decoder_gradients: bool = Field(default=True, title="Checkpoint decoder gradients")

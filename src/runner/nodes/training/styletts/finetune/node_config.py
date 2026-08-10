@@ -79,6 +79,7 @@ def build_node_config(
         profiling_enabled=settings.profiling_enabled,
         distributed_processes=settings.distributed_processes,
         load_optimizer=settings.load_optimizer,
+        reset_training_step=settings.reset_training_step,
         generator_checkpointing=settings.checkpoint_decoder_gradients,
         discriminators_checkpointing=settings.checkpoint_discriminator_gradients,
         precision=settings.numeric_precision.value,
