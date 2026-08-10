@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+import logging
+
 import torch
 from accelerate import Accelerator
 from munch import Munch
@@ -16,6 +18,9 @@ from .losses import MultiResolutionSTFTLoss
 from .modules.plbert import load_plbert
 from .optimizers import MultiOptimizer, build_optimizer
 from .utils import recursive_munch
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -186,7 +191,12 @@ def _load_base_checkpoint(
 ) -> tuple[Munch, MultiOptimizer, int]:
     if config.pretrained_model is None:
         return modules, optimizer, 0
-    ignored = [] if not config.load_only_params else ["mpd", "msd", "wd"]
+    if config.load_only_params:
+        logger.warning(
+            "Checkpoint optimizer state will not be loaded; all optimizer "
+            "state is being replaced with newly initialized state"
+        )
+    ignored: list[str] = []
     for path, name in (
         (config.ASR_path, "text_aligner"),
         (config.F0_path, "pitch_extractor"),

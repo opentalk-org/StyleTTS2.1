@@ -29,3 +29,4 @@ docs/superpowers
 .dnvr/
 .envrc
 backups/
+*.png

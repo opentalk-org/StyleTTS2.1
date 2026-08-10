@@ -94,7 +94,7 @@ def build_config(
     if architecture_path is not None:
         merge_architecture(architecture_path, config)
     _apply_model_overrides(config, multispeaker, decoder_type, generator_checkpointing, discriminators_checkpointing, symbol_count)
-    if architecture_path is None or plbert_path is not None:
+    if "language_count" not in config["model_params"] or plbert_path is not None:
         languages = plbert_config.get("languages", [])
         config["model_params"]["language_count"] = max(2, len(languages) + 1)
     if precision not in ("fp16", "bf16", "fp32"):
