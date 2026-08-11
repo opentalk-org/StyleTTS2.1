@@ -88,8 +88,8 @@ class TrainingStageSpec(BaseModel):
 
     name: str = Field(min_length=1)
     steps: int = Field(gt=0)
-    max_audio_seconds: float = Field(default=40.0, ge=40)
-    max_decoder_seconds: float = Field(default=3.0, ge=3.0, le=120)
+    max_audio_seconds: float = 40.0
+    max_decoder_seconds: float = 3.0
 
     voice_conditioning_dropout: float = Field(default=0.0, ge=0, le=1)
     style_source: StyleSource = StyleSource.QUANTIZED
