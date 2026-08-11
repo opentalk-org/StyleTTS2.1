@@ -2,16 +2,15 @@
   "nodes": {
     "dnvr": {
       "locked": {
-        "lastModified": 1786029549,
-        "narHash": "sha256-RQp6R4S8HvNGnYJLW7qJlTgykbViu+K+IQeVr+KKdUY=",
-        "owner": "adamchol",
+        "lastModified": 1786473914,
+        "narHash": "sha256-AMmBjzzBJH+W45EOQaH5H2DLmNJy0iU8LGn7DU4I46s=",
+        "owner": "dialohq",
         "repo": "dnvr",
-        "rev": "b422a26aac34e095ccaa0b7bb52539e9098d27bd",
+        "rev": "e5d3d57a7d4ec9c8ab6b99698e7cbba9afcceafb",
         "type": "github"
       },
       "original": {
-        "owner": "adamchol",
-        "ref": "postgres-as-unprivileged",
+        "owner": "dialohq",
         "repo": "dnvr",
         "type": "github"
       }

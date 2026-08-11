@@ -15,7 +15,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
     flake-parts.url = "github:hercules-ci/flake-parts";
-    dnvr.url = "github:adamchol/dnvr/postgres-as-unprivileged";
+    dnvr.url = "github:dialohq/dnvr";
   };
 
   outputs =
