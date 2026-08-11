@@ -44,10 +44,17 @@
           ...
         }:
         let
-          runtimeLibs = [
-            pkgs.stdenv.cc.cc.lib
-            pkgs.zlib
+          wheelLibs = [
+            {
+              pkg = pkgs.stdenv.cc.cc.lib;
+              sonames = [ "libstdc++.so.6" ];
+            }
+            {
+              pkg = pkgs.zlib;
+              sonames = [ "libz.so.1" ];
+            }
           ];
+          runtimeLibs = map (library: library.pkg) wheelLibs;
           runtimeExecutableDeps = [
             pkgs.espeak-ng
             pkgs.ffmpeg-headless
@@ -68,10 +75,26 @@
           nvidiaDriverDirs = [
             "/usr/local/nvidia/lib"
             "/usr/local/nvidia/lib64"
-            #"/usr/lib/x86_64-linux-gnu"
-            # "/usr/lib64"
+            "/usr/lib/x86_64-linux-gnu"
+            "/usr/lib/aarch64-linux-gnu"
+            "/run/opengl-driver/lib"
+            "/usr/lib64"
           ];
-          nvidiaDriverPath = pkgs.lib.concatStringsSep ":" nvidiaDriverDirs;
+          sitecustomize = pkgs.linkFarm "runflow-sitecustomize" [
+            {
+              name = "sitecustomize.py";
+              path = ./nix/sitecustomize.py;
+            }
+            {
+              name = "preload.json";
+              path = pkgs.writeText "preload.json" (builtins.toJSON {
+                preload_libs = lib.concatMap (
+                  library: map (soname: "${library.pkg}/lib/${soname}") library.sonames
+                ) wheelLibs;
+                nvidia_driver_dirs = nvidiaDriverDirs;
+              });
+            }
+          ];
 
           resolveTritonLibcuda = lib.optionalString pkgs.stdenv.isLinux ''
             for __d in ${lib.concatStringsSep " " nvidiaDriverDirs}; do
@@ -149,7 +172,7 @@
               UV_PYTHON_PREFERENCE = "only-system";
               UV_PYTHON_DOWNLOADS = "never";
 
-              PYTHONPATH = "$DNVR_ROOT/src";
+              PYTHONPATH = "$DNVR_ROOT/src:${sitecustomize}";
 
               AWS_ACCESS_KEY_ID = "runflow";
               AWS_SECRET_ACCESS_KEY = "runflow-secret";
@@ -176,8 +199,8 @@
             // lib.optionalAttrs pkgs.stdenv.isLinux {
               PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True";
 
-              LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib:${pkgs.ffmpeg-headless.lib}/lib:${pkgs.portaudio}/lib:${nvidiaDriverPath}";
-              LIBRARY_PATH = "${pkgs.portaudio}/lib:${nvidiaDriverPath}";
+              LD_LIBRARY_PATH = "${pkgs.ffmpeg-headless.lib}/lib:${pkgs.portaudio}/lib";
+              LIBRARY_PATH = "${pkgs.portaudio}/lib";
 
               TRITON_PTXAS_PATH = "${cuda}/bin/ptxas";
               TRITON_PTXAS_BLACKWELL_PATH = "${cuda}/bin/ptxas";
