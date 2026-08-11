@@ -159,8 +159,6 @@
             ++ (if pkgs.stdenv.isLinux then linuxDeps else [ ]);
 
             env = {
-              NIX_LD = "${pkgs.stdenv.cc.bintools.dynamicLinker}";
-              NIX_LD_LIBRARY_PATH = "${lib.makeLibraryPath runtimeLibs}";
               CC = lib.getExe pkgs.gcc;
               SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
               PHONEMIZER_ESPEAK_LIBRARY = "${pkgs.espeak-ng}/lib/libespeak-ng.so";
