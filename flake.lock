@@ -2,11 +2,11 @@
   "nodes": {
     "dnvr": {
       "locked": {
-        "lastModified": 1786473914,
-        "narHash": "sha256-AMmBjzzBJH+W45EOQaH5H2DLmNJy0iU8LGn7DU4I46s=",
+        "lastModified": 1786475580,
+        "narHash": "sha256-A1qjIIn0i6LQyDU15nOnJYUzkeYGrPsq+Tig14ryja0=",
         "owner": "dialohq",
         "repo": "dnvr",
-        "rev": "e5d3d57a7d4ec9c8ab6b99698e7cbba9afcceafb",
+        "rev": "61983f96fbd150cf41b4b2feac4aec27ab678868",
         "type": "github"
       },
       "original": {
