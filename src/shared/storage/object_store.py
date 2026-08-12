@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import boto3
+from boto3.exceptions import S3UploadFailedError
+from boto3.s3.transfer import TransferConfig
 from botocore.client import BaseClient
 from botocore.config import Config
 from botocore.exceptions import ClientError, ReadTimeoutError
@@ -17,6 +19,9 @@ from botocore.exceptions import ClientError, ReadTimeoutError
 RANGE_READ_ATTEMPTS = 6
 RANGE_READ_WORKERS = 20
 RANGE_READ_BACKOFF_SECONDS = 0.1
+UPLOAD_ATTEMPTS = 3
+UPLOAD_BACKOFF_SECONDS = 1.0
+UPLOAD_PART_SIZE = 64 * 1024 * 1024
 RETRYABLE_S3_CODES = frozenset(
     {
         "InternalError",
@@ -139,6 +144,11 @@ class S3ObjectStore(ObjectStore):
         self._request_metrics = request_metrics
         self._bucket = config.bucket
         self._folder = _normalize_folder(config.folder)
+        self._upload_config = TransferConfig(
+            multipart_chunksize=UPLOAD_PART_SIZE,
+            max_concurrency=1,
+            use_threads=False,
+        )
         self._client: BaseClient = boto3.client(
             "s3",
             endpoint_url=config.endpoint_url,
@@ -164,7 +174,30 @@ class S3ObjectStore(ObjectStore):
         self._client.put_object(Bucket=self._bucket, Key=self._key(path), Body=data)
 
     def upload_path(self, path: str, source: Path) -> None:
-        self._client.upload_file(str(source), self._bucket, self._key(path))
+        key = self._key(path)
+        for attempt in range(UPLOAD_ATTEMPTS):
+            try:
+                self._client.upload_file(
+                    str(source),
+                    self._bucket,
+                    key,
+                    Config=self._upload_config,
+                )
+                return
+            except S3UploadFailedError:
+                if attempt == UPLOAD_ATTEMPTS - 1:
+                    raise
+                delay = UPLOAD_BACKOFF_SECONDS * (2**attempt)
+                logger.warning(
+                    "S3 upload failed path=%s attempt=%s/%s; retrying in %.2fs",
+                    path,
+                    attempt + 1,
+                    UPLOAD_ATTEMPTS,
+                    delay,
+                    exc_info=True,
+                )
+                time.sleep(delay)
+        raise AssertionError("file upload retry loop exhausted")
 
     def test_connection(self) -> None:
         self._client.head_bucket(Bucket=self._bucket)
