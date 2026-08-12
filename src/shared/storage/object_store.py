@@ -148,6 +148,7 @@ class S3ObjectStore(ObjectStore):
             config=Config(
                 response_checksum_validation="when_required",
                 max_pool_connections=RANGE_READ_WORKERS,
+                read_timeout=1.5,
             ),
         )
         if request_metrics is not None:
