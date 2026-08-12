@@ -9,6 +9,14 @@ THROUGHPUT_METRICS = (
     "items_per_second",
     "steps_per_second",
 )
+OVERHEAD_METRICS = (
+    "data_wait",
+    "compute",
+    "validation",
+    "checkpoint",
+    "reporting",
+    "residual",
+)
 
 
 @dataclass
@@ -41,10 +49,21 @@ class TrainingTelemetry:
     validation_seconds: float = 0.0
     checkpoint_seconds: float = 0.0
     reporting_seconds: float = 0.0
+    previous_measured_seconds: dict[str, float] = field(
+        default_factory=lambda: {
+            name: 0.0 for name in OVERHEAD_METRICS if name != "residual"
+        }
+    )
     throughput_averages: dict[str, RollingAverage] = field(
         default_factory=lambda: {
             name: RollingAverage(THROUGHPUT_WINDOW_STEPS)
             for name in THROUGHPUT_METRICS
+        }
+    )
+    overhead_averages: dict[str, RollingAverage] = field(
+        default_factory=lambda: {
+            name: RollingAverage(THROUGHPUT_WINDOW_STEPS)
+            for name in (*OVERHEAD_METRICS, "elapsed")
         }
     )
 
@@ -82,21 +101,25 @@ class TrainingTelemetry:
         self.previous_audio_seconds_trained = self.audio_seconds_trained
         steps_per_second = averages["steps_per_second"]
         eta_seconds = (self.total_steps - step) / steps_per_second
-        measured = (
-            self.data_wait_seconds
-            + self.compute_seconds
-            + self.validation_seconds
-            + self.checkpoint_seconds
-            + self.reporting_seconds
-        )
-        overhead = {
-            "data_wait": self.data_wait_seconds,
-            "compute": self.compute_seconds,
-            "validation": self.validation_seconds,
-            "checkpoint": self.checkpoint_seconds,
-            "reporting": self.reporting_seconds,
-            "residual": max(elapsed - measured, 0.0),
+        measured_totals = {
+            name: getattr(self, f"{name}_seconds")
+            for name in OVERHEAD_METRICS
+            if name != "residual"
         }
+        overhead = {
+            name: total - self.previous_measured_seconds[name]
+            for name, total in measured_totals.items()
+        }
+        overhead["residual"] = max(
+            step_elapsed - sum(overhead.values()),
+            0.0,
+        )
+        window_elapsed = self.overhead_averages["elapsed"].step(step_elapsed)
+        window_overhead = {
+            name: self.overhead_averages[name].step(value)
+            for name, value in overhead.items()
+        }
+        self.previous_measured_seconds = measured_totals
         metrics = {
             **{
                 f"performance/{name}": value
@@ -108,8 +131,8 @@ class TrainingTelemetry:
         }
         metrics.update(
             {
-                f"overhead/{name}_percent": 100 * value / elapsed
-                for name, value in overhead.items()
+                f"overhead/{name}_percent": 100 * value / window_elapsed
+                for name, value in window_overhead.items()
             }
         )
         return metrics
