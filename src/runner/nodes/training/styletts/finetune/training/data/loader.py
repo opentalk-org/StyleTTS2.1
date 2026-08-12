@@ -16,7 +16,7 @@ from shared.storage import S3RequestMetrics
 
 from .database_dataset import DatabaseBatchDataset
 from .pipeline import PrefetchedDataPipeline
-from .records import TrainingBatch
+from .records import LoadedTrainingBatch, LoaderTelemetry, TrainingBatch
 
 logger = logging.getLogger(__name__)
 
@@ -138,21 +138,27 @@ class Collater:
             output_lengths[bid] = mel_size
             waves[bid] = wave
 
-        return TrainingBatch(
-            waves=tuple(waves),
-            audio_durations=tuple(row[5] for row in batch),
-            bucket_fetch_seconds=request_metrics.fetch_seconds,
-            bucket_fetch_bytes=request_metrics.fetch_bytes,
-            bucket_request_seconds=request_metrics.response_seconds,
-            bucket_request_count=request_metrics.request_count,
-            bucket_error_count=request_metrics.error_count,
-            speaker_ids=labels,
-            language_ids=language_ids,
-            modality_ids=modality_ids,
-            texts=texts,
-            input_lengths=input_lengths,
-            mels=mels,
-            mel_lengths=output_lengths,
+        return LoadedTrainingBatch(
+            batch=TrainingBatch(
+                waves=tuple(waves),
+                audio_durations=tuple(row[5] for row in batch),
+                speaker_ids=labels,
+                language_ids=language_ids,
+                modality_ids=modality_ids,
+                texts=texts,
+                input_lengths=input_lengths,
+                mels=mels,
+                mel_lengths=output_lengths,
+            ),
+            telemetry=LoaderTelemetry(
+                bucket_fetch_seconds=request_metrics.fetch_seconds,
+                bucket_fetch_bytes=request_metrics.fetch_bytes,
+                bucket_request_seconds=request_metrics.response_seconds,
+                bucket_request_count=request_metrics.request_count,
+                bucket_error_count=request_metrics.error_count,
+                failed_queries=request_metrics.failed_queries,
+                failed_query_codes=dict(request_metrics.failed_query_codes),
+            ),
         )
 
 

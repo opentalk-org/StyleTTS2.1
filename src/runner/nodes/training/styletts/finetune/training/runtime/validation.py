@@ -309,7 +309,8 @@ class Validator:
         samples: list[ValidationSampleArtifacts] = []
         count = 0
         with torch.no_grad():
-            for batch in batches:
+            for loaded_batch in batches:
+                batch = loaded_batch.batch
                 check_cancel()
                 batch = batch.to(self.runtime.accelerator.device)
                 values, exported, rfsq_indices = self._validate_batch(

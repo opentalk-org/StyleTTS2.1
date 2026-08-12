@@ -1,4 +1,6 @@
+import logging
 import os
+import random
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -12,8 +14,19 @@ from botocore.client import BaseClient
 from botocore.config import Config
 from botocore.exceptions import ClientError, ReadTimeoutError
 
-RANGE_READ_ATTEMPTS = 3
+RANGE_READ_ATTEMPTS = 6
 RANGE_READ_WORKERS = 20
+RANGE_READ_BACKOFF_SECONDS = 0.1
+RETRYABLE_S3_CODES = frozenset(
+    {
+        "InternalError",
+        "RequestTimeout",
+        "ServiceUnavailable",
+        "SlowDown",
+    }
+)
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -55,6 +68,8 @@ class S3RequestMetrics:
         self.response_seconds = 0.0
         self.fetch_seconds = 0.0
         self.fetch_bytes = 0
+        self.failed_queries = 0
+        self.failed_query_codes: dict[str, int] = {}
         self._lock = threading.Lock()
 
     def before_call(self, context, **_kwargs) -> None:
@@ -72,6 +87,14 @@ class S3RequestMetrics:
             self.request_count += 1
             self.error_count += int(failed)
             self.response_seconds += time.monotonic() - started
+
+    def record_failed_query(self, code: str) -> None:
+        with self._lock:
+            self.failed_queries += 1
+            self.failed_query_codes[code] = (
+                self.failed_query_codes.get(code, 0) + 1
+            )
+
 
 class ObjectStore(ABC):
     @abstractmethod
@@ -113,6 +136,7 @@ class S3ObjectStore(ObjectStore):
         config: ObjectStoreConfig,
         request_metrics: S3RequestMetrics | None = None,
     ) -> None:
+        self._request_metrics = request_metrics
         self._bucket = config.bucket
         self._folder = _normalize_folder(config.folder)
         self._client: BaseClient = boto3.client(
@@ -170,12 +194,25 @@ class S3ObjectStore(ObjectStore):
                 data = response["Body"].read()
                 break
             except (ClientError, ReadTimeoutError) as error:
-                retryable = (
-                    isinstance(error, ReadTimeoutError)
-                    or error.response["Error"]["Code"] == "NoSuchKey"
-                )
+                code = _range_error_code(error)
+                if self._request_metrics is not None:
+                    self._request_metrics.record_failed_query(code)
+                retryable = _retryable_range_error(error)
                 if not retryable or attempt == RANGE_READ_ATTEMPTS - 1:
                     raise
+                delay = (
+                    RANGE_READ_BACKOFF_SECONDS
+                    * (2**attempt)
+                    * random.uniform(0.75, 1.25)
+                )
+                logger.warning(
+                    "S3 range query failed code=%s attempt=%s/%s; retrying in %.2fs",
+                    code,
+                    attempt + 1,
+                    RANGE_READ_ATTEMPTS,
+                    delay,
+                )
+                time.sleep(delay)
         else:
             raise AssertionError(
                 "range read retry loop exhausted without returning or raising"
@@ -211,3 +248,18 @@ def _normalize_folder(folder: str) -> str:
     if stripped in {"", "."}:
         return ""
     return stripped
+
+
+def _retryable_range_error(error: ClientError | ReadTimeoutError) -> bool:
+    if isinstance(error, ReadTimeoutError):
+        return True
+    response = error.response
+    code = response["Error"]["Code"]
+    status = int(response["ResponseMetadata"]["HTTPStatusCode"])
+    return code in RETRYABLE_S3_CODES or status >= 500
+
+
+def _range_error_code(error: ClientError | ReadTimeoutError) -> str:
+    if isinstance(error, ReadTimeoutError):
+        return "ReadTimeoutError"
+    return str(error.response["Error"]["Code"])

@@ -11,11 +11,6 @@ from ...studio.val_sample_export import ValidationSampleArtifacts
 class TrainingBatch:
     waves: tuple[np.ndarray, ...]
     audio_durations: tuple[float, ...]
-    bucket_fetch_seconds: float
-    bucket_fetch_bytes: int
-    bucket_request_seconds: float
-    bucket_request_count: int
-    bucket_error_count: int
     speaker_ids: Tensor
     language_ids: Tensor
     modality_ids: Tensor
@@ -38,6 +33,23 @@ class TrainingBatch:
                 else value
             )
         return TrainingBatch(**values)
+
+
+@dataclass(frozen=True)
+class LoaderTelemetry:
+    bucket_fetch_seconds: float
+    bucket_fetch_bytes: int
+    bucket_request_seconds: float
+    bucket_request_count: int
+    bucket_error_count: int
+    failed_queries: int
+    failed_query_codes: dict[str, int]
+
+
+@dataclass(frozen=True)
+class LoadedTrainingBatch:
+    batch: TrainingBatch
+    telemetry: LoaderTelemetry
 
 
 @dataclass(frozen=True)
