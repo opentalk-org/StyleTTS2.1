@@ -11,6 +11,8 @@ from mlflow import MlflowClient
 from mlflow.entities import Metric
 from mlflow.system_metrics.system_metrics_monitor import SystemMetricsMonitor
 
+from .git_provenance import require_clean_git_commit
+
 logger = logging.getLogger(__name__)
 MAX_PENDING_OPERATIONS = 256
 
@@ -32,6 +34,8 @@ class TrackerRun(Protocol):
 
 
 class TrackingClient(Protocol):
+    def set_tag(self, run_id: str, key: str, value: object) -> object: ...
+
     def log_metric(
         self, run_id: str, key: str, value: float, *, step: int, synchronous: bool
     ) -> "PendingOperation": ...
@@ -137,6 +141,7 @@ class MlflowRun:
 
 def start_mlflow_run(*, experiment: str, name: str, config: dict[str, object]) -> TrackerRun:
     """Create an MLflow run without relying on process-global active-run state."""
+    git_commit = require_clean_git_commit()
     client = MlflowClient(tracking_uri=os.environ["MLFLOW_TRACKING_URI"])
     experiment_record = client.get_experiment_by_name(experiment)
     experiment_id = (
@@ -144,8 +149,14 @@ def start_mlflow_run(*, experiment: str, name: str, config: dict[str, object]) -
         if experiment_record is None
         else experiment_record.experiment_id
     )
-    run = client.create_run(experiment_id, tags={"mlflow.runName": name})
-    client.log_dict(run.info.run_id, config, "config.json")
+    run = client.create_run(
+        experiment_id,
+        tags={
+            "mlflow.runName": name,
+            "mlflow.source.git.commit": git_commit,
+        },
+    )
+    client.log_dict(run.info.run_id, {**config, "git_commit": git_commit}, "config.json")
     logger.info("MLflow run started experiment=%s name=%s", experiment, name)
     return MlflowRun(
         client,
@@ -156,9 +167,11 @@ def start_mlflow_run(*, experiment: str, name: str, config: dict[str, object]) -
 
 def resume_mlflow_run(run_id: str) -> TrackerRun:
     """Attach metric and artifact logging to an existing MLflow run."""
+    git_commit = require_clean_git_commit()
     client = MlflowClient(tracking_uri=os.environ["MLFLOW_TRACKING_URI"])
     run = client.get_run(run_id)
     client.update_run(run_id, status="RUNNING")
+    client.set_tag(run_id, "mlflow.source.git.commit", git_commit)
     logger.info(
         "MLflow run resumed experiment_id=%s run_id=%s",
         run.info.experiment_id,

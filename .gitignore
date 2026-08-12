@@ -30,3 +30,4 @@ docs/superpowers
 .envrc
 backups/
 *.png
+scripts/

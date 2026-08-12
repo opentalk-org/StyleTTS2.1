@@ -9,18 +9,18 @@ This project is a ComfyUI-style workflow system for typed, batched, concurrent p
 ## Repository layout
 
 - `src/runflow/` — core graph/runtime library. This must stay domain-agnostic.
-- `src/backend/` — FastAPI backend that serves the UI/API, loads workflows, persists status, publishes runner commands over NATS, and exposes runtime results.
-- `src/runner/` — NATS-backed worker/CLI that runs workflows using `runflow` and owns project-specific node definitions.
+- `src/backend/` — FastAPI backend that serves the UI/API, loads workflows, persists status, and exposes runtime results.
+- `src/runner/` — worker/CLI that runs workflows using `runflow` and owns project-specific node definitions.
 - `src/shared/` — shared database, storage, event, logging, and schema code used by both backend and runner.
 - `src/frontend/` — visual editor/client UI for nodes, typed sockets, workflow editing, and job monitoring.
 - `workflows/` — example graph JSON definitions used as smoke workflows.
 
 ## Technology Stack
 
-- backend: fastapi, sqlalchemy, pydantic, postgresql, nats jetstream, s3-compatible object storage
+- backend: fastapi, sqlalchemy, pydantic, postgresql, s3-compatible object storage
 - frontend: react, tanstack query/form, tailwind css, zustand for local state
 - runflow: pydantic
-- runner: nats worker/cli, sqlalchemy through shared db facades, pydantic
+- runner: worker/cli, sqlalchemy through shared db facades, pydantic
 
 ## Architecture rules
 
@@ -74,15 +74,15 @@ This project is a ComfyUI-style workflow system for typed, batched, concurrent p
 
 ## Development workflow
 
-- Run all project commands through `./nix/run-venv.sh <command> [arguments...]`. This is the single supported entry point for the Nix development shell, project `.venv`, local service environment, and repository user; do not assemble equivalent `nix develop`, `runuser`, `.venv`, database, MLflow, or S3 command lines in individual sessions.
+- Run all project commands through `nix develop -c <command> [arguments...]`. The development shell provides the project `.venv`, shared libraries, and local service environment; do not invoke project tools directly from the host shell.
 - Before changing behavior, find the relevant example or smoke workflow and run it before and after the change when practical.
-- Do not run backend, runner, CLI, Python, pytest, uv, npm, node, or equivalent `nix develop`/`.venv` commands directly from the host shell. The wrapper provides the correct shared libraries and environment.
-- Manage the local NATS JetStream, backend, and runner through the single shared Zellij session: `./nix/run-venv.sh runflow-dev-session`. This attaches to the existing `runflow-dev` session or creates it and starts the stack once. Check it with `./nix/run-venv.sh runflow-dev-status`; stop it with `./nix/run-venv.sh runflow-dev-stop`. Never start a second stack or run `runflow-dev` directly when the shared session exists. Do not use `sudo`.
-- The project virtual environment is at `/workspace/styletts_studio_v2/.venv`, but access it only through `./nix/run-venv.sh`; do not invoke `.venv/bin/python`, `python`, or other venv binaries directly from the host shell.
-- Torch and other project Python libraries are available through the project interpreter: use `./nix/run-venv.sh python -m <module> ...` or `./nix/run-venv.sh python <script.py>`. Verify the environment with `./nix/run-venv.sh python -c 'import torch; print(torch.__version__)'`.
-- Add or change Python dependencies in `pyproject.toml`, then update the lock with `./nix/run-venv.sh uv ...`; do not install packages with `pip install` into the environment.
-- For backend or frontend changes, use the package manager and commands already present in that subproject, but invoke them through `./nix/run-venv.sh`. Do not introduce a new toolchain unless requested.
-- Always test nodes by running them through a real graph, never by importing the node class and calling `execute()` by hand. Direct calls skip registration, port typing, `setup`/`teardown`, batching, resource leasing, and routing, so "works in my script" does not mean "works from the UI". Build a small graph (reuse the `Testing*` input feeders in `src/runner/nodes/testing/`), submit it via `POST /graphs/runs` (the exact path the UI uses — runs on the same local or remote runner), then inspect results with the `src/cli` tool through the wrapper: `./nix/run-venv.sh python -m cli runs`, `./nix/run-venv.sh python -m cli logs <run_id>` for aggregated logs, `./nix/run-venv.sh python -m cli node-log <run_id> <node>`, and `./nix/run-venv.sh python -m cli failed <run_id>` to pull a failed node's error and traceback. See `src/cli/README.md`. A node that runs clean here runs clean in the UI.
+- Manage PostgreSQL, PgBouncer, RustFS, MLflow, backend, frontend, migrations, and runner together with one `nix develop -c dnvr up` session. Use the mprocs `s` action to restart a stopped service and `q` to stop the stack; never launch scoped service scripts or a second stack manually. Check service state with `nix develop -c dnvr ps`.
+- Do not run backend, runner, CLI, Python, pytest, uv, npm, node, or `.venv` commands directly from the host shell. Enter the environment with `nix develop` or run one command with `nix develop -c`.
+- The project virtual environment is at `/workspace/styletts_studio_v2/.venv`, but access it through `nix develop`; do not invoke `.venv/bin/python` or other venv binaries directly from the host shell.
+- Torch and other project Python libraries are available through the development shell: use `nix develop -c python -m <module> ...` or `nix develop -c python <script.py>`. Verify the environment with `nix develop -c python -c 'import torch; print(torch.__version__)'`.
+- Add or change Python dependencies in `pyproject.toml`, then update the lock with `nix develop -c uv ...`; do not install packages with `pip install` into the environment.
+- For backend or frontend changes, use the package manager and commands already present in that subproject, invoked through `nix develop -c`. Do not introduce a new toolchain unless requested.
+- Always test nodes by running them through a real graph, never by importing the node class and calling `execute()` by hand. Direct calls skip registration, port typing, `setup`/`teardown`, batching, resource leasing, and routing, so "works in my script" does not mean "works from the UI". Build a small graph (reuse the `Testing*` input feeders in `src/runner/nodes/testing/`), submit it via `POST /graphs/runs` (the exact path the UI uses — runs on the same local or remote runner), then inspect results with the `src/cli` tool through the development shell: `nix develop -c python -m cli runs`, `nix develop -c python -m cli logs <run_id>` for aggregated logs, `nix develop -c python -m cli node-log <run_id> <node>`, and `nix develop -c python -m cli failed <run_id>` to pull a failed node's error and traceback. See `src/cli/README.md`. A node that runs clean here runs clean in the UI.
 - Do not keep committed tests in the repo unless explicitly requested. Temporary throwaway tests/scripts are allowed and preferable for validating behavior, but remove them before finishing.
 
 ## Change discipline
