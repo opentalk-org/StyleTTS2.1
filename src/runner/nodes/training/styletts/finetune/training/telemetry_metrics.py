@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 
 THROUGHPUT_WINDOW_STEPS = 50
 THROUGHPUT_METRICS = (
-    "audio_seconds_per_second",
     "items_per_second",
     "steps_per_second",
 )
@@ -60,6 +59,12 @@ class TrainingTelemetry:
             for name in THROUGHPUT_METRICS
         }
     )
+    audio_throughput_averages: dict[str, RollingAverage] = field(
+        default_factory=lambda: {
+            name: RollingAverage(THROUGHPUT_WINDOW_STEPS)
+            for name in ("audio_seconds", "elapsed_seconds")
+        }
+    )
     overhead_averages: dict[str, RollingAverage] = field(
         default_factory=lambda: {
             name: RollingAverage(THROUGHPUT_WINDOW_STEPS)
@@ -83,9 +88,6 @@ class TrainingTelemetry:
         elapsed = now - self.started_at
         step_elapsed = now - self.last_step_at
         rates = {
-            "audio_seconds_per_second": (
-                self.audio_seconds_trained - self.previous_audio_seconds_trained
-            ) / step_elapsed,
             "items_per_second": (
                 self.items_processed - self.previous_items_processed
             ) / step_elapsed,
@@ -95,6 +97,18 @@ class TrainingTelemetry:
             name: self.throughput_averages[name].step(value)
             for name, value in rates.items()
         }
+        window_audio_seconds = self.audio_throughput_averages[
+            "audio_seconds"
+        ].step(
+            self.audio_seconds_trained
+            - self.previous_audio_seconds_trained
+        )
+        window_audio_elapsed = self.audio_throughput_averages[
+            "elapsed_seconds"
+        ].step(step_elapsed)
+        averages["audio_seconds_per_second"] = (
+            window_audio_seconds / window_audio_elapsed
+        )
         self.last_step_at = now
         self.last_step = step
         self.previous_items_processed = self.items_processed
