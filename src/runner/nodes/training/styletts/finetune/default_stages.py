@@ -67,15 +67,15 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
     mel_weights = weights.model_copy(
         update={
             "mel": 1,
-            "sequence_alignment": 1,
-            "monotonic_alignment": 10,
+            "sequence_alignment": 0.2,
+            "monotonic_alignment": 5,
         }
     )
     tma_weights = weights.model_copy(
         update={
             "mel": 5,
-            "sequence_alignment": 1,
-            "monotonic_alignment": 10,
+            "sequence_alignment": 0.2,
+            "monotonic_alignment": 5,
             "adversarial": 1,
             "wavlm": 1,
             "speaker_feature": 1,
