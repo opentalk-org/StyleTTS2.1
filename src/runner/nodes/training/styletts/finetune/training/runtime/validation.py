@@ -80,26 +80,26 @@ def rvq_usage_metrics(counts: torch.Tensor) -> dict[str, torch.Tensor]:
     dead_fractions = []
     perplexities = []
     top_shares = []
-    level_count = counts.size(1)
-    for index, level_counts in enumerate(counts):
-        assignments = level_counts.sum()
-        probabilities = level_counts.float() / assignments
-        active = (level_counts > 0).sum()
+    code_count = counts.size(1)
+    for index, code_counts in enumerate(counts):
+        assignments = code_counts.sum()
+        probabilities = code_counts.float() / assignments
+        active = (code_counts > 0).sum()
         nonzero = probabilities > 0
         perplexity = torch.exp(
             -(probabilities[nonzero] * probabilities[nonzero].log()).sum()
         )
-        utilization = active.float() / level_count
+        utilization = active.float() / code_count
         top_share = probabilities.max()
         prefix = f"rvq/stage_{index:02d}"
-        metrics[f"{prefix}/active_levels"] = active.float()
+        metrics[f"{prefix}/active_codes"] = active.float()
         metrics[f"{prefix}/utilization"] = utilization
-        metrics[f"{prefix}/dead_level_fraction"] = 1 - utilization
+        metrics[f"{prefix}/dead_code_fraction"] = 1 - utilization
         metrics[f"{prefix}/perplexity"] = perplexity
         metrics[f"{prefix}/normalized_perplexity"] = (
-            perplexity / level_count
+            perplexity / code_count
         )
-        metrics[f"{prefix}/top_level_share"] = top_share
+        metrics[f"{prefix}/top_code_share"] = top_share
         utilizations.append(utilization)
         dead_fractions.append(1 - utilization)
         perplexities.append(perplexity)
