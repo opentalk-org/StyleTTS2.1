@@ -277,13 +277,12 @@ class Trainer:
             duration_real = batch.mels.new_zeros(duration_shape)
             duration_fake = batch.mels.new_zeros(duration_shape)
             if prosody_adversarial or weights.style_reconstruction > 0:
-                with torch.no_grad():
-                    prosody_fake = prosody_inputs(
-                        text_encoding,
-                        monotonic,
-                        predicted_f0,
-                        predicted_energy,
-                    )
+                prosody_fake = prosody_inputs(
+                    text_encoding,
+                    monotonic,
+                    predicted_f0,
+                    predicted_energy,
+                )
             if prosody_adversarial:
                 predicted_duration = torch.sigmoid(duration_predictions).sum(-1)
                 predicted_duration = predicted_duration.masked_fill(text_mask, 0.0)
