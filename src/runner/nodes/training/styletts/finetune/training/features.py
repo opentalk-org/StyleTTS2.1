@@ -1,15 +1,15 @@
-from typing import Any, cast
-
 import torch
-import torch.nn.functional as F
 import torchaudio
-from pyannote.audio import Model
+from huggingface_hub import hf_hub_download
 from torch import Tensor, nn
+from torchaudio.compliance import kaldi
 from transformers import (
     AutoModel,
 )
 
-SPEAKER_MODEL = "pyannote/wespeaker-voxceleb-resnet34-LM"
+from .modules.tidyvoice import TidyVoiceSpeakerModel
+
+SPEAKER_MODEL = "areffarhadi/Resnet34-tidyvoiceX-ASV"
 
 
 class WavLMFeatures(nn.Module):
@@ -34,31 +34,34 @@ class SpeakerFeatures(nn.Module):
     def __init__(self, sample_rate: int) -> None:
         super().__init__()
         self.resample = torchaudio.transforms.Resample(sample_rate, 16_000)
-        model = Model.from_pretrained(SPEAKER_MODEL)
-        if model is None:
-            raise RuntimeError(f"could not load speaker model {SPEAKER_MODEL}")
-        self.model = cast(Any, model.requires_grad_(False).eval())
+        checkpoint = hf_hub_download(SPEAKER_MODEL, "models/avg_model.pt")
+        self.model = TidyVoiceSpeakerModel()
+        state = torch.load(checkpoint, map_location="cpu", weights_only=True)
+        del state["projection.weight"]
+        self.model.load_state_dict(
+            state,
+            strict=True,
+        )
+        self.model.requires_grad_(False).eval()
+
+    @staticmethod
+    def _fbank(waveform: Tensor) -> Tensor:
+        values = kaldi.fbank(
+            waveform * (1 << 15),
+            num_mel_bins=80,
+            frame_length=25,
+            frame_shift=10,
+            dither=0,
+            sample_frequency=16_000,
+            window_type="hamming",
+            use_energy=False,
+        )
+        return values - values.mean(dim=0, keepdim=True)
 
     def forward(self, waveform: Tensor) -> tuple[tuple[Tensor, ...], Tensor]:
         waveform = waveform.squeeze(1) if waveform.dim() == 4 else waveform
         if waveform.size(1) > 1:
             waveform = waveform.mean(dim=1, keepdim=True)
         waveform = self.resample(waveform).float()
-        fbank = self.model.compute_fbank(waveform)
-        resnet = self.model.resnet
-        hidden = fbank.permute(0, 2, 1).unsqueeze(1)
-        hidden = F.relu(resnet.bn1(resnet.conv1(hidden)))
-        features = []
-        for stage in (
-            resnet.layer1,
-            resnet.layer2,
-            resnet.layer3,
-            resnet.layer4,
-        ):
-            for block in stage:
-                hidden = block(hidden)
-                features.append(hidden)
-        embedding = resnet.seg_1(resnet.pool(hidden))
-        if resnet.two_emb_layer:
-            embedding = resnet.seg_2(resnet.seg_bn_1(F.relu(embedding)))
-        return tuple(features), embedding
+        fbank = torch.stack([self._fbank(item) for item in waveform])
+        return self.model(fbank)
