@@ -376,6 +376,15 @@ class Trainer:
                     decoder_energy,
                     decoder_voice,
                 )
+            waveform_condition = torch.cat(
+                (
+                    aligned_crop,
+                    F.avg_pool1d(decoder_f0.unsqueeze(1), 2),
+                    F.avg_pool1d(decoder_energy.unsqueeze(1), 2),
+                    decoder_voice.unsqueeze(-1).expand(-1, -1, aligned_crop.size(-1)),
+                ),
+                dim=1,
+            ).detach()
         gan_metrics: dict[str, torch.Tensor | float] = {}
         prosody_discriminator_total = reconstructed.new_zeros(())
         slm_discriminator_loss = reconstructed.new_zeros(())
@@ -490,8 +499,8 @@ class Trainer:
                     generated_input = self.runtime.features.wavlm.discriminator_input(
                         generated_features
                     )
-                real_scores = modules.wd(real_input)
-                generated_scores = modules.wd(generated_input)
+                real_scores = modules.wd(real_input, waveform_condition)
+                generated_scores = modules.wd(generated_input, waveform_condition)
                 slm_discriminator_loss = compute_slm_discriminator_loss(
                     real_scores,
                     generated_scores,
@@ -609,7 +618,7 @@ class Trainer:
                         )
                     )
                     losses["slm_adversarial"] = slm_generator_loss(
-                        modules.wd(generated_input)
+                        modules.wd(generated_input, waveform_condition)
                     )
             if weights.speaker_feature > 0 or weights.speaker_similarity > 0:
                 speaker = self.runtime.features.speaker

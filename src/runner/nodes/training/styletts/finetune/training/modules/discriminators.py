@@ -225,13 +225,17 @@ class MultiPeriodDiscriminator(torch.nn.Module):
         return y_d_rs, y_d_gs, fmap_rs, fmap_gs
     
 class WavLMDiscriminator(nn.Module):
-    def __init__(self, slm_hidden=768, 
-                 slm_layers=13, 
-                 initial_channel=64, 
+    def __init__(self, slm_hidden=768,
+                 slm_layers=13,
+                 initial_channel=64,
+                 condition_channels=642,
                  use_spectral_norm=False):
         super(WavLMDiscriminator, self).__init__()
         norm_f = weight_norm if use_spectral_norm == False else spectral_norm
         self.pre = norm_f(Conv1d(slm_hidden * slm_layers, initial_channel, 1, 1, padding=0))
+        self.condition = norm_f(
+            Conv1d(condition_channels, initial_channel, 1, 1, padding=0)
+        )
         
         self.convs = nn.ModuleList([
             norm_f(nn.Conv1d(initial_channel, initial_channel * 2, kernel_size=5, padding=2)),
@@ -241,8 +245,14 @@ class WavLMDiscriminator(nn.Module):
 
         self.conv_post = norm_f(Conv1d(initial_channel * 4, 1, 3, 1, padding=1))
         
-    def forward(self, x):
-        x = self.pre(x)
+    def forward(self, x, condition):
+        condition = F.interpolate(
+            condition,
+            size=x.size(-1),
+            mode="linear",
+            align_corners=False,
+        )
+        x = self.pre(x) + self.condition(condition)
         
         fmap = []
         for l in self.convs:

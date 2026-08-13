@@ -207,6 +207,7 @@ def build_model(args, text_aligner, pitch_extractor, bert):
         slm_hidden=args.slm.hidden,
         slm_layers=args.slm.nlayers,
         initial_channel=args.slm.initial_channel,
+        condition_channels=args.hidden_dim + args.style_dim + 2,
     )
     mpd = MultiPeriodDiscriminator(
         gradient_checkpointing=discriminators_checkpointing,
@@ -317,6 +318,11 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
                 if name in current_keys
             }
         load_result = model[key].load_state_dict(adapted_params, strict=False)
+        if key == "wd" and any(
+            item in {"condition.weight", "condition.bias"}
+            for item in load_result.missing_keys
+        ):
+            reinitialized.add(key)
         missing_keys = [
             item for item in load_result.missing_keys
             if not item.endswith("dummy_tensor")
@@ -327,6 +333,10 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
             and not (
                 key == "alpha_flow"
                 and item in {"style_scale", "style_scale_updates"}
+            )
+            and not (
+                key == "wd"
+                and item in {"condition.weight", "condition.bias"}
             )
         ]
         unexpected_keys = [
