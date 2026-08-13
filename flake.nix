@@ -100,7 +100,10 @@
             for __d in ${lib.concatStringsSep " " nvidiaDriverDirs}; do
               if [ -e "$__d/libcuda.so.1" ]; then
                 export TRITON_LIBCUDA_PATH="$__d"
-                export LD_LIBRARY_PATH="$__d''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+                __driver_dir="$(dirname "$(readlink -f "$__d/libcuda.so.1")")"
+                export LD_LIBRARY_PATH="$__driver_dir''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+                unset __driver_dir
                 break
               fi
             done
