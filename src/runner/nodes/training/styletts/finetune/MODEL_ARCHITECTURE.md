@@ -252,7 +252,7 @@ flowchart TB
     SA2["Predicted durations/alignment<br/><b>Rtxt×50 → Rtxt×Apred</b><br/>content 512×Apred<br/>state 640×Apred"]:::prosody
     SC["SLM crop<br/>90 ≤ Lslm ≤ 100 by base config<br/>content <b>512×Lslm</b><br/>state <b>640×Lslm</b>"]:::input
     SY["F0/N: <b>2Lslm</b><br/>decoder fake: <b>1×600Lslm</b>"]:::decoder
-    WD["Frozen WavLM features + <b>wd</b><br/>WavLMDiscriminator<br/>13×768 → 9984 channels<br/>Conv1d 9984→64→128→256→1<br/>real may be GT or teacher reconstruction"]:::critic
+    WD["Frozen WavLM features + decoder conditions<br/><b>wd</b>: six-layer Conformer<br/>WavLM, SEP, global style, F0/energy,<br/>SEP, duration-expanded aligned text<br/>per-token real/fake scores"]:::critic
     RT --> SD --> SA2 --> SC --> SY --> WD
     RSTYLE -. multispeaker features .-> SD
   end

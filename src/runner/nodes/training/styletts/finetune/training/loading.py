@@ -9,6 +9,8 @@ from runner.nodes.training.styletts.finetune.training.modules.asr.models import 
 from runner.nodes.training.styletts.finetune.training.modules.discriminators import (
     MultiPeriodDiscriminator,
     MultiResSpecDiscriminator,
+)
+from runner.nodes.training.styletts.finetune.training.modules.multimodal_discriminator import (
     WavLMDiscriminator,
 )
 from runner.nodes.training.styletts.finetune.training.modules.encoders import TextEncoder
@@ -206,8 +208,8 @@ def build_model(args, text_aligner, pitch_extractor, bert):
     wd = WavLMDiscriminator(
         slm_hidden=args.slm.hidden,
         slm_layers=args.slm.nlayers,
-        initial_channel=args.slm.initial_channel,
-        condition_channels=args.hidden_dim + args.style_dim + 2,
+        hidden_dim=args.hidden_dim,
+        style_dim=args.style_dim,
     )
     mpd = MultiPeriodDiscriminator(
         gradient_checkpointing=discriminators_checkpointing,
@@ -303,6 +305,10 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
                 continue
             raise ValueError(f"checkpoint is missing unchanged module {key}")
         normalized_params = _maybe_normalize_module_prefix(model[key], params[source_key])
+        if key == "wd" and "wavlm_projection.weight" not in normalized_params:
+            logger.info("initialized paper multimodal waveform discriminator")
+            reinitialized.add(key)
+            continue
         if key == "alpha_flow":
             normalized_params = {
                 name: value
@@ -318,11 +324,6 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
                 if name in current_keys
             }
         load_result = model[key].load_state_dict(adapted_params, strict=False)
-        if key == "wd" and any(
-            item in {"condition.weight", "condition.bias"}
-            for item in load_result.missing_keys
-        ):
-            reinitialized.add(key)
         missing_keys = [
             item for item in load_result.missing_keys
             if not item.endswith("dummy_tensor")
@@ -333,10 +334,6 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
             and not (
                 key == "alpha_flow"
                 and item in {"style_scale", "style_scale_updates"}
-            )
-            and not (
-                key == "wd"
-                and item in {"condition.weight", "condition.bias"}
             )
         ]
         unexpected_keys = [
