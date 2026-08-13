@@ -51,6 +51,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         TrainableModule.BERT,
         TrainableModule.BERT_ENCODER,
         TrainableModule.DURATION_PREDICTOR,
+        TrainableModule.POSITION_EMBEDDING,
         TrainableModule.PROSODY_ENCODER,
         TrainableModule.PROSODY_PREDICTOR,
     ]
@@ -58,6 +59,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         TrainableModule.BERT,
         TrainableModule.BERT_ENCODER,
         TrainableModule.DURATION_PREDICTOR,
+        TrainableModule.POSITION_EMBEDDING,
         TrainableModule.PROSODY_ENCODER,
         TrainableModule.PROSODY_PREDICTOR,
         TrainableModule.QUANTIZER,
@@ -85,13 +87,11 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             "duration": 1,
             "duration_ce": 20,
             "prosody_adversarial": 1,
-            "style_reconstruction": 1,
         }
     )
     continuous_prosody_weights = prosody_weights.model_copy(
         update={
             "prosody_adversarial": 0.1,
-            "style_reconstruction": 0,
         }
     )
     return [

@@ -9,15 +9,17 @@ from ..data import TrainingBatch
 
 
 def prosody_inputs(
-    text_encoding: Tensor,
+    position_embedding: torch.nn.Embedding,
     alignment: Tensor,
     f0: Tensor,
     energy: Tensor,
 ) -> Tensor:
-    content_features = text_encoding @ alignment
+    positions = torch.arange(alignment.size(1), device=alignment.device)
+    positions = positions.unsqueeze(0).expand(alignment.size(0), -1)
+    duration_features = position_embedding(positions).transpose(1, 2) @ alignment
     half_f0 = F.avg_pool1d(f0.unsqueeze(1), 2)
     half_energy = F.avg_pool1d(energy.unsqueeze(1), 2)
-    return torch.cat((content_features, half_energy, half_f0), dim=1)
+    return torch.cat((duration_features, half_energy, half_f0), dim=1)
 
 
 def sample_alpha_flow_features(

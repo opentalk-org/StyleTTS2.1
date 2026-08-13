@@ -154,7 +154,6 @@ class Trainer:
                 or weights.f0 > 0
                 or weights.norm > 0
                 or prosody_adversarial
-                or weights.style_reconstruction > 0
                 or weights.style_nuisance > 0
                 or weights.xcov > 0
             )
@@ -191,7 +190,7 @@ class Trainer:
             )
             if style_required:
                 style_inputs = prosody_inputs(
-                    text_encoding,
+                    modules.position_embedding,
                     monotonic,
                     target_f0,
                     target_energy,
@@ -276,9 +275,9 @@ class Trainer:
             duration_shape = (batch.texts.size(0), 513, monotonic.size(1))
             duration_real = batch.mels.new_zeros(duration_shape)
             duration_fake = batch.mels.new_zeros(duration_shape)
-            if prosody_adversarial or weights.style_reconstruction > 0:
+            if prosody_adversarial:
                 prosody_fake = prosody_inputs(
-                    text_encoding,
+                    modules.position_embedding,
                     monotonic,
                     predicted_f0,
                     predicted_energy,
@@ -446,7 +445,7 @@ class Trainer:
                     modules.duration_discriminator,
                     duration_fake,
                     duration_real,
-                    batch.input_lengths.to(reconstructed.device) // 2,
+                    batch.input_lengths.to(reconstructed.device),
                 ),
             )
             for name, discriminator, fake, real, lengths in prosody_items:
@@ -658,9 +657,7 @@ class Trainer:
                     prosody_fake_features,
                     prosody_lengths,
                 )
-                duration_lengths = (
-                    batch.input_lengths.to(reconstructed.device) // 2
-                )
+                duration_lengths = batch.input_lengths.to(reconstructed.device)
                 duration_scores, duration_fake_features = (
                     modules.duration_discriminator(
                         duration_fake.float(),
@@ -690,16 +687,6 @@ class Trainer:
                 losses["prosody_generator_adversarial"] = adversarial
                 losses["prosody_feature_matching"] = feature_matching
                 losses["prosody_adversarial"] = adversarial + feature_matching
-            if weights.style_reconstruction > 0:
-                with torch.no_grad():
-                    reconstructed_style = modules.prosody_encoder(
-                        prosody_fake.float(),
-                        batch.mel_lengths.to(reconstructed.device) // 2,
-                    )
-                    losses["style_reconstruction"] = F.l1_loss(
-                        continuous_latent.detach(),
-                        reconstructed_style,
-                    )
             if weights.style_nuisance > 0:
                 positions = torch.arange(batch.texts.size(1), device=batch.texts.device)
                 valid = positions[None, :] < batch.input_lengths.to(batch.texts.device)[:, None]
