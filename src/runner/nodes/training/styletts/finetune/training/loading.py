@@ -23,8 +23,8 @@ from runner.nodes.training.styletts.finetune.training.modules.latent.prosody imp
     ProsodyPredictor,
     TVStyleEncoder,
 )
-from runner.nodes.training.styletts.finetune.training.modules.latent.rfsq import (
-    ResidualFiniteScalarQuantizer,
+from runner.nodes.training.styletts.finetune.training.modules.latent.rvq import (
+    ResidualVectorQuantizer,
 )
 from runner.nodes.training.styletts.finetune.training.modules.latent.voice import VoiceEncoder
 from runner.nodes.training.styletts.finetune.training.state_dict_resize import merge_state_dict_with_dim0_resize
@@ -214,16 +214,15 @@ def build_model(args, text_aligner, pitch_extractor, bert):
     prosody_encoder = TVStyleEncoder(mel_dim=514)
     duration_predictor = DurationPredictor(max_dur=50)
     prosody_predictor = ProsodyPredictor()
-    quantizer = ResidualFiniteScalarQuantizer(
+    quantizer = ResidualVectorQuantizer(
         input_dim=512,
-        latent_dim=args.prosody_quantizer.latent_dim,
         stages=args.prosody_quantizer.stages,
-        levels=args.prosody_quantizer.levels,
-        stage_dropout=args.prosody_quantizer.stage_dropout,
+        codebook_size=args.prosody_quantizer.codebook_size,
+        codebook_dim=args.prosody_quantizer.codebook_dim,
     )
     alpha_flow = AlphaFlow(
         text_dim=bert.config.hidden_size,
-        style_dim=args.prosody_quantizer.latent_dim,
+        style_dim=quantizer.latent_dim,
         style_scale=args.alpha_flow.get("style_scale", 1.0),
         transition_start=args.alpha_flow.transition_start,
         transition_end=args.alpha_flow.transition_end,
@@ -273,10 +272,10 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
         name.removeprefix("module.")
         for name in quantizer_state
     }
-    if "to_latent.weight" not in quantizer_keys:
+    if "quantizers.0.in_proj.0.weight_g" not in quantizer_keys:
         ignored.update(("quantizer", "alpha_flow"))
         logger.info(
-            "initialized residual FSQ and continuous AlphaFlow; "
+            "initialized StyleTTS-ZS RVQ and AlphaFlow; "
             "checkpoint contains a different prosody bottleneck"
         )
     reinitialized = set()

@@ -74,7 +74,7 @@ def resize_prosody(
     return resized
 
 
-def rfsq_usage_metrics(counts: torch.Tensor) -> dict[str, torch.Tensor]:
+def rvq_usage_metrics(counts: torch.Tensor) -> dict[str, torch.Tensor]:
     metrics = {}
     utilizations = []
     dead_fractions = []
@@ -91,7 +91,7 @@ def rfsq_usage_metrics(counts: torch.Tensor) -> dict[str, torch.Tensor]:
         )
         utilization = active.float() / level_count
         top_share = probabilities.max()
-        prefix = f"rfsq/stage_{index:02d}"
+        prefix = f"rvq/stage_{index:02d}"
         metrics[f"{prefix}/active_levels"] = active.float()
         metrics[f"{prefix}/utilization"] = utilization
         metrics[f"{prefix}/dead_level_fraction"] = 1 - utilization
@@ -104,13 +104,13 @@ def rfsq_usage_metrics(counts: torch.Tensor) -> dict[str, torch.Tensor]:
         dead_fractions.append(1 - utilization)
         perplexities.append(perplexity)
         top_shares.append(top_share)
-    metrics["rfsq/mean_utilization"] = torch.stack(utilizations).mean()
-    metrics["rfsq/mean_dead_level_fraction"] = torch.stack(
+    metrics["rvq/mean_utilization"] = torch.stack(utilizations).mean()
+    metrics["rvq/mean_dead_code_fraction"] = torch.stack(
         dead_fractions
     ).mean()
-    metrics["rfsq/mean_perplexity"] = torch.stack(perplexities).mean()
-    metrics["rfsq/mean_top_level_share"] = torch.stack(top_shares).mean()
-    metrics["rfsq/assignments_per_stage"] = counts.sum(1).float().mean()
+    metrics["rvq/mean_perplexity"] = torch.stack(perplexities).mean()
+    metrics["rvq/mean_top_code_share"] = torch.stack(top_shares).mean()
+    metrics["rvq/assignments_per_stage"] = counts.sum(1).float().mean()
     return metrics
 
 
@@ -145,7 +145,7 @@ def synthesize_validation(
     )
     predicted_f0 = target_f0.new_zeros(target_f0.shape)
     predicted_energy = target_energy.new_zeros(target_energy.shape)
-    rfsq_indices = None
+    rvq_indices = None
     validates_predictions = (
         stage.validation.alpha_flow
         or stage.validation.f0_source is ProsodySource.PREDICTED
@@ -171,7 +171,7 @@ def synthesize_validation(
             if stage.style_source is StyleSource.QUANTIZED:
                 latents = modules.quantizer(encoded_style)
                 style = latents.quantized_style
-                rfsq_indices = latents.indices
+                rvq_indices = latents.indices
         if stage.validation.alpha_flow:
             continuous_latent = modules.alpha_flow.sample(
                 bert,
@@ -248,7 +248,7 @@ def synthesize_validation(
         resized_energy,
         decode_alignment,
         decode_lengths,
-        rfsq_indices,
+        rvq_indices,
     )
 
 
@@ -298,10 +298,10 @@ class Validator:
         zero = torch.zeros((), device=self.runtime.accelerator.device)
         totals = {name: zero.clone() for name in metric_names}
         quantizer = modules.quantizer
-        rfsq_counts = torch.zeros(
+        rvq_counts = torch.zeros(
             (
                 quantizer.num_stages,
-                quantizer.levels,
+                quantizer.codebook_size,
             ),
             device=zero.device,
             dtype=torch.long,
@@ -313,7 +313,7 @@ class Validator:
                 batch = loaded_batch.batch
                 check_cancel()
                 batch = batch.to(self.runtime.accelerator.device)
-                values, exported, rfsq_indices = self._validate_batch(
+                values, exported, rvq_indices = self._validate_batch(
                     batch,
                     step,
                     stage,
@@ -322,13 +322,12 @@ class Validator:
                 for name, value in values.items():
                     totals[name] += value
                 samples.extend(exported)
-                if rfsq_indices is not None:
-                    for index in range(rfsq_counts.size(0)):
-                        stage_indices = rfsq_indices[:, index].reshape(-1)
-                        stage_indices = stage_indices[stage_indices >= 0]
-                        rfsq_counts[index] += torch.bincount(
+                if rvq_indices is not None:
+                    for index in range(rvq_counts.size(0)):
+                        stage_indices = rvq_indices[:, index].reshape(-1)
+                        rvq_counts[index] += torch.bincount(
                             stage_indices,
-                            minlength=rfsq_counts.size(1),
+                            minlength=rvq_counts.size(1),
                         )
                 count += 1
         if count == 0:
@@ -337,8 +336,8 @@ class Validator:
             name: value / count
             for name, value in totals.items()
         }
-        if rfsq_counts.sum() > 0:
-            reduced.update(rfsq_usage_metrics(rfsq_counts))
+        if rvq_counts.sum() > 0:
+            reduced.update(rvq_usage_metrics(rvq_counts))
         return ValidationResult(
             reduced,
             samples,
@@ -435,7 +434,7 @@ class Validator:
                 target_norm,
                 decode_alignment,
                 decode_lengths,
-                rfsq_indices,
+                rvq_indices,
             ) = synthesize_validation(
                 self.runtime,
                 batch,
@@ -660,7 +659,7 @@ class Validator:
                     free_run_samples,
                     mode="free_running",
                 )
-        return metrics, samples, rfsq_indices
+        return metrics, samples, rvq_indices
 
     def _acoustic_reconstruction_loss(
         self,

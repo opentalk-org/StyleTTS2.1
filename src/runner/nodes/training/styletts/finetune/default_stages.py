@@ -108,7 +108,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             validation=_validation(False, False),
         ),
         TrainingStageSpec(
-            name="prosody autoencoder · continuous/RFSQ · no GAN",
+            name="prosody autoencoder · StyleTTS-ZS RVQ · no GAN",
             steps=5_000,
             max_audio_seconds=90,
             max_decoder_seconds=3.0,
@@ -119,7 +119,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             validation=_validation(True, False, predicted_duration=True),
         ),
         TrainingStageSpec(
-            name="prosody autoencoder · continuous/RFSQ · GAN",
+            name="prosody autoencoder · StyleTTS-ZS RVQ · GAN",
             steps=8_000,
             max_audio_seconds=75,
             max_decoder_seconds=3.0,

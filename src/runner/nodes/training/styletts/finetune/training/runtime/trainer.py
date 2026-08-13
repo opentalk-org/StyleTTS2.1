@@ -207,7 +207,6 @@ class Trainer:
                 )
 
             style_target = batch.mels.new_zeros((batch.mels.size(0), 512, 1))
-            continuous_decode_style = style_target
             continuous_latent = batch.mels.new_zeros(
                 (
                     batch.mels.size(0),
@@ -215,8 +214,8 @@ class Trainer:
                     1,
                 )
             )
-            quantization_error = batch.mels.new_zeros(())
-            dual_decode = False
+            commitment_loss = batch.mels.new_zeros(())
+            codebook_loss = batch.mels.new_zeros(())
             if style_required:
                 with torch.autocast(device_type=device.type, enabled=False):
                     encoded_style = modules.prosody_encoder(
@@ -226,12 +225,9 @@ class Trainer:
                     if stage.style_source is StyleSource.QUANTIZED:
                         latents = modules.quantizer(encoded_style)
                         continuous_latent = latents.continuous
-                        continuous_decode_style = latents.continuous_style
                         style_target = latents.quantized_style
-                        quantization_error = latents.quantization_error
-                        dual_decode = (
-                            TrainableModule.QUANTIZER in stage.trainable_modules
-                        )
+                        commitment_loss = latents.commitment_loss
+                        codebook_loss = latents.codebook_loss
                     else:
                         style_target = encoded_style
 
@@ -258,9 +254,6 @@ class Trainer:
             )
             predicted_f0 = target_f0.new_zeros(target_f0.shape)
             predicted_energy = target_energy.new_zeros(target_energy.shape)
-            continuous_duration_predictions = duration_predictions
-            continuous_predicted_f0 = predicted_f0
-            continuous_predicted_energy = predicted_energy
             if duration_required or prosody_required:
                 duration_encoding = modules.bert_encoder(bert).transpose(-1, -2)
                 if duration_required:
@@ -270,13 +263,6 @@ class Trainer:
                         batch.input_lengths,
                         duration_encoding.size(-1),
                     )
-                    if dual_decode:
-                        continuous_duration_predictions = modules.duration_predictor(
-                            duration_encoding,
-                            continuous_decode_style,
-                            batch.input_lengths,
-                            duration_encoding.size(-1),
-                        )
                 if prosody_required:
                     aligned_duration = duration_encoding @ monotonic
                     predicted_f0, predicted_energy = modules.prosody_predictor(
@@ -285,26 +271,8 @@ class Trainer:
                         batch.mel_lengths.to(device) // 2,
                         monotonic.size(-1),
                     )
-                    if dual_decode:
-                        (
-                            continuous_predicted_f0,
-                            continuous_predicted_energy,
-                        ) = modules.prosody_predictor(
-                            aligned_duration,
-                            continuous_decode_style,
-                            batch.mel_lengths.to(device) // 2,
-                            monotonic.size(-1),
-                        )
             predicted_f0 = predicted_f0.masked_fill(full_mask, 0.0)
             predicted_energy = predicted_energy.masked_fill(full_mask, 0.0)
-            continuous_predicted_f0 = continuous_predicted_f0.masked_fill(
-                full_mask,
-                0.0,
-            )
-            continuous_predicted_energy = continuous_predicted_energy.masked_fill(
-                full_mask,
-                0.0,
-            )
 
             prosody_fake = style_inputs.new_zeros(style_inputs.shape)
             duration_shape = (batch.texts.size(0), 513, monotonic.size(1))
@@ -552,11 +520,10 @@ class Trainer:
 
         for name in trainable:
             optimizer.zero_grad(name)
-        dual_metrics: dict[str, torch.Tensor] = {}
+        quantizer_metrics: dict[str, torch.Tensor] = {}
         if style_required and stage.style_source is StyleSource.QUANTIZED:
-            dual_metrics["rfsq_quantization_error"] = (
-                quantization_error.detach()
-            )
+            quantizer_metrics["rvq_commitment"] = commitment_loss.detach()
+            quantizer_metrics["rvq_codebook"] = codebook_loss.detach()
         with accelerator.autocast():
             zero = reconstructed.new_zeros(())
             losses = {item.value: zero for item in TrainingLoss}
@@ -573,16 +540,6 @@ class Trainer:
                     divisor=10,
                 )
                 losses["f0"] = quantized_f0
-                if dual_decode:
-                    continuous_f0 = reconstruction_loss(
-                        target_f0,
-                        continuous_predicted_f0,
-                        batch.mel_lengths,
-                        divisor=10,
-                    )
-                    losses["f0"] = (quantized_f0 + continuous_f0) / 2
-                    dual_metrics["f0_quantized"] = quantized_f0.detach()
-                    dual_metrics["f0_continuous"] = continuous_f0.detach()
             if weights.norm > 0:
                 quantized_norm = reconstruction_loss(
                     target_energy,
@@ -590,15 +547,6 @@ class Trainer:
                     batch.mel_lengths,
                 )
                 losses["norm"] = quantized_norm
-                if dual_decode:
-                    continuous_norm = reconstruction_loss(
-                        target_energy,
-                        continuous_predicted_energy,
-                        batch.mel_lengths,
-                    )
-                    losses["norm"] = (quantized_norm + continuous_norm) / 2
-                    dual_metrics["norm_quantized"] = quantized_norm.detach()
-                    dual_metrics["norm_continuous"] = continuous_norm.detach()
             if weights.duration > 0 or weights.duration_ce > 0:
                 duration, duration_ce = self._duration_losses(
                     reconstructed,
@@ -606,25 +554,6 @@ class Trainer:
                     duration_targets,
                     batch,
                 )
-                if dual_decode:
-                    continuous_duration, continuous_duration_ce = (
-                        self._duration_losses(
-                            reconstructed,
-                            continuous_duration_predictions,
-                            duration_targets,
-                            batch,
-                        )
-                    )
-                    dual_metrics["duration_quantized"] = duration.detach()
-                    dual_metrics["duration_continuous"] = (
-                        continuous_duration.detach()
-                    )
-                    dual_metrics["duration_ce_quantized"] = duration_ce.detach()
-                    dual_metrics["duration_ce_continuous"] = (
-                        continuous_duration_ce.detach()
-                    )
-                    duration = (duration + continuous_duration) / 2
-                    duration_ce = (duration_ce + continuous_duration_ce) / 2
                 losses["duration"] = duration
                 losses["duration_ce"] = duration_ce
             if (
@@ -792,6 +721,8 @@ class Trainer:
             unbiased=False,
         ).mean()
         total = self._weighted_total(losses, weights)
+        if style_required and stage.style_source is StyleSource.QUANTIZED:
+            total = total + commitment_loss + codebook_loss
         with profiling_fn("loss_finite_check"):
             finite = bool(torch.isfinite(total).item())
         if finite:
@@ -832,7 +763,7 @@ class Trainer:
             gradient_metrics,
             gan_metrics,
         )
-        metrics.update(dual_metrics)
+        metrics.update(quantizer_metrics)
         if style_required and stage.style_source is StyleSource.QUANTIZED:
             metrics["continuous_latent_batch_std"] = (
                 continuous_latent.mean(-1).std(0, unbiased=False).mean()
