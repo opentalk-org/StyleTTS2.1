@@ -26,10 +26,9 @@ def merge_architecture(architecture_path: Path, config: dict[str, Any]) -> None:
     architecture = load_yaml(architecture_path)
     model_params = deepcopy(architecture["model_params"])
     model_params["alpha_flow"] = deepcopy(config["model_params"]["alpha_flow"])
-    if "prosody_quantizer" not in model_params:
-        model_params["prosody_quantizer"] = deepcopy(
-            config["model_params"]["prosody_quantizer"]
-        )
+    model_params["prosody_quantizer"] = deepcopy(
+        config["model_params"]["prosody_quantizer"]
+    )
     config["model_params"] = model_params
 
 
