@@ -79,16 +79,7 @@ def start_run(config: TrainingConfig) -> TrackerRun:
     return start_mlflow_run(
         experiment="styletts2_finetune",
         name=name,
-        config={
-            "run_id": publish["run_id"],
-            "finetune_job_id": publish["finetune_job_id"],
-            "total_steps": config.total_steps,
-            "stage_max_audio_seconds": ",".join(
-                str(stage.max_audio_seconds) for stage in config.training_stages
-            ),
-            "precision": config.precision,
-            "distributed_processes": config.distributed_processes,
-        },
+        config=config.model_dump(mode="json"),
     )
 
 

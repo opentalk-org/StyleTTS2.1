@@ -173,12 +173,18 @@ def slm_generator_loss(generated_scores: Tensor) -> Tensor:
 
 
 def speaker_losses(
-    real_values: Tensor,
-    generated_values: Tensor,
+    real_values: tuple[Tensor, ...],
+    generated_values: tuple[Tensor, ...],
     real_embedding: Tensor,
     generated_embedding: Tensor,
 ) -> tuple[Tensor, Tensor]:
-    feature = F.l1_loss(generated_values, real_values)
+    feature = generated_embedding.new_zeros(())
+    for real, generated in zip(
+        real_values,
+        generated_values,
+        strict=True,
+    ):
+        feature = feature + F.l1_loss(generated, real)
     similarity = 1 - F.cosine_similarity(
         F.normalize(generated_embedding, dim=-1),
         F.normalize(real_embedding, dim=-1),

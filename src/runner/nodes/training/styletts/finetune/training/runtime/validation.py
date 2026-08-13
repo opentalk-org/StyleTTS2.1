@@ -124,6 +124,8 @@ def synthesize_validation(
     monotonic: torch.Tensor,
     target_f0: torch.Tensor,
     target_energy: torch.Tensor,
+    prompt_mels: torch.Tensor,
+    duration_source: ValidationDurationSource,
     alpha_flow_noise: torch.Tensor | None = None,
 ) -> tuple[
     torch.Tensor,
@@ -150,10 +152,7 @@ def synthesize_validation(
         stage.validation.alpha_flow
         or stage.validation.f0_source is ProsodySource.PREDICTED
         or stage.validation.norm_source is ProsodySource.PREDICTED
-        or (
-            stage.validation.duration_source
-            is ValidationDurationSource.PREDICTED
-        )
+        or duration_source is ValidationDurationSource.PREDICTED
     )
     if validates_predictions:
         conditioning = prosody_inputs(
@@ -186,15 +185,11 @@ def synthesize_validation(
             batch.input_lengths,
             duration_encoding.size(-1),
         )
-        if (
-            stage.validation.duration_source
-            is ValidationDurationSource.PREDICTED
-        ):
+        if duration_source is ValidationDurationSource.PREDICTED:
             decode_alignment, decode_lengths = predicted_alignment(
                 duration_predictions,
                 batch.input_lengths,
             )
-    prompt_mels = sample_voice_prompts(batch)
     with torch.autocast(device_type=device.type, enabled=False):
         decoder_voice, decoder_text = modules.voice_encoder(
             prompt_mels.float(),
@@ -419,6 +414,7 @@ class Validator:
             target_norm.masked_fill_(full_mask, 0.0)
             source_target_f0 = target_f0
             source_target_norm = target_norm
+            prompt_mels = sample_voice_prompts(batch)
             alpha_flow_noise = self._alpha_flow_noise(
                 batch.texts,
                 batch.input_lengths,
@@ -445,6 +441,8 @@ class Validator:
                 monotonic if validate_predictions else soft_alignment,
                 source_target_f0,
                 source_target_norm,
+                prompt_mels,
+                ValidationDurationSource.GROUND_TRUTH,
                 alpha_flow_noise,
             )
             waveform = waveform.unsqueeze(1)
@@ -501,17 +499,6 @@ class Validator:
                     duration_targets,
                     batch.input_lengths,
                 )
-                free_run_stage = stage.model_copy(
-                    update={
-                        "validation": stage.validation.model_copy(
-                            update={
-                                "duration_source": (
-                                    ValidationDurationSource.PREDICTED
-                                ),
-                            }
-                        )
-                    }
-                )
                 (
                     free_reconstructed,
                     _,
@@ -525,13 +512,15 @@ class Validator:
                 ) = synthesize_validation(
                     self.runtime,
                     batch,
-                    free_run_stage,
+                    stage,
                     text_encoding,
                     duration_encoding,
                     bert,
                     monotonic,
                     source_target_f0,
                     source_target_norm,
+                    prompt_mels,
+                    ValidationDurationSource.PREDICTED,
                     alpha_flow_noise,
                 )
                 free_prediction_sample_lengths = [

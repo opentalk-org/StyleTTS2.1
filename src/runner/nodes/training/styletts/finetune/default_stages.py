@@ -78,6 +78,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             "monotonic_alignment": 10,
             "adversarial": 1,
             "wavlm": 1,
+            "speaker_feature": 1,
         }
     )
     prosody_weights = weights.model_copy(
@@ -100,6 +101,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             steps=10_000,
             max_audio_seconds=150,
             max_decoder_seconds=9.0,
+            voice_conditioning_dropout=0.2,
             style_source=StyleSource.CONTINUOUS,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=mel_modules,
@@ -111,6 +113,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             steps=10_000,
             max_audio_seconds=90,
             max_decoder_seconds=6.0,
+            voice_conditioning_dropout=0.2,
             style_source=StyleSource.CONTINUOUS,
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=tma_modules,

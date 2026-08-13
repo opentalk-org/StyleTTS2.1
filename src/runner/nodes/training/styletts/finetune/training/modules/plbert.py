@@ -72,17 +72,27 @@ class MultilingualPlBert(nn.Module):
         )
 
 
-def load_plbert(path, config):
+def load_plbert(path, config, checkpoint_path=None):
     if path is not None and Path(path).suffix == ".safetensors":
         return _load_multilingual_plbert(Path(path), config)
 
-    albert_base_configuration = AlbertConfig(**config['model_params'])
-    bert = CustomAlbert(albert_base_configuration)
+    if path is None and checkpoint_path is not None:
+        checkpoint = torch.load(
+            checkpoint_path,
+            map_location="cpu",
+            weights_only=False,
+        )
+        state_dict = checkpoint["net"]["bert"]
+        return _load_checkpoint_plbert(state_dict, config)
 
     if path is None:
-        print("No PLBERT path found, using default PLBERT from checkpoint")
-        return bert
+        raise ValueError(
+            "PL-BERT requires either an explicit model asset or a parent "
+            "checkpoint containing net['bert']"
+        )
 
+    albert_base_configuration = AlbertConfig(**config['model_params'])
+    bert = CustomAlbert(albert_base_configuration)
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
     state_dict = checkpoint["net"]
     stripped = OrderedDict()
@@ -102,6 +112,76 @@ def load_plbert(path, config):
     bert.load_state_dict(merged, strict=True)
 
     return bert
+
+
+def _load_checkpoint_plbert(
+    state_dict: dict[str, Tensor],
+    config: dict,
+) -> nn.Module:
+    if "language_embeddings.weight" in state_dict:
+        word_embeddings = state_dict[
+            "encoder.embeddings.word_embeddings.weight"
+        ]
+        position_embeddings = state_dict[
+            "encoder.embeddings.position_embeddings.weight"
+        ]
+        token_type_embeddings = state_dict[
+            "encoder.embeddings.token_type_embeddings.weight"
+        ]
+        layer_ids = {
+            int(key.split(".")[3])
+            for key in state_dict
+            if key.startswith("encoder.encoder.layer.")
+        }
+        model_params = config["model_params"]
+        encoder = CustomBert(
+            BertConfig(
+                vocab_size=word_embeddings.shape[0],
+                hidden_size=word_embeddings.shape[1],
+                num_hidden_layers=max(layer_ids) + 1,
+                num_attention_heads=int(model_params["num_attention_heads"]),
+                intermediate_size=state_dict[
+                    "encoder.encoder.layer.0.intermediate.dense.weight"
+                ].shape[0],
+                max_position_embeddings=position_embeddings.shape[0],
+                hidden_dropout_prob=float(model_params["dropout"]),
+                attention_probs_dropout_prob=float(model_params["dropout"]),
+                type_vocab_size=token_type_embeddings.shape[0],
+                pad_token_id=0,
+                attn_implementation="sdpa",
+            )
+        )
+        language_weights = state_dict["language_embeddings.weight"]
+        modality_weights = state_dict["modality_embeddings.weight"]
+        model = MultilingualPlBert(
+            encoder,
+            nn.Embedding(
+                language_weights.shape[0],
+                language_weights.shape[1],
+                padding_idx=0,
+            ),
+            nn.Embedding(
+                modality_weights.shape[0],
+                modality_weights.shape[1],
+            ),
+            state_dict["token_id_map"],
+        )
+    elif any("albert_layer_groups" in key for key in state_dict):
+        model_params = dict(config["model_params"])
+        model_params["vocab_size"] = state_dict[
+            "embeddings.word_embeddings.weight"
+        ].shape[0]
+        model_params["embedding_size"] = state_dict[
+            "embeddings.word_embeddings.weight"
+        ].shape[1]
+        model_params["max_position_embeddings"] = state_dict[
+            "embeddings.position_embeddings.weight"
+        ].shape[0]
+        model = CustomAlbert(AlbertConfig(**model_params))
+    else:
+        raise ValueError("checkpoint contains an unknown PL-BERT architecture")
+    model.load_state_dict(state_dict, strict=True)
+    return model
 
 
 def _load_multilingual_plbert(path: Path, config: dict) -> MultilingualPlBert:
