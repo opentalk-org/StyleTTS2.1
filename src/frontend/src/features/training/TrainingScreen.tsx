@@ -54,7 +54,9 @@ export function TrainingScreen() {
           ) : null}
         </div>
         <div className="sticky top-0 flex flex-col gap-3.5">
-          {graph ? <TrainingPresetCard key={trainTab} tab={trainTab} graph={graph} onLoad={updateGraph} /> : null}
+          {schemaQuery.data && graph ? (
+            <TrainingPresetCard key={trainTab} tab={trainTab} schema={schemaQuery.data} graph={graph} onLoad={updateGraph} />
+          ) : null}
           <QueueCard schema={schemaQuery.data ?? null} graph={graph ?? null} />
         </div>
       </div>

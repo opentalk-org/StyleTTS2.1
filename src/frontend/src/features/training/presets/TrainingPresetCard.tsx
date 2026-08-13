@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 
 import { Button } from "@/shared/ui/Button";
 import { Card } from "@/shared/ui/Card";
 import { Input } from "@/shared/ui/Input";
 import { Select } from "@/shared/ui/Select";
 
-import type { WorkflowGraph } from "../../workflows/types";
+import { runtimeConfigForGraph, workflowDefinition } from "../../workflows/logic";
+import type { WorkflowDefinition, WorkflowGraph, WorkflowSchema } from "../../workflows/types";
+import { TRAINING_WORKFLOWS } from "../logic";
 import { useCreateTrainingConfigMutation, useTrainingConfigsQuery } from "../query";
 import type { TrainTab } from "../store";
 
@@ -13,10 +15,12 @@ const PRESET_VERSION = 1;
 
 export function TrainingPresetCard({
   tab,
+  schema,
   graph,
   onLoad,
 }: {
   tab: TrainTab;
+  schema: WorkflowSchema;
   graph: WorkflowGraph;
   onLoad: (graph: WorkflowGraph) => void;
 }) {
@@ -25,6 +29,8 @@ export function TrainingPresetCard({
   const createPreset = useCreateTrainingConfigMutation(type);
   const [selectedId, setSelectedId] = useState("");
   const [name, setName] = useState("");
+  const [fileError, setFileError] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
   const selected = presets.data?.find((preset) => preset.id === selectedId);
   const options = [
     { value: "", label: presets.isLoading ? "Loading presets…" : "— select preset —" },
@@ -52,6 +58,32 @@ export function TrainingPresetCard({
     setName("");
   };
 
+  const exportWorkflow = () => {
+    const config = runtimeConfigForGraph(schema, graph, schema.runtime_config_defaults);
+    const contents = JSON.stringify(workflowDefinition(graph, config), null, 2);
+    const url = URL.createObjectURL(new Blob([contents], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "workflow.json";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const uploadWorkflow = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const definition = JSON.parse(await file.text()) as WorkflowDefinition;
+      const uploadedGraph = graphFromDefinition(definition, tab);
+      runtimeConfigForGraph(schema, uploadedGraph, definition.context.config);
+      onLoad(uploadedGraph);
+      setFileError("");
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : "Could not read workflow.json");
+    }
+  };
+
   return (
     <Card className="px-4 py-4">
       <div className="mb-3">
@@ -76,8 +108,31 @@ export function TrainingPresetCard({
           {createPreset.isPending ? "Saving…" : "Save"}
         </Button>
       </div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <Button size="sm" icon="download" onClick={exportWorkflow}>Export</Button>
+        <Button size="sm" icon="upload" onClick={() => fileRef.current?.click()}>Upload</Button>
+        <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={(event) => void uploadWorkflow(event)} />
+      </div>
       {presets.error ? <div className="mt-2 text-[11px] text-red-600">Could not load presets.</div> : null}
       {createPreset.error ? <div className="mt-2 text-[11px] text-red-600">Could not save preset.</div> : null}
+      {fileError ? <div className="mt-2 text-[11px] text-red-600">{fileError}</div> : null}
     </Card>
   );
+}
+
+function graphFromDefinition(definition: WorkflowDefinition, tab: TrainTab): WorkflowGraph {
+  if (!Array.isArray(definition.nodes) || !Array.isArray(definition.edges) || !definition.context) {
+    throw new Error("The selected file is not a workflow.json file");
+  }
+  const expectedNodes = TRAINING_WORKFLOWS[tab].nodes;
+  const nodesById = new Map(definition.nodes.map((node) => [node.id, node]));
+  const incompatible = expectedNodes.find((expected) => nodesById.get(expected.id)?.type !== expected.type);
+  if (incompatible) {
+    throw new Error(`Workflow is incompatible with the ${tab} training tab`);
+  }
+  return {
+    nodes: structuredClone(definition.nodes),
+    edges: structuredClone(definition.edges),
+    panels: structuredClone(definition.panels ?? []),
+  };
 }
