@@ -255,26 +255,14 @@ def _run_distributed_training(
 
 def _make_mlflow_run(config_path: Path) -> TrackerRun:
     """Start an MLflow run named from the training configuration."""
-    try:
-        styletts_yaml = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    except Exception:
-        styletts_yaml = {}
-    publish = styletts_yaml.get("studio_publish", {}) if isinstance(styletts_yaml, dict) else {}
-    run_name = str(publish.get("run_name") or publish.get("run_id") or "styletts_finetune")
-    config = {
-        "run_id": publish.get("run_id"),
-        "finetune_job_id": publish.get("finetune_job_id"),
-        "total_steps": styletts_yaml.get("total_steps"),
-        "distributed_processes": styletts_yaml.get("distributed_processes"),
-        "stage_max_audio_seconds": ",".join(
-            str(stage.get("max_audio_seconds"))
-            for stage in styletts_yaml.get("training_stages", [])
-        ),
-        "precision": styletts_yaml.get("precision"),
-        "n_token": (styletts_yaml.get("model_params") or {}).get("n_token"),
-        "decoder": ((styletts_yaml.get("model_params") or {}).get("decoder") or {}).get("type"),
-    }
-    return start_mlflow_run(experiment="styletts2_finetune", name=run_name, config=config)
+    styletts_yaml = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    publish = styletts_yaml["studio_publish"]
+    run_name = str(publish["run_name"] or publish["run_id"] or "styletts_finetune")
+    return start_mlflow_run(
+        experiment="styletts2_finetune",
+        name=run_name,
+        config=styletts_yaml,
+    )
 
 
 def _latest_step_result(run_id: str) -> TrainingResult:

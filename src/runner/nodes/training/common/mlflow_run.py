@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import json
 import logging
 import os
 from pathlib import Path
@@ -35,6 +36,8 @@ class TrackerRun(Protocol):
 
 class TrackingClient(Protocol):
     def set_tag(self, run_id: str, key: str, value: object) -> object: ...
+
+    def log_param(self, run_id: str, key: str, value: object) -> object: ...
 
     def log_metric(
         self, run_id: str, key: str, value: float, *, step: int, synchronous: bool
@@ -156,13 +159,32 @@ def start_mlflow_run(*, experiment: str, name: str, config: dict[str, object]) -
             "mlflow.source.git.commit": git_commit,
         },
     )
-    client.log_dict(run.info.run_id, {**config, "git_commit": git_commit}, "config.json")
+    resolved_config = {**config, "git_commit": git_commit}
+    client.log_dict(run.info.run_id, resolved_config, "config.json")
+    for key, value in _flatten_config(resolved_config).items():
+        client.log_param(run.info.run_id, key, value)
     logger.info("MLflow run started experiment=%s name=%s", experiment, name)
     return MlflowRun(
         client,
         run.info.run_id,
         resume_system_metrics=False,
     )
+
+
+def _flatten_config(value: object, prefix: str = "") -> dict[str, object]:
+    flattened: dict[str, object] = {}
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            nested_prefix = f"{prefix}.{key}" if prefix else str(key)
+            flattened.update(_flatten_config(item, nested_prefix))
+        return flattened
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            nested_prefix = f"{prefix}.{index}"
+            flattened.update(_flatten_config(item, nested_prefix))
+        return flattened
+    flattened[prefix] = json.dumps(value) if value is None else value
+    return flattened
 
 
 def resume_mlflow_run(run_id: str) -> TrackerRun:
