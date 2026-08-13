@@ -239,7 +239,7 @@ class Trainer:
                     target_energy,
                 )
                 alpha_loss = modules.alpha_flow(
-                    continuous_latent.detach(),
+                    style_target.detach(),
                     bert,
                     alpha_features,
                     batch.input_lengths,

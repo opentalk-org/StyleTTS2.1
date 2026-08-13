@@ -172,13 +172,12 @@ def synthesize_validation(
                 style = latents.quantized_style
                 rvq_indices = latents.indices
         if stage.validation.alpha_flow:
-            continuous_latent = modules.alpha_flow.sample(
+            style = modules.alpha_flow.sample(
                 bert,
                 conditioning,
                 batch.input_lengths,
                 noise=alpha_flow_noise,
             )
-            style = modules.quantizer.decode_continuous(continuous_latent)
         duration_predictions = modules.duration_predictor(
             duration_encoding,
             style,
