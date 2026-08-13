@@ -242,7 +242,10 @@ def build_model(args, text_aligner, pitch_extractor, bert):
             duration_discriminator=ProsodyDiscriminator(mel_dim=513),
             decoder=decoder,
             text_encoder=text_encoder,
-            position_embedding=nn.Embedding(512, 512),
+            position_embedding=nn.Embedding(
+                bert.config.max_position_embeddings,
+                512,
+            ),
             prosody_encoder=prosody_encoder,
             quantizer=quantizer,
             voice_encoder=voice_encoder,

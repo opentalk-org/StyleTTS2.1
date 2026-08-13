@@ -394,7 +394,6 @@
 
             processes.runner = {
               env = {
-                CUDA_LAUNCH_BLOCKING = "1";
                 RUNFLOW_PGBOUNCER_DATABASE_URL = "dnvr://pgbouncer/url";
                 RUNFLOW_S3_BUCKET = "dnvr://s3/bucket";
               };
@@ -406,7 +405,7 @@
                   ${resolveTritonLibcuda}
                   runner_id="''${RUNNER_ID:-runner-1}"
                   echo "[runner] starting $runner_id"
-                  exec env CUDA_LAUNCH_BLOCKING=1 python -m runner.cli --runner-id "$runner_id"
+                  exec python -m runner.cli --runner-id "$runner_id"
                 '';
               };
             };
