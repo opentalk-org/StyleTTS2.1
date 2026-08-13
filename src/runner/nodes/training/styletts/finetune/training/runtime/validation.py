@@ -157,7 +157,7 @@ def synthesize_validation(
     )
     if validates_predictions:
         conditioning = prosody_inputs(
-            modules.position_embedding,
+            text_encoding,
             monotonic,
             target_f0,
             target_energy,

@@ -47,14 +47,20 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
         TrainableModule.TEXT_ALIGNER,
     ]
     tma_modules = list(mel_modules)
-    prosody_modules = [
+    continuous_prosody_modules = [
+        TrainableModule.BERT,
+        TrainableModule.BERT_ENCODER,
+        TrainableModule.DURATION_PREDICTOR,
+        TrainableModule.PROSODY_ENCODER,
+        TrainableModule.PROSODY_PREDICTOR,
+    ]
+    quantized_prosody_modules = [
         TrainableModule.BERT,
         TrainableModule.BERT_ENCODER,
         TrainableModule.DURATION_PREDICTOR,
         TrainableModule.PROSODY_ENCODER,
         TrainableModule.PROSODY_PREDICTOR,
         TrainableModule.QUANTIZER,
-        TrainableModule.POSITION_EMBEDDING,
     ]
     mel_weights = weights.model_copy(
         update={
@@ -79,10 +85,14 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             "duration": 1,
             "duration_ce": 20,
             "prosody_adversarial": 1,
+            "style_reconstruction": 1,
         }
     )
-    prosody_without_gan_weights = prosody_weights.model_copy(
-        update={"prosody_adversarial": 0}
+    continuous_prosody_weights = prosody_weights.model_copy(
+        update={
+            "prosody_adversarial": 0.1,
+            "style_reconstruction": 0,
+        }
     )
     return [
         TrainingStageSpec(
@@ -108,24 +118,24 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             validation=_validation(False, False),
         ),
         TrainingStageSpec(
-            name="prosody autoencoder · StyleTTS-ZS RVQ · no GAN",
+            name="train_prosody_no_rvq.py · continuous · GAN x0.1",
             steps=5_000,
             max_audio_seconds=90,
             max_decoder_seconds=3.0,
-            style_source=StyleSource.QUANTIZED,
+            style_source=StyleSource.CONTINUOUS,
             prosody_source=ProsodySource.PREDICTED,
-            trainable_modules=prosody_modules,
-            loss_weights=prosody_without_gan_weights,
+            trainable_modules=continuous_prosody_modules,
+            loss_weights=continuous_prosody_weights,
             validation=_validation(True, False, predicted_duration=True),
         ),
         TrainingStageSpec(
-            name="prosody autoencoder · StyleTTS-ZS RVQ · GAN",
+            name="train_prosody.py · StyleTTS-ZS RVQ · GAN",
             steps=8_000,
             max_audio_seconds=75,
             max_decoder_seconds=3.0,
             style_source=StyleSource.QUANTIZED,
             prosody_source=ProsodySource.PREDICTED,
-            trainable_modules=prosody_modules,
+            trainable_modules=quantized_prosody_modules,
             loss_weights=prosody_weights,
             validation=_validation(True, False, predicted_duration=True),
         ),

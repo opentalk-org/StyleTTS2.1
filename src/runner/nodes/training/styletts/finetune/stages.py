@@ -34,7 +34,6 @@ class TrainableModule(str, Enum):
     DECODER = "decoder"
     DURATION_PREDICTOR = "duration_predictor"
     FACTORIZATION = "factorization"
-    POSITION_EMBEDDING = "position_embedding"
     PROSODY_ENCODER = "prosody_encoder"
     PROSODY_PREDICTOR = "prosody_predictor"
     QUANTIZER = "quantizer"
@@ -57,6 +56,7 @@ class TrainingLoss(str, Enum):
     SLM_ADVERSARIAL = "slm_adversarial"
     SPEAKER_FEATURE = "speaker_feature"
     SPEAKER_SIMILARITY = "speaker_similarity"
+    STYLE_RECONSTRUCTION = "style_reconstruction"
     WAVLM = "wavlm"
     STYLE_NUISANCE = "style_nuisance"
     XCOV = "xcov"
@@ -78,6 +78,7 @@ class TrainingLossWeights(BaseModel):
     slm_adversarial: float = Field(ge=0)
     speaker_feature: float = Field(ge=0)
     speaker_similarity: float = Field(ge=0)
+    style_reconstruction: float = Field(default=0, ge=0)
     wavlm: float = Field(ge=0)
     style_nuisance: float = Field(ge=0)
     xcov: float = Field(ge=0)

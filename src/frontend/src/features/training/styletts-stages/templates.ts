@@ -16,7 +16,6 @@ export const TRAINABLE_MODULES = [
   "decoder",
   "duration_predictor",
   "factorization",
-  "position_embedding",
   "prosody_encoder",
   "prosody_predictor",
   "quantizer",
@@ -39,8 +38,9 @@ export const TRAINING_LOSSES = [
   "slm_adversarial",
   "speaker_feature",
   "speaker_similarity",
-  "wavlm",
+  "style_reconstruction",
   "style_nuisance",
+  "wavlm",
   "xcov",
 ] as const;
 
@@ -62,8 +62,9 @@ export const TRAINING_LOSS_LABELS: Record<TrainingLoss, string> = {
   slm_adversarial: "SLM adversarial",
   speaker_feature: "Speaker feature",
   speaker_similarity: "Speaker similarity",
-  wavlm: "WavLM reconstruction",
+  style_reconstruction: "Style reconstruction",
   style_nuisance: "Style nuisance",
+  wavlm: "WavLM reconstruction",
   xcov: "Cross-covariance",
 };
 
