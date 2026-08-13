@@ -30,4 +30,5 @@ docs/superpowers
 .envrc
 backups/
 *.png
-scripts/
+scripts/*
+!scripts/bootstrap-vast.sh
