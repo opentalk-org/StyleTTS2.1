@@ -318,13 +318,16 @@ class Trainer:
                     )
                     if random.random() < stage.voice_conditioning_dropout:
                         with torch.no_grad():
-                            null_voice, _ = modules.voice_encoder(
+                            null_voice, null_text = modules.voice_encoder(
                                 torch.zeros_like(prompt_mels).float(),
-                                decoder_text,
+                                text_encoding.float(),
                                 batch.input_lengths,
-                                decoder_text.size(-1),
+                                text_encoding.size(-1),
                             )
-                        decoder_voice = null_voice
+                        if bool(random.getrandbits(1)):
+                            decoder_voice = null_voice
+                        else:
+                            decoder_text = null_text
                     voice = F.normalize(decoder_voice, dim=-1)
             decoder_alignment = (
                 soft_alignment if bool(random.getrandbits(1)) else monotonic
