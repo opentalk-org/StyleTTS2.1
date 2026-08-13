@@ -58,6 +58,7 @@ _CHECKPOINT_DIM0_RESIZE_KEYS_BY_MODULE = {
         "module.asr_s2s.project_to_n_symbols.weight",
         "module.asr_s2s.project_to_n_symbols.bias",
     }),
+    "position_embedding": frozenset({"weight"}),
 }
 
 logger = logging.getLogger(__name__)
@@ -86,7 +87,9 @@ def _merge_checkpoint_state_with_dim0_resize(module_name, model_module, ckpt_sd)
         ckpt_sd,
         _CHECKPOINT_DIM0_RESIZE_KEYS_BY_MODULE[module_name],
         error_scope=module_name,
-        appended_source_index=0,
+        appended_source_index=(
+            None if module_name == "position_embedding" else 0
+        ),
     )
 
 def _maybe_normalize_module_prefix(model_module, state_dict):
