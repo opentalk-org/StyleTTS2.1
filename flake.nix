@@ -444,6 +444,14 @@
                   ":sftp:/home/storagebucket"
               '';
             };
+
+            scripts.givemedata-gen = {
+              description = "Generate Python proto files for givemedata service.";
+              text = ''
+                cd "$DNVR_ROOT"
+                exec uvx --with mypy-protobuf --with "protobuf>=6.31" --from grpcio-tools python -m grpc_tools.protoc -I src --python_out=src --pyi_out=src  --grpc_python_out=src --mypy_grpc_out=src givemedata/proto/givemedata.proto
+              '';
+            };
           };
         };
     };

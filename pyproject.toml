@@ -69,6 +69,13 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "whisperx>=3.1",
     "yt-dlp>=2024.8",
+    # 1.82.0 is yanked upstream for declaring a bad protobuf dependency range.
+    "grpcio>=1.68,<1.82",
+    # protoc must emit gencode the pinned protobuf runtime accepts. nemo requires
+    # protobuf~=5.29.5, which pairs with libprotoc 29.x; grpcio-tools ships that up
+    # to 1.71. From 1.73 its bundled protoc jumps to 31.x and the stubs it generates
+    # refuse to load against the 5.29 runtime.
+    "grpcio-tools>=1.68,<1.72",
 ]
 
 # DeepFilterNet's wheel metadata pins numpy<2, but the rest of the stack (nemo,
@@ -136,5 +143,16 @@ package-dir = {"" = "src"}
 where = ["src"]
 include = ["backend*", "runflow*", "runner*", "shared*"]
 
+[tool.pyright]
+typeCheckingMode = "standard"
+reportUnknownParameterType = true
+
 [tool.setuptools.exclude-package-data]
 "*" = [".DS_Store"]
+
+[dependency-groups]
+dev = [
+    "grpcio-tools>=1.71",
+    "mypy-protobuf>=3.6",
+    "protobuf>=6.31",
+]
