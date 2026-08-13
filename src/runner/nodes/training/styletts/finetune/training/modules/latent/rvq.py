@@ -57,8 +57,6 @@ class VectorQuantizer(nn.Module):
 
 
 class ResidualVectorQuantizer(nn.Module):
-    """The nine-stage learned RVQ used by StyleTTS-ZS."""
-
     def __init__(
         self,
         input_dim: int,
