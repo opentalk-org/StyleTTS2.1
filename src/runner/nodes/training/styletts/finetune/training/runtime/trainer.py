@@ -601,13 +601,15 @@ class Trainer:
             if weights.wavlm > 0 or slm_adversarial:
                 real_features = None
                 if weights.wavlm > 0:
-                    with torch.no_grad():
-                        real_features = self.runtime.features.wavlm(
-                            waveform.detach().squeeze(1)
-                        )
-                generated_features = self.runtime.features.wavlm(
-                    reconstructed.squeeze(1)
-                )
+                    with profiling_fn("wavlm_real_forward"):
+                        with torch.no_grad():
+                            real_features = self.runtime.features.wavlm(
+                                waveform.detach().squeeze(1)
+                            )
+                with profiling_fn("wavlm_generated_forward"):
+                    generated_features = self.runtime.features.wavlm(
+                        reconstructed.squeeze(1)
+                    )
                 if real_features is not None:
                     losses["wavlm"] = wavlm_feature_loss(
                         real_features,
@@ -640,7 +642,8 @@ class Trainer:
                 wavlm_finite = bool(torch.isfinite(wavlm_branch).item())
                 auxiliary_finite = auxiliary_finite and wavlm_finite
                 if wavlm_finite:
-                    accelerator.backward(wavlm_branch, retain_graph=True)
+                    with profiling_fn("wavlm_backward"):
+                        accelerator.backward(wavlm_branch, retain_graph=True)
                 losses["wavlm"] = losses["wavlm"].detach()
                 losses["slm_adversarial"] = losses[
                     "slm_adversarial"
@@ -661,13 +664,15 @@ class Trainer:
                     speaker_start,
                     speaker_start + speaker_frames,
                 )
-                with torch.no_grad():
-                    real_values, real_embedding = speaker(
-                        waveform[..., speaker_slice].detach()
+                with profiling_fn("speaker_real_forward"):
+                    with torch.no_grad():
+                        real_values, real_embedding = speaker(
+                            waveform[..., speaker_slice].detach()
+                        )
+                with profiling_fn("speaker_generated_forward"):
+                    generated_values, generated_embedding = speaker(
+                        reconstructed[..., speaker_slice]
                     )
-                generated_values, generated_embedding = (
-                    speaker(reconstructed[..., speaker_slice])
-                )
                 speaker_feature, speaker_similarity = speaker_losses(
                     real_values,
                     generated_values,
@@ -683,7 +688,8 @@ class Trainer:
                 speaker_finite = bool(torch.isfinite(speaker_branch).item())
                 auxiliary_finite = auxiliary_finite and speaker_finite
                 if speaker_finite:
-                    accelerator.backward(speaker_branch, retain_graph=True)
+                    with profiling_fn("speaker_backward"):
+                        accelerator.backward(speaker_branch, retain_graph=True)
                 losses["speaker_feature"] = speaker_feature.detach()
                 losses["speaker_similarity"] = speaker_similarity.detach()
             if prosody_adversarial:
