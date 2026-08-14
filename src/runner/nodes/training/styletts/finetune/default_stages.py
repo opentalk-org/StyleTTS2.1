@@ -69,6 +69,8 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             "mel": 5,
             "sequence_alignment": 0.2,
             "monotonic_alignment": 5,
+            "wavlm": 1,
+            "speaker_feature": 1,
         }
     )
     tma_weights = weights.model_copy(
@@ -98,7 +100,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
     return [
         TrainingStageSpec(
             name="StyleTTS2 train_first.py · mel pretraining",
-            steps=10_000,
+            steps=30_000,
             max_audio_seconds=150,
             max_decoder_seconds=9.0,
             voice_conditioning_dropout=0.2,
