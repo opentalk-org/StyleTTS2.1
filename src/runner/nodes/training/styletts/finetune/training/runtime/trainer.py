@@ -523,6 +523,8 @@ class Trainer:
             quantizer_metrics["rvq_commitment"] = commitment_loss.detach()
             quantizer_metrics["rvq_codebook"] = codebook_loss.detach()
         auxiliary_finite = True
+        auxiliary_waveform_gradient = None
+        feature_waveform = reconstructed.detach().requires_grad_(True)
         with accelerator.autocast():
             zero = reconstructed.new_zeros(())
             losses = {item.value: zero for item in TrainingLoss}
@@ -608,7 +610,7 @@ class Trainer:
                             )
                 with profiling_fn("wavlm_generated_forward"):
                     generated_features = self.runtime.features.wavlm(
-                        reconstructed.squeeze(1)
+                        feature_waveform.squeeze(1)
                     )
                 if real_features is not None:
                     losses["wavlm"] = wavlm_feature_loss(
@@ -643,7 +645,10 @@ class Trainer:
                 auxiliary_finite = auxiliary_finite and wavlm_finite
                 if wavlm_finite:
                     with profiling_fn("wavlm_backward"):
-                        accelerator.backward(wavlm_branch, retain_graph=True)
+                        auxiliary_waveform_gradient = torch.autograd.grad(
+                            wavlm_branch,
+                            feature_waveform,
+                        )[0]
                 losses["wavlm"] = losses["wavlm"].detach()
                 losses["slm_adversarial"] = losses[
                     "slm_adversarial"
@@ -671,7 +676,7 @@ class Trainer:
                         )
                 with profiling_fn("speaker_generated_forward"):
                     generated_values, generated_embedding = speaker(
-                        reconstructed[..., speaker_slice]
+                        feature_waveform[..., speaker_slice]
                     )
                 speaker_feature, speaker_similarity = speaker_losses(
                     real_values,
@@ -689,7 +694,14 @@ class Trainer:
                 auxiliary_finite = auxiliary_finite and speaker_finite
                 if speaker_finite:
                     with profiling_fn("speaker_backward"):
-                        accelerator.backward(speaker_branch, retain_graph=True)
+                        speaker_gradient = torch.autograd.grad(
+                            speaker_branch,
+                            feature_waveform,
+                        )[0]
+                    if auxiliary_waveform_gradient is None:
+                        auxiliary_waveform_gradient = speaker_gradient
+                    else:
+                        auxiliary_waveform_gradient.add_(speaker_gradient)
                 losses["speaker_feature"] = speaker_feature.detach()
                 losses["speaker_similarity"] = speaker_similarity.detach()
             if prosody_adversarial:
@@ -775,11 +787,19 @@ class Trainer:
         total = self._weighted_total(losses, weights)
         if style_required and stage.style_source is StyleSource.QUANTIZED:
             total = total + commitment_loss + codebook_loss
+        backward_total = total
+        if auxiliary_waveform_gradient is not None:
+            waveform_surrogate = (
+                reconstructed * auxiliary_waveform_gradient.detach()
+            ).sum()
+            backward_total = (
+                total + waveform_surrogate - waveform_surrogate.detach()
+            )
         with profiling_fn("loss_finite_check"):
             finite = auxiliary_finite and bool(torch.isfinite(total).item())
         if finite:
             with profiling_fn("generator_backward"):
-                accelerator.backward(total)
+                accelerator.backward(backward_total)
         else:
             self.skipped_steps += 1
             logger.warning("non-finite generator loss at step=%s", self.step)
