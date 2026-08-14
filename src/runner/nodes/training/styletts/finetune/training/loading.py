@@ -305,6 +305,17 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
                 continue
             raise ValueError(f"checkpoint is missing unchanged module {key}")
         normalized_params = _maybe_normalize_module_prefix(model[key], params[source_key])
+        if key == "voice_encoder" and any(
+            name.startswith("conformer_pre.") for name in normalized_params
+        ):
+            normalized_params = {
+                (
+                    f"phoneme_encoder.{name}"
+                    if name.startswith(("conformer_pre.", "conformer_body."))
+                    else name
+                ): value
+                for name, value in normalized_params.items()
+            }
         if key == "wd" and "wavlm_projection.weight" not in normalized_params:
             logger.info("initialized paper multimodal waveform discriminator")
             reinitialized.add(key)
@@ -324,6 +335,10 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
                 if name in current_keys
             }
         load_result = model[key].load_state_dict(adapted_params, strict=False)
+        if key == "voice_encoder" and "positions.weight" in load_result.missing_keys:
+            logger.info(
+                "initialized 16-token voice pooling and text conditioning"
+            )
         missing_keys = [
             item for item in load_result.missing_keys
             if not item.endswith("dummy_tensor")
@@ -334,6 +349,18 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
             and not (
                 key == "alpha_flow"
                 and item in {"style_scale", "style_scale_updates"}
+            )
+            and not (
+                key == "voice_encoder"
+                and item.startswith(
+                    (
+                        "cross_attention.",
+                        "positions.",
+                        "embedder.",
+                        "prompt_conformer_pre.",
+                        "prompt_conformer_body.",
+                    )
+                )
             )
         ]
         unexpected_keys = [
