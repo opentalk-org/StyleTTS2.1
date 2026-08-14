@@ -16,7 +16,7 @@ from botocore.client import BaseClient
 from botocore.config import Config
 from botocore.exceptions import ClientError, ReadTimeoutError
 
-RANGE_READ_ATTEMPTS = 6
+RANGE_READ_ATTEMPTS = 11
 RANGE_READ_WORKERS = 20
 RANGE_READ_BACKOFF_SECONDS = 0.1
 UPLOAD_ATTEMPTS = 3
