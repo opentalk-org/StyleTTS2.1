@@ -2,6 +2,7 @@ import torch
 import torchaudio
 from huggingface_hub import hf_hub_download
 from torch import Tensor, nn
+from torch.utils.checkpoint import checkpoint
 from torchaudio.compliance import kaldi
 from transformers import (
     AutoModel,
@@ -20,10 +21,19 @@ class WavLMFeatures(nn.Module):
 
     def forward(self, waveform: Tensor):
         waveform = self.resample(waveform.float())
-        return self.model(
-            input_values=waveform,
-            output_hidden_states=True,
-        ).hidden_states
+        if waveform.requires_grad:
+            output = checkpoint(
+                self.model,
+                input_values=waveform,
+                output_hidden_states=True,
+                use_reentrant=False,
+            )
+        else:
+            output = self.model(
+                input_values=waveform,
+                output_hidden_states=True,
+            )
+        return output.hidden_states
 
     @staticmethod
     def discriminator_input(features) -> Tensor:
@@ -64,4 +74,6 @@ class SpeakerFeatures(nn.Module):
             waveform = waveform.mean(dim=1, keepdim=True)
         waveform = self.resample(waveform).float()
         fbank = torch.stack([self._fbank(item) for item in waveform])
+        if fbank.requires_grad:
+            return checkpoint(self.model, fbank, use_reentrant=False)
         return self.model(fbank)
