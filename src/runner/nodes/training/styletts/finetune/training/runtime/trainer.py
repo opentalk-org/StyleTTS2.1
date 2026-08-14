@@ -653,6 +653,15 @@ class Trainer:
                 losses["slm_adversarial"] = losses[
                     "slm_adversarial"
                 ].detach()
+                del generated_features, real_features, wavlm_branch
+                if slm_adversarial:
+                    del (
+                        generated_input,
+                        generated_scores,
+                        generated_hidden,
+                        real_scores,
+                        real_hidden,
+                    )
             if weights.speaker_feature > 0 or weights.speaker_similarity > 0:
                 speaker = self.runtime.features.speaker
                 if speaker is None:
@@ -702,8 +711,18 @@ class Trainer:
                         auxiliary_waveform_gradient = speaker_gradient
                     else:
                         auxiliary_waveform_gradient.add_(speaker_gradient)
+                    del speaker_gradient
                 losses["speaker_feature"] = speaker_feature.detach()
                 losses["speaker_similarity"] = speaker_similarity.detach()
+                del (
+                    generated_values,
+                    generated_embedding,
+                    real_values,
+                    real_embedding,
+                    speaker_feature,
+                    speaker_similarity,
+                    speaker_branch,
+                )
             if prosody_adversarial:
                 prosody_lengths = batch.mel_lengths.to(reconstructed.device) // 2
                 prosody_scores, prosody_fake_features = (
