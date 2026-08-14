@@ -83,6 +83,11 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             "speaker_feature": 1,
         }
     )
+    tma_warmup_weights = tma_weights.model_copy(
+        update={
+            "adversarial": 0.1,
+        }
+    )
     prosody_weights = weights.model_copy(
         update={
             "f0": 1,
@@ -108,6 +113,18 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
             prosody_source=ProsodySource.GROUND_TRUTH,
             trainable_modules=mel_modules,
             loss_weights=mel_weights,
+            validation=_validation(False, False),
+        ),
+        TrainingStageSpec(
+            name="StyleTTS2 train_first.py · TMA acoustic GAN x0.1",
+            steps=5_000,
+            max_audio_seconds=90,
+            max_decoder_seconds=6.0,
+            voice_conditioning_dropout=0.2,
+            style_source=StyleSource.CONTINUOUS,
+            prosody_source=ProsodySource.GROUND_TRUTH,
+            trainable_modules=tma_modules,
+            loss_weights=tma_warmup_weights,
             validation=_validation(False, False),
         ),
         TrainingStageSpec(

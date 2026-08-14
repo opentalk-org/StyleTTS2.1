@@ -82,13 +82,14 @@ export type TrainingStageSpec = {
 
 export const STAGE_PRESETS = [
   { label: "Mel pretraining", indexes: [0] },
-  { label: "TMA acoustic GAN", indexes: [1] },
-  { label: "Prosody without GAN", indexes: [2] },
-  { label: "Prosody GAN", indexes: [3] },
-  { label: "AlphaFlow", indexes: [4] },
-  { label: "StyleTTS2 acoustic", indexes: [0, 1] },
-  { label: "Default StyleTTS-ZS", indexes: [0, 1, 2, 3, 4] },
-  { label: "Without mel pretraining", indexes: [1, 2, 3, 4] },
+  { label: "TMA GAN warm-up", indexes: [1] },
+  { label: "TMA acoustic GAN", indexes: [1, 2] },
+  { label: "Prosody without GAN", indexes: [3] },
+  { label: "Prosody GAN", indexes: [4] },
+  { label: "AlphaFlow", indexes: [5] },
+  { label: "StyleTTS2 acoustic", indexes: [0, 1, 2] },
+  { label: "Default StyleTTS-ZS", indexes: [0, 1, 2, 3, 4, 5] },
+  { label: "Without mel pretraining", indexes: [1, 2, 3, 4, 5] },
 ] as const;
 
 export function stageTemplates(defaultStages: TrainingStageSpec[]): TrainingStageSpec[] {

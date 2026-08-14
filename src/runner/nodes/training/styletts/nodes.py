@@ -62,12 +62,12 @@ class StyleTtsFinetuneSettings(StrictSettings):
         min_length=1,
     )
     validation_interval_steps: int = Field(
-        default=500,
+        default=1000,
         title="Validation interval",
         ge=1,
     )
     checkpoint_interval_steps: int = Field(
-        default=2000,
+        default=5000,
         title="Checkpoint interval",
         ge=1,
     )
