@@ -521,6 +521,7 @@ class Trainer:
         if style_required and stage.style_source is StyleSource.QUANTIZED:
             quantizer_metrics["rvq_commitment"] = commitment_loss.detach()
             quantizer_metrics["rvq_codebook"] = codebook_loss.detach()
+        auxiliary_finite = True
         with accelerator.autocast():
             zero = reconstructed.new_zeros(())
             losses = {item.value: zero for item in TrainingLoss}
@@ -631,6 +632,18 @@ class Trainer:
                         real_hidden,
                         generated_hidden,
                     )
+                wavlm_branch = (
+                    losses["wavlm"] * weights.wavlm
+                    + losses["slm_adversarial"] * weights.slm_adversarial
+                )
+                wavlm_finite = bool(torch.isfinite(wavlm_branch).item())
+                auxiliary_finite = auxiliary_finite and wavlm_finite
+                if wavlm_finite:
+                    accelerator.backward(wavlm_branch, retain_graph=True)
+                losses["wavlm"] = losses["wavlm"].detach()
+                losses["slm_adversarial"] = losses[
+                    "slm_adversarial"
+                ].detach()
             if weights.speaker_feature > 0 or weights.speaker_similarity > 0:
                 speaker = self.runtime.features.speaker
                 if speaker is None:
@@ -648,6 +661,16 @@ class Trainer:
                 )
                 losses["speaker_feature"] = speaker_feature
                 losses["speaker_similarity"] = speaker_similarity
+                speaker_branch = (
+                    speaker_feature * weights.speaker_feature
+                    + speaker_similarity * weights.speaker_similarity
+                )
+                speaker_finite = bool(torch.isfinite(speaker_branch).item())
+                auxiliary_finite = auxiliary_finite and speaker_finite
+                if speaker_finite:
+                    accelerator.backward(speaker_branch, retain_graph=True)
+                losses["speaker_feature"] = speaker_feature.detach()
+                losses["speaker_similarity"] = speaker_similarity.detach()
             if prosody_adversarial:
                 prosody_lengths = batch.mel_lengths.to(reconstructed.device) // 2
                 prosody_scores, prosody_fake_features = (
@@ -732,7 +755,7 @@ class Trainer:
         if style_required and stage.style_source is StyleSource.QUANTIZED:
             total = total + commitment_loss + codebook_loss
         with profiling_fn("loss_finite_check"):
-            finite = bool(torch.isfinite(total).item())
+            finite = auxiliary_finite and bool(torch.isfinite(total).item())
         if finite:
             with profiling_fn("generator_backward"):
                 accelerator.backward(total)
