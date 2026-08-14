@@ -66,7 +66,7 @@ def build_default_training_stages() -> list[TrainingStageSpec]:
     ]
     mel_weights = weights.model_copy(
         update={
-            "mel": 1,
+            "mel": 5,
             "sequence_alignment": 0.2,
             "monotonic_alignment": 5,
         }
