@@ -41,6 +41,7 @@ from .gradient_norms import gradient_norm_metrics
 
 
 logger = logging.getLogger(__name__)
+SPEAKER_LOSS_SECONDS = 3
 
 
 class Trainer:
@@ -648,10 +649,24 @@ class Trainer:
                 speaker = self.runtime.features.speaker
                 if speaker is None:
                     raise RuntimeError("speaker features were not initialized")
+                speaker_frames = min(
+                    reconstructed.size(-1),
+                    self.config.preprocess_params.sr * SPEAKER_LOSS_SECONDS,
+                )
+                speaker_start = random.randint(
+                    0,
+                    reconstructed.size(-1) - speaker_frames,
+                )
+                speaker_slice = slice(
+                    speaker_start,
+                    speaker_start + speaker_frames,
+                )
                 with torch.no_grad():
-                    real_values, real_embedding = speaker(waveform.detach())
+                    real_values, real_embedding = speaker(
+                        waveform[..., speaker_slice].detach()
+                    )
                 generated_values, generated_embedding = (
-                    speaker(reconstructed)
+                    speaker(reconstructed[..., speaker_slice])
                 )
                 speaker_feature, speaker_similarity = speaker_losses(
                     real_values,
