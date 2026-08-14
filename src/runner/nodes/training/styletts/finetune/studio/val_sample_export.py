@@ -48,9 +48,13 @@ class ValidationArtifactRenderer:
         step: int,
         samples: list[ValidationSample],
         mode: str = "teacher_forced_timing",
+        sample_indices: list[int] | None = None,
     ) -> list[ValidationSampleArtifacts]:
+        indices = sample_indices or list(range(len(samples)))
+        if len(indices) != len(samples):
+            raise ValueError("sample_indices must match samples")
         artifacts = []
-        for index, sample in enumerate(samples):
+        for index, sample in zip(indices, samples, strict=True):
             relative = Path(
                 "samples",
                 f"step_{step:09d}",

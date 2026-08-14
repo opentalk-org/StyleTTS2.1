@@ -268,6 +268,7 @@ class Validator:
             Path(config.log_dir),
             config.preprocess_params.sr,
         )
+        self.sample_cursor = 0
 
     def run(
         self,
@@ -301,17 +302,34 @@ class Validator:
             dtype=torch.long,
         )
         samples: list[ValidationSampleArtifacts] = []
+        validation_sample_count = self.config.data_params.validation_samples
+        export_count = min(4, validation_sample_count)
+        export_positions = [
+            (self.sample_cursor + index) % validation_sample_count
+            for index in range(export_count)
+        ]
+        export_slots = {
+            position: slot for slot, position in enumerate(export_positions)
+        }
+        batch_start = 0
         count = 0
         with torch.no_grad():
             for loaded_batch in batches:
                 batch = loaded_batch.batch
                 check_cancel()
                 batch = batch.to(self.runtime.accelerator.device)
+                batch_end = batch_start + batch.texts.size(0)
+                selected = [
+                    (position - batch_start, export_slots[position])
+                    for position in export_positions
+                    if batch_start <= position < batch_end
+                ]
                 values, exported, rvq_indices = self._validate_batch(
                     batch,
                     step,
                     stage,
-                    export_samples=not samples,
+                    export_indices=[index for index, _ in selected],
+                    export_slots=[slot for _, slot in selected],
                 )
                 for name, value in values.items():
                     totals[name] += value
@@ -324,6 +342,7 @@ class Validator:
                             minlength=rvq_counts.size(1),
                         )
                 count += 1
+                batch_start = batch_end
         if count == 0:
             raise ValueError("validation loader produced no batches")
         reduced = {
@@ -332,6 +351,9 @@ class Validator:
         }
         if rvq_counts.sum() > 0:
             reduced.update(rvq_usage_metrics(rvq_counts))
+        self.sample_cursor = (
+            self.sample_cursor + export_count
+        ) % validation_sample_count
         return ValidationResult(
             reduced,
             samples,
@@ -342,7 +364,8 @@ class Validator:
         batch: TrainingBatch,
         step: int,
         stage: TrainingStageSpec,
-        export_samples: bool,
+        export_indices: list[int],
+        export_slots: list[int],
     ) -> tuple[
         dict[str, torch.Tensor],
         list[ValidationSampleArtifacts],
@@ -549,8 +572,7 @@ class Validator:
                     }
                 )
         samples = []
-        if export_samples:
-            sample_count = min(4, waveform.size(0))
+        if export_indices:
             validation_samples = [
                 ValidationSample(
                     ground_truth=waveform[
@@ -592,12 +614,13 @@ class Validator:
                         : batch.mel_lengths[index] // (2**n_down),
                     ],
                 )
-                for index in range(sample_count)
+                for index in export_indices
             ]
             teacher_forced_samples = self.artifacts.render(
                 step,
                 validation_samples,
                 mode="teacher_forced_timing",
+                sample_indices=export_slots,
             )
             samples = teacher_forced_samples
             if validate_predictions:
@@ -640,12 +663,13 @@ class Validator:
                             : free_lengths[index],
                         ],
                     )
-                    for index in range(sample_count)
+                    for index in export_indices
                 ]
                 samples += self.artifacts.render(
                     step,
                     free_run_samples,
                     mode="free_running",
+                    sample_indices=export_slots,
                 )
         return metrics, samples, rvq_indices
 
