@@ -67,6 +67,9 @@ def build_training_runtime(
     parameters = recursive_munch(config.model_params)
     modules = _build_models(config, parameters, device)
     if device.type == "cuda":
+        # Frozen feature-loss networks are backpropagated before the main loss
+        # to bound VRAM, which requires retaining the shared decoder graph.
+        torch._functorch.config.donated_buffer = False
         generator = modules.decoder.generator
         for name in (
             "_pre_upsample_noise",
