@@ -14,23 +14,17 @@ from boto3.exceptions import S3UploadFailedError
 from boto3.s3.transfer import TransferConfig
 from botocore.client import BaseClient
 from botocore.config import Config
-from botocore.exceptions import ClientError, ReadTimeoutError
+from botocore.exceptions import BotoCoreError, ClientError, ReadTimeoutError
 
-RANGE_READ_ATTEMPTS = 11
 RANGE_READ_WORKERS = 20
-RANGE_READ_BACKOFF_SECONDS = 0.1
+READ_BACKOFF_SECONDS = 0.1
+READ_BACKOFF_MAX_SECONDS = 30.0
 UPLOAD_ATTEMPTS = 3
 UPLOAD_BACKOFF_SECONDS = 1.0
 UPLOAD_PART_SIZE = 64 * 1024 * 1024
 RETRYABLE_S3_CODES = frozenset(
-    {
-        "InternalError",
-        "RequestTimeout",
-        "ServiceUnavailable",
-        "SlowDown",
-    }
+    {"InternalError", "RequestTimeout", "ServiceUnavailable", "SlowDown"}
 )
-
 logger = logging.getLogger(__name__)
 
 
@@ -213,50 +207,47 @@ class S3ObjectStore(ObjectStore):
             raise
 
     def download(self, path: str) -> bytes:
-        response = self._client.get_object(Bucket=self._bucket, Key=self._key(path))
-        return response["Body"].read()
+        return self._read(path, None, None)
 
     def read_range(self, request: ObjectRange) -> bytes:
         last_byte = request.byte_offset + request.byte_length - 1
-        for attempt in range(RANGE_READ_ATTEMPTS):
+        byte_range = f"bytes={request.byte_offset}-{last_byte}"
+        return self._read(request.path, byte_range, request.byte_length)
+
+    def _read(self, path: str, byte_range: str | None, length: int | None) -> bytes:
+        attempt = 0
+        while True:
             try:
-                response = self._client.get_object(
-                    Bucket=self._bucket,
-                    Key=self._key(request.path),
-                    Range=f"bytes={request.byte_offset}-{last_byte}",
-                )
+                if byte_range is None:
+                    response = self._client.get_object(
+                        Bucket=self._bucket,
+                        Key=self._key(path),
+                    )
+                else:
+                    response = self._client.get_object(
+                        Bucket=self._bucket, Key=self._key(path), Range=byte_range
+                    )
                 data = response["Body"].read()
-                break
-            except (ClientError, ReadTimeoutError) as error:
-                code = _range_error_code(error)
-                if self._request_metrics is not None:
-                    self._request_metrics.record_failed_query(code)
-                retryable = _retryable_range_error(error)
-                if not retryable or attempt == RANGE_READ_ATTEMPTS - 1:
+                expected = int(response["ContentLength"]) if length is None else length
+                if len(data) != expected:
+                    raise EOFError(
+                        f"{path} returned {len(data)} bytes; expected {expected}"
+                    )
+                return data
+            except (BotoCoreError, EOFError) as error:
+                if not _retryable_read_error(error):
                     raise
-                delay = (
-                    RANGE_READ_BACKOFF_SECONDS
-                    * (2**attempt)
-                    * random.uniform(0.75, 1.25)
-                )
+                self._record_read_failure(error)
+                delay = _read_retry_delay(attempt)
                 logger.warning(
-                    "S3 range query failed code=%s attempt=%s/%s; retrying in %.2fs",
-                    code,
+                    "S3 read failed path=%s code=%s attempt=%s; retrying in %.2fs",
+                    path,
+                    _read_error_code(error),
                     attempt + 1,
-                    RANGE_READ_ATTEMPTS,
                     delay,
                 )
                 time.sleep(delay)
-        else:
-            raise AssertionError(
-                "range read retry loop exhausted without returning or raising"
-            )
-        if len(data) != request.byte_length:
-            raise EOFError(
-                f"{request.path} returned {len(data)} bytes; "
-                f"expected {request.byte_length}"
-            )
-        return data
+                attempt += 1
 
     def read_ranges(self, requests: Sequence[ObjectRange]) -> list[bytes]:
         if not requests:
@@ -276,16 +267,20 @@ class S3ObjectStore(ObjectStore):
             return normalized_path
         return f"{self._folder}/{normalized_path}"
 
+    def _record_read_failure(self, error: BotoCoreError | EOFError) -> None:
+        if self._request_metrics is not None:
+            self._request_metrics.record_failed_query(_read_error_code(error))
+
 
 def _normalize_folder(folder: str) -> str:
     stripped = folder.strip().strip("/")
-    if stripped in {"", "."}:
-        return ""
-    return stripped
+    return "" if stripped in {"", "."} else stripped
 
 
-def _retryable_range_error(error: ClientError | ReadTimeoutError) -> bool:
-    if isinstance(error, ReadTimeoutError):
+def _retryable_read_error(error: BotoCoreError | EOFError) -> bool:
+    if isinstance(error, (ReadTimeoutError, EOFError)):
+        return True
+    if not isinstance(error, ClientError):
         return True
     response = error.response
     code = response["Error"]["Code"]
@@ -293,7 +288,13 @@ def _retryable_range_error(error: ClientError | ReadTimeoutError) -> bool:
     return code in RETRYABLE_S3_CODES or status >= 500
 
 
-def _range_error_code(error: ClientError | ReadTimeoutError) -> str:
-    if isinstance(error, ReadTimeoutError):
-        return "ReadTimeoutError"
-    return str(error.response["Error"]["Code"])
+def _read_error_code(error: BotoCoreError | EOFError) -> str:
+    if isinstance(error, ClientError):
+        return str(error.response["Error"]["Code"])
+    return type(error).__name__
+
+
+def _read_retry_delay(attempt: int) -> float:
+    exponential_delay = READ_BACKOFF_SECONDS * (2 ** min(attempt, 20))
+    capped_delay = min(exponential_delay, READ_BACKOFF_MAX_SECONDS)
+    return capped_delay * random.uniform(0.75, 1.25)
