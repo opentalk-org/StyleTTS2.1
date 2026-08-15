@@ -52,6 +52,7 @@ def build_config(
     log_every_steps: int,
     profiling_enabled: bool,
     distributed_processes: int,
+    gradient_accumulation_steps: int,
     load_optimizer: bool,
     reset_training_step: bool,
     generator_checkpointing: bool,
@@ -73,6 +74,7 @@ def build_config(
     config["log_every_steps"] = int(log_every_steps)
     config["profiling_enabled"] = profiling_enabled
     config["distributed_processes"] = int(distributed_processes)
+    config["gradient_accumulation_steps"] = int(gradient_accumulation_steps)
     config["load_only_params"] = not load_optimizer
     config["reset_training_step"] = reset_training_step
     config["data_params"] = {

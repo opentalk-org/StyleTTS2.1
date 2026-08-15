@@ -78,6 +78,11 @@ class StyleTtsFinetuneSettings(StrictSettings):
         ge=1,
         le=8,
     )
+    gradient_accumulation_steps: int = Field(
+        default=1,
+        title="Gradient accumulation steps",
+        ge=1,
+    )
     load_optimizer: bool = Field(default=False, title="Load optimizer state")
     reset_training_step: bool = Field(
         default=False,

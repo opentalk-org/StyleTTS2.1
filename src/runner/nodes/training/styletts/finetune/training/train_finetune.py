@@ -126,8 +126,6 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
                 with profiling_fn("train_step"):
                     step_metrics = trainer.train_step(batch)
             timing.compute_seconds += time.monotonic() - compute_started
-            trainer.step += 1
-            step = trainer.step
             if TrainableModule.DECODER in stage.trainable_modules:
                 crop_frames = min(
                     int(batch.mel_lengths.min().item() / 2 - 1),
@@ -158,6 +156,10 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
             )
             timing.items_processed += reduced_totals[0].item()
             timing.audio_seconds_trained += reduced_totals[1].item()
+            if not trainer.update_completed:
+                continue
+            trainer.step += 1
+            step = trainer.step
             metrics = dict(step_metrics)
             metrics.update(timing.metrics(step))
             fetch_mib = loader_telemetry.bucket_fetch_bytes / (1024 * 1024)

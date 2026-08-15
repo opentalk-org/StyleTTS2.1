@@ -55,6 +55,10 @@ class Trainer:
             self.alpha_flow_start += training_stage.steps
         self.skipped_steps = 0
         self.step = runtime.initial_step
+        self.accumulation_steps = config.gradient_accumulation_steps
+        self.accumulation_microstep = 0
+        self.update_completed = False
+        self._generator_accumulation_finite = True
 
     def set_training_mode(self) -> None:
         stage = stage_for_step(self.config.training_stages, self.step)
@@ -71,6 +75,9 @@ class Trainer:
         self.runtime.models.set_training_mode(training_modules)
 
     def train_step(self, batch: TrainingBatch) -> dict[str, torch.Tensor | float]:
+        first_microbatch = self.accumulation_microstep == 0
+        update_due = self.accumulation_microstep + 1 == self.accumulation_steps
+        self.update_completed = False
         set_profiling_step(self.step)
         runtime = self.runtime
         accelerator = runtime.accelerator
@@ -395,7 +402,8 @@ class Trainer:
                 ("mpd", modules.mpd),
                 ("msd", modules.msd),
             ):
-                optimizer.zero_grad(name)
+                if first_microbatch:
+                    optimizer.zero_grad(name)
                 with accelerator.autocast():
                     real_scores, generated_scores, _, _ = discriminator(
                         waveform.detach().float(),
@@ -429,13 +437,17 @@ class Trainer:
                             ),
                         }
                     )
-                accelerator.backward(discriminator_losses.total)
-                synchronize_gradients(accelerator, modules, (name,))
-                if measure_gradient_norms:
+                accelerator.backward(
+                    discriminator_losses.total / self.accumulation_steps
+                )
+                if update_due:
+                    synchronize_gradients(accelerator, modules, (name,))
+                if update_due and measure_gradient_norms:
                     gradient_metrics.update(
                         gradient_norm_metrics(accelerator, modules, (name,))
                     )
-                optimizer.step(name)
+                if update_due:
+                    optimizer.step(name)
                 discriminator.requires_grad_(False)
 
         if prosody_adversarial:
@@ -456,7 +468,8 @@ class Trainer:
                 ),
             )
             for name, discriminator, fake, real, lengths in prosody_items:
-                optimizer.zero_grad(name)
+                if first_microbatch:
+                    optimizer.zero_grad(name)
                 generated_scores, _ = discriminator(
                     fake.detach().float(),
                     style_target.detach().float(),
@@ -474,18 +487,21 @@ class Trainer:
                     generated_scores,
                     lengths,
                 )
-                accelerator.backward(loss)
-                synchronize_gradients(accelerator, modules, (name,))
-                if measure_gradient_norms:
+                accelerator.backward(loss / self.accumulation_steps)
+                if update_due:
+                    synchronize_gradients(accelerator, modules, (name,))
+                if update_due and measure_gradient_norms:
                     gradient_metrics.update(
                         gradient_norm_metrics(accelerator, modules, (name,))
                     )
-                optimizer.step(name)
+                if update_due:
+                    optimizer.step(name)
                 modules[name].requires_grad_(False)
                 prosody_discriminator_total += loss.detach()
 
         if slm_adversarial:
-            optimizer.zero_grad("wd")
+            if first_microbatch:
+                optimizer.zero_grad("wd")
             with accelerator.autocast():
                 with torch.no_grad():
                     real_features = self.runtime.features.wavlm(
@@ -506,18 +522,23 @@ class Trainer:
                     real_scores,
                     generated_scores,
                 )
-            accelerator.backward(slm_discriminator_loss)
-            synchronize_gradients(accelerator, modules, ("wd",))
-            if measure_gradient_norms:
+            accelerator.backward(
+                slm_discriminator_loss / self.accumulation_steps
+            )
+            if update_due:
+                synchronize_gradients(accelerator, modules, ("wd",))
+            if update_due and measure_gradient_norms:
                 gradient_metrics.update(
                     gradient_norm_metrics(accelerator, modules, ("wd",))
                 )
-            optimizer.step("wd")
+            if update_due:
+                optimizer.step("wd")
             modules.wd.requires_grad_(False)
             slm_discriminator_loss = slm_discriminator_loss.detach()
 
-        for name in trainable:
-            optimizer.zero_grad(name)
+        if first_microbatch:
+            for name in trainable:
+                optimizer.zero_grad(name)
         quantizer_metrics: dict[str, torch.Tensor] = {}
         if style_required and stage.style_source is StyleSource.QUANTIZED:
             quantizer_metrics["rvq_commitment"] = commitment_loss.detach()
@@ -818,29 +839,39 @@ class Trainer:
             finite = auxiliary_finite and bool(torch.isfinite(total).item())
         if finite:
             with profiling_fn("generator_backward"):
-                accelerator.backward(backward_total)
-        else:
-            self.skipped_steps += 1
-            logger.warning("non-finite generator loss at step=%s", self.step)
-            for name in trainable:
-                for parameter in modules[name].parameters():
-                    if parameter.requires_grad:
-                        parameter.grad = torch.zeros_like(parameter)
-        with profiling_fn("generator_gradient_sync"):
-            synchronize_gradients(accelerator, modules, trainable)
-        with profiling_fn("generator_gradient_metrics"):
-            if measure_gradient_norms:
-                gradient_metrics.update(
-                    gradient_norm_metrics(
-                        accelerator,
-                        modules,
-                        trainable,
-                        group_name="generator",
-                    )
+                accelerator.backward(
+                    backward_total / self.accumulation_steps
                 )
-        with profiling_fn("generator_optimizer_step"):
+        else:
+            logger.warning("non-finite generator loss at step=%s", self.step)
+        self._generator_accumulation_finite &= finite
+        update_finite = self._generator_accumulation_finite
+        if update_due and update_finite:
+            with profiling_fn("generator_gradient_sync"):
+                synchronize_gradients(accelerator, modules, trainable)
+            with profiling_fn("generator_gradient_metrics"):
+                if measure_gradient_norms:
+                    gradient_metrics.update(
+                        gradient_norm_metrics(
+                            accelerator,
+                            modules,
+                            trainable,
+                            group_name="generator",
+                        )
+                    )
+            with profiling_fn("generator_optimizer_step"):
+                for name in trainable:
+                    optimizer.step(name)
+        elif update_due:
+            self.skipped_steps += 1
             for name in trainable:
-                optimizer.step(name)
+                optimizer.zero_grad(name)
+        if update_due:
+            self.accumulation_microstep = 0
+            self._generator_accumulation_finite = True
+            self.update_completed = True
+        else:
+            self.accumulation_microstep += 1
         metrics = self._reported_metrics(
             voice,
             style_target,
@@ -850,7 +881,7 @@ class Trainer:
             prosody_discriminator_total,
             slm_discriminator_loss,
             style_batch_std,
-            finite,
+            update_finite,
             gradient_metrics,
             gan_metrics,
         )
