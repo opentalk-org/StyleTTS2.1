@@ -99,7 +99,7 @@
           resolveTritonLibcuda = lib.optionalString pkgs.stdenv.isLinux ''
             for __d in ${lib.concatStringsSep " " nvidiaDriverDirs}; do
               if [ -e "$__d/libcuda.so.1" ]; then
-                # export LD_LIBRARY_PATH=$__d:${pkgs.ffmpeg-headless.lib}/lib:${pkgs.portaudio}/lib
+                
                 export TRITON_LIBCUDA_PATH="$__d"
               fi
             done
@@ -219,6 +219,7 @@
               else
                 echo "no .venv yet - run: uv sync --frozen"
               fi
+              export LD_LIBRARY_PATH=$__d:${pkgs.ffmpeg-headless.lib}/lib:${pkgs.portaudio}/lib
             '';
 
             processes.pg = {
