@@ -92,12 +92,12 @@ def build_config(
         stage.model_dump(mode="json")
         for stage in training_stages
     ]
+    if architecture_path is not None:
+        merge_architecture(architecture_path, config)
     voice_encoders = {stage.voice_encoder.value for stage in training_stages}
     if len(voice_encoders) != 1:
         raise ValueError("all training stages must use the same voice encoder")
     config["model_params"]["voice_encoder"] = voice_encoders.pop()
-    if architecture_path is not None:
-        merge_architecture(architecture_path, config)
     _apply_model_overrides(config, multispeaker, decoder_type, generator_checkpointing, discriminators_checkpointing, symbol_count)
     if "language_count" not in config["model_params"] or plbert_path is not None:
         languages = plbert_config.get("languages", [])
