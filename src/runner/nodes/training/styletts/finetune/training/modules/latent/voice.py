@@ -114,7 +114,7 @@ class VoiceEncoder(nn.Module):
         voice_dim: int = 128,
         num_heads: int = 8,
         num_layers: int = 6,
-        token_count: int = 16,
+        token_count: int = 32,
         head_features: int = 64,
     ) -> None:
         super().__init__()
