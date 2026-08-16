@@ -28,7 +28,10 @@ from runner.nodes.training.styletts.finetune.training.modules.latent.prosody imp
 from runner.nodes.training.styletts.finetune.training.modules.latent.rvq import (
     ResidualVectorQuantizer,
 )
-from runner.nodes.training.styletts.finetune.training.modules.latent.voice import VoiceEncoder
+from runner.nodes.training.styletts.finetune.training.modules.latent.voice import (
+    LegacyJointVoiceEncoder,
+    VoiceEncoder,
+)
 from runner.nodes.training.styletts.finetune.training.state_dict_resize import merge_state_dict_with_dim0_resize
 
 _ASR_N_TOKEN_DIM0_KEYS = frozenset({
@@ -200,7 +203,11 @@ def build_model(args, text_aligner, pitch_extractor, bert):
             torch.cat((base_weight, appended), dim=0),
             freeze=False,
         )
-    voice_encoder = VoiceEncoder(
+    voice_encoder_type = {
+        "legacy_joint": LegacyJointVoiceEncoder,
+        "token_pooling": VoiceEncoder,
+    }[args.voice_encoder]
+    voice_encoder = voice_encoder_type(
         mel_dim=args.n_mels,
         text_dim=args.hidden_dim,
         voice_dim=args.style_dim,

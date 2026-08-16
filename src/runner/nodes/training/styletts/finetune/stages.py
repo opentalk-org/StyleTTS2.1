@@ -13,6 +13,11 @@ class StyleSource(str, Enum):
     QUANTIZED = "quantized"
 
 
+class VoiceEncoderArchitecture(str, Enum):
+    TOKEN_POOLING = "token_pooling"
+    LEGACY_JOINT = "legacy_joint"
+
+
 class ValidationDurationSource(str, Enum):
     GROUND_TRUTH = "ground_truth"
     PREDICTED = "predicted"
@@ -92,6 +97,7 @@ class TrainingStageSpec(BaseModel):
     max_decoder_seconds: float = 3.0
 
     voice_conditioning_dropout: float = Field(default=0.0, ge=0, le=1)
+    voice_encoder: VoiceEncoderArchitecture = VoiceEncoderArchitecture.TOKEN_POOLING
     style_source: StyleSource = StyleSource.QUANTIZED
     prosody_source: ProsodySource
     trainable_modules: list[TrainableModule]
