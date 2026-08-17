@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+service GiveMeData {
+  rpc Init (InitRequest) returns (InitResponse);
+  rpc Data (stream DataRequest) returns (stream DataResponse);
+}
+
+message InitRequest {
+  string dataset_id = 1;
+  int32 validation_samples = 2;
+  bool validation = 3;
+  int32 seed = 4;
+  float max_seconds = 5;
+  int32 num_workers = 6;
+  string device = 7;
+  repeated string symbols = 8;
+  int32 max_text_tokens = 9;
+  repeated string plbert_languages = 10;
+  int32 plbert_modality_id = 11;
+}
+
+message InitResponse {
+  string session_id = 1;
+}
+
+enum Split {
+  TRAINING = 0;
+  VALIDATION = 1;
+}
+
+message DataRequest {
+  string session_id = 1;
+  Split split = 2;
+}
+
+message DataResponse {
+  string data = 1;
+}

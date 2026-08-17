@@ -14,6 +14,7 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgsRust.url = "github:NixOS/nixpkgs/26.05";
     flake-parts.url = "github:hercules-ci/flake-parts";
     dnvr.url = "github:dialohq/dnvr";
   };
@@ -23,6 +24,7 @@
       nixpkgs,
       flake-parts,
       dnvr,
+      nixpkgsRust,
       ...
     }@inputs:
     flake-parts.lib.mkFlake { inherit inputs; } {
@@ -44,6 +46,7 @@
           ...
         }:
         let
+          pkgsRust = import nixpkgsRust { inherit system; };
           wheelLibs = [
             {
               pkg = pkgs.stdenv.cc.cc.lib;
@@ -61,10 +64,10 @@
             pkgs.opusTools
             pkgs.cmake
             pkgs.gcc
-            pkgs.cargo
             pkgs.openssl
             pkgs.patchelf
-            pkgs.rustc
+            pkgsRust.cargo
+            pkgsRust.rustc
           ];
           cuda = pkgs.cudaPackages.cuda_nvcc;
           python = pkgs.python312Full;
@@ -155,6 +158,11 @@
               pkgs.rclone
               pkgs.uv
               pkgs.pyright
+              pkgsRust.cargo
+              pkgsRust.rustc
+              pkgsRust.rust-analyzer
+              pkgsRust.rustfmt
+              pkgsRust.sqlx-cli
             ]
             ++ runtimeLibs
             ++ runtimeExecutableDeps
