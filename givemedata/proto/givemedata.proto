@@ -33,6 +33,14 @@ message DataRequest {
   Split split = 2;
 }
 
+message Sample {
+  bytes wave = 1;
+  double duration = 2;
+  int64 speaker_id = 3;
+  int32 language_id = 4;
+  bytes text = 5;
+}
+
 message DataResponse {
-  string data = 1;
+  repeated Sample batch = 1;
 }
