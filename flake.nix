@@ -163,6 +163,7 @@
               pkgsRust.rust-analyzer
               pkgsRust.rustfmt
               pkgsRust.sqlx-cli
+              pkgsRust.protobuf
             ]
             ++ runtimeLibs
             ++ runtimeExecutableDeps

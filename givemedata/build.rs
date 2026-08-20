@@ -7,7 +7,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // compile with protox so no system `protoc` is required
     let descriptors = protox::compile([PROTO], [INCLUDE])?;
 
-    tonic_build::configure().compile_fds(descriptors)?;
+    tonic_build::configure()
+        .bytes(["."])
+        .compile_fds(descriptors)?;
 
     Ok(())
 }
