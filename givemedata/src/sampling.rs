@@ -5,7 +5,7 @@ use blake2::{
 };
 use bytes::Bytes;
 use rand::{
-    RngExt,
+    SeedableRng,
     rngs::SmallRng,
     seq::{IndexedMutRandom, IndexedRandom},
 };
@@ -16,12 +16,14 @@ use crate::{
     symbols::{TextCleaner, boundary_token_id, text_to_tensor_bytes},
 };
 
+#[derive(Clone)]
 pub struct SampleObject {
     pub path: String,
     pub offset: i64,
     pub length: i64,
 }
 
+#[derive(Clone)]
 pub struct Sample {
     pub duration: f64,
     pub audio_id: Uuid,
@@ -81,6 +83,7 @@ impl Sample {
     }
 }
 
+#[derive(Clone)]
 pub struct DurationBin {
     pub lower_bound: f64,
     pub upper_bound: f64,
@@ -88,24 +91,28 @@ pub struct DurationBin {
     pub total_seconds: f64,
 }
 
-pub struct HistogramSampler<R: RngExt = SmallRng> {
-    pub bins: Vec<DurationBin>,
-    pub max_seconds: f64,
-    pub rng: R,
+pub struct HistogramSampler {
+    template: Vec<DurationBin>,
+    bins: Vec<DurationBin>,
+    max_seconds: f64,
+    rng: SmallRng,
+    seed: u64,
+    // like a epoch number
+    loops: u64,
 }
 
-impl<R: RngExt> HistogramSampler<R> {
+impl HistogramSampler {
+    /// `sample_rows` should be sorted by duration
     pub fn from_samples(
         sample_rows: Vec<SampleRow>,
         plbert_languages: &Vec<String>,
         max_seconds: f64,
-        rng: R,
+        seed: u64,
     ) -> anyhow::Result<Self> {
         let mut bins: Vec<DurationBin> = vec![];
 
         let mut text_cleaner = TextCleaner::default();
 
-        // sample_rows should be sorted by duration at this point
         for row in sample_rows {
             match row {
                 SampleRow {
@@ -160,20 +167,29 @@ impl<R: RngExt> HistogramSampler<R> {
         }
 
         Ok(Self {
+            template: bins.clone(),
             bins,
             max_seconds,
-            rng,
+            rng: SmallRng::seed_from_u64(seed),
+            seed,
+            loops: 0,
         })
     }
 
     pub fn next_batch(&mut self) -> anyhow::Result<Vec<Sample>> {
+        if self.bins.iter().all(|b| b.samples.is_empty()) {
+            self.loops += 1;
+            println!("bins drained, looping with seed {}", self.loops);
+            self.bins = self.template.clone();
+            self.rng = SmallRng::seed_from_u64(self.seed + self.loops);
+        }
+
         let mut remaining = self.max_seconds;
         let mut batch: Vec<Sample> = vec![];
         let bin = self
             .bins
             .choose_weighted_mut(&mut self.rng, |b| b.total_seconds)?;
 
-        // TODO: parallel and shit
         loop {
             let eligable: Vec<(usize, f64)> = bin
                 .samples
@@ -192,6 +208,7 @@ impl<R: RngExt> HistogramSampler<R> {
             }
             let random_sample = eligable.choose_weighted(&mut self.rng, |s| s.1)?;
             batch.push(bin.samples.remove(random_sample.0));
+            bin.total_seconds = (bin.total_seconds - random_sample.1).max(0.0);
             remaining -= random_sample.1;
         }
 
