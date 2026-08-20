@@ -65,32 +65,13 @@ async fn data_handler(
             session.training_sampler.next_batch()?
         };
 
-        let loaded_batch = load_batch(batch, loader).await?;
+        let loaded_batch = loader.load_batch(batch).await?;
         resp_stream.send(Ok(DataResponse {
             batch: loaded_batch,
         }))?;
     }
 
     Ok(())
-}
-
-async fn load_batch(
-    batch: Vec<crate::sampling::Sample>,
-    loader: &Loader,
-) -> anyhow::Result<Vec<givemedata::Sample>> {
-    println!("loading batch of {}", batch.len());
-    let mut loaded_batch: Vec<givemedata::Sample> = vec![];
-
-    let mut set = tokio::task::JoinSet::new();
-    for sample in batch {
-        let loader = loader.clone();
-        set.spawn(async move { loader.load_sample(sample).await });
-    }
-    for res in set.join_all().await {
-        loaded_batch.push(res?);
-    }
-
-    Ok(loaded_batch)
 }
 
 #[tonic::async_trait]

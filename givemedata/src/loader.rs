@@ -53,4 +53,23 @@ impl Loader {
             text: sample.text,
         })
     }
+
+    pub async fn load_batch(
+        &self,
+        batch: Vec<crate::sampling::Sample>,
+    ) -> anyhow::Result<Vec<givemedata::Sample>> {
+        println!("loading batch of {}", batch.len());
+        let mut loaded_batch: Vec<givemedata::Sample> = vec![];
+
+        let mut set = tokio::task::JoinSet::new();
+        for sample in batch {
+            let loader = self.clone();
+            set.spawn(async move { loader.load_sample(sample).await });
+        }
+        for res in set.join_all().await {
+            loaded_batch.push(res?);
+        }
+
+        Ok(loaded_batch)
+    }
 }
