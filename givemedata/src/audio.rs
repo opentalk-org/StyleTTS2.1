@@ -8,6 +8,9 @@ use rubato::{
 };
 use thiserror::Error;
 
+const EDGE_PAD_SAMPLES: usize = 5000;
+const MIN_WAVE_SAMPLES: usize = 24_600;
+
 #[derive(Error, Debug)]
 pub enum AudioError {
     #[error("wav encoding/decoding error: {0}")]
@@ -55,9 +58,20 @@ pub fn process_audio(raw_wav: Bytes, target_sample_rate: u32) -> Result<Bytes, A
         out.take_data()
     };
 
-    let mut wave = BytesMut::with_capacity(4 * data.len());
+    let padded_len = data.len() + 2 * EDGE_PAD_SAMPLES;
+    let missing = MIN_WAVE_SAMPLES.saturating_sub(padded_len);
+    let left_pad = EDGE_PAD_SAMPLES + missing / 2;
+    let right_pad = EDGE_PAD_SAMPLES + (missing - missing / 2);
+
+    let mut wave = BytesMut::with_capacity(4 * (data.len() + left_pad + right_pad));
+    for _ in 0..left_pad {
+        wave.put_f32_le(0.0);
+    }
     for s in data {
         wave.put_f32_le(s);
+    }
+    for _ in 0..right_pad {
+        wave.put_f32_le(0.0);
     }
 
     Ok(wave.freeze())

@@ -76,7 +76,11 @@ async fn main() -> anyhow::Result<()> {
         ))
         .load()
         .await;
-    let s3_client = aws_sdk_s3::Client::new(&s3_config);
+    let s3_client = aws_sdk_s3::Client::from_conf(
+        aws_sdk_s3::config::Builder::from(&s3_config)
+            .force_path_style(true)
+            .build(),
+    );
 
     serve(args.port, s3_client, pg_pool, args.bucket).await
 }
