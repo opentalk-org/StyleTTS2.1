@@ -12,9 +12,13 @@ use sqlx::PgPool;
 
 use crate::server::serve;
 
+mod audio;
+mod db;
+mod loader;
+mod sampling;
+mod server;
+mod session;
 mod symbols;
-
-pub mod server;
 
 const STYLES: Styles = Styles::styled()
     .header(AnsiColor::Green.on_default().effects(Effects::BOLD))
