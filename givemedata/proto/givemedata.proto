@@ -9,7 +9,7 @@ message InitRequest {
   string dataset_id = 1;
   int32 validation_samples = 2;
   bool validation = 3;
-  int32 seed = 4;
+  uint64 seed = 4;
   float max_seconds = 5;
   int32 num_workers = 6;
   string device = 7;

@@ -59,31 +59,38 @@ async fn data_handler(
             .context("unknown session")?;
         let mut session = session.lock().await;
 
-        if req.split() == Split::Validation {
-            let batch = session.validation_histogram.next_batch()?;
-
-            println!("loading batch of {}", batch.len());
-            let mut loaded_batch: Vec<givemedata::Sample> = vec![];
-
-            let mut set = tokio::task::JoinSet::new();
-            for sample in batch {
-                let loader = loader.clone();
-                set.spawn(async move { loader.load_sample(sample).await });
-            }
-            for res in set.join_all().await {
-                loaded_batch.push(res?);
-            }
-
-            resp_stream.send(Ok(DataResponse {
-                batch: loaded_batch,
-            }))?;
+        let batch = if req.split() == Split::Validation {
+            session.validation_sampler.next_batch()?
         } else {
-            // yield traiinig
-            resp_stream.send(Ok(DataResponse { batch: vec![] }))?;
-        }
+            session.training_sampler.next_batch()?
+        };
+
+        let loaded_batch = load_batch(batch, loader).await?;
+        resp_stream.send(Ok(DataResponse {
+            batch: loaded_batch,
+        }))?;
     }
 
     Ok(())
+}
+
+async fn load_batch(
+    batch: Vec<crate::sampling::Sample>,
+    loader: &Loader,
+) -> anyhow::Result<Vec<givemedata::Sample>> {
+    println!("loading batch of {}", batch.len());
+    let mut loaded_batch: Vec<givemedata::Sample> = vec![];
+
+    let mut set = tokio::task::JoinSet::new();
+    for sample in batch {
+        let loader = loader.clone();
+        set.spawn(async move { loader.load_sample(sample).await });
+    }
+    for res in set.join_all().await {
+        loaded_batch.push(res?);
+    }
+
+    Ok(loaded_batch)
 }
 
 #[tonic::async_trait]
@@ -104,6 +111,7 @@ impl GiveMeDataService for GiveMeData {
             request.max_seconds,
             request.max_text_tokens,
             &request.plbert_languages,
+            request.seed,
         )
         .await
         .map_err(|e| Status::internal(e.to_string()))?;
