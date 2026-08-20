@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use bytes::{BufMut, Bytes, BytesMut};
+
 pub const PAD_SYMBOL: &str = "$";
 pub const START_SYMBOL: &str = "<start/>";
 pub const END_SYMBOL: &str = "<end/>";
@@ -96,6 +98,19 @@ pub fn text_to_tensor(cleaner: &mut TextCleaner, boundary_token_id: i64, text: &
     tokens.insert(0, boundary_token_id);
     tokens.push(boundary_token_id);
     tokens
+}
+
+pub fn text_to_tensor_bytes(
+    cleaner: &mut TextCleaner,
+    boundary_token_id: i64,
+    text: &str,
+) -> Bytes {
+    let v = text_to_tensor(cleaner, boundary_token_id, text);
+    let mut buff = BytesMut::with_capacity(8 * v.len());
+    for t in v {
+        buff.put_i64_le(t);
+    }
+    buff.freeze()
 }
 
 pub fn boundary_token_id(cleaner: &TextCleaner) -> anyhow::Result<i64> {
