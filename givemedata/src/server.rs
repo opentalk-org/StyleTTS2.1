@@ -3,7 +3,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use crate::loader::Loader;
-use crate::server::givemedata::{InitRequest, InitResponse};
+use crate::server::givemedata::{EndRequest, EndResponse, InitRequest, InitResponse};
 use crate::session::Session;
 use anyhow::Context;
 use sqlx::{PgPool, Pool, Postgres};
@@ -126,6 +126,18 @@ impl GiveMeDataService for GiveMeData {
         });
 
         Ok(UnboundedReceiverStream::new(out_rx).into())
+    }
+
+    async fn end(&self, request: Request<EndRequest>) -> Result<Response<EndResponse>, Status> {
+        let request = request.into_inner();
+        let mut sessions = self.sessions.write().await;
+        let removed = sessions.remove(&request.session_id);
+
+        if removed.is_none() {
+            return Err(Status::internal("unknown session"));
+        }
+
+        Ok(Response::new(EndResponse {}))
     }
 }
 
