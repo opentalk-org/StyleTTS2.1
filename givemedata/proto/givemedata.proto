@@ -3,6 +3,7 @@ syntax = "proto3";
 service GiveMeData {
   rpc Init (InitRequest) returns (InitResponse);
   rpc Data (stream DataRequest) returns (stream DataResponse);
+  rpc End (EndRequest) returns (EndResponse);
 }
 
 message InitRequest {
@@ -44,3 +45,9 @@ message Sample {
 message DataResponse {
   repeated Sample batch = 1;
 }
+
+message EndRequest {
+  string session_id = 1;
+}
+
+message EndResponse {}
