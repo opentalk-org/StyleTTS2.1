@@ -6,6 +6,16 @@ use crate::{
     sampling::HistogramSampler,
 };
 
+#[derive(Clone, Copy)]
+pub struct Config {
+    pub dataset_id: Uuid,
+    pub validation_samples: i64,
+    pub max_seconds: f32,
+    pub max_text_tokens: i32,
+    pub seed: u64,
+    pub plbert_languages: &'static [String],
+}
+
 pub struct Session {
     pub validation_sampler: HistogramSampler,
     pub training_sampler: HistogramSampler,
@@ -13,55 +23,23 @@ pub struct Session {
 }
 
 impl Session {
-    pub async fn new(
-        pg_pool: &PgPool,
-        dataset_id: Uuid,
-        validation_samples: i64,
-        max_seconds: f32,
-        max_text_tokens: i32,
-        plbert_languages: &Vec<String>,
-        seed: u64,
-    ) -> anyhow::Result<Self> {
+    pub async fn new(pg_pool: &PgPool, config: Config) -> anyhow::Result<Self> {
         let id = Uuid::new_v4();
         println!("initializing session {id}");
 
         println!(
             "fetching {} validation rows from dataset {}",
-            validation_samples, dataset_id
+            config.validation_samples, config.dataset_id
         );
-        let validation_rows = fetch_validation_samples(
-            pg_pool,
-            validation_samples,
-            &dataset_id,
-            max_seconds,
-            max_text_tokens,
-        )
-        .await?;
+        let validation_rows = fetch_validation_samples(pg_pool, config).await?;
 
         let validation_ids: Vec<Uuid> = validation_rows.iter().map(|r| r.audio_id).collect();
 
-        let validation_histogram = HistogramSampler::from_samples(
-            validation_rows,
-            plbert_languages,
-            max_seconds as f64,
-            seed,
-        )?;
+        let validation_histogram = HistogramSampler::from_samples(validation_rows, config)?;
 
-        println!("fetching training rows from dataset {dataset_id}");
-        let training_rows = fetch_training_samples(
-            pg_pool,
-            &validation_ids,
-            &dataset_id,
-            max_seconds,
-            max_text_tokens,
-        )
-        .await?;
-        let training_histogram = HistogramSampler::from_samples(
-            training_rows,
-            plbert_languages,
-            max_seconds as f64,
-            seed,
-        )?;
+        println!("fetching training rows from dataset {}", config.dataset_id);
+        let training_rows = fetch_training_samples(pg_pool, &validation_ids, config).await?;
+        let training_histogram = HistogramSampler::from_samples(training_rows, config)?;
 
         Ok(Session {
             validation_sampler: validation_histogram,

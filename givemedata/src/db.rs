@@ -1,6 +1,8 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::session;
+
 pub struct SampleRow {
     pub audio_id: Uuid,
     pub duration: f64,
@@ -20,10 +22,7 @@ pub struct SampleRow {
 
 pub async fn fetch_validation_samples(
     db: &PgPool,
-    n: i64,
-    dataset_id: &Uuid,
-    max_audio_duration: f32,
-    max_text_tokens: i32,
+    config: session::Config,
 ) -> Result<Vec<SampleRow>, sqlx::Error> {
     let rows = sqlx::query_as!(
         SampleRow,
@@ -108,10 +107,10 @@ join bucket_files b on b.id = agg.bucket_file_id
 where length(text) <= $4
 order by duration, audio_id
     ",
-        dataset_id,
-        n,
-        max_audio_duration as f64,
-        max_text_tokens
+        config.dataset_id,
+        config.validation_samples,
+        config.max_seconds as f64,
+        config.max_text_tokens
     )
     .fetch_all(db)
     .await?;
@@ -122,9 +121,7 @@ order by duration, audio_id
 pub async fn fetch_training_samples(
     db: &PgPool,
     excluded_ids: &[Uuid],
-    dataset_id: &Uuid,
-    max_audio_duration: f32,
-    max_text_tokens: i32,
+    config: session::Config,
 ) -> Result<Vec<SampleRow>, sqlx::Error> {
     let rows = sqlx::query_as!(
         SampleRow,
@@ -206,10 +203,10 @@ join bucket_files b on b.id = agg.bucket_file_id
 where length(text) <= $4
 order by duration, audio_id
     ",
-        dataset_id,
+        config.dataset_id,
         excluded_ids as &[Uuid],
-        max_audio_duration as f64,
-        max_text_tokens
+        config.max_seconds as f64,
+        config.max_text_tokens
     )
     .fetch_all(db)
     .await?;

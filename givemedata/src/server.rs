@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::loader::Loader;
 use crate::server::givemedata::{EndRequest, EndResponse, InitRequest, InitResponse};
-use crate::session::Session;
+use crate::session::{self, Session};
 use anyhow::Context;
 use sqlx::{PgPool, Pool, Postgres};
 use tokio::sync::mpsc::UnboundedSender;
@@ -85,17 +85,18 @@ impl GiveMeDataService for GiveMeData {
             Status::invalid_argument(format!("Could not parse dataset_id UUID: {e}"))
         })?;
 
-        let session = Session::new(
-            &self.db_pool,
+        let config = session::Config {
             dataset_id,
-            request.validation_samples as i64,
-            request.max_seconds,
-            request.max_text_tokens,
-            &request.plbert_languages,
-            request.seed,
-        )
-        .await
-        .map_err(|e| Status::internal(e.to_string()))?;
+            validation_samples: request.validation_samples as i64,
+            max_seconds: request.max_seconds,
+            max_text_tokens: request.max_text_tokens,
+            seed: request.seed,
+            plbert_languages: Box::leak(request.plbert_languages.into_boxed_slice()),
+        };
+
+        let session = Session::new(&self.db_pool, config)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
         let session_id = session.id.to_string();
 
         self.sessions

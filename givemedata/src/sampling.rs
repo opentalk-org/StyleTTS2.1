@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::{
     db::SampleRow,
+    session,
     symbols::{TextCleaner, boundary_token_id, text_to_tensor_bytes},
 };
 
@@ -41,7 +42,7 @@ impl Sample {
         text: String,
         text_cleaner: &mut TextCleaner,
         language: &String,
-        plbert_langs: &Vec<String>,
+        plbert_langs: &[String],
         speaker_id: Option<String>,
         object: SampleObject,
     ) -> anyhow::Result<Self> {
@@ -105,9 +106,7 @@ impl HistogramSampler {
     /// `sample_rows` should be sorted by duration
     pub fn from_samples(
         sample_rows: Vec<SampleRow>,
-        plbert_languages: &Vec<String>,
-        max_seconds: f64,
-        seed: u64,
+        config: session::Config,
     ) -> anyhow::Result<Self> {
         let mut bins: Vec<DurationBin> = vec![];
 
@@ -134,7 +133,7 @@ impl HistogramSampler {
                         text,
                         &mut text_cleaner,
                         &lang,
-                        plbert_languages,
+                        config.plbert_languages,
                         speaker_id,
                         SampleObject {
                             path: object_path,
@@ -169,9 +168,9 @@ impl HistogramSampler {
         Ok(Self {
             template: bins.clone(),
             bins,
-            max_seconds,
-            rng: SmallRng::seed_from_u64(seed),
-            seed,
+            max_seconds: config.max_seconds as f64,
+            rng: SmallRng::seed_from_u64(config.seed),
+            seed: config.seed,
             loops: 0,
         })
     }
