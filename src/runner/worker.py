@@ -1,9 +1,13 @@
 import asyncio
 import os
 
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
+
 from runner.job_poller import JobPoller
 from runner.run_execution import RunExecution
 from runner.state_buffer import RunnerStateBuffer
+from shared.db import database_session
 from shared.db.jobs.schemas import NodeStateReplacement
 from shared.db.notifications import PostgresNotifier
 from shared.logging_setup import get_logger
@@ -11,6 +15,13 @@ from shared.schemas import InlineGraphRunRequest
 
 
 POLL_SECONDS = 0.5
+DB_CONNECT_ATTEMPTS = 5
+DB_CONNECT_BACKOFF_SECONDS = 1.0
+
+
+def _ping_database() -> None:
+    with database_session() as session:
+        session.execute(text("select 1"))
 
 
 class RunnerWorker:
@@ -27,6 +38,7 @@ class RunnerWorker:
 
     async def run(self) -> None:
         self.logger.info("PostgreSQL runner starting")
+        await self._wait_for_database()
         notify_task = asyncio.create_task(self.notifier.run(), name=f"runner:{self.runner_id}:notify")
         try:
             await self.state.flush_due()
@@ -39,6 +51,24 @@ class RunnerWorker:
         finally:
             notify_task.cancel()
             await asyncio.gather(notify_task, return_exceptions=True)
+
+    async def _wait_for_database(self) -> None:
+        for attempt in range(1, DB_CONNECT_ATTEMPTS + 1):
+            try:
+                await asyncio.to_thread(_ping_database)
+                return
+            except OperationalError as error:
+                if attempt == DB_CONNECT_ATTEMPTS:
+                    raise
+                wait = DB_CONNECT_BACKOFF_SECONDS * 2 ** (attempt - 1)
+                self.logger.warning(
+                    "database not reachable (attempt %s/%s), retrying in %.0fs: %s",
+                    attempt,
+                    DB_CONNECT_ATTEMPTS,
+                    wait,
+                    error,
+                )
+                await asyncio.sleep(wait)
 
     async def _claim_jobs(self) -> None:
         available = max(0, 1 - len(self.tasks))
