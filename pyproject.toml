@@ -76,6 +76,7 @@ dependencies = [
     # to 1.71. From 1.73 its bundled protoc jumps to 31.x and the stubs it generates
     # refuse to load against the 5.29 runtime.
     "grpcio-tools>=1.68,<1.72",
+    "givemedata-client",
 ]
 
 # DeepFilterNet's wheel metadata pins numpy<2, but the rest of the stack (nemo,
@@ -130,6 +131,7 @@ torch = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux'" }]
 torchaudio = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux'" }]
 torchvision = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux'" }]
 monotonic-align = { git = "https://github.com/resemble-ai/monotonic_align.git", rev = "c6e5e6cb19882164027eb6e35118e841eed9298e" }
+givemedata-client = { path = "givemedata-client", editable = true }
 
 [[tool.uv.index]]
 name = "pytorch-cu128"

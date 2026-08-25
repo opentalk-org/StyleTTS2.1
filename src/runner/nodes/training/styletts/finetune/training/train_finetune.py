@@ -4,6 +4,7 @@ import shutil
 import time
 from pathlib import Path
 
+import givemedata_client as gmd
 import numpy as np
 import torch
 from torch.profiler import ProfilerActivity, profile
@@ -13,7 +14,6 @@ from runner.nodes.training.common.mlflow_run import TrackerRun
 
 from .checkpoints import CheckpointPublisher
 from .config import load_training_config
-from .data import build_dataloader
 from .mlflow_logging import MlflowLogger, start_run
 from .profiling import configure_profiling, profiling_fn
 from .runtime import Trainer, Validator
@@ -52,38 +52,35 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
     logged_steps = 0
     validation_loss = None
     active_stage = None
+    data_client = None
     train_batches = None
     validation_batches = None
 
     while trainer.step < config.total_steps:
         stage = stage_for_step(config.training_stages, trainer.step)
         if stage is not active_stage:
-            dataset_config = {
-                "symbols": config.symbols,
-                "max_text_tokens": config.PLBERT_config["model_params"][
+            if data_client is not None:
+                data_client.close()
+            data_client = gmd.GiveMeDataClient(
+                config.data_params.dataset_id,
+                validation_samples=config.data_params.validation_samples,
+                max_seconds=stage.max_audio_seconds,
+                max_text_tokens=config.PLBERT_config["model_params"][
                     "max_position_embeddings"
                 ],
-                "plbert_languages": config.PLBERT_config.get("languages"),
-                "plbert_modality_id": config.PLBERT_config.get("modality_id", 0),
-            }
-            train_batches = build_dataloader(
-                config.data_params.dataset_id,
-                config.data_params.validation_samples,
-                max_seconds=stage.max_audio_seconds,
-                num_workers=0,
-                dataset_config=dataset_config,
-                device=config.device,
+                plbert_languages=config.PLBERT_config.get("languages"),
+                plbert_modality_id=config.PLBERT_config.get("modality_id", 0),
                 seed=config.seed,
-            ).prepare(accelerator)
-            validation_batches = build_dataloader(
-                config.data_params.dataset_id,
-                config.data_params.validation_samples,
-                max_seconds=stage.max_audio_seconds,
+            )
+            train_batches = gmd.dataloader(
+                data_client,
+                device=config.device,
+            )
+            validation_batches = gmd.dataloader(
+                data_client,
                 validation=True,
-                num_workers=0,
                 device=config.device,
-                seed=config.seed,
-                dataset_config=dataset_config,
+                samples_per_epoch=config.data_params.validation_samples,
             )
             active_stage = stage
         assert train_batches is not None
@@ -97,11 +94,9 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
         ):
             data_wait_started = time.monotonic()
             try:
-                loaded_batch = next(batch_iterator)
+                batch = next(batch_iterator)
             except StopIteration:
                 break
-            batch = loaded_batch.batch
-            loader_telemetry = loaded_batch.telemetry
             timing.data_wait_seconds += time.monotonic() - data_wait_started
             check_cancel()
             compute_started = time.monotonic()
@@ -162,28 +157,6 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
             step = trainer.step
             metrics = dict(step_metrics)
             metrics.update(timing.metrics(step))
-            fetch_mib = loader_telemetry.bucket_fetch_bytes / (1024 * 1024)
-            metrics.update({
-                "performance/bucket_fetch_seconds": (
-                    loader_telemetry.bucket_fetch_seconds
-                ),
-                "performance/bucket_fetch_mib": fetch_mib,
-                "performance/bucket_fetch_mib_per_second": (
-                    fetch_mib / max(loader_telemetry.bucket_fetch_seconds, 1e-9)
-                ),
-                "performance/bucket_request_seconds": (
-                    loader_telemetry.bucket_request_seconds
-                ),
-                "performance/bucket_request_count": loader_telemetry.bucket_request_count,
-                "performance/bucket_error_count": loader_telemetry.bucket_error_count,
-                "performance/failed_queries": loader_telemetry.failed_queries,
-            })
-            metrics.update(
-                {
-                    f"performance/failed_queries/{code}": count
-                    for code, count in loader_telemetry.failed_query_codes.items()
-                }
-            )
             if accelerator.is_main_process:
                 assert telemetry is not None
                 reporting_started = time.monotonic()
@@ -245,6 +218,8 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
                 )
             if validate or checkpoint:
                 accelerator.wait_for_everyone()
+    if data_client is not None:
+        data_client.close()
     if owns_run:
         assert run is not None
         run.close()

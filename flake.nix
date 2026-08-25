@@ -204,6 +204,8 @@
               RUNNER_ID = "runner-1";
 
               HF_HOME = "$DNVR_ROOT/.cache/huggingface";
+              RUST_LOG = "debug,h2=off,hyper=off,tower=off,sqlx=off";
+
             }
             // lib.optionalAttrs pkgs.stdenv.isLinux {
               PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True";
@@ -454,10 +456,17 @@
             };
 
             scripts.givemedata-gen = {
-              description = "Generate Python proto files for givemedata service.";
+              description = "Generate Python proto stubs for givemedata-client.";
+              runtimeInputs = [ pkgs.gnused ];
               text = ''
-                cd "$DNVR_ROOT"
-                exec uvx --with mypy-protobuf --with "protobuf>=6.31" --from grpcio-tools python -m grpc_tools.protoc -I src --python_out=src --pyi_out=src  --grpc_python_out=src --mypy_grpc_out=src givemedata/proto/givemedata.proto
+                cd "$DNVR_ROOT/givemedata-client"
+                uvx --from "grpcio-tools>=1.68,<1.72" python -m grpc_tools.protoc \
+                  -I ../givemedata/proto \
+                  --python_out=src \
+                  --pyi_out=src \
+                  --grpc_python_out=src \
+                  givemedata.proto
+                sed -i 's/^import givemedata_pb2/from . import givemedata_pb2/' src/givemedata_pb2_grpc.py
               '';
             };
           };

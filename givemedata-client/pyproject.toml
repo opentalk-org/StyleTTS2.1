@@ -1,0 +1,28 @@
+[project]
+name = "givemedata-client"
+version = "0.1.0"
+description = "PyTorch DataLoader client for the givemedata gRPC service"
+requires-python = ">=3.11"
+dependencies = [
+    # pins mirror the root pyproject: 1.82.0 is yanked upstream, and the
+    # protobuf 5.29 runtime only accepts gencode from protoc 29.x
+    "grpcio>=1.68,<1.82",
+    "protobuf>=5.29.5,<5.30",
+    "numpy",
+    "torch",
+    "torchaudio",
+]
+
+[dependency-groups]
+dev = [
+    # bundled protoc 29.x pairs with the protobuf 5.29 runtime; 1.73+ jumps to 31.x
+    "grpcio-tools>=1.68,<1.72",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = { "givemedata_client" = "src" }
+packages = ["givemedata_client"]

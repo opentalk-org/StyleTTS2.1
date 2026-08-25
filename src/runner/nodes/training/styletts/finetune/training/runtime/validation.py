@@ -314,8 +314,7 @@ class Validator:
         batch_start = 0
         count = 0
         with torch.no_grad():
-            for loaded_batch in batches:
-                batch = loaded_batch.batch
+            for batch in batches:
                 check_cancel()
                 batch = batch.to(self.runtime.accelerator.device)
                 batch_end = batch_start + batch.texts.size(0)
