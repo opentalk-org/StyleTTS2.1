@@ -14,6 +14,7 @@ async-stream = "0.3.6"
 aws-config = "1.10.1"
 aws-sdk-s3 = "1.141.0"
 blake2 = "0.10.6"
+blake3 = "1.8.7"
 bytes = "1.12.1"
 clap = { version = "4.6.6", features = ["env", "derive"] }
 futures = "0.3.31"
@@ -25,6 +26,7 @@ sqlx = { version = "0.9.0", features = ["runtime-tokio", "postgres", "uuid", "sq
 thiserror = "2.0.20"
 tokio = { version = "1.44.2", features = ["full"] }
 tokio-stream = "0.1.17"
+tokio-util = "0.7.19"
 tonic = "0.13.1"
 uuid = { version = "1.16.0", features = ["v4"] }
 

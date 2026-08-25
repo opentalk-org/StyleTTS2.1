@@ -107,6 +107,7 @@ impl HistogramSampler {
     pub fn from_samples(
         sample_rows: Vec<SampleRow>,
         config: session::Config,
+        plbert_languages: &[String],
     ) -> anyhow::Result<Self> {
         let mut bins: Vec<DurationBin> = vec![];
 
@@ -133,7 +134,7 @@ impl HistogramSampler {
                         text,
                         &mut text_cleaner,
                         &lang,
-                        config.plbert_languages,
+                        plbert_languages,
                         speaker_id,
                         SampleObject {
                             path: object_path,

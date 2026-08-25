@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::Context;
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::Credentials;
@@ -9,6 +11,7 @@ use clap::{
     },
 };
 use sqlx::PgPool;
+use tokio::fs;
 
 use crate::server::serve;
 
@@ -55,6 +58,12 @@ struct Args {
     s3_secret: String,
     #[arg(long, env = "S3_BUCKET", help = "S3 bucket name.")]
     bucket: String,
+    #[arg(
+        long,
+        env = "CACHE_DIR",
+        help = "Path to directory for caching fetched audio."
+    )]
+    cache_dir: PathBuf,
 }
 
 #[tokio::main]
@@ -82,5 +91,14 @@ async fn main() -> anyhow::Result<()> {
             .build(),
     );
 
-    serve(args.port, s3_client, pg_pool, args.bucket).await
+    fs::create_dir_all(&args.cache_dir).await?;
+
+    serve(
+        args.port,
+        s3_client,
+        pg_pool,
+        args.bucket.leak(),
+        Box::leak(args.cache_dir.into_boxed_path()),
+    )
+    .await
 }

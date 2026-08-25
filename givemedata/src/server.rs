@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::loader::Loader;
@@ -32,11 +33,12 @@ impl GiveMeData {
     async fn new(
         s3_client: aws_sdk_s3::Client,
         pg_pool: Pool<Postgres>,
-        bucket: String,
+        bucket: &'static str,
+        cache_dir: &'static Path,
     ) -> Result<Self, sqlx::Error> {
         Ok(GiveMeData {
             sessions: Default::default(),
-            loader: Loader::new(s3_client, bucket),
+            loader: Loader::new(s3_client, bucket, cache_dir),
             db_pool: pg_pool,
         })
     }
@@ -46,7 +48,6 @@ async fn data_handler(
     sessions: SessionsMap,
     req_stream: &mut Streaming<DataRequest>,
     resp_stream: &UnboundedSender<Result<DataResponse, Status>>,
-    loader: &Loader,
 ) -> anyhow::Result<()> {
     while let Some(req) = req_stream.message().await? {
         println!("{req:?}");
@@ -59,13 +60,7 @@ async fn data_handler(
             .context("unknown session")?;
         let mut session = session.lock().await;
 
-        let batch = if req.split() == Split::Validation {
-            session.validation_sampler.next_batch()?
-        } else {
-            session.training_sampler.next_batch()?
-        };
-
-        let loaded_batch = loader.load_batch(batch).await?;
+        let loaded_batch = session.next_batch(req.split() == Split::Validation).await?;
         resp_stream.send(Ok(DataResponse {
             batch: loaded_batch,
         }))?;
@@ -77,7 +72,6 @@ async fn data_handler(
 #[tonic::async_trait]
 impl GiveMeDataService for GiveMeData {
     async fn init(&self, request: Request<InitRequest>) -> Result<Response<InitResponse>, Status> {
-        // preprocessing, prefetching, other shit like that
         let request = request.into_inner();
         println!("{request:?}");
 
@@ -91,12 +85,16 @@ impl GiveMeDataService for GiveMeData {
             max_seconds: request.max_seconds,
             max_text_tokens: request.max_text_tokens,
             seed: request.seed,
-            plbert_languages: Box::leak(request.plbert_languages.into_boxed_slice()),
         };
 
-        let session = Session::new(&self.db_pool, config)
-            .await
-            .map_err(|e| Status::internal(e.to_string()))?;
+        let session = Session::new(
+            &self.db_pool,
+            self.loader.clone(),
+            config,
+            &request.plbert_languages,
+        )
+        .await
+        .map_err(|e| Status::internal(e.to_string()))?;
         let session_id = session.id.to_string();
 
         self.sessions
@@ -118,10 +116,10 @@ impl GiveMeDataService for GiveMeData {
         let (out_tx, out_rx) = mpsc::unbounded_channel();
         tokio::spawn({
             let sessions = self.sessions.clone();
-            let loader = self.loader.clone();
             async move {
-                if let Err(err) = data_handler(sessions, &mut stream, &out_tx, &loader).await {
-                    println!("erra: {err}");
+                if let Err(err) = data_handler(sessions, &mut stream, &out_tx).await {
+                    println!("erra: {err:#}");
+                    let _ = out_tx.send(Err(Status::internal(format!("{err:#}"))));
                 }
             }
         });
@@ -146,13 +144,14 @@ pub async fn serve(
     port: u16,
     s3_client: aws_sdk_s3::Client,
     pg_pool: Pool<Postgres>,
-    bucket: String,
+    bucket: &'static str,
+    cache_dir: &'static Path,
 ) -> anyhow::Result<()> {
     println!("[givemedata] listening on 0.0.0.0:{}", port);
 
     Server::builder()
         .add_service(GiveMeDataServer::new(
-            GiveMeData::new(s3_client, pg_pool, bucket).await?,
+            GiveMeData::new(s3_client, pg_pool, bucket, cache_dir).await?,
         ))
         .serve(SocketAddr::from((Ipv4Addr::new(0, 0, 0, 0), port)))
         .await?;

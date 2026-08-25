@@ -1,22 +1,41 @@
-use bytes::{BufMut, BytesMut};
+use std::path::{Path, PathBuf};
 
-use crate::{audio, sampling, server::givemedata};
+use bytes::{BufMut, Bytes, BytesMut};
+use tokio::fs;
 
-// just an alias for now, will probably change in the future
-type LoadedSample = givemedata::Sample;
+use crate::{audio, sampling};
+
+pub struct LoadedSample {
+    pub wave_path: PathBuf,
+    pub duration: f64,
+    pub speaker_id: i64,
+    pub language_id: i32,
+    pub text: Bytes,
+}
+
+pub type LoadedBatch = Vec<LoadedSample>;
 
 #[derive(Clone)]
 pub struct Loader {
     s3_client: aws_sdk_s3::Client,
-    bucket: String,
+    bucket: &'static str,
+    cache_dir: &'static Path,
 }
 
 impl Loader {
-    pub fn new(s3_client: aws_sdk_s3::Client, bucket: String) -> Self {
-        Self { s3_client, bucket }
+    pub fn new(
+        s3_client: aws_sdk_s3::Client,
+        bucket: &'static str,
+        cache_dir: &'static Path,
+    ) -> Self {
+        Self {
+            s3_client,
+            bucket,
+            cache_dir,
+        }
     }
 
-    pub async fn load_sample(&self, sample: sampling::Sample) -> anyhow::Result<LoadedSample> {
+    pub async fn load_sample_bytes(&self, sample: &sampling::Sample) -> anyhow::Result<Bytes> {
         println!(
             "getting audio file {} from {}:{}-{}",
             sample.audio_id,
@@ -27,7 +46,7 @@ impl Loader {
         let obj = self
             .s3_client
             .get_object()
-            .bucket(&self.bucket)
+            .bucket(self.bucket)
             .key(&sample.object.path)
             .range(format!(
                 "bytes={}-{}",
@@ -45,8 +64,19 @@ impl Loader {
         }
         let wave = audio::process_audio(buff.freeze(), 24_000)?;
 
-        Ok(givemedata::Sample {
-            wave,
+        Ok(wave)
+    }
+
+    pub async fn load_sample(&self, sample: sampling::Sample) -> anyhow::Result<LoadedSample> {
+        let wave = self.load_sample_bytes(&sample).await?;
+
+        let path = self
+            .cache_dir
+            .join(format!("{}-{}.raw", sample.audio_id, uuid::Uuid::new_v4()));
+        fs::write(&path, wave).await?;
+
+        Ok(LoadedSample {
+            wave_path: path,
             duration: sample.duration,
             speaker_id: sample.speaker_id as i64,
             language_id: sample.language_id,
@@ -57,17 +87,20 @@ impl Loader {
     pub async fn load_batch(
         &self,
         batch: Vec<crate::sampling::Sample>,
-    ) -> anyhow::Result<Vec<givemedata::Sample>> {
+    ) -> anyhow::Result<LoadedBatch> {
         println!("loading batch of {}", batch.len());
-        let mut loaded_batch: Vec<givemedata::Sample> = vec![];
 
-        let mut set = tokio::task::JoinSet::new();
-        for sample in batch {
-            let loader = self.clone();
-            set.spawn(async move { loader.load_sample(sample).await });
-        }
-        for res in set.join_all().await {
-            loaded_batch.push(res?);
+        let handles: Vec<_> = batch
+            .into_iter()
+            .map(|sample| {
+                let loader = self.clone();
+                tokio::spawn(async move { loader.load_sample(sample).await })
+            })
+            .collect();
+
+        let mut loaded_batch: Vec<LoadedSample> = vec![];
+        for handle in handles {
+            loaded_batch.push(handle.await??);
         }
 
         Ok(loaded_batch)
