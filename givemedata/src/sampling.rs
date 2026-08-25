@@ -179,7 +179,7 @@ impl HistogramSampler {
     pub fn next_batch(&mut self) -> anyhow::Result<Vec<Sample>> {
         if self.bins.iter().all(|b| b.samples.is_empty()) {
             self.loops += 1;
-            println!("bins drained, looping with seed {}", self.loops);
+            tracing::info!(loops = self.loops, "bins drained, looping with a new seed");
             self.bins = self.template.clone();
             self.rng = SmallRng::seed_from_u64(self.seed + self.loops);
         }

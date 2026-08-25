@@ -13,6 +13,7 @@ use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status, Streaming};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 pub mod givemedata {
@@ -50,8 +51,7 @@ async fn data_handler(
     resp_stream: &UnboundedSender<Result<DataResponse, Status>>,
 ) -> anyhow::Result<()> {
     while let Some(req) = req_stream.message().await? {
-        println!("{req:?}");
-        println!("locking session {}", req.session_id);
+        debug!(session = %req.session_id, split = ?req.split(), "data request");
         let session = sessions
             .read()
             .await
@@ -73,7 +73,7 @@ async fn data_handler(
 impl GiveMeDataService for GiveMeData {
     async fn init(&self, request: Request<InitRequest>) -> Result<Response<InitResponse>, Status> {
         let request = request.into_inner();
-        println!("{request:?}");
+        debug!(?request, "init request");
 
         let dataset_id = Uuid::try_parse(&request.dataset_id).map_err(|e| {
             Status::invalid_argument(format!("Could not parse dataset_id UUID: {e}"))
@@ -94,13 +94,17 @@ impl GiveMeDataService for GiveMeData {
             &request.plbert_languages,
         )
         .await
-        .map_err(|e| Status::internal(e.to_string()))?;
+        .map_err(|err| {
+            error!(error = format!("{err:#}"), "session init failed");
+            Status::internal(format!("{err:#}"))
+        })?;
         let session_id = session.id.to_string();
 
         self.sessions
             .write()
             .await
             .insert(session_id.clone(), Arc::new(Mutex::new(session)));
+        info!(session = %session_id, "session created");
 
         Ok(Response::new(InitResponse { session_id }))
     }
@@ -118,7 +122,7 @@ impl GiveMeDataService for GiveMeData {
             let sessions = self.sessions.clone();
             async move {
                 if let Err(err) = data_handler(sessions, &mut stream, &out_tx).await {
-                    println!("erra: {err:#}");
+                    error!(error = format!("{err:#}"), "data stream failed");
                     let _ = out_tx.send(Err(Status::internal(format!("{err:#}"))));
                 }
             }
@@ -129,6 +133,7 @@ impl GiveMeDataService for GiveMeData {
 
     async fn end(&self, request: Request<EndRequest>) -> Result<Response<EndResponse>, Status> {
         let request = request.into_inner();
+        info!(session = %request.session_id, "ending session");
         let mut sessions = self.sessions.write().await;
         let removed = sessions.remove(&request.session_id);
 
@@ -147,7 +152,7 @@ pub async fn serve(
     bucket: &'static str,
     cache_dir: &'static Path,
 ) -> anyhow::Result<()> {
-    println!("[givemedata] listening on 0.0.0.0:{}", port);
+    info!("listening on 0.0.0.0:{port}");
 
     Server::builder()
         .add_service(GiveMeDataServer::new(

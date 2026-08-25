@@ -84,7 +84,7 @@ impl TextCleaner {
             if let Some(index) = self.symbol_index.get(&character.to_string()) {
                 indexes.push(*index);
             } else if self.chars_logged.insert(character) {
-                eprintln!("Character {character} not found in dictionary");
+                tracing::warn!("character {character} not found in dictionary");
             }
             position += character.len_utf8();
         }

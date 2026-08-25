@@ -7,6 +7,7 @@ use rubato::{
     audioadapter_buffers::{SizeError, direct::InterleavedSlice},
 };
 use thiserror::Error;
+use tracing::trace;
 
 #[derive(Error, Debug)]
 pub enum AudioError {
@@ -31,7 +32,11 @@ fn resample_and_quantize(
     sample_rate: u32,
     target_sample_rate: u32,
 ) -> Result<Vec<i16>, AudioError> {
-    println!("resampling and quantizing audio");
+    trace!(
+        from = sample_rate,
+        to = target_sample_rate,
+        "resampling and quantizing audio"
+    );
     let mut rs = Fft::<f32>::new(
         sample_rate as usize,
         target_sample_rate as usize,
@@ -57,7 +62,7 @@ pub fn process_audio(raw_wav: Bytes, target_sample_rate: u32) -> Result<Bytes, A
             channels,
             sample_rate,
         } if sample_rate == target_sample_rate => {
-            println!("passing data as is");
+            trace!("16-bit audio at target rate, passing through");
             reader
                 .samples::<i16>()
                 .step_by(channels as usize)

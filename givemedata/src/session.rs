@@ -2,6 +2,7 @@ use anyhow::bail;
 use sqlx::PgPool;
 use tokio::{fs, sync::mpsc};
 use tokio_util::sync::CancellationToken;
+use tracing::{Instrument, debug, error, info, info_span};
 use uuid::Uuid;
 
 use crate::{
@@ -33,30 +34,41 @@ fn spawn_prefetcher(
     mut sampler: HistogramSampler,
     loader: Loader,
     cancel_token: CancellationToken,
+    span: tracing::Span,
 ) -> mpsc::Receiver<anyhow::Result<LoadedBatch>> {
     let (tx, rx) = mpsc::channel(CACHED_BATCHES);
 
-    tokio::spawn(async move {
-        loop {
-            let permit = tokio::select! {
-                permit = tx.reserve() => match permit {
-                    Ok(permit) => permit,
-                    Err(_) => break,
-                },
-                () = cancel_token.cancelled() => break,
-            };
+    tokio::spawn(
+        async move {
+            loop {
+                let permit = tokio::select! {
+                    permit = tx.reserve() => match permit {
+                        Ok(permit) => permit,
+                        Err(_) => break,
+                    },
+                    () = cancel_token.cancelled() => break,
+                };
 
-            let loaded = match sampler.next_batch() {
-                Ok(batch) => loader.load_batch(batch).await,
-                Err(err) => Err(err),
-            };
-            let failed = loaded.is_err();
-            permit.send(loaded);
-            if failed {
-                break;
+                let loaded = match sampler.next_batch() {
+                    Ok(batch) => loader.load_batch(batch).await,
+                    Err(err) => Err(err),
+                };
+                match &loaded {
+                    Ok(batch) => debug!(samples = batch.len(), "batch cached"),
+                    Err(err) => {
+                        error!(error = format!("{err:#}"), "prefetching batch failed")
+                    }
+                }
+                let failed = loaded.is_err();
+                permit.send(loaded);
+                if failed {
+                    break;
+                }
             }
+            debug!("prefetcher stopped");
         }
-    });
+        .instrument(span),
+    );
 
     rx
 }
@@ -82,29 +94,38 @@ impl Session {
         plbert_languages: &[String],
     ) -> anyhow::Result<Self> {
         let id = Uuid::new_v4();
-        println!("initializing session {id}");
+        info!(session = %id, dataset = %config.dataset_id, "initializing session");
 
-        println!(
-            "fetching {} validation rows from dataset {}",
-            config.validation_samples, config.dataset_id
-        );
         let validation_rows = fetch_validation_samples(pg_pool, config).await?;
+        info!(
+            rows = validation_rows.len(),
+            requested = config.validation_samples,
+            "fetched validation rows"
+        );
 
         let validation_ids: Vec<Uuid> = validation_rows.iter().map(|r| r.audio_id).collect();
 
         let validation_sampler =
             HistogramSampler::from_samples(validation_rows, config, plbert_languages)?;
 
-        println!("fetching training rows from dataset {}", config.dataset_id);
         let training_rows = fetch_training_samples(pg_pool, &validation_ids, config).await?;
+        info!(rows = training_rows.len(), "fetched training rows");
         let training_sampler =
             HistogramSampler::from_samples(training_rows, config, plbert_languages)?;
 
         let cancel_token = CancellationToken::new();
-        let training_batches_rx =
-            spawn_prefetcher(training_sampler, loader.clone(), cancel_token.clone());
-        let validation_batches_rx =
-            spawn_prefetcher(validation_sampler, loader, cancel_token.clone());
+        let training_batches_rx = spawn_prefetcher(
+            training_sampler,
+            loader.clone(),
+            cancel_token.clone(),
+            info_span!("prefetcher", session = %id, split = "training"),
+        );
+        let validation_batches_rx = spawn_prefetcher(
+            validation_sampler,
+            loader,
+            cancel_token.clone(),
+            info_span!("prefetcher", session = %id, split = "validation"),
+        );
 
         Ok(Session {
             id,
@@ -127,12 +148,16 @@ impl Session {
             bail!("channel closed, session ended");
         };
 
-        futures::future::try_join_all(batch?.into_iter().map(read_cached_sample)).await
+        let samples =
+            futures::future::try_join_all(batch?.into_iter().map(read_cached_sample)).await?;
+        debug!(session = %self.id, validation, samples = samples.len(), "read batch from cache");
+        Ok(samples)
     }
 }
 
 impl Drop for Session {
     fn drop(&mut self) {
+        debug!(session = %self.id, "session dropped, stopping prefetchers");
         self.cancel_token.cancel();
     }
 }

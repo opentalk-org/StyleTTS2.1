@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use bytes::{BufMut, Bytes, BytesMut};
 use tokio::fs;
+use tracing::{debug, trace};
 
 use crate::{audio, sampling};
 
@@ -36,12 +37,12 @@ impl Loader {
     }
 
     pub async fn load_sample_bytes(&self, sample: &sampling::Sample) -> anyhow::Result<Bytes> {
-        println!(
-            "getting audio file {} from {}:{}-{}",
-            sample.audio_id,
-            sample.object.path,
-            sample.object.offset,
-            sample.object.offset + sample.object.length - 1
+        trace!(
+            audio = %sample.audio_id,
+            object = %sample.object.path,
+            offset = sample.object.offset,
+            length = sample.object.length,
+            "fetching audio from bucket"
         );
         let obj = self
             .s3_client
@@ -88,7 +89,7 @@ impl Loader {
         &self,
         batch: Vec<crate::sampling::Sample>,
     ) -> anyhow::Result<LoadedBatch> {
-        println!("loading batch of {}", batch.len());
+        debug!(samples = batch.len(), "loading batch");
 
         let handles: Vec<_> = batch
             .into_iter()
