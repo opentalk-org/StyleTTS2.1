@@ -204,8 +204,6 @@
               RUNNER_ID = "runner-1";
 
               HF_HOME = "$DNVR_ROOT/.cache/huggingface";
-              RUST_LOG = "debug,h2=off,hyper=off,tower=off,sqlx=off";
-
             }
             // lib.optionalAttrs pkgs.stdenv.isLinux {
               PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True";

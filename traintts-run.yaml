@@ -1,0 +1,181 @@
+# Translated from the UI training-tab workflow graph:
+# scratch training (no base checkpoint), default IPA alphabet, default-shaped
+# 5-stage curriculum but with steps: 1 per stage (smoke-test schedule).
+# The graph's ood_text_set file is not listed: the finetune loop never used it.
+
+dataset_id: "f0943606-6e06-400e-8bc4-7ab3ea8dbe04"
+output_dir: runs/styletts-scratch
+run_name: styletts_finetune
+
+base_checkpoint: null   # SelectCheckpoint was __scratch__
+asr_model: .cache/runflow/assets/checkpoints/567d8044d496449217baa609f86462297a0506add638e0fad00938e3631a8e8e/epoch_00080.pth
+f0_model: .cache/runflow/assets/checkpoints/609c00a909dcab83769ada9c3727fe5929ccd214b0c3205e82decea5debafef3/bst.t7
+plbert: .cache/runflow/assets/checkpoints/6a8c0987582acf8724c32cd6daf66bb5cdfbb39a7203162ceeff6f02b3bf2788/step_1000000.t7
+
+seed: 1
+validation_samples: 32
+learning_rate: 1.0e-4
+precision: fp32
+device: cuda
+validation_every_steps: 500
+checkpoint_every_steps: 2000
+log_every_steps: 10
+load_optimizer: false
+reset_training_step: false
+decoder: hifigan
+multispeaker: true
+checkpoint_decoder_gradients: true
+checkpoint_discriminator_gradients: false
+symbols: null           # preset "ipa" resolves to the default StyleTTS alphabet
+
+training_stages:
+  - name: "StyleTTS2 train_first.py · mel pretraining"
+    steps: 1
+    max_audio_seconds: 150
+    max_decoder_seconds: 9
+    voice_conditioning_dropout: 0
+    style_source: continuous
+    prosody_source: ground_truth
+    trainable_modules: [text_encoder, voice_encoder, decoder, text_aligner]
+    loss_weights:
+      alpha_flow: 0
+      adversarial: 0
+      duration: 0
+      duration_ce: 0
+      f0: 0
+      mel: 1
+      monotonic_alignment: 10
+      norm: 0
+      prosody_adversarial: 0
+      sequence_alignment: 1
+      slm_adversarial: 0
+      speaker_feature: 0
+      speaker_similarity: 0
+      wavlm: 0
+      style_nuisance: 0
+      xcov: 0
+    validation:
+      f0_source: ground_truth
+      norm_source: ground_truth
+      duration_source: ground_truth
+      alpha_flow: false
+  - name: "StyleTTS2 train_first.py · TMA acoustic GAN"
+    steps: 1
+    max_audio_seconds: 90
+    max_decoder_seconds: 6
+    voice_conditioning_dropout: 0
+    style_source: continuous
+    prosody_source: ground_truth
+    trainable_modules: [text_encoder, voice_encoder, decoder, text_aligner]
+    loss_weights:
+      alpha_flow: 0
+      adversarial: 1
+      duration: 0
+      duration_ce: 0
+      f0: 0
+      mel: 5
+      monotonic_alignment: 10
+      norm: 0
+      prosody_adversarial: 0
+      sequence_alignment: 1
+      slm_adversarial: 0
+      speaker_feature: 0
+      speaker_similarity: 0
+      wavlm: 1
+      style_nuisance: 0
+      xcov: 0
+    validation:
+      f0_source: ground_truth
+      norm_source: ground_truth
+      duration_source: ground_truth
+      alpha_flow: false
+  - name: "prosody autoencoder · continuous/RFSQ · no GAN"
+    steps: 1
+    max_audio_seconds: 90
+    max_decoder_seconds: 3
+    voice_conditioning_dropout: 0
+    style_source: quantized
+    prosody_source: predicted
+    trainable_modules: [bert, bert_encoder, duration_predictor, prosody_encoder, prosody_predictor, quantizer, position_embedding]
+    loss_weights:
+      alpha_flow: 0
+      adversarial: 0
+      duration: 1
+      duration_ce: 20
+      f0: 1
+      mel: 0
+      monotonic_alignment: 0
+      norm: 1
+      prosody_adversarial: 0
+      sequence_alignment: 0
+      slm_adversarial: 0
+      speaker_feature: 0
+      speaker_similarity: 0
+      wavlm: 0
+      style_nuisance: 0
+      xcov: 0
+    validation:
+      f0_source: predicted
+      norm_source: predicted
+      duration_source: predicted
+      alpha_flow: false
+  - name: "prosody autoencoder · continuous/RFSQ · GAN"
+    steps: 1
+    max_audio_seconds: 75
+    max_decoder_seconds: 3
+    voice_conditioning_dropout: 0
+    style_source: quantized
+    prosody_source: predicted
+    trainable_modules: [bert, bert_encoder, duration_predictor, prosody_encoder, prosody_predictor, quantizer, position_embedding]
+    loss_weights:
+      alpha_flow: 0
+      adversarial: 0
+      duration: 1
+      duration_ce: 20
+      f0: 1
+      mel: 0
+      monotonic_alignment: 0
+      norm: 1
+      prosody_adversarial: 1
+      sequence_alignment: 0
+      slm_adversarial: 0
+      speaker_feature: 0
+      speaker_similarity: 0
+      wavlm: 0
+      style_nuisance: 0
+      xcov: 0
+    validation:
+      f0_source: predicted
+      norm_source: predicted
+      duration_source: predicted
+      alpha_flow: false
+  - name: "v_diffusion.py · AlphaFlow"
+    steps: 1
+    max_audio_seconds: 65
+    max_decoder_seconds: 3
+    voice_conditioning_dropout: 0
+    style_source: quantized
+    prosody_source: predicted
+    trainable_modules: [alpha_flow]
+    loss_weights:
+      alpha_flow: 1
+      adversarial: 0
+      duration: 0
+      duration_ce: 0
+      f0: 0
+      mel: 0
+      monotonic_alignment: 0
+      norm: 0
+      prosody_adversarial: 0
+      sequence_alignment: 0
+      slm_adversarial: 0
+      speaker_feature: 0
+      speaker_similarity: 0
+      wavlm: 0
+      style_nuisance: 0
+      xcov: 0
+    validation:
+      f0_source: predicted
+      norm_source: predicted
+      duration_source: predicted
+      alpha_flow: true

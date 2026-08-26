@@ -1,0 +1,193 @@
+"""Metric and artifact tracking: MLflow when MLFLOW_TRACKING_URI is set,
+plain files under the log dir otherwise."""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import shutil
+import time
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Protocol
+
+logger = logging.getLogger(__name__)
+MAX_PENDING_OPERATIONS = 256
+
+
+class TrackerRun(Protocol):
+    """Metric and artifact sink shared by training implementations."""
+
+    def track(self, value: object, name: str, step: int, epoch: int | None = None) -> None: ...
+
+    def track_metrics(
+        self, metrics: Mapping[str, float], step: int, epoch: int | None = None
+    ) -> None: ...
+
+    def log_artifact(self, path: Path, artifact_path: str) -> None: ...
+
+    def log_artifacts(self, path: Path, artifact_path: str) -> None: ...
+
+    def close(self) -> None: ...
+
+
+class LocalTracker:
+    """File-based tracker: metrics appended to log_dir/metrics.jsonl,
+    artifacts copied under log_dir/artifacts/."""
+
+    def __init__(self, log_dir: Path | str) -> None:
+        self.log_dir = Path(log_dir)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self._metrics = (self.log_dir / "metrics.jsonl").open("a", encoding="utf-8")
+
+    def track(self, value: object, name: str, step: int, epoch: int | None = None) -> None:
+        if isinstance(value, (bool, int, float)):
+            self.track_metrics({name: float(value)}, step=step, epoch=epoch)
+
+    def track_metrics(
+        self, metrics: Mapping[str, float], step: int, epoch: int | None = None
+    ) -> None:
+        record: dict[str, float] = {"step": float(step), "time": time.time()}
+        if epoch is not None:
+            record["epoch"] = float(epoch)
+        record.update({name: float(value) for name, value in metrics.items()})
+        self._metrics.write(json.dumps(record) + "\n")
+        self._metrics.flush()
+
+    def log_artifact(self, path: Path, artifact_path: str) -> None:
+        dest = self.log_dir / "artifacts" / artifact_path
+        dest.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, dest / Path(path).name)
+
+    def log_artifacts(self, path: Path, artifact_path: str) -> None:
+        shutil.copytree(path, self.log_dir / "artifacts" / artifact_path, dirs_exist_ok=True)
+
+    def close(self) -> None:
+        self._metrics.close()
+
+
+class MlflowRun:
+    """Concurrency-safe adapter that always addresses one explicit MLflow run."""
+
+    def __init__(
+        self,
+        client,
+        run_id: str,
+        *,
+        resume_system_metrics: bool,
+    ) -> None:
+        from mlflow.system_metrics.system_metrics_monitor import SystemMetricsMonitor
+
+        self._client = client
+        self._run_id = run_id
+        self._last_epoch_step: tuple[int, int] | None = None
+        self._last_logged_step: int | None = None
+        self._pending: list = []
+        self._system_metrics = SystemMetricsMonitor(
+            run_id,
+            resume_logging=resume_system_metrics,
+            tracking_uri=os.environ["MLFLOW_TRACKING_URI"],
+        )
+        self._system_metrics.start()
+
+    def track(self, value: object, name: str, step: int, epoch: int | None = None) -> None:
+        if step != self._last_logged_step:
+            operation = self._client.log_metric(
+                self._run_id, "step", float(step), step=step, synchronous=False
+            )
+            self._queue(operation)
+            self._last_logged_step = step
+        epoch_step = None if epoch is None else (epoch, step)
+        if epoch_step is not None and epoch_step != self._last_epoch_step:
+            operation = self._client.log_metric(
+                self._run_id, "epoch", float(epoch), step=step, synchronous=False
+            )
+            self._queue(operation)
+            self._last_epoch_step = epoch_step
+        if isinstance(value, (bool, int, float)):
+            operation = self._client.log_metric(
+                self._run_id, name, float(value), step=step, synchronous=False
+            )
+            self._queue(operation)
+            return
+        artifact_file = f"text/{name}/step_{step:09d}.txt"
+        self._client.log_text(self._run_id, str(value), artifact_file)
+
+    def track_metrics(
+        self, metrics: Mapping[str, float], step: int, epoch: int | None = None
+    ) -> None:
+        from mlflow.entities import Metric
+
+        timestamp = int(time.time() * 1000)
+        batch = [Metric(name, float(value), timestamp, step) for name, value in metrics.items()]
+        if step != self._last_logged_step:
+            batch.append(Metric("step", float(step), timestamp, step))
+            self._last_logged_step = step
+        epoch_step = None if epoch is None else (epoch, step)
+        if epoch_step is not None and epoch_step != self._last_epoch_step:
+            batch.append(Metric("epoch", float(epoch), timestamp, step))
+            self._last_epoch_step = epoch_step
+        operation = self._client.log_batch(self._run_id, batch, synchronous=False)
+        self._queue(operation)
+
+    def log_artifact(self, path: Path, artifact_path: str) -> None:
+        self._client.log_artifact(self._run_id, str(path), artifact_path)
+
+    def log_artifacts(self, path: Path, artifact_path: str) -> None:
+        self._client.log_artifacts(self._run_id, str(path), artifact_path)
+
+    def close(self) -> None:
+        self._system_metrics.finish()
+        self._flush_pending()
+        self._client.set_terminated(self._run_id, "FINISHED")
+
+    def _queue(self, operation) -> None:
+        self._pending.append(operation)
+        if len(self._pending) >= MAX_PENDING_OPERATIONS:
+            self._flush_pending()
+
+    def _flush_pending(self) -> None:
+        for operation in self._pending:
+            operation.wait()
+        self._pending.clear()
+
+
+def start_mlflow_run(*, experiment: str, name: str, config: dict[str, object]) -> TrackerRun:
+    """Create an MLflow run without relying on process-global active-run state."""
+    from mlflow import MlflowClient
+
+    client = MlflowClient(tracking_uri=os.environ["MLFLOW_TRACKING_URI"])
+    experiment_record = client.get_experiment_by_name(experiment)
+    experiment_id = (
+        client.create_experiment(experiment)
+        if experiment_record is None
+        else experiment_record.experiment_id
+    )
+    run = client.create_run(experiment_id, tags={"mlflow.runName": name})
+    client.log_dict(run.info.run_id, dict(config), "config.json")
+    logger.info("MLflow run started experiment=%s name=%s", experiment, name)
+    return MlflowRun(
+        client,
+        run.info.run_id,
+        resume_system_metrics=False,
+    )
+
+
+def resume_mlflow_run(run_id: str) -> TrackerRun:
+    """Attach metric and artifact logging to an existing MLflow run."""
+    from mlflow import MlflowClient
+
+    client = MlflowClient(tracking_uri=os.environ["MLFLOW_TRACKING_URI"])
+    run = client.get_run(run_id)
+    client.update_run(run_id, status="RUNNING")
+    logger.info(
+        "MLflow run resumed experiment_id=%s run_id=%s",
+        run.info.experiment_id,
+        run_id,
+    )
+    return MlflowRun(
+        client,
+        run_id,
+        resume_system_metrics=True,
+    )
