@@ -25,6 +25,15 @@ logger = logging.getLogger(__name__)
 
 def train(config_path: str, *, run: TrackerRun | None) -> None:
     config = load_training_config(config_path)
+    logger.info(
+        "config loaded dataset=%s total_steps=%s stages=%s device=%s precision=%s seed=%s",
+        config.data_params.dataset_id,
+        config.total_steps,
+        len(config.training_stages),
+        config.device,
+        config.precision,
+        config.seed,
+    )
     random.seed(config.seed)
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
@@ -42,7 +51,17 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
         if accelerator.is_main_process and run is not None
         else None
     )
+    logger.info(
+        "building models and loading weights pretrained=%s",
+        config.pretrained_model or "from scratch",
+    )
     runtime = build_training_runtime(config, accelerator)
+    logger.info(
+        "runtime ready device=%s processes=%s initial_step=%s",
+        accelerator.device,
+        accelerator.num_processes,
+        runtime.initial_step,
+    )
     trainer = Trainer(config, runtime)
     validator = Validator(config, runtime)
     checkpoints = CheckpointPublisher(config, runtime)
@@ -58,6 +77,14 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
     while trainer.step < config.total_steps:
         stage = stage_for_step(config.training_stages, trainer.step)
         if stage is not active_stage:
+            logger.info(
+                "stage starting name=%r step=%s/%s max_audio_seconds=%s trainable=%s",
+                stage.name,
+                trainer.step,
+                config.total_steps,
+                stage.max_audio_seconds,
+                [module.value for module in stage.trainable_modules],
+            )
             if data_client is not None:
                 data_client.close()
             data_client = gmd.GiveMeDataClient(
@@ -80,6 +107,11 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
                 validation=True,
                 device=config.device,
                 samples_per_epoch=config.data_params.validation_samples,
+            )
+            logger.info(
+                "givemedata session ready session=%s dataset=%s",
+                data_client.session_id,
+                config.data_params.dataset_id,
             )
             active_stage = stage
         assert train_batches is not None
@@ -184,6 +216,7 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
                 validation_started = time.monotonic()
                 if accelerator.is_main_process:
                     assert telemetry is not None
+                    logger.info("validation starting step=%s", step)
                     with profiling_fn("validation"):
                         result = validator.run(validation_batches, step)
                     validation_loss = result.metrics["mel_loss"]
@@ -192,6 +225,13 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
                         result.metrics,
                         result.samples,
                         config.log_dir,
+                    )
+                    logger.info(
+                        "validation done step=%s mel_loss=%.5f samples=%s seconds=%.1f",
+                        step,
+                        _scalar(validation_loss),
+                        len(result.samples),
+                        time.monotonic() - validation_started,
                     )
                     if trainer.step < config.total_steps:
                         trainer.set_training_mode()
@@ -214,6 +254,12 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
                 )
             if validate or checkpoint:
                 accelerator.wait_for_everyone()
+    logger.info(
+        "training finished step=%s/%s elapsed_seconds=%.1f",
+        trainer.step,
+        config.total_steps,
+        time.monotonic() - timing.started_at,
+    )
     if data_client is not None:
         data_client.close()
     if owns_run:

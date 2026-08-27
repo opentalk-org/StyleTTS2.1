@@ -4,7 +4,8 @@ Replicates what the training workflow's node graph used to assemble, without
 the runner/backend/DB machinery. Data comes from the givemedata service
 (GIVEMEDATA_ADDR, default localhost:8181); assets and the base checkpoint are
 plain local paths; checkpoints land under <output_dir>/run/published_checkpoints;
-metrics go to MLflow when MLFLOW_TRACKING_URI is set, else to metrics.jsonl.
+metrics and artifacts go to <output_dir>/run/metrics.jsonl and artifacts/
+(the MLflow integration is commented out for now).
 
 Usage:
     python -m traintts.main run.yaml [--dry-run]
@@ -16,6 +17,7 @@ Multi-GPU:
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 from typing import Any, Literal
 
@@ -28,6 +30,10 @@ from .default_stages import build_default_training_stages
 from .layout import architecture_yaml, latest_weight
 from .stages import TrainingStageSpec
 from .symbols import DEFAULT_STYLETTS_SYMBOLS
+
+logger = logging.getLogger(__name__)
+
+LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 
 
 class RunSpec(BaseModel):
@@ -47,7 +53,7 @@ class RunSpec(BaseModel):
     plbert_symbols: list[str] | None = None
     plbert_languages: list[str] = Field(default_factory=list)
 
-    mlflow_run_id: str = ""
+    # mlflow_run_id: str = ""  # mlflow disabled for now
     seed: int = 1
     validation_samples: int = 32
     learning_rate: float = 1e-4
@@ -134,7 +140,7 @@ def build_run_config(spec: RunSpec) -> dict[str, Any]:
             "run_id": spec.run_name,
             "finetune_job_id": spec.run_name,
             "run_name": spec.run_name,
-            "mlflow_run_id": spec.mlflow_run_id,
+            "mlflow_run_id": "",  # mlflow disabled for now
         },
         symbols=symbols,
         symbol_count=len(symbols),
@@ -180,6 +186,7 @@ def main(argv: list[str] | None = None) -> None:
         help="Build and validate the full training config, print it, and exit",
     )
     arguments = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
     spec = RunSpec.model_validate(yaml.safe_load(Path(arguments.spec).read_text(encoding="utf-8")))
     config = build_run_config(spec)
@@ -193,6 +200,7 @@ def main(argv: list[str] | None = None) -> None:
     config_path = output_dir / "config.yaml"
     write_config(config_path, config)
     Path(training_config.log_dir).mkdir(parents=True, exist_ok=True)
+    logger.info("run %r starting, resolved config written to %s", spec.run_name, config_path)
 
     # deferred: these pull in torch and the whole model stack
     from .mlflow_logging import start_run
