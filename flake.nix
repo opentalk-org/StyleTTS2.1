@@ -87,12 +87,14 @@
             }
             {
               name = "preload.json";
-              path = pkgs.writeText "preload.json" (builtins.toJSON {
-                preload_libs = lib.concatMap (
-                  library: map (soname: "${library.pkg}/lib/${soname}") library.sonames
-                ) wheelLibs;
-                nvidia_driver_dirs = nvidiaDriverDirs;
-              });
+              path = pkgs.writeText "preload.json" (
+                builtins.toJSON {
+                  preload_libs = lib.concatMap (
+                    library: map (soname: "${library.pkg}/lib/${soname}") library.sonames
+                  ) wheelLibs;
+                  nvidia_driver_dirs = nvidiaDriverDirs;
+                }
+              );
             }
           ];
 
@@ -221,7 +223,7 @@
               else
                 echo "no .venv yet - run: uv sync --frozen"
               fi
-              export LD_LIBRARY_PATH=$__d:${pkgs.ffmpeg-headless.lib}/lib:${pkgs.portaudio}/lib
+              export LD_LIBRARY_PATH=$TRITON_LIBCUDA_PATH:${pkgs.ffmpeg-headless.lib}/lib:${pkgs.portaudio}/lib
             '';
 
             processes.pg = {
