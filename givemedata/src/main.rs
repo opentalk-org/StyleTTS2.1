@@ -76,7 +76,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter("debug,h2=off,hyper=off,tower=off,sqlx=off,aws_runtime=off,aws_sdk_s3=off")
+        .with_env_filter("debug,h2=off,hyper=off,tower=off,sqlx=off,aws_runtime=off,aws_sdk_s3=off,aws_smithy_runtime_api=off")
         .init();
 
     let args = Args::parse();
