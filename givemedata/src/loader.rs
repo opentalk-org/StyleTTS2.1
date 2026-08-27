@@ -1,42 +1,41 @@
-use std::path::{Path, PathBuf};
-
+use async_trait::async_trait;
 use bytes::{BufMut, Bytes, BytesMut};
-use tokio::fs;
 use tracing::{debug, trace};
 
 use crate::{audio, sampling};
 
-pub struct LoadedSample {
-    pub wave_path: PathBuf,
-    pub duration: f64,
-    pub speaker_id: i64,
-    pub language_id: i32,
-    pub text: Bytes,
-}
+#[async_trait]
+pub trait Loader: Send + Sync {
+    async fn load(&self, sample: &sampling::Sample) -> anyhow::Result<Bytes>;
+    async fn load_batch(
+        &self,
+        batch: Vec<sampling::Sample>,
+    ) -> anyhow::Result<Vec<(sampling::Sample, Bytes)>> {
+        debug!(samples = batch.len(), "loading batch");
 
-pub type LoadedBatch = Vec<LoadedSample>;
+        futures::future::try_join_all(batch.into_iter().map(|sample| async move {
+            let wave = self.load(&sample).await?;
+            anyhow::Ok((sample, wave))
+        }))
+        .await
+    }
+}
 
 #[derive(Clone)]
-pub struct Loader {
+pub struct S3Loader {
     s3_client: aws_sdk_s3::Client,
     bucket: &'static str,
-    cache_dir: &'static Path,
 }
 
-impl Loader {
-    pub fn new(
-        s3_client: aws_sdk_s3::Client,
-        bucket: &'static str,
-        cache_dir: &'static Path,
-    ) -> Self {
-        Self {
-            s3_client,
-            bucket,
-            cache_dir,
-        }
+impl S3Loader {
+    pub fn new(s3_client: aws_sdk_s3::Client, bucket: &'static str) -> Self {
+        Self { s3_client, bucket }
     }
+}
 
-    pub async fn load_sample_bytes(&self, sample: &sampling::Sample) -> anyhow::Result<Bytes> {
+#[async_trait]
+impl Loader for S3Loader {
+    async fn load(&self, sample: &sampling::Sample) -> anyhow::Result<Bytes> {
         trace!(
             audio = %sample.audio_id,
             object = %sample.object.path,
@@ -67,43 +66,20 @@ impl Loader {
 
         Ok(wave)
     }
+}
 
-    pub async fn load_sample(&self, sample: sampling::Sample) -> anyhow::Result<LoadedSample> {
-        let wave = self.load_sample_bytes(&sample).await?;
+pub struct SyntheticLoader;
 
-        let path = self
-            .cache_dir
-            .join(format!("{}-{}.raw", sample.audio_id, uuid::Uuid::new_v4()));
-        fs::write(&path, wave).await?;
-
-        Ok(LoadedSample {
-            wave_path: path,
-            duration: sample.duration,
-            speaker_id: sample.speaker_id as i64,
-            language_id: sample.language_id,
-            text: sample.text,
-        })
-    }
-
-    pub async fn load_batch(
-        &self,
-        batch: Vec<crate::sampling::Sample>,
-    ) -> anyhow::Result<LoadedBatch> {
-        debug!(samples = batch.len(), "loading batch");
-
-        let handles: Vec<_> = batch
-            .into_iter()
-            .map(|sample| {
-                let loader = self.clone();
-                tokio::spawn(async move { loader.load_sample(sample).await })
-            })
-            .collect();
-
-        let mut loaded_batch: Vec<LoadedSample> = vec![];
-        for handle in handles {
-            loaded_batch.push(handle.await??);
+#[async_trait]
+impl Loader for SyntheticLoader {
+    async fn load(&self, sample: &sampling::Sample) -> anyhow::Result<Bytes> {
+        let sample_count = (sample.duration * 24_000.0) as usize;
+        let mut wave = BytesMut::with_capacity(2 * sample_count);
+        for t in 0..sample_count {
+            let phase = 2.0 * std::f64::consts::PI * 220.0 * t as f64 / 24_000.0;
+            wave.put_i16_le((0.25 * phase.sin() * 32_767.0) as i16);
         }
 
-        Ok(loaded_batch)
+        Ok(wave.freeze())
     }
 }

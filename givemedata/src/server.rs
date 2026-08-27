@@ -3,7 +3,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::loader::Loader;
+use crate::loader::{Loader, S3Loader, SyntheticLoader};
 use crate::server::givemedata::{EndRequest, EndResponse, InitRequest, InitResponse};
 use crate::session::{self, Session};
 use anyhow::Context;
@@ -26,7 +26,9 @@ type SessionsMap = Arc<RwLock<HashMap<String, Arc<Mutex<Session>>>>>;
 
 struct GiveMeData {
     db_pool: PgPool,
-    loader: Loader,
+    loader: Arc<dyn Loader>,
+    cache_dir: &'static Path,
+    synthetic: bool,
     sessions: SessionsMap,
 }
 
@@ -36,10 +38,18 @@ impl GiveMeData {
         pg_pool: Pool<Postgres>,
         bucket: &'static str,
         cache_dir: &'static Path,
+        synthetic: bool,
     ) -> Result<Self, sqlx::Error> {
+        let loader: Arc<dyn Loader> = if synthetic {
+            Arc::new(SyntheticLoader)
+        } else {
+            Arc::new(S3Loader::new(s3_client, bucket))
+        };
         Ok(GiveMeData {
             sessions: Default::default(),
-            loader: Loader::new(s3_client, bucket, cache_dir),
+            loader,
+            cache_dir,
+            synthetic,
             db_pool: pg_pool,
         })
     }
@@ -61,9 +71,17 @@ async fn data_handler(
         let mut session = session.lock().await;
 
         let loaded_batch = session.next_batch(req.split() == Split::Validation).await?;
-        resp_stream.send(Ok(DataResponse {
-            batch: loaded_batch,
-        }))?;
+        let batch = loaded_batch
+            .into_iter()
+            .map(|sample| givemedata::Sample {
+                wave: sample.wave,
+                duration: sample.duration,
+                speaker_id: sample.speaker_id,
+                language_id: sample.language_id,
+                text: sample.text,
+            })
+            .collect();
+        resp_stream.send(Ok(DataResponse { batch }))?;
     }
 
     Ok(())
@@ -85,11 +103,13 @@ impl GiveMeDataService for GiveMeData {
             max_seconds: request.max_seconds,
             max_text_tokens: request.max_text_tokens,
             seed: request.seed,
+            synthetic: self.synthetic,
         };
 
         let session = Session::new(
             &self.db_pool,
             self.loader.clone(),
+            self.cache_dir,
             config,
             &request.plbert_languages,
         )
@@ -151,12 +171,16 @@ pub async fn serve(
     pg_pool: Pool<Postgres>,
     bucket: &'static str,
     cache_dir: &'static Path,
+    synthetic: bool,
 ) -> anyhow::Result<()> {
+    if synthetic {
+        info!("serving synthetic sessions");
+    }
     info!("listening on 0.0.0.0:{port}");
 
     Server::builder()
         .add_service(GiveMeDataServer::new(
-            GiveMeData::new(s3_client, pg_pool, bucket, cache_dir).await?,
+            GiveMeData::new(s3_client, pg_pool, bucket, cache_dir, synthetic).await?,
         ))
         .serve(SocketAddr::from((Ipv4Addr::new(0, 0, 0, 0), port)))
         .await?;

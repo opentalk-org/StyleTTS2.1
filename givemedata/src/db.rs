@@ -1,15 +1,17 @@
+use rand::{RngExt, SeedableRng, rngs::SmallRng};
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::session;
+
+pub const VALIDATION_SEED_SALT: u64 = 0x76616c;
+pub const TRAINING_SEED_SALT: u64 = 0x747261;
 
 pub struct SampleRow {
     pub audio_id: Uuid,
     pub duration: f64,
     pub language: Option<String>,
     pub speaker_id: Option<String>,
-    pub source_id: Option<String>,
-    pub repository: Option<String>,
     pub text: Option<String>,
 
     pub lower_bound: Option<f64>,
@@ -101,7 +103,7 @@ agg as (
              a.language, a.source_id, a.repository, a.bucket_file_id, a.byte_offset, a.byte_length
 )
 select audio_id, duration, byte_offset, byte_length, b.path as object_path, lower_bound::float, upper_bound::float, language,
-       speaker_id, source_id, repository, text
+       speaker_id, text
 from agg
 join bucket_files b on b.id = agg.bucket_file_id
 where length(text) <= $4
@@ -197,7 +199,7 @@ agg as (
              a.language, a.source_id, a.repository, a.bucket_file_id, a.byte_offset, a.byte_length
 )
 select audio_id, duration, byte_offset, byte_length, b.path as object_path, lower_bound::float, upper_bound::float, language,
-       speaker_id, source_id, repository, text
+       speaker_id, text
 from agg
 join bucket_files b on b.id = agg.bucket_file_id
 where length(text) <= $4
@@ -212,4 +214,58 @@ order by duration, audio_id
     .await?;
 
     Ok(rows)
+}
+
+pub fn synthetic_rows(
+    config: session::Config,
+    language: &str,
+    count: usize,
+    seed_salt: u64,
+) -> Vec<SampleRow> {
+    let mut rng = SmallRng::seed_from_u64(config.seed ^ seed_salt);
+
+    let max_seconds = config.max_seconds as f64;
+    let mut durations: Vec<f64> = (0..count)
+        // log-uniform in [1, max_seconds) so the exp2 bins populate evenly
+        .map(|_| rng.random_range(0f64..max_seconds.ln()).exp())
+        .collect();
+    durations.sort_by(f64::total_cmp);
+    let max_duration = durations.last().copied().unwrap_or(1.0);
+
+    durations
+        .iter()
+        .enumerate()
+        .map(|(i, &duration)| {
+            let (lower_bound, upper_bound) = exp2_bounds(duration, max_duration);
+            SampleRow {
+                audio_id: Uuid::from_u128(rng.random()),
+                duration,
+                language: Some(language.to_string()),
+                speaker_id: Some(format!("spk-{}", i % 3)),
+                text: Some("wˈʌn tˈuː θrˈiː".to_string()),
+                lower_bound: Some(lower_bound),
+                upper_bound: Some(upper_bound),
+                object_path: "synthetic".to_string(),
+                byte_offset: 0,
+                byte_length: 0,
+            }
+        })
+        .collect()
+}
+
+fn exp2_bounds(duration: f64, max_duration: f64) -> (f64, f64) {
+    let top = max_duration.ceil().log2().floor() as i32;
+    let bounds: Vec<f64> = (0..=top).map(|x| 2f64.powi(x)).collect();
+
+    let bin_index = bounds
+        .iter()
+        .take_while(|&&bound| bound <= duration)
+        .count();
+    let lower = if bin_index == 0 {
+        0.0
+    } else {
+        bounds[bin_index - 1]
+    };
+    let upper = 2f64.powi(bin_index as i32).min(max_duration);
+    (lower, upper)
 }

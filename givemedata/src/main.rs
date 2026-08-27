@@ -18,6 +18,7 @@ use crate::server::serve;
 mod audio;
 mod db;
 mod loader;
+mod prefetch;
 mod sampling;
 mod server;
 mod session;
@@ -33,7 +34,7 @@ const STYLES: Styles = Styles::styled()
     .invalid(AnsiColor::Yellow.on_default().effects(Effects::BOLD));
 
 #[derive(Parser)]
-#[command(name = "givemedata", styles = STYLES)]
+#[command(name = "givemedata a", styles = STYLES)]
 #[command(about = "GIVE ME DATA!", long_about = None)]
 struct Args {
     #[arg(
@@ -61,9 +62,15 @@ struct Args {
     #[arg(
         long,
         env = "CACHE_DIR",
-        help = "Path to directory for caching fetched audio."
+        help = "Directory for spilling prefetched audio to disk; omit to keep it in memory."
     )]
     cache_dir: PathBuf,
+    #[arg(
+        long,
+        env = "SYNTHETIC",
+        help = "Serve synthetic sessions: fabricated samples instead of database rows and bucket audio."
+    )]
+    synthetic: bool,
 }
 
 #[tokio::main]
@@ -103,6 +110,7 @@ async fn main() -> anyhow::Result<()> {
         pg_pool,
         args.bucket.leak(),
         Box::leak(args.cache_dir.into_boxed_path()),
+        args.synthetic,
     )
     .await
 }
