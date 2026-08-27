@@ -35,4 +35,3 @@ scripts/*
 runflow_mlflow_backup_20260827T094556Z/
 runflow_mlflow_backup_20260827T094556Z.zip
 target/
-.sqlx/
