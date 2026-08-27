@@ -25,7 +25,7 @@ class GiveMeDataClient:
     ) -> None:
         self.plbert_modality_id = plbert_modality_id
         addr = addr or os.environ.get("GIVEMEDATA_ADDR", DEFAULT_ADDR)
-        self._channel = grpc.insecure_channel(addr)
+        self._channel = grpc.insecure_channel(addr, options=[("grpc.max_receive_message_length", 67136000)])
         self._stub = pb_grpc.GiveMeDataStub(self._channel)
         response = self._stub.Init(
             pb.InitRequest(
