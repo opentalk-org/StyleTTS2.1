@@ -134,12 +134,13 @@ def dataloader(
     prefetch: int = 4,
     device: str = "cpu",
     samples_per_epoch: int | None = None,
+    modality_id: int = 0,
 ) -> DataLoader:
     split = pb.VALIDATION if validation else pb.TRAINING
     return DataLoader(
         _StreamDataset(client, split, prefetch, samples_per_epoch),
         batch_size=None,
         num_workers=0,
-        collate_fn=lambda response: _collate(response, client.plbert_modality_id),
+        collate_fn=lambda response: _collate(response, modality_id),
         pin_memory=device != "cpu",
     )

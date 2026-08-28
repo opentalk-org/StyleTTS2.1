@@ -23,7 +23,12 @@ from .telemetry_metrics import TrainingTelemetry
 logger = logging.getLogger(__name__)
 
 
-def train(config_path: str, *, run: TrackerRun | None) -> None:
+def train(
+    config_path: str,
+    *,
+    run: TrackerRun | None,
+    data_client: gmd.GiveMeDataClient | None = None,
+) -> None:
     config = load_training_config(config_path)
     logger.info(
         "config loaded dataset=%s total_steps=%s stages=%s device=%s precision=%s seed=%s",
@@ -70,9 +75,29 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
     logged_steps = 0
     validation_loss = None
     active_stage = None
-    data_client = None
-    train_batches = None
-    validation_batches = None
+
+    # one session serves the whole run: the service drives the batch schedule
+    # (sequence of sequences), the loop just asks for data
+    if data_client is None:
+        data_client = gmd.GiveMeDataClient()
+    modality_id = config.PLBERT_config.get("modality_id", 0)
+    train_batches = gmd.dataloader(
+        data_client,
+        device=config.device,
+        modality_id=modality_id,
+    )
+    validation_batches = gmd.dataloader(
+        data_client,
+        validation=True,
+        device=config.device,
+        samples_per_epoch=config.data_params.validation_samples,
+        modality_id=modality_id,
+    )
+    logger.info(
+        "givemedata session ready session=%s dataset=%s",
+        data_client.session_id,
+        config.data_params.dataset_id,
+    )
 
     while trainer.step < config.total_steps:
         stage = stage_for_step(config.training_stages, trainer.step)
@@ -85,37 +110,7 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
                 stage.max_audio_seconds,
                 [module.value for module in stage.trainable_modules],
             )
-            if data_client is not None:
-                data_client.close()
-            data_client = gmd.GiveMeDataClient(
-                config.data_params.dataset_id,
-                validation_samples=config.data_params.validation_samples,
-                max_seconds=stage.max_audio_seconds,
-                max_text_tokens=config.PLBERT_config["model_params"][
-                    "max_position_embeddings"
-                ],
-                plbert_languages=config.PLBERT_config.get("languages"),
-                plbert_modality_id=config.PLBERT_config.get("modality_id", 0),
-                seed=config.seed,
-            )
-            train_batches = gmd.dataloader(
-                data_client,
-                device=config.device,
-            )
-            validation_batches = gmd.dataloader(
-                data_client,
-                validation=True,
-                device=config.device,
-                samples_per_epoch=config.data_params.validation_samples,
-            )
-            logger.info(
-                "givemedata session ready session=%s dataset=%s",
-                data_client.session_id,
-                config.data_params.dataset_id,
-            )
             active_stage = stage
-        assert train_batches is not None
-        assert validation_batches is not None
         trainer.set_training_mode()
         batch_iterator = iter(train_batches)
         while (
@@ -260,8 +255,7 @@ def train(config_path: str, *, run: TrackerRun | None) -> None:
         config.total_steps,
         time.monotonic() - timing.started_at,
     )
-    if data_client is not None:
-        data_client.close()
+    data_client.close()
     if owns_run:
         assert run is not None
         run.close()

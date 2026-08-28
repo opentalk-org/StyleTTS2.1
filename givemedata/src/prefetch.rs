@@ -11,7 +11,7 @@ use tracing::{Instrument, debug, error, warn};
 
 use crate::{
     loader::Loader,
-    sampling::{self, HistogramSampler, Sample},
+    sampling::{self, Sample, ScheduledSampler},
 };
 
 struct PrefetchedSample {
@@ -52,7 +52,7 @@ pub struct Prefetcher {
 
 impl Prefetcher {
     pub fn spawn(
-        mut sampler: HistogramSampler,
+        mut sampler: ScheduledSampler,
         loader: Arc<dyn Loader>,
         cache_dir: &'static Path,
         cancel_token: CancellationToken,
@@ -74,7 +74,11 @@ impl Prefetcher {
                     };
 
                     let loaded = match sampler.next_batch() {
-                        Ok(batch) => load_batch(&loader, cache_dir, batch).await,
+                        Ok(Some(batch)) => load_batch(&loader, cache_dir, batch).await,
+                        Ok(None) => {
+                            debug!("schedule exhausted");
+                            break;
+                        }
                         Err(err) => Err(err),
                     };
                     match &loaded {
@@ -100,7 +104,7 @@ impl Prefetcher {
     pub async fn next_batch(&mut self) -> anyhow::Result<LoadedBatch> {
         match self.rx.recv().await {
             Some(batch) => futures::future::try_join_all(batch?.into_iter().map(read_sample)).await,
-            None => bail!("prefetcher stopped, session ended"),
+            None => bail!("batch stream ended"),
         }
     }
 

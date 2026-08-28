@@ -102,78 +102,96 @@ pub struct HistogramSampler {
     loops: u64,
 }
 
-impl HistogramSampler {
-    /// `sample_rows` should be sorted by duration
-    pub fn from_samples(
-        sample_rows: Vec<SampleRow>,
-        config: session::Config,
-        plbert_languages: &[String],
-    ) -> anyhow::Result<Self> {
-        let mut bins: Vec<DurationBin> = vec![];
+/// `sample_rows` should be sorted by duration
+pub fn bins_from_rows(
+    sample_rows: Vec<SampleRow>,
+    plbert_languages: &[String],
+) -> anyhow::Result<Vec<DurationBin>> {
+    let mut bins: Vec<DurationBin> = vec![];
 
-        let mut text_cleaner = TextCleaner::default();
+    let mut text_cleaner = TextCleaner::default();
 
-        for row in sample_rows {
-            match row {
-                SampleRow {
+    for row in sample_rows {
+        match row {
+            SampleRow {
+                audio_id,
+                duration,
+                language: Some(lang),
+                text: Some(text),
+                speaker_id,
+                lower_bound: Some(lower_bound),
+                upper_bound: Some(upper_bound),
+                object_path,
+                byte_offset,
+                byte_length,
+                ..
+            } => {
+                let sample = Sample::new(
                     audio_id,
                     duration,
-                    language: Some(lang),
-                    text: Some(text),
+                    text,
+                    &mut text_cleaner,
+                    &lang,
+                    plbert_languages,
                     speaker_id,
-                    lower_bound: Some(lower_bound),
-                    upper_bound: Some(upper_bound),
-                    object_path,
-                    byte_offset,
-                    byte_length,
-                    ..
-                } => {
-                    let sample = Sample::new(
-                        audio_id,
-                        duration,
-                        text,
-                        &mut text_cleaner,
-                        &lang,
-                        plbert_languages,
-                        speaker_id,
-                        SampleObject {
-                            path: object_path,
-                            offset: byte_offset,
-                            length: byte_length,
-                        },
-                    )?;
+                    SampleObject {
+                        path: object_path,
+                        offset: byte_offset,
+                        length: byte_length,
+                    },
+                )?;
 
-                    if let Some(bin) = bins
-                        .iter_mut()
-                        .find(|b| b.lower_bound == lower_bound && b.upper_bound == upper_bound)
-                    {
-                        bin.samples.push(sample);
-                        bin.total_seconds += duration;
-                    } else {
-                        let bin = DurationBin {
-                            lower_bound,
-                            upper_bound,
-                            total_seconds: duration,
-                            samples: vec![sample],
-                        };
-                        bins.push(bin);
-                    }
+                if let Some(bin) = bins
+                    .iter_mut()
+                    .find(|b| b.lower_bound == lower_bound && b.upper_bound == upper_bound)
+                {
+                    bin.samples.push(sample);
+                    bin.total_seconds += duration;
+                } else {
+                    let bin = DurationBin {
+                        lower_bound,
+                        upper_bound,
+                        total_seconds: duration,
+                        samples: vec![sample],
+                    };
+                    bins.push(bin);
                 }
-                SampleRow { language: None, .. } => {
-                    bail!("training audio is missing its language");
-                }
-                _ => {}
             }
+            SampleRow { language: None, .. } => {
+                bail!("training audio is missing its language");
+            }
+            _ => {}
         }
+    }
 
-        Ok(Self {
+    Ok(bins)
+}
+
+impl HistogramSampler {
+    pub fn new(template: Vec<DurationBin>, max_seconds: f64, seed: u64) -> Self {
+        // a sample longer than the packing budget can never join a batch;
+        // keep it out so it doesn't distort bin weights (mirrors the SQL
+        // `duration < max_seconds` filter, applied here per sequence)
+        let bins: Vec<DurationBin> = template
+            .into_iter()
+            .filter_map(|mut bin| {
+                bin.samples.retain(|s| s.duration < max_seconds);
+                if bin.samples.is_empty() {
+                    return None;
+                }
+                bin.total_seconds = bin.samples.iter().map(|s| s.duration).sum();
+                Some(bin)
+            })
+            .collect();
+
+        Self {
             template: bins.clone(),
             bins,
-            max_seconds: config.max_seconds as f64,
-            rng: SmallRng::seed_from_u64(config.seed),
-            seed: config.seed,
+            max_seconds,
+            rng: SmallRng::seed_from_u64(seed),
+            seed,
             loops: 0,
-        })
+        }
     }
 
     pub fn next_batch(&mut self) -> anyhow::Result<Vec<Sample>> {
@@ -213,5 +231,90 @@ impl HistogramSampler {
         }
 
         Ok(batch)
+    }
+}
+
+struct Sequence {
+    // None loops forever (validation)
+    batches: Option<u64>,
+    max_seconds: f64,
+}
+
+/// Serves the whole schedule as one stream: exactly `batches` batches with each
+/// sequence's shape, then the next sequence, then `None` when the schedule is done.
+pub struct ScheduledSampler {
+    template: Vec<DurationBin>,
+    schedule: std::vec::IntoIter<Sequence>,
+    seed: u64,
+    current: Option<(HistogramSampler, Option<u64>)>,
+}
+
+impl ScheduledSampler {
+    pub fn training(
+        template: Vec<DurationBin>,
+        sequences: &[session::SequenceConfig],
+        seed: u64,
+    ) -> Self {
+        let schedule: Vec<Sequence> = sequences
+            .iter()
+            .map(|s| Sequence {
+                batches: Some(s.batches),
+                max_seconds: s.max_seconds as f64,
+            })
+            .collect();
+        Self {
+            template,
+            schedule: schedule.into_iter(),
+            seed,
+            current: None,
+        }
+    }
+
+    pub fn validation(template: Vec<DurationBin>, max_seconds: f64, seed: u64) -> Self {
+        let schedule = vec![Sequence {
+            batches: None,
+            max_seconds,
+        }];
+        Self {
+            template,
+            schedule: schedule.into_iter(),
+            seed,
+            current: None,
+        }
+    }
+
+    /// `Ok(None)` means the schedule is exhausted.
+    pub fn next_batch(&mut self) -> anyhow::Result<Option<Vec<Sample>>> {
+        loop {
+            let needs_advance = matches!(&self.current, None | Some((_, Some(0))));
+            if needs_advance {
+                self.current = match self.schedule.next() {
+                    Some(sequence) => {
+                        tracing::info!(
+                            batches = ?sequence.batches,
+                            max_seconds = sequence.max_seconds,
+                            "starting batch sequence"
+                        );
+                        Some((
+                            HistogramSampler::new(
+                                self.template.clone(),
+                                sequence.max_seconds,
+                                self.seed,
+                            ),
+                            sequence.batches,
+                        ))
+                    }
+                    None => return Ok(None),
+                };
+                continue;
+            }
+
+            let (sampler, remaining) = self.current.as_mut().expect("current sequence set");
+            let batch = sampler.next_batch()?;
+            if let Some(count) = remaining {
+                *count -= 1;
+            }
+            return Ok(Some(batch));
+        }
     }
 }

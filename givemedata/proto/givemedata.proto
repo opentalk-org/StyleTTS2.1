@@ -6,22 +6,12 @@ service GiveMeData {
   rpc End (EndRequest) returns (EndResponse);
 }
 
-message InitRequest {
-  string dataset_id = 1;
-  int32 validation_samples = 2;
-  bool validation = 3;
-  uint64 seed = 4;
-  float max_seconds = 5;
-  int32 num_workers = 6;
-  string device = 7;
-  repeated string symbols = 8;
-  int32 max_text_tokens = 9;
-  repeated string plbert_languages = 10;
-  int32 plbert_modality_id = 11;
-}
+message InitRequest {}
 
 message InitResponse {
   string session_id = 1;
+  // verbatim yaml passed through to the training loop, never parsed here
+  string train_config = 2;
 }
 
 enum Split {

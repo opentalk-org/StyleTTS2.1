@@ -24,29 +24,29 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10givemedata.proto\"\xf9\x01\n\x0bInitRequest\x12\x12\n\ndataset_id\x18\x01 \x01(\t\x12\x1a\n\x12validation_samples\x18\x02 \x01(\x05\x12\x12\n\nvalidation\x18\x03 \x01(\x08\x12\x0c\n\x04seed\x18\x04 \x01(\x04\x12\x13\n\x0bmax_seconds\x18\x05 \x01(\x02\x12\x13\n\x0bnum_workers\x18\x06 \x01(\x05\x12\x0e\n\x06\x64\x65vice\x18\x07 \x01(\t\x12\x0f\n\x07symbols\x18\x08 \x03(\t\x12\x17\n\x0fmax_text_tokens\x18\t \x01(\x05\x12\x18\n\x10plbert_languages\x18\n \x03(\t\x12\x1a\n\x12plbert_modality_id\x18\x0b \x01(\x05\"\"\n\x0cInitResponse\x12\x12\n\nsession_id\x18\x01 \x01(\t\"8\n\x0b\x44\x61taRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x15\n\x05split\x18\x02 \x01(\x0e\x32\x06.Split\"_\n\x06Sample\x12\x0c\n\x04wave\x18\x01 \x01(\x0c\x12\x10\n\x08\x64uration\x18\x02 \x01(\x01\x12\x12\n\nspeaker_id\x18\x03 \x01(\x03\x12\x13\n\x0blanguage_id\x18\x04 \x01(\x05\x12\x0c\n\x04text\x18\x05 \x01(\x0c\"&\n\x0c\x44\x61taResponse\x12\x16\n\x05\x62\x61tch\x18\x01 \x03(\x0b\x32\x07.Sample\" \n\nEndRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\"\r\n\x0b\x45ndResponse*%\n\x05Split\x12\x0c\n\x08TRAINING\x10\x00\x12\x0e\n\nVALIDATION\x10\x01\x32|\n\nGiveMeData\x12#\n\x04Init\x12\x0c.InitRequest\x1a\r.InitResponse\x12\'\n\x04\x44\x61ta\x12\x0c.DataRequest\x1a\r.DataResponse(\x01\x30\x01\x12 \n\x03\x45nd\x12\x0b.EndRequest\x1a\x0c.EndResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10givemedata.proto\"\r\n\x0bInitRequest\"8\n\x0cInitResponse\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x14\n\x0ctrain_config\x18\x02 \x01(\t\"8\n\x0b\x44\x61taRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x15\n\x05split\x18\x02 \x01(\x0e\x32\x06.Split\"_\n\x06Sample\x12\x0c\n\x04wave\x18\x01 \x01(\x0c\x12\x10\n\x08\x64uration\x18\x02 \x01(\x01\x12\x12\n\nspeaker_id\x18\x03 \x01(\x03\x12\x13\n\x0blanguage_id\x18\x04 \x01(\x05\x12\x0c\n\x04text\x18\x05 \x01(\x0c\"&\n\x0c\x44\x61taResponse\x12\x16\n\x05\x62\x61tch\x18\x01 \x03(\x0b\x32\x07.Sample\" \n\nEndRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\"\r\n\x0b\x45ndResponse*%\n\x05Split\x12\x0c\n\x08TRAINING\x10\x00\x12\x0e\n\nVALIDATION\x10\x01\x32|\n\nGiveMeData\x12#\n\x04Init\x12\x0c.InitRequest\x1a\r.InitResponse\x12\'\n\x04\x44\x61ta\x12\x0c.DataRequest\x1a\r.DataResponse(\x01\x30\x01\x12 \n\x03\x45nd\x12\x0b.EndRequest\x1a\x0c.EndResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'givemedata_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_SPLIT']._serialized_start=552
-  _globals['_SPLIT']._serialized_end=589
-  _globals['_INITREQUEST']._serialized_start=21
-  _globals['_INITREQUEST']._serialized_end=270
-  _globals['_INITRESPONSE']._serialized_start=272
-  _globals['_INITRESPONSE']._serialized_end=306
-  _globals['_DATAREQUEST']._serialized_start=308
-  _globals['_DATAREQUEST']._serialized_end=364
-  _globals['_SAMPLE']._serialized_start=366
-  _globals['_SAMPLE']._serialized_end=461
-  _globals['_DATARESPONSE']._serialized_start=463
-  _globals['_DATARESPONSE']._serialized_end=501
-  _globals['_ENDREQUEST']._serialized_start=503
-  _globals['_ENDREQUEST']._serialized_end=535
-  _globals['_ENDRESPONSE']._serialized_start=537
-  _globals['_ENDRESPONSE']._serialized_end=550
-  _globals['_GIVEMEDATA']._serialized_start=591
-  _globals['_GIVEMEDATA']._serialized_end=715
+  _globals['_SPLIT']._serialized_start=337
+  _globals['_SPLIT']._serialized_end=374
+  _globals['_INITREQUEST']._serialized_start=20
+  _globals['_INITREQUEST']._serialized_end=33
+  _globals['_INITRESPONSE']._serialized_start=35
+  _globals['_INITRESPONSE']._serialized_end=91
+  _globals['_DATAREQUEST']._serialized_start=93
+  _globals['_DATAREQUEST']._serialized_end=149
+  _globals['_SAMPLE']._serialized_start=151
+  _globals['_SAMPLE']._serialized_end=246
+  _globals['_DATARESPONSE']._serialized_start=248
+  _globals['_DATARESPONSE']._serialized_end=286
+  _globals['_ENDREQUEST']._serialized_start=288
+  _globals['_ENDREQUEST']._serialized_end=320
+  _globals['_ENDRESPONSE']._serialized_start=322
+  _globals['_ENDRESPONSE']._serialized_end=335
+  _globals['_GIVEMEDATA']._serialized_start=376
+  _globals['_GIVEMEDATA']._serialized_end=500
 # @@protoc_insertion_point(module_scope)

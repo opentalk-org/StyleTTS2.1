@@ -7,8 +7,11 @@ plain local paths; checkpoints land under <output_dir>/run/published_checkpoints
 metrics and artifacts go to <output_dir>/run/metrics.jsonl and artifacts/
 (the MLflow integration is commented out for now).
 
+The run spec (RunSpec yaml) is not a local file anymore: it is fetched from the
+givemedata service, which passes its --train-config file through verbatim.
+
 Usage:
-    python -m traintts.main run.yaml [--dry-run]
+    python -m traintts.main [--dry-run]
 
 Multi-GPU:
     accelerate launch -m traintts.distributed <output_dir>/config.yaml
@@ -22,6 +25,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
+from givemedata_client.client import GiveMeDataClient
 from pydantic import BaseModel, ConfigDict, Field
 
 from .build_config import ASR_YAML, PLBERT_YAML, build_config, load_yaml, write_config
@@ -179,7 +183,6 @@ def _plbert_config(
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="traintts")
-    parser.add_argument("spec", help="Path to the run yaml (RunSpec schema)")
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -188,12 +191,15 @@ def main(argv: list[str] | None = None) -> None:
     arguments = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
-    spec = RunSpec.model_validate(yaml.safe_load(Path(arguments.spec).read_text(encoding="utf-8")))
+    data_client = GiveMeDataClient()
+    logger.info("fetched train config from givemedata session=%s", data_client.session_id)
+    spec = RunSpec.model_validate(yaml.safe_load(data_client.train_config))
     config = build_run_config(spec)
     training_config = TrainingConfig.model_validate(config)
 
     if arguments.dry_run:
         print(yaml.safe_dump(config, sort_keys=False, allow_unicode=True))
+        data_client.close()
         return
 
     output_dir = Path(spec.output_dir)
@@ -208,7 +214,7 @@ def main(argv: list[str] | None = None) -> None:
 
     run = start_run(training_config)
     try:
-        train(str(config_path), run=run)
+        train(str(config_path), run=run, data_client=data_client)
     finally:
         run.close()
 

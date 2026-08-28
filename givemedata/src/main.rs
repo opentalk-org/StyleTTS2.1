@@ -71,12 +71,24 @@ struct Args {
         help = "Serve synthetic sessions: fabricated samples instead of database rows and bucket audio."
     )]
     synthetic: bool,
+    #[arg(
+        long,
+        env = "DATA_CONFIG",
+        help = "YAML with everything sessions need for sampling and fetching data."
+    )]
+    data_config: PathBuf,
+    #[arg(
+        long,
+        env = "TRAIN_CONFIG",
+        help = "YAML passed verbatim to the training loop in InitResponse; never parsed here."
+    )]
+    train_config: PathBuf,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter("debug,h2=off,hyper=off,tower=off,sqlx=off,aws_runtime=off,aws_sdk_s3=off,aws_smithy_runtime_api=off")
+        .with_env_filter("debug,h2=off,hyper=off,tower=off,sqlx=off,aws_runtime=off,aws_sdk_s3=off,aws_smithy_runtime_api=off,aws_smithy_runtime=off")
         .init();
 
     let args = Args::parse();
@@ -104,6 +116,16 @@ async fn main() -> anyhow::Result<()> {
 
     fs::create_dir_all(&args.cache_dir).await?;
 
+    let data_config: session::DataConfig = serde_yaml::from_str(
+        &fs::read_to_string(&args.data_config)
+            .await
+            .with_context(|| format!("failed to read {}", args.data_config.display()))?,
+    )
+    .with_context(|| format!("failed to parse {}", args.data_config.display()))?;
+    let train_config = fs::read_to_string(&args.train_config)
+        .await
+        .with_context(|| format!("failed to read {}", args.train_config.display()))?;
+
     serve(
         args.port,
         s3_client,
@@ -111,6 +133,8 @@ async fn main() -> anyhow::Result<()> {
         args.bucket.leak(),
         Box::leak(args.cache_dir.into_boxed_path()),
         args.synthetic,
+        Box::leak(Box::new(data_config)),
+        train_config.leak(),
     )
     .await
 }

@@ -11,34 +11,14 @@ DEFAULT_ADDR = "localhost:8181"
 
 
 class GiveMeDataClient:
-    def __init__(
-        self,
-        dataset_id: str,
-        *,
-        validation_samples: int,
-        max_seconds: float,
-        max_text_tokens: int,
-        plbert_languages: list[str] | None = None,
-        plbert_modality_id: int = 0,
-        seed: int = 1,
-        addr: str | None = None,
-    ) -> None:
-        self.plbert_modality_id = plbert_modality_id
+    def __init__(self, addr: str | None = None) -> None:
         addr = addr or os.environ.get("GIVEMEDATA_ADDR", DEFAULT_ADDR)
         self._channel = grpc.insecure_channel(addr, options=[("grpc.max_receive_message_length", 67136000)])
         self._stub = pb_grpc.GiveMeDataStub(self._channel)
-        response = self._stub.Init(
-            pb.InitRequest(
-                dataset_id=dataset_id,
-                validation_samples=validation_samples,
-                seed=seed,
-                max_seconds=max_seconds,
-                max_text_tokens=max_text_tokens,
-                plbert_languages=plbert_languages or [],
-                plbert_modality_id=plbert_modality_id,
-            )
-        )
+        response = self._stub.Init(pb.InitRequest())
         self.session_id: str = response.session_id
+        # verbatim yaml the service passes through, untouched, for the training loop
+        self.train_config: str = response.train_config
 
     def batches(self, split: int, prefetch: int = 4) -> Iterator[pb.DataResponse]:
         requests: queue.SimpleQueue[pb.DataRequest] = queue.SimpleQueue()

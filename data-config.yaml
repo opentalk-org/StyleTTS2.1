@@ -1,0 +1,27 @@
+# Config for the givemedata service (--data-config): everything sessions need
+# for sampling and fetching. Values that also appear in train-config.yaml are
+# intentionally duplicated — the two files are separate beasts and are assumed
+# equal for now.
+
+dataset_id: f0943606-6e06-400e-8bc4-7ab3ea8dbe04
+seed: 1
+max_text_tokens: 512      # plbert max_position_embeddings
+plbert_languages: []      # empty -> language_id 0
+
+validation:
+  samples: 32
+  max_seconds: 65         # fixed batch budget for the whole run
+
+# sequence of sequences of batches; batch counts mirror the training stages'
+# steps, max_seconds is each sequence's batch-packing budget
+training:
+  - batches: 1
+    max_seconds: 150
+  - batches: 1
+    max_seconds: 90
+  - batches: 1
+    max_seconds: 90
+  - batches: 1
+    max_seconds: 75
+  - batches: 1
+    max_seconds: 65

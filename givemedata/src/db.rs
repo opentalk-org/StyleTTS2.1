@@ -24,7 +24,7 @@ pub struct SampleRow {
 
 pub async fn fetch_validation_samples(
     db: &PgPool,
-    config: session::Config,
+    config: &session::DataConfig,
 ) -> Result<Vec<SampleRow>, sqlx::Error> {
     let rows = sqlx::query_as!(
         SampleRow,
@@ -110,8 +110,8 @@ where length(text) <= $4
 order by duration, audio_id
     ",
         config.dataset_id,
-        config.validation_samples,
-        config.max_seconds as f64,
+        config.validation.samples,
+        config.validation.max_seconds as f64,
         config.max_text_tokens
     )
     .fetch_all(db)
@@ -123,7 +123,7 @@ order by duration, audio_id
 pub async fn fetch_training_samples(
     db: &PgPool,
     excluded_ids: &[Uuid],
-    config: session::Config,
+    config: &session::DataConfig,
 ) -> Result<Vec<SampleRow>, sqlx::Error> {
     let rows = sqlx::query_as!(
         SampleRow,
@@ -207,7 +207,8 @@ order by duration, audio_id
     ",
         config.dataset_id,
         excluded_ids as &[Uuid],
-        config.max_seconds as f64,
+        // fetch once with the widest budget; each sequence narrows in the sampler
+        config.training_max_seconds() as f64,
         config.max_text_tokens
     )
     .fetch_all(db)
@@ -217,14 +218,14 @@ order by duration, audio_id
 }
 
 pub fn synthetic_rows(
-    config: session::Config,
+    max_seconds: f64,
+    seed: u64,
     language: &str,
     count: usize,
     seed_salt: u64,
 ) -> Vec<SampleRow> {
-    let mut rng = SmallRng::seed_from_u64(config.seed ^ seed_salt);
+    let mut rng = SmallRng::seed_from_u64(seed ^ seed_salt);
 
-    let max_seconds = config.max_seconds as f64;
     let mut durations: Vec<f64> = (0..count)
         // log-uniform in [1, max_seconds) so the exp2 bins populate evenly
         .map(|_| rng.random_range(0f64..max_seconds.ln()).exp())

@@ -14,36 +14,16 @@ TRAINING: Split
 VALIDATION: Split
 
 class InitRequest(_message.Message):
-    __slots__ = ("dataset_id", "validation_samples", "validation", "seed", "max_seconds", "num_workers", "device", "symbols", "max_text_tokens", "plbert_languages", "plbert_modality_id")
-    DATASET_ID_FIELD_NUMBER: _ClassVar[int]
-    VALIDATION_SAMPLES_FIELD_NUMBER: _ClassVar[int]
-    VALIDATION_FIELD_NUMBER: _ClassVar[int]
-    SEED_FIELD_NUMBER: _ClassVar[int]
-    MAX_SECONDS_FIELD_NUMBER: _ClassVar[int]
-    NUM_WORKERS_FIELD_NUMBER: _ClassVar[int]
-    DEVICE_FIELD_NUMBER: _ClassVar[int]
-    SYMBOLS_FIELD_NUMBER: _ClassVar[int]
-    MAX_TEXT_TOKENS_FIELD_NUMBER: _ClassVar[int]
-    PLBERT_LANGUAGES_FIELD_NUMBER: _ClassVar[int]
-    PLBERT_MODALITY_ID_FIELD_NUMBER: _ClassVar[int]
-    dataset_id: str
-    validation_samples: int
-    validation: bool
-    seed: int
-    max_seconds: float
-    num_workers: int
-    device: str
-    symbols: _containers.RepeatedScalarFieldContainer[str]
-    max_text_tokens: int
-    plbert_languages: _containers.RepeatedScalarFieldContainer[str]
-    plbert_modality_id: int
-    def __init__(self, dataset_id: _Optional[str] = ..., validation_samples: _Optional[int] = ..., validation: bool = ..., seed: _Optional[int] = ..., max_seconds: _Optional[float] = ..., num_workers: _Optional[int] = ..., device: _Optional[str] = ..., symbols: _Optional[_Iterable[str]] = ..., max_text_tokens: _Optional[int] = ..., plbert_languages: _Optional[_Iterable[str]] = ..., plbert_modality_id: _Optional[int] = ...) -> None: ...
+    __slots__ = ()
+    def __init__(self) -> None: ...
 
 class InitResponse(_message.Message):
-    __slots__ = ("session_id",)
+    __slots__ = ("session_id", "train_config")
     SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    TRAIN_CONFIG_FIELD_NUMBER: _ClassVar[int]
     session_id: str
-    def __init__(self, session_id: _Optional[str] = ...) -> None: ...
+    train_config: str
+    def __init__(self, session_id: _Optional[str] = ..., train_config: _Optional[str] = ...) -> None: ...
 
 class DataRequest(_message.Message):
     __slots__ = ("session_id", "split")

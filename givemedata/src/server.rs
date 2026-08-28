@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::loader::{Loader, S3Loader, SyntheticLoader};
 use crate::server::givemedata::{EndRequest, EndResponse, InitRequest, InitResponse};
-use crate::session::{self, Session, SessionHandle};
+use crate::session::{DataConfig, Session, SessionHandle};
 use anyhow::Context;
 use sqlx::{PgPool, Pool, Postgres};
 use tokio::sync::mpsc::UnboundedSender;
@@ -14,7 +14,6 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status, Streaming};
 use tracing::{debug, error, info};
-use uuid::Uuid;
 
 pub mod givemedata {
     tonic::include_proto!("_");
@@ -29,6 +28,8 @@ struct GiveMeData {
     loader: Arc<dyn Loader>,
     cache_dir: &'static Path,
     synthetic: bool,
+    data_config: &'static DataConfig,
+    train_config: &'static str,
     sessions: SessionsMap,
 }
 
@@ -39,6 +40,8 @@ impl GiveMeData {
         bucket: &'static str,
         cache_dir: &'static Path,
         synthetic: bool,
+        data_config: &'static DataConfig,
+        train_config: &'static str,
     ) -> Result<Self, sqlx::Error> {
         let loader: Arc<dyn Loader> = if synthetic {
             Arc::new(SyntheticLoader)
@@ -50,6 +53,8 @@ impl GiveMeData {
             loader,
             cache_dir,
             synthetic,
+            data_config,
+            train_config,
             db_pool: pg_pool,
         })
     }
@@ -88,29 +93,15 @@ async fn data_handler(
 
 #[tonic::async_trait]
 impl GiveMeDataService for GiveMeData {
-    async fn init(&self, request: Request<InitRequest>) -> Result<Response<InitResponse>, Status> {
-        let request = request.into_inner();
-        debug!(?request, "init request");
-
-        let dataset_id = Uuid::try_parse(&request.dataset_id).map_err(|e| {
-            Status::invalid_argument(format!("Could not parse dataset_id UUID: {e}"))
-        })?;
-
-        let config = session::Config {
-            dataset_id,
-            validation_samples: request.validation_samples as i64,
-            max_seconds: request.max_seconds,
-            max_text_tokens: request.max_text_tokens,
-            seed: request.seed,
-            synthetic: self.synthetic,
-        };
+    async fn init(&self, _request: Request<InitRequest>) -> Result<Response<InitResponse>, Status> {
+        debug!("init request");
 
         let session = Session::new(
             &self.db_pool,
             self.loader.clone(),
             self.cache_dir,
-            config,
-            &request.plbert_languages,
+            self.data_config,
+            self.synthetic,
         )
         .await
         .map_err(|err| {
@@ -126,7 +117,10 @@ impl GiveMeDataService for GiveMeData {
             .insert(session_id.clone(), handle);
         info!(session = %session_id, "session created");
 
-        Ok(Response::new(InitResponse { session_id }))
+        Ok(Response::new(InitResponse {
+            session_id,
+            train_config: self.train_config.to_string(),
+        }))
     }
 
     type DataStream = UnboundedReceiverStream<Result<DataResponse, Status>>;
@@ -172,6 +166,8 @@ pub async fn serve(
     bucket: &'static str,
     cache_dir: &'static Path,
     synthetic: bool,
+    data_config: &'static DataConfig,
+    train_config: &'static str,
 ) -> anyhow::Result<()> {
     if synthetic {
         info!("serving synthetic sessions");
@@ -180,7 +176,16 @@ pub async fn serve(
 
     Server::builder()
         .add_service(GiveMeDataServer::new(
-            GiveMeData::new(s3_client, pg_pool, bucket, cache_dir, synthetic).await?,
+            GiveMeData::new(
+                s3_client,
+                pg_pool,
+                bucket,
+                cache_dir,
+                synthetic,
+                data_config,
+                train_config,
+            )
+            .await?,
         ))
         .serve(SocketAddr::from((Ipv4Addr::new(0, 0, 0, 0), port)))
         .await?;

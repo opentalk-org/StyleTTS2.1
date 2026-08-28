@@ -2,6 +2,7 @@ use std::{path::Path, pin::Pin, sync::Arc};
 
 use anyhow::bail;
 use futures::{Stream, StreamExt};
+use serde::Deserialize;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, debug, info, info_span};
@@ -14,19 +15,41 @@ use crate::{
     },
     loader::Loader,
     prefetch::{LoadedBatch, LoadedSample, Prefetcher},
-    sampling::HistogramSampler,
+    sampling::{ScheduledSampler, bins_from_rows},
 };
 
 const SYNTHETIC_TRAINING_SAMPLES: usize = 256;
 
-#[derive(Clone, Copy)]
-pub struct Config {
+#[derive(Deserialize)]
+pub struct DataConfig {
     pub dataset_id: Uuid,
-    pub validation_samples: i64,
-    pub max_seconds: f32,
-    pub max_text_tokens: i32,
     pub seed: u64,
-    pub synthetic: bool,
+    pub max_text_tokens: i32,
+    #[serde(default)]
+    pub plbert_languages: Vec<String>,
+    pub validation: ValidationConfig,
+    pub training: Vec<SequenceConfig>,
+}
+
+#[derive(Deserialize)]
+pub struct ValidationConfig {
+    pub samples: i64,
+    pub max_seconds: f32,
+}
+
+#[derive(Deserialize)]
+pub struct SequenceConfig {
+    pub batches: u64,
+    pub max_seconds: f32,
+}
+
+impl DataConfig {
+    pub fn training_max_seconds(&self) -> f32 {
+        self.training
+            .iter()
+            .map(|s| s.max_seconds)
+            .fold(0.0, f32::max)
+    }
 }
 
 enum Batches {
@@ -34,17 +57,27 @@ enum Batches {
     OnDemand(Pin<Box<dyn Stream<Item = anyhow::Result<LoadedBatch>> + Send>>),
 }
 
-fn on_demand_batches(mut sampler: HistogramSampler, loader: Arc<dyn Loader>) -> Batches {
+fn on_demand_batches(mut sampler: ScheduledSampler, loader: Arc<dyn Loader>) -> Batches {
     Batches::OnDemand(Box::pin(async_stream::stream! {
         loop {
-            let batch = match sampler.next_batch() {
-                Ok(batch) => {
-                    let batch = loader.load_batch( batch).await?;
-                    Ok(batch.into_iter().map(LoadedSample::from).collect())
+            match sampler.next_batch() {
+                Ok(Some(batch)) => {
+                    let batch = loader
+                        .load_batch(batch)
+                        .await
+                        .map(|batch| batch.into_iter().map(LoadedSample::from).collect());
+                    let failed = batch.is_err();
+                    yield batch;
+                    if failed {
+                        break;
+                    }
                 }
-                Err(err) => Err(err),
-            };
-            yield batch;
+                Ok(None) => break,
+                Err(err) => {
+                    yield Err(err);
+                    break;
+                }
+            }
         }
     }))
 }
@@ -61,22 +94,28 @@ impl Session {
         pg_pool: &sqlx::PgPool,
         loader: Arc<dyn Loader>,
         cache_dir: &'static Path,
-        config: Config,
-        plbert_languages: &[String],
+        config: &'static DataConfig,
+        synthetic: bool,
     ) -> anyhow::Result<Self> {
         let id = Uuid::new_v4();
-        info!(session = %id, dataset = %config.dataset_id, synthetic = config.synthetic, "initializing session");
+        info!(session = %id, dataset = %config.dataset_id, synthetic, "initializing session");
 
-        let (validation_rows, training_rows) = if config.synthetic {
-            let language = plbert_languages.first().map(String::as_str).unwrap_or("en");
+        let (validation_rows, training_rows) = if synthetic {
+            let language = config
+                .plbert_languages
+                .first()
+                .map(String::as_str)
+                .unwrap_or("en");
             let validation_rows = synthetic_rows(
-                config,
+                config.validation.max_seconds as f64,
+                config.seed,
                 language,
-                config.validation_samples as usize,
+                config.validation.samples as usize,
                 VALIDATION_SEED_SALT,
             );
             let training_rows = synthetic_rows(
-                config,
+                config.training_max_seconds() as f64,
+                config.seed,
                 language,
                 SYNTHETIC_TRAINING_SAMPLES,
                 TRAINING_SEED_SALT,
@@ -91,7 +130,7 @@ impl Session {
             let validation_rows = fetch_validation_samples(pg_pool, config).await?;
             info!(
                 rows = validation_rows.len(),
-                requested = config.validation_samples,
+                requested = config.validation.samples,
                 "fetched validation rows"
             );
 
@@ -102,13 +141,18 @@ impl Session {
             (validation_rows, training_rows)
         };
 
-        let validation_sampler =
-            HistogramSampler::from_samples(validation_rows, config, plbert_languages)?;
-        let training_sampler =
-            HistogramSampler::from_samples(training_rows, config, plbert_languages)?;
+        let validation_bins = bins_from_rows(validation_rows, &config.plbert_languages)?;
+        let training_bins = bins_from_rows(training_rows, &config.plbert_languages)?;
+
+        let validation_sampler = ScheduledSampler::validation(
+            validation_bins,
+            config.validation.max_seconds as f64,
+            config.seed,
+        );
+        let training_sampler = ScheduledSampler::training(training_bins, &config.training, config.seed);
 
         let cancel_token = CancellationToken::new();
-        let (training_batches, validation_batches) = if config.synthetic {
+        let (training_batches, validation_batches) = if synthetic {
             (
                 on_demand_batches(training_sampler, loader.clone()),
                 on_demand_batches(validation_sampler, loader),
@@ -176,8 +220,6 @@ enum Command {
     },
 }
 
-// The actor task owns the Session by value: batch requests are serialized through the
-// channel, and consuming `Session::finish` runs on every exit path.
 #[derive(Clone)]
 pub struct SessionHandle {
     pub id: Uuid,
@@ -208,7 +250,7 @@ impl SessionHandle {
         }
     }
 
-    pub async fn finish(&self) {
+    pub async fn finish(self) {
         let (reply, response) = oneshot::channel();
         if self.tx.send(Command::Finish { reply }).await.is_ok() {
             // wait for the drain to complete; an error means the actor is already gone
