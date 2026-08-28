@@ -11,7 +11,7 @@ use tracing::{Instrument, debug, error, warn};
 
 use crate::{
     loader::Loader,
-    sampling::{self, Sample, ScheduledSampler},
+    sampling::{self, Sample, Sampler},
 };
 
 struct PrefetchedSample {
@@ -52,7 +52,7 @@ pub struct Prefetcher {
 
 impl Prefetcher {
     pub fn spawn(
-        mut sampler: ScheduledSampler,
+        mut sampler: Box<dyn Sampler>,
         loader: Arc<dyn Loader>,
         cache_dir: &'static Path,
         cancel_token: CancellationToken,

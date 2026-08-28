@@ -15,7 +15,7 @@ use crate::{
     },
     loader::Loader,
     prefetch::{LoadedBatch, LoadedSample, Prefetcher},
-    sampling::{ScheduledSampler, bins_from_rows},
+    sampling::{HistogramSampler, Sampler, ScheduledSampler, bins_from_rows},
 };
 
 const SYNTHETIC_TRAINING_SAMPLES: usize = 256;
@@ -60,7 +60,7 @@ enum Batches {
     OnDemand(Pin<Box<dyn Stream<Item = anyhow::Result<LoadedBatch>> + Send>>),
 }
 
-fn on_demand_batches(mut sampler: ScheduledSampler, loader: Arc<dyn Loader>) -> Batches {
+fn on_demand_batches(mut sampler: Box<dyn Sampler>, loader: Arc<dyn Loader>) -> Batches {
     Batches::OnDemand(Box::pin(async_stream::stream! {
         loop {
             match sampler.next_batch() {
@@ -147,12 +147,18 @@ impl Session {
         let validation_bins = bins_from_rows(validation_rows, &config.plbert_languages)?;
         let training_bins = bins_from_rows(training_rows, &config.plbert_languages)?;
 
-        let validation_sampler = ScheduledSampler::validation(
+        // validation is one endlessly-looping set, so the plain histogram
+        // sampler serves it; training follows the batch schedule
+        let validation_sampler: Box<dyn Sampler> = Box::new(HistogramSampler::new(
             validation_bins,
             config.validation.max_seconds as f64,
             config.seed,
-        );
-        let training_sampler = ScheduledSampler::training(training_bins, &config.training, config.seed);
+        ));
+        let training_sampler: Box<dyn Sampler> = Box::new(ScheduledSampler::new(
+            training_bins,
+            &config.training,
+            config.seed,
+        ));
 
         let cancel_token = CancellationToken::new();
         let (training_batches, validation_batches) = if synthetic {

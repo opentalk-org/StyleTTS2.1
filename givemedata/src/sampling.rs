@@ -84,6 +84,11 @@ impl Sample {
     }
 }
 
+pub trait Sampler: Send {
+    /// `Ok(None)` means the sampler is exhausted and the stream should end.
+    fn next_batch(&mut self) -> anyhow::Result<Option<Vec<Sample>>>;
+}
+
 #[derive(Clone)]
 pub struct DurationBin {
     pub lower_bound: f64,
@@ -194,7 +199,7 @@ impl HistogramSampler {
         }
     }
 
-    pub fn next_batch(&mut self) -> anyhow::Result<Vec<Sample>> {
+    fn sample_batch(&mut self) -> anyhow::Result<Vec<Sample>> {
         if self.bins.iter().all(|b| b.samples.is_empty()) {
             self.loops += 1;
             tracing::info!(loops = self.loops, "bins drained, looping with a new seed");
@@ -234,9 +239,15 @@ impl HistogramSampler {
     }
 }
 
+/// Loops its sample set forever; never exhausts.
+impl Sampler for HistogramSampler {
+    fn next_batch(&mut self) -> anyhow::Result<Option<Vec<Sample>>> {
+        Ok(Some(self.sample_batch()?))
+    }
+}
+
 struct Sequence {
-    // None loops forever (validation)
-    batches: Option<u64>,
+    batches: u64,
     max_seconds: f64,
 }
 
@@ -246,11 +257,11 @@ pub struct ScheduledSampler {
     template: Vec<DurationBin>,
     schedule: std::vec::IntoIter<Sequence>,
     seed: u64,
-    current: Option<(HistogramSampler, Option<u64>)>,
+    current: Option<(HistogramSampler, u64)>,
 }
 
 impl ScheduledSampler {
-    pub fn training(
+    pub fn new(
         template: Vec<DurationBin>,
         sequences: &[session::SequenceConfig],
         seed: u64,
@@ -258,7 +269,7 @@ impl ScheduledSampler {
         let schedule: Vec<Sequence> = sequences
             .iter()
             .map(|s| Sequence {
-                batches: Some(s.batches),
+                batches: s.batches,
                 max_seconds: s.max_seconds as f64,
             })
             .collect();
@@ -269,29 +280,17 @@ impl ScheduledSampler {
             current: None,
         }
     }
+}
 
-    pub fn validation(template: Vec<DurationBin>, max_seconds: f64, seed: u64) -> Self {
-        let schedule = vec![Sequence {
-            batches: None,
-            max_seconds,
-        }];
-        Self {
-            template,
-            schedule: schedule.into_iter(),
-            seed,
-            current: None,
-        }
-    }
-
-    /// `Ok(None)` means the schedule is exhausted.
-    pub fn next_batch(&mut self) -> anyhow::Result<Option<Vec<Sample>>> {
+impl Sampler for ScheduledSampler {
+    fn next_batch(&mut self) -> anyhow::Result<Option<Vec<Sample>>> {
         loop {
-            let needs_advance = matches!(&self.current, None | Some((_, Some(0))));
+            let needs_advance = matches!(&self.current, None | Some((_, 0)));
             if needs_advance {
                 self.current = match self.schedule.next() {
                     Some(sequence) => {
                         tracing::info!(
-                            batches = ?sequence.batches,
+                            batches = sequence.batches,
                             max_seconds = sequence.max_seconds,
                             "starting batch sequence"
                         );
@@ -310,10 +309,8 @@ impl ScheduledSampler {
             }
 
             let (sampler, remaining) = self.current.as_mut().expect("current sequence set");
-            let batch = sampler.next_batch()?;
-            if let Some(count) = remaining {
-                *count -= 1;
-            }
+            let batch = sampler.sample_batch()?;
+            *remaining -= 1;
             return Ok(Some(batch));
         }
     }
