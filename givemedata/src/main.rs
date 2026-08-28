@@ -1,15 +1,16 @@
-use std::path::PathBuf;
+use std::{io, path::PathBuf};
 
 use anyhow::Context;
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::Credentials;
 use clap::{
-    Parser,
+    CommandFactory, FromArgMatches, Parser, Subcommand,
     builder::{
         Styles,
         styling::{AnsiColor, Effects},
     },
 };
+use clap_complete::{Shell, generate};
 use sqlx::PgPool;
 use tokio::fs;
 
@@ -34,9 +35,16 @@ const STYLES: Styles = Styles::styled()
     .invalid(AnsiColor::Yellow.on_default().effects(Effects::BOLD));
 
 #[derive(Parser)]
-#[command(name = "givemedata a", styles = STYLES)]
+#[command(
+    name = "givemedata",
+    styles = STYLES,
+    args_conflicts_with_subcommands = true,
+    subcommand_negates_reqs = true
+)]
 #[command(about = "GIVE ME DATA!", long_about = None)]
 struct Args {
+    #[command(subcommand)]
+    command: Option<Command>,
     #[arg(
         short,
         long,
@@ -97,13 +105,27 @@ struct Args {
     train_config: PathBuf,
 }
 
+#[derive(Subcommand)]
+enum Command {
+    /// Generate shell completion definitions.
+    Completions { shell: Shell },
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter("debug,h2=off,hyper=off,tower=off,sqlx=off,aws_runtime=off,aws_sdk_s3=off,aws_smithy_runtime_api=off,aws_smithy_runtime=off")
         .init();
 
-    let args = Args::parse();
+    let matches = Args::command().get_matches();
+    if let Some(("completions", completion_matches)) = matches.subcommand() {
+        let shell = *completion_matches
+            .get_one::<Shell>("shell")
+            .expect("shell is required by clap");
+        generate(shell, &mut Args::command(), "givemedata", &mut io::stdout());
+        return Ok(());
+    }
+    let args = Args::from_arg_matches(&matches)?;
 
     let pg_pool = PgPool::connect(&args.db_url)
         .await
