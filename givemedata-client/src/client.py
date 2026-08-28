@@ -1,6 +1,9 @@
 import os
 import queue
+import shutil
+import tarfile
 from collections.abc import Iterator
+from pathlib import Path
 
 import grpc
 
@@ -34,6 +37,41 @@ class GiveMeDataClient:
             requests.put(request)
             yield response
 
+    def download_asset(self, name: str, dest_dir: Path) -> Path:
+        """Fetch one named asset into <dest_dir>/<name>/, skipping the download
+        when a previous run already completed it (the .done marker)."""
+        asset_dir = dest_dir / name
+        marker = dest_dir / f"{name}.done"
+        if marker.exists():
+            return asset_dir
+
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        part = dest_dir / f"{name}.part"
+        with open(part, "wb") as f:
+            for response in self._stub.Asset(
+                pb.AssetRequest(session_id=self.session_id, name=name)
+            ):
+                f.write(response.chunk)
+
+        shutil.rmtree(asset_dir, ignore_errors=True)
+        asset_dir.mkdir(parents=True)
+        if tarfile.is_tarfile(part):
+            with tarfile.open(part) as tar:
+                tar.extractall(asset_dir, filter="data")
+            part.unlink()
+        else:
+            part.rename(asset_dir / name)
+        marker.touch()
+        return asset_dir
+
     def close(self) -> None:
         self._stub.End(pb.EndRequest(session_id=self.session_id))
         self._channel.close()
+
+
+def asset_file(asset_dir: Path) -> Path:
+    """The single file inside an extracted asset; errors if there isn't exactly one."""
+    files = [p for p in asset_dir.rglob("*") if p.is_file()]
+    if len(files) != 1:
+        raise ValueError(f"expected exactly one file in {asset_dir}, found {len(files)}")
+    return files[0]

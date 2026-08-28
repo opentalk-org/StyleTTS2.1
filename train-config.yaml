@@ -7,10 +7,11 @@ dataset_id: "f0943606-6e06-400e-8bc4-7ab3ea8dbe04"
 output_dir: runs/styletts-scratch
 run_name: styletts_finetune
 
+# asset names resolved through the givemedata Asset RPC (see data-config.yaml assets)
 base_checkpoint: null   # SelectCheckpoint was __scratch__
-asr_model: .cache/runflow/assets/checkpoints/567d8044d496449217baa609f86462297a0506add638e0fad00938e3631a8e8e/epoch_00080.pth
-f0_model: .cache/runflow/assets/checkpoints/609c00a909dcab83769ada9c3727fe5929ccd214b0c3205e82decea5debafef3/bst.t7
-plbert: .cache/runflow/assets/checkpoints/6a8c0987582acf8724c32cd6daf66bb5cdfbb39a7203162ceeff6f02b3bf2788/step_1000000.t7
+asr_model: asr
+f0_model: f0
+plbert: plbert
 
 seed: 1
 validation_samples: 32

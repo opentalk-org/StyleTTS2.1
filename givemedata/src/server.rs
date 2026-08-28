@@ -1,13 +1,20 @@
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::loader::{Loader, S3Loader, SyntheticLoader};
-use crate::server::givemedata::{EndRequest, EndResponse, InitRequest, InitResponse};
+use crate::server::givemedata::{
+    AssetRequest, AssetResponse, EndRequest, EndResponse, InitRequest, InitResponse,
+};
 use crate::session::{DataConfig, Session, SessionHandle};
 use anyhow::Context;
+use bytes::BytesMut;
+use futures::Stream;
 use sqlx::{PgPool, Pool, Postgres};
+use tokio::fs;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{RwLock, mpsc};
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -23,10 +30,15 @@ use givemedata::{DataRequest, DataResponse, Split};
 
 type SessionsMap = Arc<RwLock<HashMap<String, SessionHandle>>>;
 
+const ASSET_CHUNK_BYTES: usize = 2 * 1024 * 1024;
+
 struct GiveMeData {
     db_pool: PgPool,
     loader: Arc<dyn Loader>,
+    s3_client: aws_sdk_s3::Client,
+    bucket: &'static str,
     cache_dir: &'static Path,
+    assets_dir: &'static Path,
     synthetic: bool,
     data_config: &'static DataConfig,
     train_config: &'static str,
@@ -39,6 +51,7 @@ impl GiveMeData {
         pg_pool: Pool<Postgres>,
         bucket: &'static str,
         cache_dir: &'static Path,
+        assets_dir: &'static Path,
         synthetic: bool,
         data_config: &'static DataConfig,
         train_config: &'static str,
@@ -46,17 +59,52 @@ impl GiveMeData {
         let loader: Arc<dyn Loader> = if synthetic {
             Arc::new(SyntheticLoader)
         } else {
-            Arc::new(S3Loader::new(s3_client, bucket))
+            Arc::new(S3Loader::new(s3_client.clone(), bucket))
         };
         Ok(GiveMeData {
             sessions: Default::default(),
             loader,
+            s3_client,
+            bucket,
             cache_dir,
+            assets_dir,
             synthetic,
             data_config,
             train_config,
             db_pool: pg_pool,
         })
+    }
+
+    /// Downloads the asset into the assets dir unless it is already there.
+    /// Writes to a .part file first so a crashed download is never served.
+    async fn ensure_asset(&self, name: &str, key: &str) -> anyhow::Result<PathBuf> {
+        let path = self.assets_dir.join(name);
+        if fs::try_exists(&path).await? {
+            return Ok(path);
+        }
+
+        let part = self.assets_dir.join(format!("{name}.part"));
+        info!(asset = name, key, "downloading asset");
+        if self.synthetic {
+            fs::write(&part, format!("synthetic asset {name}\n").repeat(1024)).await?;
+        } else {
+            let mut object = self
+                .s3_client
+                .get_object()
+                .bucket(self.bucket)
+                .key(key)
+                .send()
+                .await
+                .with_context(|| format!("fetching asset {name} from {key}"))?;
+            let mut file = fs::File::create(&part).await?;
+            while let Some(bytes) = object.body.try_next().await? {
+                file.write_all(&bytes).await?;
+            }
+            file.sync_all().await?;
+        }
+        fs::rename(&part, &path).await?;
+
+        Ok(path)
     }
 }
 
@@ -95,6 +143,13 @@ async fn data_handler(
 impl GiveMeDataService for GiveMeData {
     async fn init(&self, _request: Request<InitRequest>) -> Result<Response<InitResponse>, Status> {
         debug!("init request");
+
+        for (name, key) in &self.data_config.assets {
+            self.ensure_asset(name, key).await.map_err(|err| {
+                error!(error = format!("{err:#}"), asset = %name, "asset prefetch failed");
+                Status::internal(format!("{err:#}"))
+            })?;
+        }
 
         let session = Session::new(
             &self.db_pool,
@@ -145,6 +200,54 @@ impl GiveMeDataService for GiveMeData {
         Ok(UnboundedReceiverStream::new(out_rx).into())
     }
 
+    type AssetStream = Pin<Box<dyn Stream<Item = Result<AssetResponse, Status>> + Send>>;
+
+    async fn asset(
+        &self,
+        request: Request<AssetRequest>,
+    ) -> Result<Response<Self::AssetStream>, Status> {
+        let request = request.into_inner();
+        if !self.sessions.read().await.contains_key(&request.session_id) {
+            return Err(Status::not_found("unknown session"));
+        }
+        let key = self
+            .data_config
+            .assets
+            .get(&request.name)
+            .ok_or_else(|| Status::not_found(format!("unknown asset {:?}", request.name)))?;
+        info!(session = %request.session_id, asset = %request.name, "asset requested");
+
+        // streamed straight from the assets dir, never through the session actor:
+        // a large transfer must not block batch serving
+        let path = self.ensure_asset(&request.name, key).await.map_err(|err| {
+            error!(error = format!("{err:#}"), asset = %request.name, "asset fetch failed");
+            Status::internal(format!("{err:#}"))
+        })?;
+
+        let stream = async_stream::stream! {
+            let mut file = match fs::File::open(&path).await {
+                Ok(file) => file,
+                Err(err) => {
+                    yield Err(Status::internal(format!("{err:#}")));
+                    return;
+                }
+            };
+            loop {
+                let mut buf = BytesMut::with_capacity(ASSET_CHUNK_BYTES);
+                match file.read_buf(&mut buf).await {
+                    Ok(0) => break,
+                    Ok(_) => yield Ok(AssetResponse { chunk: buf.freeze() }),
+                    Err(err) => {
+                        yield Err(Status::internal(format!("{err:#}")));
+                        break;
+                    }
+                }
+            }
+        };
+
+        Ok(Response::new(Box::pin(stream)))
+    }
+
     async fn end(&self, request: Request<EndRequest>) -> Result<Response<EndResponse>, Status> {
         let request = request.into_inner();
         info!(session = %request.session_id, "ending session");
@@ -165,6 +268,7 @@ pub async fn serve(
     pg_pool: Pool<Postgres>,
     bucket: &'static str,
     cache_dir: &'static Path,
+    assets_dir: &'static Path,
     synthetic: bool,
     data_config: &'static DataConfig,
     train_config: &'static str,
@@ -181,6 +285,7 @@ pub async fn serve(
                 pg_pool,
                 bucket,
                 cache_dir,
+                assets_dir,
                 synthetic,
                 data_config,
                 train_config,

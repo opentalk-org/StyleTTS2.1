@@ -27,6 +27,9 @@ pub struct DataConfig {
     pub max_text_tokens: i32,
     #[serde(default)]
     pub plbert_languages: Vec<String>,
+    /// asset name -> S3 object key; names are the contract with the training side
+    #[serde(default)]
+    pub assets: std::collections::HashMap<String, String>,
     pub validation: ValidationConfig,
     pub training: Vec<SequenceConfig>,
 }

@@ -21,11 +21,12 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from givemedata_client.client import GiveMeDataClient
+from givemedata_client.client import GiveMeDataClient, asset_file
 from pydantic import BaseModel, ConfigDict, Field
 
 from .build_config import ASR_YAML, PLBERT_YAML, build_config, load_yaml, write_config
@@ -181,6 +182,22 @@ def _plbert_config(
     return config
 
 
+def _resolve_assets(spec: RunSpec, client: GiveMeDataClient) -> None:
+    """Turn asset names from the train config into local paths, downloading
+    through the givemedata Asset RPC (skipped when already cached on disk)."""
+    assets_dir = Path(os.environ.get("TRAINTTS_ASSETS_DIR", ".cache/traintts/assets"))
+    for field in ("asr_model", "f0_model", "plbert"):
+        name = getattr(spec, field)
+        if name:
+            path = asset_file(client.download_asset(name, assets_dir))
+            logger.info("asset %s (%s) -> %s", field, name, path)
+            setattr(spec, field, str(path))
+    if spec.base_checkpoint:
+        path = client.download_asset(spec.base_checkpoint, assets_dir)
+        logger.info("asset base_checkpoint (%s) -> %s", spec.base_checkpoint, path)
+        spec.base_checkpoint = str(path)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="traintts")
     parser.add_argument(
@@ -194,6 +211,9 @@ def main(argv: list[str] | None = None) -> None:
     data_client = GiveMeDataClient()
     logger.info("fetched train config from givemedata session=%s", data_client.session_id)
     spec = RunSpec.model_validate(yaml.safe_load(data_client.train_config))
+    if not arguments.dry_run:
+        # dry-run keeps the asset names as-is; nothing is downloaded
+        _resolve_assets(spec, data_client)
     config = build_run_config(spec)
     training_config = TrainingConfig.model_validate(config)
 

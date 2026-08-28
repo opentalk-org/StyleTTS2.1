@@ -53,6 +53,20 @@ class DataResponse(_message.Message):
     batch: _containers.RepeatedCompositeFieldContainer[Sample]
     def __init__(self, batch: _Optional[_Iterable[_Union[Sample, _Mapping]]] = ...) -> None: ...
 
+class AssetRequest(_message.Message):
+    __slots__ = ("session_id", "name")
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    session_id: str
+    name: str
+    def __init__(self, session_id: _Optional[str] = ..., name: _Optional[str] = ...) -> None: ...
+
+class AssetResponse(_message.Message):
+    __slots__ = ("chunk",)
+    CHUNK_FIELD_NUMBER: _ClassVar[int]
+    chunk: bytes
+    def __init__(self, chunk: _Optional[bytes] = ...) -> None: ...
+
 class EndRequest(_message.Message):
     __slots__ = ("session_id",)
     SESSION_ID_FIELD_NUMBER: _ClassVar[int]

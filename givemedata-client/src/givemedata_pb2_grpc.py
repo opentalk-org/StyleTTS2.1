@@ -44,6 +44,11 @@ class GiveMeDataStub(object):
                 request_serializer=givemedata__pb2.DataRequest.SerializeToString,
                 response_deserializer=givemedata__pb2.DataResponse.FromString,
                 _registered_method=True)
+        self.Asset = channel.unary_stream(
+                '/GiveMeData/Asset',
+                request_serializer=givemedata__pb2.AssetRequest.SerializeToString,
+                response_deserializer=givemedata__pb2.AssetResponse.FromString,
+                _registered_method=True)
         self.End = channel.unary_unary(
                 '/GiveMeData/End',
                 request_serializer=givemedata__pb2.EndRequest.SerializeToString,
@@ -61,6 +66,12 @@ class GiveMeDataServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def Data(self, request_iterator, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Asset(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -84,6 +95,11 @@ def add_GiveMeDataServicer_to_server(servicer, server):
                     servicer.Data,
                     request_deserializer=givemedata__pb2.DataRequest.FromString,
                     response_serializer=givemedata__pb2.DataResponse.SerializeToString,
+            ),
+            'Asset': grpc.unary_stream_rpc_method_handler(
+                    servicer.Asset,
+                    request_deserializer=givemedata__pb2.AssetRequest.FromString,
+                    response_serializer=givemedata__pb2.AssetResponse.SerializeToString,
             ),
             'End': grpc.unary_unary_rpc_method_handler(
                     servicer.End,
@@ -145,6 +161,33 @@ class GiveMeData(object):
             '/GiveMeData/Data',
             givemedata__pb2.DataRequest.SerializeToString,
             givemedata__pb2.DataResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Asset(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/GiveMeData/Asset',
+            givemedata__pb2.AssetRequest.SerializeToString,
+            givemedata__pb2.AssetResponse.FromString,
             options,
             channel_credentials,
             insecure,

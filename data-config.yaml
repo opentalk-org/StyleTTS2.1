@@ -8,6 +8,12 @@ seed: 1
 max_text_tokens: 512      # plbert max_position_embeddings
 plbert_languages: []      # empty -> language_id 0
 
+# training assets by name -> S3 object key; the train config references the names
+assets:
+  asr: checkpoints/dc7a65bd-e0fa-4fcf-902e-8cb5f493219b.tar
+  f0: checkpoints/fdbaecfa-1c18-42f3-b47a-b7db7fa4bec5.tar
+  plbert: checkpoints/2791d241-7c36-4a6b-9336-ae12a9e21af1.tar
+
 validation:
   samples: 32
   max_seconds: 65         # fixed batch budget for the whole run

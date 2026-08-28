@@ -73,6 +73,12 @@ struct Args {
     synthetic: bool,
     #[arg(
         long,
+        env = "ASSETS_DIR",
+        help = "Directory caching training assets downloaded from the bucket."
+    )]
+    assets_dir: PathBuf,
+    #[arg(
+        long,
         env = "DATA_CONFIG",
         help = "YAML with everything sessions need for sampling and fetching data."
     )]
@@ -115,6 +121,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     fs::create_dir_all(&args.cache_dir).await?;
+    fs::create_dir_all(&args.assets_dir).await?;
 
     let data_config: session::DataConfig = serde_yaml::from_str(
         &fs::read_to_string(&args.data_config)
@@ -132,6 +139,7 @@ async fn main() -> anyhow::Result<()> {
         pg_pool,
         args.bucket.leak(),
         Box::leak(args.cache_dir.into_boxed_path()),
+        Box::leak(args.assets_dir.into_boxed_path()),
         args.synthetic,
         Box::leak(Box::new(data_config)),
         train_config.leak(),
