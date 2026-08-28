@@ -226,8 +226,6 @@ impl GiveMeDataService for GiveMeData {
             .ok_or_else(|| Status::not_found(format!("unknown asset {:?}", request.name)))?;
         info!(session = %request.session_id, asset = %request.name, "asset requested");
 
-        // streamed straight from the assets dir, never through the session actor:
-        // a large transfer must not block batch serving
         let path = self
             .ensure_asset(&request.name, &asset.object)
             .await
@@ -292,8 +290,6 @@ impl GiveMeDataService for GiveMeData {
         }
         info!(session = %metadata.session_id, step = metadata.step, "receiving checkpoint");
 
-        // written directly from the request stream, never through the session
-        // actor: a large upload must not block batch serving
         let result: anyhow::Result<(PathBuf, u64)> = async {
             let dir = self.checkpoint_dir.join(&metadata.session_id);
             fs::create_dir_all(&dir).await?;

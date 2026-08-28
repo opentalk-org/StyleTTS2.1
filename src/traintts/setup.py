@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import logging
+import warnings
 
 import torch
 from accelerate import Accelerator
@@ -67,6 +68,13 @@ def build_training_runtime(
     parameters = recursive_munch(config.model_params)
     modules = _build_models(config, parameters, device)
     if device.type == "cuda":
+        torch._logging.set_logs(dynamo=logging.ERROR, inductor=logging.ERROR)
+        warnings.filterwarnings(
+            "ignore",
+            message="TensorFloat32 tensor cores for float32 matrix multiplication.*",
+            category=UserWarning,
+            module=r"torch\._inductor\.compile_fx",
+        )
         generator = modules.decoder.generator
         for name in (
             "_pre_upsample_noise",
