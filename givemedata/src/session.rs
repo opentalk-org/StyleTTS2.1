@@ -2,8 +2,9 @@ use std::{path::Path, pin::Pin, sync::Arc};
 
 use anyhow::bail;
 use futures::{Stream, StreamExt};
+use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, info_span};
+use tracing::{Instrument, debug, info, info_span};
 use uuid::Uuid;
 
 use crate::{
@@ -153,11 +154,85 @@ impl Session {
             },
         }
     }
+
+    pub async fn finish(self) {
+        self.cancel_token.cancel();
+        let prefetchers = match (self.validation_batches, self.training_batches) {
+            (Batches::Prefetched(p1), Batches::Prefetched(p2)) => vec![p1, p2],
+            (Batches::Prefetched(p), _) | (_, Batches::Prefetched(p)) => vec![p],
+            _ => return,
+        };
+        futures::future::join_all(prefetchers.into_iter().map(Prefetcher::drain)).await;
+    }
 }
 
-impl Drop for Session {
-    fn drop(&mut self) {
-        debug!(session = %self.id, "session dropped, stopping prefetchers");
-        self.cancel_token.cancel();
+enum Command {
+    NextBatch {
+        validation: bool,
+        reply: oneshot::Sender<anyhow::Result<LoadedBatch>>,
+    },
+    Finish {
+        reply: oneshot::Sender<()>,
+    },
+}
+
+// The actor task owns the Session by value: batch requests are serialized through the
+// channel, and consuming `Session::finish` runs on every exit path.
+#[derive(Clone)]
+pub struct SessionHandle {
+    pub id: Uuid,
+    tx: mpsc::Sender<Command>,
+}
+
+impl SessionHandle {
+    pub fn spawn(session: Session) -> Self {
+        let id = session.id;
+        let (tx, rx) = mpsc::channel(1);
+        tokio::spawn(run(session, rx).instrument(info_span!("session", session = %id)));
+        Self { id, tx }
     }
+
+    pub async fn next_batch(&self, validation: bool) -> anyhow::Result<LoadedBatch> {
+        let (reply, response) = oneshot::channel();
+        if self
+            .tx
+            .send(Command::NextBatch { validation, reply })
+            .await
+            .is_err()
+        {
+            bail!("session ended");
+        }
+        match response.await {
+            Ok(batch) => batch,
+            Err(_) => bail!("session ended"),
+        }
+    }
+
+    pub async fn finish(&self) {
+        let (reply, response) = oneshot::channel();
+        if self.tx.send(Command::Finish { reply }).await.is_ok() {
+            // wait for the drain to complete; an error means the actor is already gone
+            let _ = response.await;
+        }
+    }
+}
+
+async fn run(mut session: Session, mut rx: mpsc::Receiver<Command>) {
+    while let Some(cmd) = rx.recv().await {
+        match cmd {
+            Command::NextBatch { validation, reply } => {
+                let _ = reply.send(session.next_batch(validation).await);
+            }
+            Command::Finish { reply } => {
+                session.finish().await;
+                let _ = reply.send(());
+                debug!("session finished");
+                return;
+            }
+        }
+    }
+
+    // all handles dropped without an End: still stop prefetchers and drain the cache
+    session.finish().await;
+    debug!("session finished after handles dropped");
 }
