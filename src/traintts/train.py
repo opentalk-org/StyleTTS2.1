@@ -98,6 +98,7 @@ def train(
         data_client.session_id,
         config.data_params.dataset_id,
     )
+    batch_iterator = iter(train_batches)
 
     while trainer.step < config.total_steps:
         stage = stage_for_step(config.training_stages, trainer.step)
@@ -112,7 +113,6 @@ def train(
             )
             active_stage = stage
         trainer.set_training_mode()
-        batch_iterator = iter(train_batches)
         while (
             trainer.step < config.total_steps
             and stage_for_step(config.training_stages, trainer.step)
