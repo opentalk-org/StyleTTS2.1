@@ -5,11 +5,11 @@ use std::sync::Arc;
 
 use crate::loader::{Loader, S3Loader, SyntheticLoader};
 use crate::server::givemedata::{EndRequest, EndResponse, InitRequest, InitResponse};
-use crate::session::{self, Session};
+use crate::session::{self, Session, SessionHandle};
 use anyhow::Context;
 use sqlx::{PgPool, Pool, Postgres};
 use tokio::sync::mpsc::UnboundedSender;
-use tokio::sync::{Mutex, RwLock, mpsc};
+use tokio::sync::{RwLock, mpsc};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status, Streaming};
@@ -22,7 +22,7 @@ pub mod givemedata {
 use givemedata::give_me_data_server::{GiveMeData as GiveMeDataService, GiveMeDataServer};
 use givemedata::{DataRequest, DataResponse, Split};
 
-type SessionsMap = Arc<RwLock<HashMap<String, Arc<Mutex<Session>>>>>;
+type SessionsMap = Arc<RwLock<HashMap<String, SessionHandle>>>;
 
 struct GiveMeData {
     db_pool: PgPool,
@@ -68,7 +68,6 @@ async fn data_handler(
             .get(&req.session_id)
             .cloned()
             .context("unknown session")?;
-        let mut session = session.lock().await;
 
         let loaded_batch = session.next_batch(req.split() == Split::Validation).await?;
         let batch = loaded_batch
@@ -118,12 +117,13 @@ impl GiveMeDataService for GiveMeData {
             error!(error = format!("{err:#}"), "session init failed");
             Status::internal(format!("{err:#}"))
         })?;
-        let session_id = session.id.to_string();
+        let handle = SessionHandle::spawn(session);
+        let session_id = handle.id.to_string();
 
         self.sessions
             .write()
             .await
-            .insert(session_id.clone(), Arc::new(Mutex::new(session)));
+            .insert(session_id.clone(), handle);
         info!(session = %session_id, "session created");
 
         Ok(Response::new(InitResponse { session_id }))
@@ -154,11 +154,11 @@ impl GiveMeDataService for GiveMeData {
     async fn end(&self, request: Request<EndRequest>) -> Result<Response<EndResponse>, Status> {
         let request = request.into_inner();
         info!(session = %request.session_id, "ending session");
-        let mut sessions = self.sessions.write().await;
-        let removed = sessions.remove(&request.session_id);
+        let removed = self.sessions.write().await.remove(&request.session_id);
 
-        if removed.is_none() {
-            return Err(Status::internal("unknown session"));
+        match removed {
+            None => return Err(Status::not_found("unknown session")),
+            Some(handle) => handle.finish().await,
         }
 
         Ok(Response::new(EndResponse {}))

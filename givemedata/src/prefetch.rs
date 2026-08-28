@@ -7,7 +7,7 @@ use anyhow::bail;
 use bytes::Bytes;
 use tokio::{fs, sync::mpsc};
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, debug, error};
+use tracing::{Instrument, debug, error, warn};
 
 use crate::{
     loader::Loader,
@@ -47,6 +47,7 @@ const CACHED_BATCHES: usize = 5;
 
 pub struct Prefetcher {
     rx: mpsc::Receiver<anyhow::Result<PrefetchedBatch>>,
+    cancel_token: CancellationToken,
 }
 
 impl Prefetcher {
@@ -59,7 +60,9 @@ impl Prefetcher {
     ) -> Self {
         let (tx, rx) = mpsc::channel(CACHED_BATCHES);
 
-        tokio::spawn(
+        let cancel_token = cancel_token.child_token();
+        tokio::spawn({
+            let cancel_token = cancel_token.clone();
             async move {
                 loop {
                     let permit = tokio::select! {
@@ -88,16 +91,34 @@ impl Prefetcher {
                 }
                 debug!("prefetcher stopped");
             }
-            .instrument(span),
-        );
+            .instrument(span)
+        });
 
-        Self { rx }
+        Self { rx, cancel_token }
     }
 
     pub async fn next_batch(&mut self) -> anyhow::Result<LoadedBatch> {
         match self.rx.recv().await {
             Some(batch) => futures::future::try_join_all(batch?.into_iter().map(read_sample)).await,
             None => bail!("prefetcher stopped, session ended"),
+        }
+    }
+
+    // best-effort removal of every cached file still in flight; consumes self
+    pub async fn drain(mut self) {
+        self.cancel_token.cancel();
+
+        while let Some(batch) = self.rx.recv().await {
+            let Ok(batch) = batch else { continue };
+            for sample in batch {
+                if let Err(err) = fs::remove_file(&sample.path).await {
+                    warn!(
+                        error = format!("{err:#}"),
+                        path = %sample.path.display(),
+                        "failed to drain cache file"
+                    );
+                }
+            }
         }
     }
 }
