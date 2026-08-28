@@ -198,8 +198,11 @@ impl HistogramSampler {
             loops: 0,
         }
     }
+}
 
-    fn sample_batch(&mut self) -> anyhow::Result<Vec<Sample>> {
+/// Loops its sample set forever; never exhausts.
+impl Sampler for HistogramSampler {
+    fn next_batch(&mut self) -> anyhow::Result<Option<Vec<Sample>>> {
         if self.bins.iter().all(|b| b.samples.is_empty()) {
             self.loops += 1;
             tracing::info!(loops = self.loops, "bins drained, looping with a new seed");
@@ -235,14 +238,7 @@ impl HistogramSampler {
             remaining -= random_sample.1;
         }
 
-        Ok(batch)
-    }
-}
-
-/// Loops its sample set forever; never exhausts.
-impl Sampler for HistogramSampler {
-    fn next_batch(&mut self) -> anyhow::Result<Option<Vec<Sample>>> {
-        Ok(Some(self.sample_batch()?))
+        Ok(Some(batch))
     }
 }
 
@@ -309,7 +305,9 @@ impl Sampler for ScheduledSampler {
             }
 
             let (sampler, remaining) = self.current.as_mut().expect("current sequence set");
-            let batch = sampler.sample_batch()?;
+            let batch = sampler
+                .next_batch()?
+                .expect("histogram sampler never exhausts");
             *remaining -= 1;
             return Ok(Some(batch));
         }
