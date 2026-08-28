@@ -24,15 +24,15 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10givemedata.proto\"\r\n\x0bInitRequest\"8\n\x0cInitResponse\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x14\n\x0ctrain_config\x18\x02 \x01(\t\"8\n\x0b\x44\x61taRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x15\n\x05split\x18\x02 \x01(\x0e\x32\x06.Split\"_\n\x06Sample\x12\x0c\n\x04wave\x18\x01 \x01(\x0c\x12\x10\n\x08\x64uration\x18\x02 \x01(\x01\x12\x12\n\nspeaker_id\x18\x03 \x01(\x03\x12\x13\n\x0blanguage_id\x18\x04 \x01(\x05\x12\x0c\n\x04text\x18\x05 \x01(\x0c\"&\n\x0c\x44\x61taResponse\x12\x16\n\x05\x62\x61tch\x18\x01 \x03(\x0b\x32\x07.Sample\"0\n\x0c\x41ssetRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\"\x1e\n\rAssetResponse\x12\r\n\x05\x63hunk\x18\x01 \x01(\x0c\" \n\nEndRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\"\r\n\x0b\x45ndResponse*%\n\x05Split\x12\x0c\n\x08TRAINING\x10\x00\x12\x0e\n\nVALIDATION\x10\x01\x32\xa6\x01\n\nGiveMeData\x12#\n\x04Init\x12\x0c.InitRequest\x1a\r.InitResponse\x12\'\n\x04\x44\x61ta\x12\x0c.DataRequest\x1a\r.DataResponse(\x01\x30\x01\x12(\n\x05\x41sset\x12\r.AssetRequest\x1a\x0e.AssetResponse0\x01\x12 \n\x03\x45nd\x12\x0b.EndRequest\x1a\x0c.EndResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10givemedata.proto\"\r\n\x0bInitRequest\"8\n\x0cInitResponse\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x14\n\x0ctrain_config\x18\x02 \x01(\t\"8\n\x0b\x44\x61taRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x15\n\x05split\x18\x02 \x01(\x0e\x32\x06.Split\"_\n\x06Sample\x12\x0c\n\x04wave\x18\x01 \x01(\x0c\x12\x10\n\x08\x64uration\x18\x02 \x01(\x01\x12\x12\n\nspeaker_id\x18\x03 \x01(\x03\x12\x13\n\x0blanguage_id\x18\x04 \x01(\x05\x12\x0c\n\x04text\x18\x05 \x01(\x0c\"&\n\x0c\x44\x61taResponse\x12\x16\n\x05\x62\x61tch\x18\x01 \x03(\x0b\x32\x07.Sample\"0\n\x0c\x41ssetRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\"\x1e\n\rAssetResponse\x12\r\n\x05\x63hunk\x18\x01 \x01(\x0c\"6\n\x12\x43heckpointMetadata\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x0c\n\x04step\x18\x02 \x01(\x04\"X\n\x11\x43heckpointRequest\x12\'\n\x08metadata\x18\x01 \x01(\x0b\x32\x13.CheckpointMetadataH\x00\x12\x0f\n\x05\x63hunk\x18\x02 \x01(\x0cH\x00\x42\t\n\x07payload\"\x14\n\x12\x43heckpointResponse\" \n\nEndRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\"\r\n\x0b\x45ndResponse*%\n\x05Split\x12\x0c\n\x08TRAINING\x10\x00\x12\x0e\n\nVALIDATION\x10\x01\x32\xdf\x01\n\nGiveMeData\x12#\n\x04Init\x12\x0c.InitRequest\x1a\r.InitResponse\x12\'\n\x04\x44\x61ta\x12\x0c.DataRequest\x1a\r.DataResponse(\x01\x30\x01\x12(\n\x05\x41sset\x12\r.AssetRequest\x1a\x0e.AssetResponse0\x01\x12\x37\n\nCheckpoint\x12\x12.CheckpointRequest\x1a\x13.CheckpointResponse(\x01\x12 \n\x03\x45nd\x12\x0b.EndRequest\x1a\x0c.EndResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'givemedata_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_SPLIT']._serialized_start=419
-  _globals['_SPLIT']._serialized_end=456
+  _globals['_SPLIT']._serialized_start=587
+  _globals['_SPLIT']._serialized_end=624
   _globals['_INITREQUEST']._serialized_start=20
   _globals['_INITREQUEST']._serialized_end=33
   _globals['_INITRESPONSE']._serialized_start=35
@@ -47,10 +47,16 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_ASSETREQUEST']._serialized_end=336
   _globals['_ASSETRESPONSE']._serialized_start=338
   _globals['_ASSETRESPONSE']._serialized_end=368
-  _globals['_ENDREQUEST']._serialized_start=370
-  _globals['_ENDREQUEST']._serialized_end=402
-  _globals['_ENDRESPONSE']._serialized_start=404
-  _globals['_ENDRESPONSE']._serialized_end=417
-  _globals['_GIVEMEDATA']._serialized_start=459
-  _globals['_GIVEMEDATA']._serialized_end=625
+  _globals['_CHECKPOINTMETADATA']._serialized_start=370
+  _globals['_CHECKPOINTMETADATA']._serialized_end=424
+  _globals['_CHECKPOINTREQUEST']._serialized_start=426
+  _globals['_CHECKPOINTREQUEST']._serialized_end=514
+  _globals['_CHECKPOINTRESPONSE']._serialized_start=516
+  _globals['_CHECKPOINTRESPONSE']._serialized_end=536
+  _globals['_ENDREQUEST']._serialized_start=538
+  _globals['_ENDREQUEST']._serialized_end=570
+  _globals['_ENDRESPONSE']._serialized_start=572
+  _globals['_ENDRESPONSE']._serialized_end=585
+  _globals['_GIVEMEDATA']._serialized_start=627
+  _globals['_GIVEMEDATA']._serialized_end=850
 # @@protoc_insertion_point(module_scope)

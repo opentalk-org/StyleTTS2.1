@@ -4,6 +4,7 @@ service GiveMeData {
   rpc Init (InitRequest) returns (InitResponse);
   rpc Data (stream DataRequest) returns (stream DataResponse);
   rpc Asset (AssetRequest) returns (stream AssetResponse);
+  rpc Checkpoint (stream CheckpointRequest) returns (CheckpointResponse);
   rpc End (EndRequest) returns (EndResponse);
 }
 
@@ -46,6 +47,21 @@ message AssetRequest {
 message AssetResponse {
   bytes chunk = 1;
 }
+
+message CheckpointMetadata {
+  string session_id = 1;
+  uint64 step = 2;
+}
+
+message CheckpointRequest {
+  oneof payload {
+    // must be the first message of the stream
+    CheckpointMetadata metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
+message CheckpointResponse {}
 
 message EndRequest {
   string session_id = 1;

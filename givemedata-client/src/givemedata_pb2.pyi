@@ -67,6 +67,26 @@ class AssetResponse(_message.Message):
     chunk: bytes
     def __init__(self, chunk: _Optional[bytes] = ...) -> None: ...
 
+class CheckpointMetadata(_message.Message):
+    __slots__ = ("session_id", "step")
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    STEP_FIELD_NUMBER: _ClassVar[int]
+    session_id: str
+    step: int
+    def __init__(self, session_id: _Optional[str] = ..., step: _Optional[int] = ...) -> None: ...
+
+class CheckpointRequest(_message.Message):
+    __slots__ = ("metadata", "chunk")
+    METADATA_FIELD_NUMBER: _ClassVar[int]
+    CHUNK_FIELD_NUMBER: _ClassVar[int]
+    metadata: CheckpointMetadata
+    chunk: bytes
+    def __init__(self, metadata: _Optional[_Union[CheckpointMetadata, _Mapping]] = ..., chunk: _Optional[bytes] = ...) -> None: ...
+
+class CheckpointResponse(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
 class EndRequest(_message.Message):
     __slots__ = ("session_id",)
     SESSION_ID_FIELD_NUMBER: _ClassVar[int]

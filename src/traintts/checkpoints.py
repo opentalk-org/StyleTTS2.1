@@ -29,9 +29,11 @@ class CheckpointPublisher:
         self,
         config: TrainingConfig,
         runtime: TrainingRuntime,
+        data_client=None,
     ) -> None:
         self.config = config
         self.runtime = runtime
+        self.data_client = data_client
 
     def publish(
         self,
@@ -66,3 +68,6 @@ class CheckpointPublisher:
             target.stat().st_size,
             dest,
         )
+        if self.data_client is not None:
+            self.data_client.upload_checkpoint(step, dest)
+            logger.info("checkpoint uploaded to givemedata step=%s", step)

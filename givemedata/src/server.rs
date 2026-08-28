@@ -6,7 +6,8 @@ use std::sync::Arc;
 
 use crate::loader::{Loader, S3Loader, SyntheticLoader};
 use crate::server::givemedata::{
-    AssetRequest, AssetResponse, EndRequest, EndResponse, InitRequest, InitResponse,
+    AssetRequest, AssetResponse, CheckpointRequest, CheckpointResponse, EndRequest, EndResponse,
+    InitRequest, InitResponse, checkpoint_request,
 };
 use crate::session::{DataConfig, Session, SessionHandle};
 use anyhow::Context;
@@ -39,6 +40,7 @@ struct GiveMeData {
     bucket: &'static str,
     cache_dir: &'static Path,
     assets_dir: &'static Path,
+    checkpoint_dir: &'static Path,
     synthetic: bool,
     data_config: &'static DataConfig,
     train_config: &'static str,
@@ -52,6 +54,7 @@ impl GiveMeData {
         bucket: &'static str,
         cache_dir: &'static Path,
         assets_dir: &'static Path,
+        checkpoint_dir: &'static Path,
         synthetic: bool,
         data_config: &'static DataConfig,
         train_config: &'static str,
@@ -68,6 +71,7 @@ impl GiveMeData {
             bucket,
             cache_dir,
             assets_dir,
+            checkpoint_dir,
             synthetic,
             data_config,
             train_config,
@@ -144,12 +148,17 @@ impl GiveMeDataService for GiveMeData {
     async fn init(&self, _request: Request<InitRequest>) -> Result<Response<InitResponse>, Status> {
         debug!("init request");
 
-        for (name, key) in &self.data_config.assets {
-            self.ensure_asset(name, key).await.map_err(|err| {
-                error!(error = format!("{err:#}"), asset = %name, "asset prefetch failed");
-                Status::internal(format!("{err:#}"))
-            })?;
-        }
+        futures::future::try_join_all(
+            self.data_config
+                .assets
+                .iter()
+                .map(|(name, key)| self.ensure_asset(name, key)),
+        )
+        .await
+        .map_err(|err| {
+            error!(error = format!("{err:#}"), "asset prefetch failed");
+            Status::internal(format!("{err:#}"))
+        })?;
 
         let session = Session::new(
             &self.db_pool,
@@ -248,6 +257,73 @@ impl GiveMeDataService for GiveMeData {
         Ok(Response::new(Box::pin(stream)))
     }
 
+    async fn checkpoint(
+        &self,
+        request: Request<Streaming<CheckpointRequest>>,
+    ) -> Result<Response<CheckpointResponse>, Status> {
+        let mut stream = request.into_inner();
+
+        let metadata = match stream.message().await?.and_then(|r| r.payload) {
+            Some(checkpoint_request::Payload::Metadata(metadata)) => metadata,
+            _ => {
+                return Err(Status::invalid_argument(
+                    "first checkpoint message must be metadata",
+                ));
+            }
+        };
+        if !self
+            .sessions
+            .read()
+            .await
+            .contains_key(&metadata.session_id)
+        {
+            return Err(Status::not_found("unknown session"));
+        }
+        info!(session = %metadata.session_id, step = metadata.step, "receiving checkpoint");
+
+        // written directly from the request stream, never through the session
+        // actor: a large upload must not block batch serving
+        let result: anyhow::Result<(PathBuf, u64)> = async {
+            let dir = self.checkpoint_dir.join(&metadata.session_id);
+            fs::create_dir_all(&dir).await?;
+            let path = dir.join(format!("step_{:09}.tar", metadata.step));
+            let part = dir.join(format!("step_{:09}.tar.part", metadata.step));
+
+            let mut file = fs::File::create(&part).await?;
+            let mut bytes: u64 = 0;
+            while let Some(request) = stream.message().await? {
+                match request.payload {
+                    Some(checkpoint_request::Payload::Chunk(chunk)) => {
+                        bytes += chunk.len() as u64;
+                        file.write_all(&chunk).await?;
+                    }
+                    _ => anyhow::bail!("expected checkpoint chunks after the metadata"),
+                }
+            }
+            file.sync_all().await?;
+            fs::rename(&part, &path).await?;
+            Ok((path, bytes))
+        }
+        .await;
+
+        match result {
+            Ok((path, bytes)) => {
+                info!(
+                    session = %metadata.session_id,
+                    step = metadata.step,
+                    bytes,
+                    path = %path.display(),
+                    "checkpoint stored"
+                );
+                Ok(Response::new(CheckpointResponse {}))
+            }
+            Err(err) => {
+                error!(error = format!("{err:#}"), "storing checkpoint failed");
+                Err(Status::internal(format!("{err:#}")))
+            }
+        }
+    }
+
     async fn end(&self, request: Request<EndRequest>) -> Result<Response<EndResponse>, Status> {
         let request = request.into_inner();
         info!(session = %request.session_id, "ending session");
@@ -269,6 +345,7 @@ pub async fn serve(
     bucket: &'static str,
     cache_dir: &'static Path,
     assets_dir: &'static Path,
+    checkpoint_dir: &'static Path,
     synthetic: bool,
     data_config: &'static DataConfig,
     train_config: &'static str,
@@ -286,6 +363,7 @@ pub async fn serve(
                 bucket,
                 cache_dir,
                 assets_dir,
+                checkpoint_dir,
                 synthetic,
                 data_config,
                 train_config,

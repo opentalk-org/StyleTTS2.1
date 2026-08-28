@@ -2,6 +2,7 @@ import os
 import queue
 import shutil
 import tarfile
+import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from . import givemedata_pb2 as pb
 from . import givemedata_pb2_grpc as pb_grpc
 
 DEFAULT_ADDR = "localhost:8181"
+CHECKPOINT_CHUNK_BYTES = 2 * 1024 * 1024
 
 
 class GiveMeDataClient:
@@ -63,6 +65,31 @@ class GiveMeDataClient:
             part.rename(asset_dir / name)
         marker.touch()
         return asset_dir
+
+    def upload_checkpoint(self, step: int, source_dir: Path) -> None:
+        """Stream a checkpoint directory to the service as a tar (the same
+        shape assets have, so it can come back as a base checkpoint later)."""
+        # tar to a file, not memory: checkpoints are GBs
+        with tempfile.NamedTemporaryFile(
+            dir=source_dir.parent, suffix=".tar", delete=False
+        ) as tmp:
+            tar_path = Path(tmp.name)
+        try:
+            with tarfile.open(tar_path, "w") as tar:
+                for entry in sorted(source_dir.iterdir()):
+                    tar.add(entry, arcname=entry.name)
+
+            def requests() -> Iterator[pb.CheckpointRequest]:
+                yield pb.CheckpointRequest(
+                    metadata=pb.CheckpointMetadata(session_id=self.session_id, step=step)
+                )
+                with open(tar_path, "rb") as f:
+                    while chunk := f.read(CHECKPOINT_CHUNK_BYTES):
+                        yield pb.CheckpointRequest(chunk=chunk)
+
+            self._stub.Checkpoint(requests())
+        finally:
+            tar_path.unlink(missing_ok=True)
 
     def close(self) -> None:
         self._stub.End(pb.EndRequest(session_id=self.session_id))

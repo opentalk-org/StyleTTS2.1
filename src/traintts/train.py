@@ -67,19 +67,19 @@ def train(
         accelerator.num_processes,
         runtime.initial_step,
     )
+    # one session serves the whole run: the service drives the batch schedule
+    # (sequence of sequences), the loop just asks for data
+    if data_client is None:
+        data_client = gmd.GiveMeDataClient()
     trainer = Trainer(config, runtime)
     validator = Validator(config, runtime)
-    checkpoints = CheckpointPublisher(config, runtime)
+    checkpoints = CheckpointPublisher(config, runtime, data_client=data_client)
     timing = TrainingTelemetry.start(config.total_steps, trainer.step)
     logged_total_loss = 0.0
     logged_steps = 0
     validation_loss = None
     active_stage = None
 
-    # one session serves the whole run: the service drives the batch schedule
-    # (sequence of sequences), the loop just asks for data
-    if data_client is None:
-        data_client = gmd.GiveMeDataClient()
     modality_id = config.PLBERT_config.get("modality_id", 0)
     train_batches = gmd.dataloader(
         data_client,
