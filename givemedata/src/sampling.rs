@@ -89,6 +89,16 @@ pub trait Sampler: Send {
     fn next_batch(&mut self) -> anyhow::Result<Option<Vec<Sample>>>;
 }
 
+pub trait InfiniteSampler: Send {
+    fn sample_batch(&mut self) -> anyhow::Result<Vec<Sample>>;
+}
+
+impl<T: InfiniteSampler> Sampler for T {
+    fn next_batch(&mut self) -> anyhow::Result<Option<Vec<Sample>>> {
+        self.sample_batch().map(Some)
+    }
+}
+
 #[derive(Clone)]
 pub struct DurationBin {
     pub lower_bound: f64,
@@ -201,8 +211,8 @@ impl HistogramSampler {
 }
 
 /// Loops its sample set forever; never exhausts.
-impl Sampler for HistogramSampler {
-    fn next_batch(&mut self) -> anyhow::Result<Option<Vec<Sample>>> {
+impl InfiniteSampler for HistogramSampler {
+    fn sample_batch(&mut self) -> anyhow::Result<Vec<Sample>> {
         if self.bins.iter().all(|b| b.samples.is_empty()) {
             self.loops += 1;
             tracing::info!(loops = self.loops, "bins drained, looping with a new seed");
@@ -238,7 +248,7 @@ impl Sampler for HistogramSampler {
             remaining -= random_sample.1;
         }
 
-        Ok(Some(batch))
+        Ok(batch)
     }
 }
 
@@ -281,35 +291,26 @@ impl ScheduledSampler {
 impl Sampler for ScheduledSampler {
     fn next_batch(&mut self) -> anyhow::Result<Option<Vec<Sample>>> {
         loop {
-            let needs_advance = matches!(&self.current, None | Some((_, 0)));
-            if needs_advance {
-                self.current = match self.schedule.next() {
-                    Some(sequence) => {
-                        tracing::info!(
-                            batches = sequence.batches,
-                            max_seconds = sequence.max_seconds,
-                            "starting batch sequence"
-                        );
-                        Some((
-                            HistogramSampler::new(
-                                self.template.clone(),
-                                sequence.max_seconds,
-                                self.seed,
-                            ),
-                            sequence.batches,
-                        ))
-                    }
-                    None => return Ok(None),
-                };
-                continue;
+            if let Some((sampler, remaining)) = self.current.as_mut()
+                && *remaining > 0
+            {
+                let batch = sampler.sample_batch()?;
+                *remaining -= 1;
+                return Ok(Some(batch));
             }
 
-            let (sampler, remaining) = self.current.as_mut().expect("current sequence set");
-            let batch = sampler
-                .next_batch()?
-                .expect("histogram sampler never exhausts");
-            *remaining -= 1;
-            return Ok(Some(batch));
+            let Some(sequence) = self.schedule.next() else {
+                return Ok(None);
+            };
+            tracing::info!(
+                batches = sequence.batches,
+                max_seconds = sequence.max_seconds,
+                "starting batch sequence"
+            );
+            self.current = Some((
+                HistogramSampler::new(self.template.clone(), sequence.max_seconds, self.seed),
+                sequence.batches,
+            ));
         }
     }
 }
