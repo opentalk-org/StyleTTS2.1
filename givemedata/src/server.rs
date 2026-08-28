@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::loader::{Loader, S3Loader, SyntheticLoader};
 use crate::server::givemedata::{
     AssetRequest, AssetResponse, CheckpointRequest, CheckpointResponse, EndRequest, EndResponse,
-    InitRequest, InitResponse, checkpoint_request,
+    InitRequest, InitResponse, asset_response, checkpoint_request,
 };
 use crate::session::{DataConfig, Session, SessionHandle};
 use anyhow::Context;
@@ -152,7 +152,7 @@ impl GiveMeDataService for GiveMeData {
             self.data_config
                 .assets
                 .iter()
-                .map(|(name, key)| self.ensure_asset(name, key)),
+                .map(|(name, asset)| self.ensure_asset(name, &asset.object)),
         )
         .await
         .map_err(|err| {
@@ -219,7 +219,7 @@ impl GiveMeDataService for GiveMeData {
         if !self.sessions.read().await.contains_key(&request.session_id) {
             return Err(Status::not_found("unknown session"));
         }
-        let key = self
+        let asset = self
             .data_config
             .assets
             .get(&request.name)
@@ -228,12 +228,21 @@ impl GiveMeDataService for GiveMeData {
 
         // streamed straight from the assets dir, never through the session actor:
         // a large transfer must not block batch serving
-        let path = self.ensure_asset(&request.name, key).await.map_err(|err| {
-            error!(error = format!("{err:#}"), asset = %request.name, "asset fetch failed");
-            Status::internal(format!("{err:#}"))
-        })?;
+        let path = self
+            .ensure_asset(&request.name, &asset.object)
+            .await
+            .map_err(|err| {
+                error!(error = format!("{err:#}"), asset = %request.name, "asset fetch failed");
+                Status::internal(format!("{err:#}"))
+            })?;
+        let entrypoint = asset.entrypoint.clone();
 
         let stream = async_stream::stream! {
+            yield Ok(AssetResponse {
+                payload: Some(asset_response::Payload::Metadata(givemedata::AssetMetadata {
+                    entrypoint,
+                })),
+            });
             let mut file = match fs::File::open(&path).await {
                 Ok(file) => file,
                 Err(err) => {
@@ -245,7 +254,9 @@ impl GiveMeDataService for GiveMeData {
                 let mut buf = BytesMut::with_capacity(ASSET_CHUNK_BYTES);
                 match file.read_buf(&mut buf).await {
                     Ok(0) => break,
-                    Ok(_) => yield Ok(AssetResponse { chunk: buf.freeze() }),
+                    Ok(_) => yield Ok(AssetResponse {
+                        payload: Some(asset_response::Payload::Chunk(buf.freeze())),
+                    }),
                     Err(err) => {
                         yield Err(Status::internal(format!("{err:#}")));
                         break;

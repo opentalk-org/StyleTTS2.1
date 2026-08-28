@@ -2,8 +2,8 @@
 
 Replicates what the training workflow's node graph used to assemble, without
 the runner/backend/DB machinery. Data comes from the givemedata service
-(GIVEMEDATA_ADDR, default localhost:8181); assets and the base checkpoint are
-plain local paths; checkpoints land under <output_dir>/run/published_checkpoints;
+(GIVEMEDATA_ADDR, default localhost:8181); named assets are downloaded through
+the same service; checkpoints land under <output_dir>/run/published_checkpoints;
 metrics and artifacts go to <output_dir>/run/metrics.jsonl and artifacts/
 (the MLflow integration is commented out for now).
 
@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from givemedata_client.client import GiveMeDataClient, asset_file
+from givemedata_client.client import GiveMeDataClient
 from pydantic import BaseModel, ConfigDict, Field
 
 from .build_config import ASR_YAML, PLBERT_YAML, build_config, load_yaml, write_config
@@ -189,7 +189,7 @@ def _resolve_assets(spec: RunSpec, client: GiveMeDataClient) -> None:
     for field in ("asr_model", "f0_model", "plbert"):
         name = getattr(spec, field)
         if name:
-            path = asset_file(client.download_asset(name, assets_dir))
+            path = client.download_asset(name, assets_dir)
             logger.info("asset %s (%s) -> %s", field, name, path)
             setattr(spec, field, str(path))
     if spec.base_checkpoint:

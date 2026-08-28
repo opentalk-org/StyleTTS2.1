@@ -44,8 +44,16 @@ message AssetRequest {
   string name = 2;
 }
 
+message AssetMetadata {
+  optional string entrypoint = 1;
+}
+
 message AssetResponse {
-  bytes chunk = 1;
+  oneof payload {
+    // must be the first message of the stream
+    AssetMetadata metadata = 1;
+    bytes chunk = 2;
+  }
 }
 
 message CheckpointMetadata {

@@ -61,11 +61,19 @@ class AssetRequest(_message.Message):
     name: str
     def __init__(self, session_id: _Optional[str] = ..., name: _Optional[str] = ...) -> None: ...
 
+class AssetMetadata(_message.Message):
+    __slots__ = ("entrypoint",)
+    ENTRYPOINT_FIELD_NUMBER: _ClassVar[int]
+    entrypoint: str
+    def __init__(self, entrypoint: _Optional[str] = ...) -> None: ...
+
 class AssetResponse(_message.Message):
-    __slots__ = ("chunk",)
+    __slots__ = ("metadata", "chunk")
+    METADATA_FIELD_NUMBER: _ClassVar[int]
     CHUNK_FIELD_NUMBER: _ClassVar[int]
+    metadata: AssetMetadata
     chunk: bytes
-    def __init__(self, chunk: _Optional[bytes] = ...) -> None: ...
+    def __init__(self, metadata: _Optional[_Union[AssetMetadata, _Mapping]] = ..., chunk: _Optional[bytes] = ...) -> None: ...
 
 class CheckpointMetadata(_message.Message):
     __slots__ = ("session_id", "step")

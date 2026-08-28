@@ -40,19 +40,28 @@ class GiveMeDataClient:
             yield response
 
     def download_asset(self, name: str, dest_dir: Path) -> Path:
-        """Fetch one named asset into <dest_dir>/<name>/, skipping the download
-        when a previous run already completed it (the .done marker)."""
+        """Fetch one named asset and return its configured entrypoint or directory."""
         asset_dir = dest_dir / name
         marker = dest_dir / f"{name}.done"
         if marker.exists():
-            return asset_dir
+            return _resolved_asset_path(asset_dir, marker.read_text().strip())
 
         dest_dir.mkdir(parents=True, exist_ok=True)
         part = dest_dir / f"{name}.part"
+        responses = iter(
+            self._stub.Asset(pb.AssetRequest(session_id=self.session_id, name=name))
+        )
+        first = next(responses)
+        if first.WhichOneof("payload") != "metadata":
+            raise ValueError(f"asset {name!r} stream did not start with metadata")
+        metadata = first.metadata
+        entrypoint = (
+            metadata.entrypoint if metadata.HasField("entrypoint") else None
+        )
         with open(part, "wb") as f:
-            for response in self._stub.Asset(
-                pb.AssetRequest(session_id=self.session_id, name=name)
-            ):
+            for response in responses:
+                if response.WhichOneof("payload") != "chunk":
+                    raise ValueError(f"asset {name!r} stream contained repeated metadata")
                 f.write(response.chunk)
 
         shutil.rmtree(asset_dir, ignore_errors=True)
@@ -63,8 +72,14 @@ class GiveMeDataClient:
             part.unlink()
         else:
             part.rename(asset_dir / name)
-        marker.touch()
-        return asset_dir
+        relative_path = entrypoint or "."
+        resolved = _resolved_asset_path(asset_dir, relative_path)
+        if not resolved.exists():
+            raise FileNotFoundError(
+                f"asset {name!r} entrypoint {relative_path!r} does not exist"
+            )
+        marker.write_text(relative_path)
+        return resolved
 
     def upload_checkpoint(self, step: int, source_dir: Path) -> None:
         """Stream a checkpoint directory to the service as a tar (the same
@@ -96,9 +111,7 @@ class GiveMeDataClient:
         self._channel.close()
 
 
-def asset_file(asset_dir: Path) -> Path:
-    """The single file inside an extracted asset; errors if there isn't exactly one."""
-    files = [p for p in asset_dir.rglob("*") if p.is_file()]
-    if len(files) != 1:
-        raise ValueError(f"expected exactly one file in {asset_dir}, found {len(files)}")
-    return files[0]
+def _resolved_asset_path(asset_dir: Path, relative_path: str) -> Path:
+    if not relative_path:
+        raise ValueError(f"asset marker {asset_dir}.done is empty")
+    return asset_dir if relative_path == "." else asset_dir / relative_path
