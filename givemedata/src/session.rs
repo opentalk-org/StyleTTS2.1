@@ -199,7 +199,7 @@ impl Session {
         })
     }
 
-    pub async fn next_batch(&mut self, validation: bool) -> anyhow::Result<LoadedBatch> {
+    pub async fn next_batch(&mut self, validation: bool) -> anyhow::Result<Option<LoadedBatch>> {
         let batches = if validation {
             &mut self.validation_batches
         } else {
@@ -208,8 +208,8 @@ impl Session {
         match batches {
             Batches::Prefetched(prefetcher) => prefetcher.next_batch().await,
             Batches::OnDemand(stream) => match stream.next().await {
-                Some(batch) => batch,
-                None => bail!("batch stream ended"),
+                Some(batch) => batch.map(Some),
+                None => Ok(None),
             },
         }
     }
@@ -228,7 +228,7 @@ impl Session {
 enum Command {
     NextBatch {
         validation: bool,
-        reply: oneshot::Sender<anyhow::Result<LoadedBatch>>,
+        reply: oneshot::Sender<anyhow::Result<Option<LoadedBatch>>>,
     },
     Finish {
         reply: oneshot::Sender<()>,
@@ -249,7 +249,7 @@ impl SessionHandle {
         Self { id, tx }
     }
 
-    pub async fn next_batch(&self, validation: bool) -> anyhow::Result<LoadedBatch> {
+    pub async fn next_batch(&self, validation: bool) -> anyhow::Result<Option<LoadedBatch>> {
         let (reply, response) = oneshot::channel();
         if self
             .tx

@@ -126,7 +126,14 @@ async fn data_handler(
             .cloned()
             .context("unknown session")?;
 
-        let loaded_batch = session.next_batch(req.split() == Split::Validation).await?;
+        let Some(loaded_batch) = session.next_batch(req.split() == Split::Validation).await? else {
+            debug!(
+                session = %req.session_id,
+                split = ?req.split(),
+                "data stream exhausted"
+            );
+            return Ok(());
+        };
         let batch = loaded_batch
             .into_iter()
             .map(|sample| givemedata::Sample {

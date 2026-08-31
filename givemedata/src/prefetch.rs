@@ -3,7 +3,6 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::bail;
 use bytes::Bytes;
 use tokio::{fs, sync::mpsc};
 use tokio_util::sync::CancellationToken;
@@ -66,11 +65,12 @@ impl Prefetcher {
             async move {
                 loop {
                     let permit = tokio::select! {
+                        biased;
+                        () = cancel_token.cancelled() => break,
                         permit = tx.reserve() => match permit {
                             Ok(permit) => permit,
                             Err(_) => break,
                         },
-                        () = cancel_token.cancelled() => break,
                     };
 
                     let loaded = match sampler.next_batch() {
@@ -101,10 +101,12 @@ impl Prefetcher {
         Self { rx, cancel_token }
     }
 
-    pub async fn next_batch(&mut self) -> anyhow::Result<LoadedBatch> {
+    pub async fn next_batch(&mut self) -> anyhow::Result<Option<LoadedBatch>> {
         match self.rx.recv().await {
-            Some(batch) => futures::future::try_join_all(batch?.into_iter().map(read_sample)).await,
-            None => bail!("batch stream ended"),
+            Some(batch) => futures::future::try_join_all(batch?.into_iter().map(read_sample))
+                .await
+                .map(Some),
+            None => Ok(None),
         }
     }
 

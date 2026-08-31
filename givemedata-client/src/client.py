@@ -3,6 +3,7 @@ import queue
 import shutil
 import tarfile
 import tempfile
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -26,18 +27,26 @@ class GiveMeDataClient:
         self.train_config: str = response.train_config
 
     def batches(self, split: int, prefetch: int = 4) -> Iterator[pb.DataResponse]:
-        requests: queue.SimpleQueue[pb.DataRequest] = queue.SimpleQueue()
+        requests: queue.SimpleQueue[pb.DataRequest | None] = queue.SimpleQueue()
+        stopped = threading.Event()
         request = pb.DataRequest(session_id=self.session_id, split=split)
         for _ in range(prefetch):
             requests.put(request)
 
         def request_iterator() -> Iterator[pb.DataRequest]:
-            while True:
-                yield requests.get()
+            while not stopped.is_set():
+                queued = requests.get()
+                if queued is None:
+                    return
+                yield queued
 
-        for response in self._stub.Data(request_iterator()):
-            requests.put(request)
-            yield response
+        try:
+            for response in self._stub.Data(request_iterator()):
+                requests.put(request)
+                yield response
+        finally:
+            stopped.set()
+            requests.put(None)
 
     def download_asset(self, name: str, dest_dir: Path) -> Path:
         """Fetch one named asset and return its configured entrypoint or directory."""

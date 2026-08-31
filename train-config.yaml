@@ -1,33 +1,27 @@
-# Translated from the UI training-tab workflow graph:
-# scratch training (no base checkpoint), default IPA alphabet, default-shaped
-# 5-stage curriculum but with steps: 1 per stage (smoke-test schedule).
-# The graph's ood_text_set file is not listed: the finetune loop never used it.
-
 dataset_id: "f0943606-6e06-400e-8bc4-7ab3ea8dbe04"
-output_dir: runs/styletts-scratch
-run_name: styletts_finetune
+output_dir: runs/styletts-smoke
+run_name: styletts_smoke
 
-# asset names resolved through the givemedata Asset RPC (see data-config.yaml assets)
-base_checkpoint: null   # SelectCheckpoint was __scratch__
+base_checkpoint: null
 asr_model: asr
 f0_model: f0
 plbert: plbert
 
 seed: 1
-validation_samples: 32
+validation_samples: 1
 learning_rate: 1.0e-4
 precision: fp32
-device: mps
+device: cuda
 validation_every_steps: 500
 checkpoint_every_steps: 2000
-log_every_steps: 10
+log_every_steps: 1
 load_optimizer: false
 reset_training_step: false
 decoder: hifigan
 multispeaker: true
 checkpoint_decoder_gradients: true
 checkpoint_discriminator_gradients: false
-symbols: null           # preset "ipa" resolves to the default StyleTTS alphabet
+symbols: null
 
 training_stages:
   - name: "StyleTTS2 train_first.py · mel pretraining"

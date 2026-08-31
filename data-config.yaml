@@ -21,7 +21,7 @@ assets:
     entrypoint: step_1000000.t7
 
 validation:
-  samples: 32
+  samples: 1
   max_seconds: 65         # fixed batch budget for the whole run
 
 # sequence of sequences of batches; batch counts mirror the training stages'
