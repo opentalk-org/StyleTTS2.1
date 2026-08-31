@@ -5,9 +5,11 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::loader::{Loader, S3Loader, SyntheticLoader};
+use crate::metrics;
 use crate::server::givemedata::{
     AssetRequest, AssetResponse, CheckpointRequest, CheckpointResponse, EndRequest, EndResponse,
-    InitRequest, InitResponse, asset_response, checkpoint_request,
+    InitRequest, InitResponse, MetricsRequest, MetricsResponse, asset_response, checkpoint_request,
+    metrics_request,
 };
 use crate::session::{DataConfig, Session, SessionHandle};
 use anyhow::Context;
@@ -41,6 +43,7 @@ struct GiveMeData {
     cache_dir: &'static Path,
     assets_dir: &'static Path,
     checkpoint_dir: &'static Path,
+    metrics_dir: &'static Path,
     synthetic: bool,
     data_config: &'static DataConfig,
     train_config: &'static str,
@@ -55,6 +58,7 @@ impl GiveMeData {
         cache_dir: &'static Path,
         assets_dir: &'static Path,
         checkpoint_dir: &'static Path,
+        metrics_dir: &'static Path,
         synthetic: bool,
         data_config: &'static DataConfig,
         train_config: &'static str,
@@ -72,6 +76,7 @@ impl GiveMeData {
             cache_dir,
             assets_dir,
             checkpoint_dir,
+            metrics_dir,
             synthetic,
             data_config,
             train_config,
@@ -338,6 +343,51 @@ impl GiveMeDataService for GiveMeData {
         }
     }
 
+    async fn metrics(
+        &self,
+        request: Request<Streaming<MetricsRequest>>,
+    ) -> Result<Response<MetricsResponse>, Status> {
+        let mut stream = request.into_inner();
+        let metadata = match stream.message().await?.and_then(|request| request.payload) {
+            Some(metrics_request::Payload::Metadata(metadata)) => metadata,
+            _ => {
+                return Err(Status::invalid_argument(
+                    "first metrics message must be stream metadata",
+                ));
+            }
+        };
+        if !self
+            .sessions
+            .read()
+            .await
+            .contains_key(&metadata.session_id)
+        {
+            return Err(Status::not_found("unknown session"));
+        }
+        info!(session = %metadata.session_id, "receiving metrics");
+
+        match metrics::receive(self.metrics_dir, &metadata.session_id, stream).await {
+            Ok(response) => {
+                info!(
+                    session = %metadata.session_id,
+                    metrics = response.metrics_received,
+                    artifacts = response.artifacts_received,
+                    artifact_bytes = response.artifact_bytes_received,
+                    "metrics stored"
+                );
+                Ok(Response::new(response))
+            }
+            Err(status) => {
+                error!(
+                    session = %metadata.session_id,
+                    error = %status,
+                    "storing metrics failed"
+                );
+                Err(status)
+            }
+        }
+    }
+
     async fn end(&self, request: Request<EndRequest>) -> Result<Response<EndResponse>, Status> {
         let request = request.into_inner();
         info!(session = %request.session_id, "ending session");
@@ -360,6 +410,7 @@ pub async fn serve(
     cache_dir: &'static Path,
     assets_dir: &'static Path,
     checkpoint_dir: &'static Path,
+    metrics_dir: &'static Path,
     synthetic: bool,
     data_config: &'static DataConfig,
     train_config: &'static str,
@@ -378,6 +429,7 @@ pub async fn serve(
                 cache_dir,
                 assets_dir,
                 checkpoint_dir,
+                metrics_dir,
                 synthetic,
                 data_config,
                 train_config,

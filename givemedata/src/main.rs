@@ -19,6 +19,7 @@ use crate::server::serve;
 mod audio;
 mod db;
 mod loader;
+mod metrics;
 mod prefetch;
 mod sampling;
 mod server;
@@ -93,6 +94,12 @@ struct Args {
     checkpoint_dir: PathBuf,
     #[arg(
         long,
+        env = "METRICS_DIR",
+        help = "Directory storing streamed metrics and artifacts."
+    )]
+    metrics_dir: PathBuf,
+    #[arg(
+        long,
         env = "DATA_CONFIG",
         help = "YAML with everything sessions need for sampling and fetching data."
     )]
@@ -119,9 +126,10 @@ async fn main() -> anyhow::Result<()> {
 
     let matches = Args::command().get_matches();
     if let Some(("completions", completion_matches)) = matches.subcommand() {
-        let shell = *completion_matches
+        let shell = completion_matches
             .get_one::<Shell>("shell")
-            .expect("shell is required by clap");
+            .copied()
+            .context("shell is required by clap")?;
         generate(shell, &mut Args::command(), "givemedata", &mut io::stdout());
         return Ok(());
     }
@@ -151,6 +159,7 @@ async fn main() -> anyhow::Result<()> {
     fs::create_dir_all(&args.cache_dir).await?;
     fs::create_dir_all(&args.assets_dir).await?;
     fs::create_dir_all(&args.checkpoint_dir).await?;
+    fs::create_dir_all(&args.metrics_dir).await?;
 
     let data_config: session::DataConfig = serde_yaml::from_str(
         &fs::read_to_string(&args.data_config)
@@ -170,6 +179,7 @@ async fn main() -> anyhow::Result<()> {
         Box::leak(args.cache_dir.into_boxed_path()),
         Box::leak(args.assets_dir.into_boxed_path()),
         Box::leak(args.checkpoint_dir.into_boxed_path()),
+        Box::leak(args.metrics_dir.into_boxed_path()),
         args.synthetic,
         Box::leak(Box::new(data_config)),
         train_config.leak(),

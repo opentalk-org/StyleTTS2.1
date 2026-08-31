@@ -27,7 +27,7 @@ def train(
     config_path: str,
     *,
     run: TrackerRun | None,
-    data_client: gmd.GiveMeDataClient | None = None,
+    data_client: gmd.GiveMeDataClient,
 ) -> None:
     config = load_training_config(config_path)
     logger.info(
@@ -50,7 +50,7 @@ def train(
     accelerator = build_accelerator(config)
     owns_run = run is None and accelerator.is_main_process
     if owns_run:
-        run = start_run(config)
+        run = start_run(config, data_client)
     telemetry = (
         MlflowLogger(run, config.total_steps)
         if accelerator.is_main_process and run is not None
@@ -69,8 +69,6 @@ def train(
     )
     # one session serves the whole run: the service drives the batch schedule
     # (sequence of sequences), the loop just asks for data
-    if data_client is None:
-        data_client = gmd.GiveMeDataClient()
     trainer = Trainer(config, runtime)
     validator = Validator(config, runtime)
     checkpoints = CheckpointPublisher(config, runtime, data_client=data_client)
@@ -141,7 +139,7 @@ def train(
                 trace_path = log_dir / "training_step_000000021_trace.json"
                 torch_profile.export_chrome_trace(str(trace_path))
                 if run is not None:
-                    run.log_artifact(trace_path, "profiling")
+                    run.log_artifact(trace_path, "profiling", step=trainer.step + 1)
             else:
                 with profiling_fn("train_step"):
                     step_metrics = trainer.train_step(batch)
@@ -255,7 +253,6 @@ def train(
         config.total_steps,
         time.monotonic() - timing.started_at,
     )
-    data_client.close()
     if owns_run:
         assert run is not None
         run.close()

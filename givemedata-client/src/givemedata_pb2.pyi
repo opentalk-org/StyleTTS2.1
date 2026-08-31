@@ -95,6 +95,66 @@ class CheckpointResponse(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
+class MetricsStreamMetadata(_message.Message):
+    __slots__ = ("session_id",)
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    session_id: str
+    def __init__(self, session_id: _Optional[str] = ...) -> None: ...
+
+class ScalarMetric(_message.Message):
+    __slots__ = ("step", "timestamp_unix_ms", "name", "value")
+    STEP_FIELD_NUMBER: _ClassVar[int]
+    TIMESTAMP_UNIX_MS_FIELD_NUMBER: _ClassVar[int]
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    VALUE_FIELD_NUMBER: _ClassVar[int]
+    step: int
+    timestamp_unix_ms: int
+    name: str
+    value: float
+    def __init__(self, step: _Optional[int] = ..., timestamp_unix_ms: _Optional[int] = ..., name: _Optional[str] = ..., value: _Optional[float] = ...) -> None: ...
+
+class ArtifactMetric(_message.Message):
+    __slots__ = ("step", "timestamp_unix_ms", "name", "content_type", "size_bytes")
+    STEP_FIELD_NUMBER: _ClassVar[int]
+    TIMESTAMP_UNIX_MS_FIELD_NUMBER: _ClassVar[int]
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    CONTENT_TYPE_FIELD_NUMBER: _ClassVar[int]
+    SIZE_BYTES_FIELD_NUMBER: _ClassVar[int]
+    step: int
+    timestamp_unix_ms: int
+    name: str
+    content_type: str
+    size_bytes: int
+    def __init__(self, step: _Optional[int] = ..., timestamp_unix_ms: _Optional[int] = ..., name: _Optional[str] = ..., content_type: _Optional[str] = ..., size_bytes: _Optional[int] = ...) -> None: ...
+
+class ArtifactChunk(_message.Message):
+    __slots__ = ("data",)
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    data: bytes
+    def __init__(self, data: _Optional[bytes] = ...) -> None: ...
+
+class MetricsRequest(_message.Message):
+    __slots__ = ("metadata", "metric", "artifact", "artifact_chunk")
+    METADATA_FIELD_NUMBER: _ClassVar[int]
+    METRIC_FIELD_NUMBER: _ClassVar[int]
+    ARTIFACT_FIELD_NUMBER: _ClassVar[int]
+    ARTIFACT_CHUNK_FIELD_NUMBER: _ClassVar[int]
+    metadata: MetricsStreamMetadata
+    metric: ScalarMetric
+    artifact: ArtifactMetric
+    artifact_chunk: ArtifactChunk
+    def __init__(self, metadata: _Optional[_Union[MetricsStreamMetadata, _Mapping]] = ..., metric: _Optional[_Union[ScalarMetric, _Mapping]] = ..., artifact: _Optional[_Union[ArtifactMetric, _Mapping]] = ..., artifact_chunk: _Optional[_Union[ArtifactChunk, _Mapping]] = ...) -> None: ...
+
+class MetricsResponse(_message.Message):
+    __slots__ = ("metrics_received", "artifacts_received", "artifact_bytes_received")
+    METRICS_RECEIVED_FIELD_NUMBER: _ClassVar[int]
+    ARTIFACTS_RECEIVED_FIELD_NUMBER: _ClassVar[int]
+    ARTIFACT_BYTES_RECEIVED_FIELD_NUMBER: _ClassVar[int]
+    metrics_received: int
+    artifacts_received: int
+    artifact_bytes_received: int
+    def __init__(self, metrics_received: _Optional[int] = ..., artifacts_received: _Optional[int] = ..., artifact_bytes_received: _Optional[int] = ...) -> None: ...
+
 class EndRequest(_message.Message):
     __slots__ = ("session_id",)
     SESSION_ID_FIELD_NUMBER: _ClassVar[int]

@@ -3,9 +3,8 @@
 Replicates what the training workflow's node graph used to assemble, without
 the runner/backend/DB machinery. Data comes from the givemedata service
 (GIVEMEDATA_ADDR, default localhost:8181); named assets are downloaded through
-the same service; checkpoints land under <output_dir>/run/published_checkpoints;
-metrics and artifacts go to <output_dir>/run/metrics.jsonl and artifacts/
-(the MLflow integration is commented out for now).
+the same service; checkpoints, metrics, and metric artifacts are streamed back
+to givemedata (the MLflow integration is commented out for now).
 
 The run spec (RunSpec yaml) is not a local file anymore: it is fetched from the
 givemedata service, which passes its --train-config file through verbatim.
@@ -33,8 +32,10 @@ from .build_config import ASR_YAML, PLBERT_YAML, build_config, load_yaml, write_
 from .config import TrainingConfig
 from .default_stages import build_default_training_stages
 from .layout import architecture_yaml, latest_weight
+from .mlflow_logging import start_run
 from .stages import TrainingStageSpec
 from .symbols import DEFAULT_STYLETTS_SYMBOLS
+from .train import train
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +210,13 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
     data_client = GiveMeDataClient()
+    try:
+        _run(arguments, data_client)
+    finally:
+        data_client.close()
+
+
+def _run(arguments: argparse.Namespace, data_client: GiveMeDataClient) -> None:
     logger.info("fetched train config from givemedata session=%s", data_client.session_id)
     spec = RunSpec.model_validate(yaml.safe_load(data_client.train_config))
     if not arguments.dry_run:
@@ -219,7 +227,6 @@ def main(argv: list[str] | None = None) -> None:
 
     if arguments.dry_run:
         print(yaml.safe_dump(config, sort_keys=False, allow_unicode=True))
-        data_client.close()
         return
 
     output_dir = Path(spec.output_dir)
@@ -228,11 +235,7 @@ def main(argv: list[str] | None = None) -> None:
     Path(training_config.log_dir).mkdir(parents=True, exist_ok=True)
     logger.info("run %r starting, resolved config written to %s", spec.run_name, config_path)
 
-    # deferred: these pull in torch and the whole model stack
-    from .mlflow_logging import start_run
-    from .train import train
-
-    run = start_run(training_config)
+    run = start_run(training_config, data_client)
     try:
         train(str(config_path), run=run, data_client=data_client)
     finally:

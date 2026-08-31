@@ -11,6 +11,7 @@ import grpc
 
 from . import givemedata_pb2 as pb
 from . import givemedata_pb2_grpc as pb_grpc
+from .metrics import MetricsStream
 
 DEFAULT_ADDR = "localhost:8181"
 CHECKPOINT_CHUNK_BYTES = 2 * 1024 * 1024
@@ -25,6 +26,8 @@ class GiveMeDataClient:
         self.session_id: str = response.session_id
         # verbatim yaml the service passes through, untouched, for the training loop
         self.train_config: str = response.train_config
+        self._metrics: MetricsStream | None = None
+        self._closed = False
 
     def batches(self, split: int, prefetch: int = 4) -> Iterator[pb.DataResponse]:
         requests: queue.SimpleQueue[pb.DataRequest | None] = queue.SimpleQueue()
@@ -115,9 +118,29 @@ class GiveMeDataClient:
         finally:
             tar_path.unlink(missing_ok=True)
 
+    def metrics(self) -> MetricsStream:
+        if self._closed:
+            raise RuntimeError("givemedata client is closed")
+        if self._metrics is None:
+            self._metrics = MetricsStream(self._stub, self.session_id)
+        return self._metrics
+
     def close(self) -> None:
-        self._stub.End(pb.EndRequest(session_id=self.session_id))
-        self._channel.close()
+        if self._closed:
+            return
+        self._closed = True
+        metrics_error: BaseException | None = None
+        try:
+            if self._metrics is not None:
+                self._metrics.close()
+        except BaseException as error:
+            metrics_error = error
+        try:
+            self._stub.End(pb.EndRequest(session_id=self.session_id))
+        finally:
+            self._channel.close()
+        if metrics_error is not None:
+            raise metrics_error
 
 
 def _resolved_asset_path(asset_dir: Path, relative_path: str) -> Path:

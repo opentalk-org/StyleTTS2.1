@@ -5,6 +5,7 @@ service GiveMeData {
   rpc Data (stream DataRequest) returns (stream DataResponse);
   rpc Asset (AssetRequest) returns (stream AssetResponse);
   rpc Checkpoint (stream CheckpointRequest) returns (CheckpointResponse);
+  rpc Metrics (stream MetricsRequest) returns (MetricsResponse);
   rpc End (EndRequest) returns (EndResponse);
 }
 
@@ -70,6 +71,45 @@ message CheckpointRequest {
 }
 
 message CheckpointResponse {}
+
+message MetricsStreamMetadata {
+  string session_id = 1;
+}
+
+message ScalarMetric {
+  uint64 step = 1;
+  int64 timestamp_unix_ms = 2;
+  string name = 3;
+  double value = 4;
+}
+
+message ArtifactMetric {
+  uint64 step = 1;
+  int64 timestamp_unix_ms = 2;
+  string name = 3;
+  string content_type = 4;
+  uint64 size_bytes = 5;
+}
+
+message ArtifactChunk {
+  bytes data = 1;
+}
+
+message MetricsRequest {
+  oneof payload {
+    // Must be the first message of the stream and appear exactly once.
+    MetricsStreamMetadata metadata = 1;
+    ScalarMetric metric = 2;
+    ArtifactMetric artifact = 3;
+    ArtifactChunk artifact_chunk = 4;
+  }
+}
+
+message MetricsResponse {
+  uint64 metrics_received = 1;
+  uint64 artifacts_received = 2;
+  uint64 artifact_bytes_received = 3;
+}
 
 message EndRequest {
   string session_id = 1;

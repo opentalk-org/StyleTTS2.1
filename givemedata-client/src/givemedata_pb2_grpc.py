@@ -54,6 +54,11 @@ class GiveMeDataStub(object):
                 request_serializer=givemedata__pb2.CheckpointRequest.SerializeToString,
                 response_deserializer=givemedata__pb2.CheckpointResponse.FromString,
                 _registered_method=True)
+        self.Metrics = channel.stream_unary(
+                '/GiveMeData/Metrics',
+                request_serializer=givemedata__pb2.MetricsRequest.SerializeToString,
+                response_deserializer=givemedata__pb2.MetricsResponse.FromString,
+                _registered_method=True)
         self.End = channel.unary_unary(
                 '/GiveMeData/End',
                 request_serializer=givemedata__pb2.EndRequest.SerializeToString,
@@ -88,6 +93,12 @@ class GiveMeDataServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def Metrics(self, request_iterator, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def End(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -116,6 +127,11 @@ def add_GiveMeDataServicer_to_server(servicer, server):
                     servicer.Checkpoint,
                     request_deserializer=givemedata__pb2.CheckpointRequest.FromString,
                     response_serializer=givemedata__pb2.CheckpointResponse.SerializeToString,
+            ),
+            'Metrics': grpc.stream_unary_rpc_method_handler(
+                    servicer.Metrics,
+                    request_deserializer=givemedata__pb2.MetricsRequest.FromString,
+                    response_serializer=givemedata__pb2.MetricsResponse.SerializeToString,
             ),
             'End': grpc.unary_unary_rpc_method_handler(
                     servicer.End,
@@ -231,6 +247,33 @@ class GiveMeData(object):
             '/GiveMeData/Checkpoint',
             givemedata__pb2.CheckpointRequest.SerializeToString,
             givemedata__pb2.CheckpointResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Metrics(request_iterator,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.stream_unary(
+            request_iterator,
+            target,
+            '/GiveMeData/Metrics',
+            givemedata__pb2.MetricsRequest.SerializeToString,
+            givemedata__pb2.MetricsResponse.FromString,
             options,
             channel_credentials,
             insecure,

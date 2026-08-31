@@ -3,16 +3,11 @@ import math
 from pathlib import Path
 
 import torch
+from givemedata_client import GiveMeDataClient
 
-from .tracking import (
-    LocalTracker,
-    TrackerRun,
-    # mlflow disabled for now
-    # resume_mlflow_run,
-    # start_mlflow_run,
-)
-from .val_sample_export import ValidationSampleArtifacts
 from .config import TrainingConfig
+from .tracking import GiveMeDataTracker, TrackerRun
+from .val_sample_export import ValidationSampleArtifacts
 
 
 class MlflowLogger:
@@ -65,41 +60,16 @@ class MlflowLogger:
                 self.run.log_artifact(
                     path,
                     artifact_path=artifact_path,
+                    step=step,
                 )
 
 
-def start_run(config: TrainingConfig) -> TrackerRun:
+def start_run(config: TrainingConfig, data_client: GiveMeDataClient) -> TrackerRun:
     logging.getLogger(__name__).info(
-        "logging metrics to %s/metrics.jsonl",
-        config.log_dir,
+        "streaming metrics through givemedata session=%s",
+        data_client.session_id,
     )
-    return LocalTracker(config.log_dir)
-    # mlflow disabled for now
-    # if not os.environ.get("MLFLOW_TRACKING_URI"):
-    #     return LocalTracker(config.log_dir)
-    # publish = config.studio_publish
-    # resume_run_id = str(publish["mlflow_run_id"])
-    # if resume_run_id:
-    #     return resume_mlflow_run(resume_run_id)
-    # name = str(
-    #     publish["run_name"]
-    #     or publish["run_id"]
-    #     or "finetune"
-    # )
-    # return start_mlflow_run(
-    #     experiment="styletts2_finetune",
-    #     name=name,
-    #     config={
-    #         "run_id": publish["run_id"],
-    #         "finetune_job_id": publish["finetune_job_id"],
-    #         "total_steps": config.total_steps,
-    #         "stage_max_audio_seconds": ",".join(
-    #             str(stage.max_audio_seconds) for stage in config.training_stages
-    #         ),
-    #         "precision": config.precision,
-    #         "distributed_processes": config.distributed_processes,
-    #     },
-    # )
+    return GiveMeDataTracker(data_client.metrics())
 
 
 def _scalar(value: torch.Tensor | float) -> float:
