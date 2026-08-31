@@ -122,22 +122,6 @@ class VoiceEncoder(nn.Module):
             kernel_size=3,
             padding=1,
         )
-        self.mel_conformer = Conformer(
-            input_dim=text_dim,
-            num_heads=num_heads,
-            ffn_dim=text_dim * 2,
-            num_layers=3,
-            depthwise_conv_kernel_size=31,
-            use_group_norm=True,
-        )
-        self.token_conformer = Conformer(
-            input_dim=text_dim,
-            num_heads=num_heads,
-            ffn_dim=text_dim * 2,
-            num_layers=1,
-            depthwise_conv_kernel_size=15,
-            use_group_norm=True,
-        )
         self.local_pool = nn.MultiheadAttention(
             embed_dim=text_dim,
             num_heads=num_heads,
@@ -164,10 +148,6 @@ class VoiceEncoder(nn.Module):
         text_return = text.new_zeros(text.size(0), text.size(1), max_size)
         text = text[..., : input_lengths.max()]
         mel = self.mel_proj(mel)
-        mel_lengths = input_lengths.new_full(
-            (mel.size(0),),
-            mel.size(-1),
-        )
         mel_hidden = mel.transpose(-1, -2)
         frame_indices = torch.arange(mel_hidden.size(1), device=mel.device)
         pool_indices = torch.div(
@@ -179,10 +159,6 @@ class VoiceEncoder(nn.Module):
             mel_hidden
             + self.embedder(frame_indices)
             + self.pool_embeddings(pool_indices)
-        )
-        mel_hidden, mel_lengths = self.mel_conformer(
-            mel_hidden,
-            mel_lengths,
         )
         token_indices = torch.arange(self.num_time, device=mel.device)
         queries = self.pool_embeddings(token_indices).unsqueeze(0)
@@ -203,11 +179,6 @@ class VoiceEncoder(nn.Module):
             attn_mask=local_mask,
             need_weights=False,
         )
-        token_lengths = mel_lengths.new_full(
-            (mel_hidden.size(0),),
-            self.num_time,
-        )
-        pooled, _ = self.token_conformer(pooled, token_lengths)
         voice_tokens, text_hidden = self.phoneme_encoder(
             pooled,
             text,
