@@ -4,7 +4,7 @@ use serde::Serialize;
 use tokio::fs::{self, File, OpenOptions};
 use tokio::io::AsyncWriteExt;
 use tonic::{Status, Streaming};
-use tracing::warn;
+use tracing::{debug, trace, warn};
 
 use crate::server::givemedata::{
     ArtifactMetric, MetricsRequest, MetricsResponse, ScalarMetric, metrics_request,
@@ -59,6 +59,14 @@ pub async fn receive(
                 }
                 Some(metrics_request::Payload::Metric(metric)) => {
                     store_metric(&metrics_path, &metric).await?;
+                    trace!(
+                        session = session_id,
+                        step = metric.step,
+                        timestamp_unix_ms = metric.timestamp_unix_ms,
+                        metric = %metric.name,
+                        value = metric.value,
+                        "metric received"
+                    );
                     response.metrics_received += 1;
                 }
                 Some(metrics_request::Payload::Artifact(artifact)) => {
@@ -71,9 +79,27 @@ pub async fn receive(
                         );
                         discard_artifact(previous).await?;
                     }
+                    debug!(
+                        session = session_id,
+                        step = artifact.step,
+                        timestamp_unix_ms = artifact.timestamp_unix_ms,
+                        artifact = %artifact.name,
+                        content_type = %artifact.content_type,
+                        bytes = artifact.size_bytes,
+                        "receiving artifact"
+                    );
                     let artifact = begin_artifact(&artifacts_dir, artifact).await?;
                     if artifact.metadata.size_bytes == 0 {
+                        let name = artifact.metadata.name.clone();
+                        let step = artifact.metadata.step;
                         finish_artifact(artifact, &artifacts_path).await?;
+                        debug!(
+                            session = session_id,
+                            step,
+                            artifact = %name,
+                            bytes = 0,
+                            "artifact received"
+                        );
                         response.artifacts_received += 1;
                     } else {
                         pending = Some(artifact);
@@ -99,7 +125,17 @@ pub async fn receive(
                     artifact.received += chunk_size;
                     response.artifact_bytes_received += chunk_size;
                     if artifact.received == artifact.metadata.size_bytes {
+                        let name = artifact.metadata.name.clone();
+                        let step = artifact.metadata.step;
+                        let bytes = artifact.metadata.size_bytes;
                         finish_artifact(artifact, &artifacts_path).await?;
+                        debug!(
+                            session = session_id,
+                            step,
+                            artifact = %name,
+                            bytes,
+                            "artifact received"
+                        );
                         response.artifacts_received += 1;
                     } else {
                         pending = Some(artifact);
