@@ -4349,6 +4349,16 @@ wheels = [
 ]
 
 [[package]]
+name = "morfeusz2"
+version = "1.99.15"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a3/cf/87a496f0632b2c7d97bfbbf5f38000510d16c9b2e7c5d6ea8ffe11eebe07/morfeusz2-1.99.15-20260601-cp310-abi3-macosx_11_0_universal2.whl", hash = "sha256:8ff0d3f9d2ab814b905afc471bc9b70415b3abb4ffcbf6ed3904735de88dbdac", size = 15772667, upload-time = "2026-06-01T15:30:11.002Z" },
+    { url = "https://files.pythonhosted.org/packages/64/e7/467816dae5a8029d3573083af8e4e95910939c5da0b76e5d73b35a3b5bc0/morfeusz2-1.99.15-20260601-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:089a83ab03a137a57e23d9d42028d80b8858d1a4de78f1db86a18ba504400a98", size = 9210531, upload-time = "2026-06-01T15:30:18.634Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/13/d0d5483a1598ea053ae53ab10b8943dd7979e3b77f0bf484ffe09cf0ea90/morfeusz2-1.99.15-20260601-cp310-abi3-win_amd64.whl", hash = "sha256:1f20fefc457ea674640f87bd8de129b6310bb063ac21a68ea02b0f86bbd9aafe", size = 9688808, upload-time = "2026-06-01T15:30:29.413Z" },
+]
+
+[[package]]
 name = "mpmath"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -5963,6 +5973,14 @@ zh = [
     { name = "torch", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux'" },
     { name = "unicode-rbnf" },
+]
+
+[[package]]
+name = "pl-core-news-sm"
+version = "3.8.0"
+source = { url = "https://github.com/explosion/spacy-models/releases/download/pl_core_news_sm-3.8.0/pl_core_news_sm-3.8.0-py3-none-any.whl" }
+wheels = [
+    { url = "https://github.com/explosion/spacy-models/releases/download/pl_core_news_sm-3.8.0/pl_core_news_sm-3.8.0-py3-none-any.whl", hash = "sha256:9b536db854b0cdb9132a74f68b392b8112ab6030f971bb03282462362a940dbb" },
 ]
 
 [[package]]
@@ -7949,8 +7967,10 @@ dependencies = [
     { name = "mlflow" },
     { name = "mojimoji" },
     { name = "monotonic-align" },
+    { name = "morfeusz2" },
     { name = "munch" },
     { name = "nemo-toolkit" },
+    { name = "num2words" },
     { name = "numba" },
     { name = "onnxruntime", marker = "sys_platform == 'darwin'" },
     { name = "onnxruntime-gpu", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
@@ -7960,6 +7980,7 @@ dependencies = [
     { name = "phaseaug" },
     { name = "phonemizer" },
     { name = "piper-tts", extra = ["zh"] },
+    { name = "pl-core-news-sm" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pyannote-audio" },
     { name = "pyarrow" },
@@ -8013,8 +8034,10 @@ requires-dist = [
     { name = "mlflow", specifier = ">=3.7" },
     { name = "mojimoji", specifier = ">=0.0.13" },
     { name = "monotonic-align", git = "https://github.com/resemble-ai/monotonic_align.git?rev=c6e5e6cb19882164027eb6e35118e841eed9298e" },
+    { name = "morfeusz2", specifier = ">=1.99.15" },
     { name = "munch", specifier = ">=4.0" },
     { name = "nemo-toolkit", extras = ["asr"], specifier = ">=2.0" },
+    { name = "num2words", specifier = ">=0.5.14" },
     { name = "numba", specifier = ">=0.60" },
     { name = "onnxruntime", marker = "sys_platform == 'darwin'", specifier = ">=1.23,<1.24" },
     { name = "onnxruntime-gpu", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", specifier = ">=1.23,<1.24" },
@@ -8024,6 +8047,7 @@ requires-dist = [
     { name = "phaseaug", specifier = "==1.0.1" },
     { name = "phonemizer", specifier = ">=3.3" },
     { name = "piper-tts", extras = ["zh"], specifier = ">=1.5.0" },
+    { name = "pl-core-news-sm", url = "https://github.com/explosion/spacy-models/releases/download/pl_core_news_sm-3.8.0/pl_core_news_sm-3.8.0-py3-none-any.whl" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pyannote-audio", specifier = ">=4.0,<5" },
     { name = "pyarrow", specifier = ">=20.0" },

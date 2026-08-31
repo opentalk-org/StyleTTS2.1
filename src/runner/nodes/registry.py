@@ -5,6 +5,7 @@ from runflow.registry.type_registry import TypeRegistry
 from runner.nodes.asr import (
     CanaryTranscribeNode,
     ParakeetTranscribeNode,
+    TranscriptQualityNode,
     WhisperTranscribeNode,
     WhisperXAlignNode,
 )
@@ -59,7 +60,7 @@ from runner.nodes.speaker_clustering import (
 )
 from runner.nodes.youtube_source import YouTubeAudioSourceNode
 from runner.nodes.text_generation import OpenRouterGenerateTextsNode
-from runner.nodes.text_processing import PhonemizeSegmentsNode
+from runner.nodes.text_processing import NormalizePolishNumbersNode, PhonemizeSegmentsNode
 from runner.nodes.tts import TTS_NODES
 from runner.nodes.testing import (
     SelectStyleReferenceNode,
@@ -101,7 +102,9 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         ParakeetTranscribeNode,
         CanaryTranscribeNode,
         WhisperXAlignNode,
+        TranscriptQualityNode,
         PhonemizeSegmentsNode,
+        NormalizePolishNumbersNode,
         VadDetectNode,
         CutAudioBySegmentsNode,
         SortformerDiarizationNode,

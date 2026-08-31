@@ -33,13 +33,16 @@ dependencies = [
     # fetched at runtime (a runtime `spacy download` shells out to pip and fails in the
     # immutable nix store interpreter).
     "en-core-web-sm",
+    "pl-core-news-sm",
     "librosa>=0.10",
     "matplotlib>=3.8",
     "monotonic-align",
     "mojimoji>=0.0.13",
+    "morfeusz2>=1.99.15",
     "munch>=4.0",
     "nemo-toolkit[asr]>=2.0",
     "numba>=0.60",
+    "num2words>=0.5.14",
     "onnxruntime>=1.23,<1.24;sys_platform == 'darwin'",
     "onnxruntime-gpu>=1.23,<1.24;sys_platform == 'linux' and platform_machine == 'x86_64'",
     "openai-whisper>=20240930",
@@ -113,6 +116,7 @@ override-dependencies = [
 
 [tool.uv.sources]
 en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
+pl-core-news-sm = { url = "https://github.com/explosion/spacy-models/releases/download/pl_core_news_sm-3.8.0/pl_core_news_sm-3.8.0-py3-none-any.whl" }
 # vLLM's PyPI wheel is a CUDA-13 build (its _C links libcudart.so.13). Pin vLLM's cu129
 # wheel instead: it is CUDA major-12 (links libcudart.so.12), which the cu128 torch stack
 # already provides — so Orpheus/vLLM run without migrating the stack off CUDA 12.8.
