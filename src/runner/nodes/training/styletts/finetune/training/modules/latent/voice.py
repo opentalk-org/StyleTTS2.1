@@ -138,6 +138,11 @@ class VoiceEncoder(nn.Module):
             depthwise_conv_kernel_size=15,
             use_group_norm=True,
         )
+        self.local_pool = nn.MultiheadAttention(
+            embed_dim=text_dim,
+            num_heads=num_heads,
+            batch_first=True,
+        )
         self.num_time = token_count
         self.pool_embeddings = nn.Embedding(token_count, text_dim)
         self.embedder = NumberEmbedder(features=text_dim)
@@ -179,24 +184,25 @@ class VoiceEncoder(nn.Module):
             mel_hidden,
             mel_lengths,
         )
-        pool_counts = torch.bincount(
-            pool_indices,
-            minlength=self.num_time,
-        ).to(dtype=mel_hidden.dtype)
-        assert torch.all(pool_counts > 0), (
-            "voice prompt must contain at least one mel frame per voice token"
+        token_indices = torch.arange(self.num_time, device=mel.device)
+        queries = self.pool_embeddings(token_indices).unsqueeze(0)
+        queries = queries.expand(mel_hidden.size(0), -1, -1)
+        frame_positions = (
+            (frame_indices.to(mel_hidden.dtype) + 0.5)
+            * self.num_time
+            / mel_hidden.size(1)
         )
-        pooled = mel_hidden.new_zeros(
-            mel_hidden.size(0),
-            self.num_time,
-            mel_hidden.size(2),
-        )
-        pooled.scatter_add_(
-            1,
-            pool_indices.view(1, -1, 1).expand_as(mel_hidden),
+        token_positions = token_indices.to(mel_hidden.dtype) + 0.5
+        local_mask = (
+            token_positions[:, None] - frame_positions[None, :]
+        ).abs() > 0.75
+        pooled, _ = self.local_pool(
+            queries,
             mel_hidden,
+            mel_hidden,
+            attn_mask=local_mask,
+            need_weights=False,
         )
-        pooled = pooled / pool_counts.view(1, -1, 1)
         token_lengths = mel_lengths.new_full(
             (mel_hidden.size(0),),
             self.num_time,
