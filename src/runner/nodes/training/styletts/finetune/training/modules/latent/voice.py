@@ -113,7 +113,7 @@ class VoiceEncoder(nn.Module):
         voice_dim: int = 128,
         num_heads: int = 8,
         num_layers: int = 6,
-        token_count: int = 32,
+        token_count: int = 64,
     ) -> None:
         super().__init__()
         self.mel_proj = nn.Conv1d(
@@ -122,13 +122,24 @@ class VoiceEncoder(nn.Module):
             kernel_size=3,
             padding=1,
         )
-        self.local_pool = nn.MultiheadAttention(
-            embed_dim=text_dim,
+        self.prompt_conformer_pre = Conformer(
+            input_dim=text_dim,
             num_heads=num_heads,
-            batch_first=True,
+            ffn_dim=text_dim * 2,
+            num_layers=1,
+            depthwise_conv_kernel_size=31,
+            use_group_norm=True,
+        )
+        self.prompt_conformer_body = Conformer(
+            input_dim=text_dim,
+            num_heads=num_heads,
+            ffn_dim=text_dim * 2,
+            num_layers=num_layers - 1,
+            depthwise_conv_kernel_size=15,
+            use_group_norm=True,
         )
         self.num_time = token_count
-        self.pool_embeddings = nn.Embedding(token_count, text_dim)
+        self.positions = nn.Embedding(token_count, text_dim)
         self.embedder = NumberEmbedder(features=text_dim)
         self.out = nn.Linear(text_dim, voice_dim)
         self.phoneme_encoder = PhonemeEncoder(
@@ -148,37 +159,29 @@ class VoiceEncoder(nn.Module):
         text_return = text.new_zeros(text.size(0), text.size(1), max_size)
         text = text[..., : input_lengths.max()]
         mel = self.mel_proj(mel)
-        mel_hidden = mel.transpose(-1, -2)
-        frame_indices = torch.arange(mel_hidden.size(1), device=mel.device)
-        pool_indices = torch.div(
-            frame_indices * self.num_time,
-            mel_hidden.size(1),
-            rounding_mode="floor",
+        mel_lengths = input_lengths.new_full(
+            (mel.size(0),),
+            mel.size(-1),
         )
-        mel_hidden = (
-            mel_hidden
-            + self.embedder(frame_indices)
-            + self.pool_embeddings(pool_indices)
+        indices = torch.arange(self.num_time, device=mel.device)
+        positions = self.positions(indices).unsqueeze(0).expand(
+            mel.size(0),
+            -1,
+            -1,
         )
-        token_indices = torch.arange(self.num_time, device=mel.device)
-        queries = self.pool_embeddings(token_indices).unsqueeze(0)
-        queries = queries.expand(mel_hidden.size(0), -1, -1)
-        frame_positions = (
-            (frame_indices.to(mel_hidden.dtype) + 0.5)
-            * self.num_time
-            / mel_hidden.size(1)
+        time = torch.arange(mel.size(-1), device=mel.device)
+        mel_hidden = mel.transpose(-1, -2) + self.embedder(time)
+        prompt_hidden = torch.cat((positions, mel_hidden), dim=1)
+        prompt_lengths = mel_lengths + self.num_time
+        prompt_hidden, prompt_lengths = self.prompt_conformer_pre(
+            prompt_hidden,
+            prompt_lengths,
         )
-        token_positions = token_indices.to(mel_hidden.dtype) + 0.5
-        local_mask = (
-            token_positions[:, None] - frame_positions[None, :]
-        ).abs() > 0.75
-        pooled, _ = self.local_pool(
-            queries,
-            mel_hidden,
-            mel_hidden,
-            attn_mask=local_mask,
-            need_weights=False,
+        prompt_hidden, _ = self.prompt_conformer_body(
+            prompt_hidden,
+            prompt_lengths,
         )
+        pooled = prompt_hidden[:, : self.num_time]
         voice_tokens, text_hidden = self.phoneme_encoder(
             pooled,
             text,
