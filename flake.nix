@@ -16,6 +16,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
     flake-parts.url = "github:hercules-ci/flake-parts";
     dnvr.url = "github:dialohq/dnvr";
+    dialo-overlays.url = "github:dialohq/nix-overlays";
   };
 
   outputs =
@@ -143,6 +144,8 @@
           };
 
           dnvr.shells.default = { config, ... }: {
+            imports = [ ./nix/clickhouse.nix ];
+
             packages = [
               python
 
@@ -155,6 +158,7 @@
               pkgs.rclone
               pkgs.uv
               pkgs.pyright
+              inputs.dialo-overlays.packages.${system}.atlas
             ]
             ++ runtimeLibs
             ++ runtimeExecutableDeps
