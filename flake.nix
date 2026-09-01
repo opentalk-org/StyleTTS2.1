@@ -206,6 +206,8 @@
               MLFLOW_S3_ENDPOINT_URL = "http://127.0.0.1:9000";
               VITE_BACKEND_URL = "http://127.0.0.1:8001";
               RUNNER_ID = "runner-1";
+              GIVEMEDATA_HTTP_ADDR = "http://127.0.0.1:8180";
+              GIVEMEDATA_ADDR = "127.0.0.1:8181";
 
               HF_HOME = "$DNVR_ROOT/.cache/huggingface";
 
