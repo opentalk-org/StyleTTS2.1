@@ -42,6 +42,18 @@ impl From<(sampling::Sample, Bytes)> for LoadedSample {
     }
 }
 
+impl From<LoadedSample> for crate::proto::Sample {
+    fn from(sample: LoadedSample) -> Self {
+        Self {
+            wave: sample.wave,
+            duration: sample.duration,
+            speaker_id: sample.speaker_id,
+            language_id: sample.language_id,
+            text: sample.text,
+        }
+    }
+}
+
 const CACHED_BATCHES: usize = 5;
 
 pub struct Prefetcher {

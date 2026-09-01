@@ -93,7 +93,7 @@ def train(
     )
     logger.info(
         "givemedata session ready session=%s dataset=%s",
-        data_client.session_id,
+        data_client.training_id,
         config.data_params.dataset_id,
     )
     batch_iterator = iter(train_batches)

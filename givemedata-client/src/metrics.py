@@ -35,13 +35,13 @@ ArtifactJob = ArtifactFileJob | ArtifactDirectoryJob
 
 
 class MetricsStream:
-    def __init__(self, stub, session_id: str) -> None:
+    def __init__(self, stub, training_id: str) -> None:
         self._requests: queue.Queue[pb.MetricsRequest | None] = queue.Queue(
             maxsize=METRICS_QUEUE_SIZE
         )
         self._requests.put(
             pb.MetricsRequest(
-                metadata=pb.MetricsStreamMetadata(session_id=session_id)
+                metadata=pb.MetricsStreamMetadata(training_id=training_id)
             )
         )
         self._future = stub.Metrics.future(self._request_iterator())

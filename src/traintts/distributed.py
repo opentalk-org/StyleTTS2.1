@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 
 from givemedata_client import GiveMeDataClient
 import torch.distributed as dist
@@ -13,7 +14,7 @@ def main() -> None:
     parser.add_argument("config")
     arguments = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
-    data_client = GiveMeDataClient()
+    data_client = GiveMeDataClient(os.environ["GIVEMEDATA_TRAINING_ID"])
     try:
         train(arguments.config, run=None, data_client=data_client)
     finally:

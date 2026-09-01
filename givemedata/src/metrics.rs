@@ -6,7 +6,7 @@ use tokio::io::AsyncWriteExt;
 use tonic::{Status, Streaming};
 use tracing::{debug, trace, warn};
 
-use crate::server::givemedata::{
+use crate::proto::{
     ArtifactMetric, MetricsRequest, MetricsResponse, ScalarMetric, metrics_request,
 };
 
@@ -37,14 +37,14 @@ struct PendingArtifact {
 
 pub async fn receive(
     root: &Path,
-    session_id: &str,
+    training_id: &str,
     mut stream: Streaming<MetricsRequest>,
 ) -> Result<MetricsResponse, Status> {
-    let session_dir = root.join(session_id);
-    fs::create_dir_all(&session_dir).await.map_err(internal)?;
-    let metrics_path = session_dir.join("metrics.jsonl");
-    let artifacts_path = session_dir.join("artifacts.jsonl");
-    let artifacts_dir = session_dir.join("artifacts");
+    let training_dir = root.join(training_id);
+    fs::create_dir_all(&training_dir).await.map_err(internal)?;
+    let metrics_path = training_dir.join("metrics.jsonl");
+    let artifacts_path = training_dir.join("artifacts.jsonl");
+    let artifacts_dir = training_dir.join("artifacts");
     fs::create_dir_all(&artifacts_dir).await.map_err(internal)?;
 
     let mut pending: Option<PendingArtifact> = None;
@@ -60,7 +60,7 @@ pub async fn receive(
                 Some(metrics_request::Payload::Metric(metric)) => {
                     store_metric(&metrics_path, &metric).await?;
                     trace!(
-                        session = session_id,
+                        training = training_id,
                         step = metric.step,
                         timestamp_unix_ms = metric.timestamp_unix_ms,
                         metric = %metric.name,
@@ -80,7 +80,7 @@ pub async fn receive(
                         discard_artifact(previous).await?;
                     }
                     debug!(
-                        session = session_id,
+                        training = training_id,
                         step = artifact.step,
                         timestamp_unix_ms = artifact.timestamp_unix_ms,
                         artifact = %artifact.name,
@@ -94,7 +94,7 @@ pub async fn receive(
                         let step = artifact.metadata.step;
                         finish_artifact(artifact, &artifacts_path).await?;
                         debug!(
-                            session = session_id,
+                            training = training_id,
                             step,
                             artifact = %name,
                             bytes = 0,
@@ -130,7 +130,7 @@ pub async fn receive(
                         let bytes = artifact.metadata.size_bytes;
                         finish_artifact(artifact, &artifacts_path).await?;
                         debug!(
-                            session = session_id,
+                            training = training_id,
                             step,
                             artifact = %name,
                             bytes,

@@ -470,6 +470,85 @@
               '';
             };
           };
+
+          dnvr.shells.givemedata = {
+            packages = [
+              python
+              pkgs.postgresql_16
+              pkgs.ruff
+              pkgs.uv
+              pkgs.pyright
+              pkgsRust.cargo
+              pkgsRust.clippy
+              pkgsRust.rustc
+              pkgsRust.rust-analyzer
+              pkgsRust.rustfmt
+              pkgsRust.sqlx-cli
+              pkgsRust.protobuf
+            ];
+
+            env = {
+              DATABASE_URL = "postgresql://postgres@127.0.0.1:5433/givemedata";
+              DATA_DATABASE_URL = "postgresql://postgres@127.0.0.1:5433/givemedata";
+              GRPC_PORT = "8181";
+              HTTP_PORT = "8180";
+              SYNTHETIC = "true";
+
+              AWS_ENDPOINT_URL = "http://127.0.0.1:9000";
+              AWS_ACCESS_KEY_ID = "givemedata";
+              AWS_SECRET_ACCESS_KEY = "givemedata";
+              S3_BUCKET = "givemedata";
+
+              CACHE_DIR = "$DNVR_ROOT/.givemedata/cache";
+              ASSETS_DIR = "$DNVR_ROOT/.givemedata/assets";
+              CHECKPOINT_DIR = "$DNVR_ROOT/.givemedata/checkpoints";
+              METRICS_DIR = "$DNVR_ROOT/.givemedata/metrics";
+
+              UV_PYTHON = lib.getExe python;
+              UV_PYTHON_PREFERENCE = "only-system";
+              UV_PYTHON_DOWNLOADS = "never";
+              SQLX_OFFLINE = "true";
+            };
+
+            shellHook = ''
+              if [ -f .env ]; then
+                set -a
+                . ./.env
+                set +a
+              fi
+              unset NIX_CFLAGS_COMPILE CFLAGS CXXFLAGS
+              if [ -e .venv/bin/activate ]; then
+                . .venv/bin/activate
+              fi
+            '';
+
+            processes.givemedata-pg = {
+              imports = [ presets.postgres ];
+              package = pkgs.postgresql_16;
+              database = "givemedata";
+              port = 5433;
+              runAsUser = "user";
+              initdbArgs = [
+                "--encoding=UTF8"
+                "--locale=C.UTF-8"
+              ];
+            };
+
+            scripts.givemedata-gen = {
+              description = "Generate Python proto stubs for givemedata-client.";
+              runtimeInputs = [ pkgs.gnused ];
+              text = ''
+                cd "$DNVR_ROOT/givemedata-client"
+                uvx --from "grpcio-tools>=1.68,<1.72" python -m grpc_tools.protoc \
+                  -I ../givemedata/proto \
+                  --python_out=src \
+                  --pyi_out=src \
+                  --grpc_python_out=src \
+                  givemedata.proto
+                sed -i 's/^import givemedata_pb2/from . import givemedata_pb2/' src/givemedata_pb2_grpc.py
+              '';
+            };
+          };
         };
     };
 }

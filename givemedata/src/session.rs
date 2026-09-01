@@ -2,7 +2,7 @@ use std::{path::Path, pin::Pin, sync::Arc};
 
 use anyhow::bail;
 use futures::{Stream, StreamExt};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, debug, info, info_span};
@@ -20,7 +20,7 @@ use crate::{
 
 const SYNTHETIC_TRAINING_SAMPLES: usize = 256;
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct DataConfig {
     pub dataset_id: Uuid,
     pub seed: u64,
@@ -34,19 +34,19 @@ pub struct DataConfig {
     pub training: Vec<SequenceConfig>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct AssetConfig {
     pub object: String,
     pub entrypoint: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct ValidationConfig {
     pub samples: i64,
     pub max_seconds: f32,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct SequenceConfig {
     pub batches: u64,
     pub max_seconds: f32,
@@ -100,13 +100,13 @@ pub struct Session {
 
 impl Session {
     pub async fn new(
+        id: Uuid,
         pg_pool: &sqlx::PgPool,
         loader: Arc<dyn Loader>,
         cache_dir: &'static Path,
-        config: &'static DataConfig,
+        config: &DataConfig,
         synthetic: bool,
     ) -> anyhow::Result<Self> {
-        let id = Uuid::new_v4();
         info!(session = %id, dataset = %config.dataset_id, synthetic, "initializing session");
 
         let (validation_rows, training_rows) = if synthetic {
@@ -237,7 +237,6 @@ enum Command {
 
 #[derive(Clone)]
 pub struct SessionHandle {
-    pub id: Uuid,
     tx: mpsc::Sender<Command>,
 }
 
@@ -246,7 +245,7 @@ impl SessionHandle {
         let id = session.id;
         let (tx, rx) = mpsc::channel(1);
         tokio::spawn(run(session, rx).instrument(info_span!("session", session = %id)));
-        Self { id, tx }
+        Self { tx }
     }
 
     pub async fn next_batch(&self, validation: bool) -> anyhow::Result<Option<LoadedBatch>> {

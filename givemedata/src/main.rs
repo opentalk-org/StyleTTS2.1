@@ -13,18 +13,25 @@ use clap::{
 use clap_complete::{Shell, generate};
 use sqlx::PgPool;
 use tokio::fs;
-
-use crate::server::serve;
+use tokio_util::sync::CancellationToken;
+use tracing::{error, info};
 
 mod audio;
 mod db;
+mod grpc;
+mod grpc_support;
+mod http;
 mod loader;
 mod metrics;
 mod prefetch;
 mod sampling;
-mod server;
 mod session;
 mod symbols;
+mod trainings;
+
+mod proto {
+    tonic::include_proto!("_");
+}
 
 const STYLES: Styles = Styles::styled()
     .header(AnsiColor::Green.on_default().effects(Effects::BOLD))
@@ -49,17 +56,30 @@ struct Args {
     #[arg(
         short,
         long,
-        env = "PORT",
-        help = "Main server binding port.",
+        env = "GRPC_PORT",
+        help = "gRPC server binding port.",
         default_value = "8181"
     )]
-    port: u16,
+    grpc_port: u16,
     #[arg(
         long,
         env = "DATABASE_URL",
-        help = "PostgreSQL URI to database with data metadata."
+        help = "PostgreSQL URI to the training-state database."
     )]
-    db_url: String,
+    database_url: String,
+    #[arg(
+        long,
+        env = "DATA_DATABASE_URL",
+        help = "PostgreSQL URI to the database containing dataset metadata."
+    )]
+    data_database_url: String,
+    #[arg(
+        long,
+        env = "HTTP_PORT",
+        help = "HTTP server binding port.",
+        default_value = "8180"
+    )]
+    http_port: u16,
     #[arg(long, env = "AWS_ENDPOINT_URL", help = "Endpoint to S3 bucket.")]
     s3_endpoint: String,
     #[arg(long, env = "AWS_ACCESS_KEY_ID", help = "S3 access key ID.")]
@@ -98,18 +118,6 @@ struct Args {
         help = "Directory storing streamed metrics and artifacts."
     )]
     metrics_dir: PathBuf,
-    #[arg(
-        long,
-        env = "DATA_CONFIG",
-        help = "YAML with everything sessions need for sampling and fetching data."
-    )]
-    data_config: PathBuf,
-    #[arg(
-        long,
-        env = "TRAIN_CONFIG",
-        help = "YAML passed verbatim to the training loop in InitResponse; never parsed here."
-    )]
-    train_config: PathBuf,
 }
 
 #[derive(Subcommand)]
@@ -135,9 +143,12 @@ async fn main() -> anyhow::Result<()> {
     }
     let args = Args::from_arg_matches(&matches)?;
 
-    let pg_pool = PgPool::connect(&args.db_url)
+    let training_pool = PgPool::connect(&args.database_url)
         .await
-        .context(format!("failed to connect to postgres"))?;
+        .context("failed to connect to training-state postgres")?;
+    let data_pool = PgPool::connect(&args.data_database_url)
+        .await
+        .context("failed to connect to data postgres")?;
 
     let s3_config = aws_config::defaults(BehaviorVersion::latest())
         .endpoint_url(&args.s3_endpoint)
@@ -161,28 +172,73 @@ async fn main() -> anyhow::Result<()> {
     fs::create_dir_all(&args.checkpoint_dir).await?;
     fs::create_dir_all(&args.metrics_dir).await?;
 
-    let data_config: session::DataConfig = serde_yaml::from_str(
-        &fs::read_to_string(&args.data_config)
-            .await
-            .with_context(|| format!("failed to read {}", args.data_config.display()))?,
-    )
-    .with_context(|| format!("failed to parse {}", args.data_config.display()))?;
-    let train_config = fs::read_to_string(&args.train_config)
-        .await
-        .with_context(|| format!("failed to read {}", args.train_config.display()))?;
-
-    serve(
-        args.port,
+    let trainings = trainings::TrainingStore::new(training_pool);
+    let shutdown = CancellationToken::new();
+    tokio::spawn(watch_shutdown_signals(shutdown.clone()));
+    let mut http_server = tokio::spawn(http::serve(
+        args.http_port,
+        trainings.clone(),
+        shutdown.clone(),
+    ));
+    let mut grpc_server = tokio::spawn(grpc::serve(
+        args.grpc_port,
         s3_client,
-        pg_pool,
+        data_pool,
+        trainings,
         args.bucket.leak(),
         Box::leak(args.cache_dir.into_boxed_path()),
         Box::leak(args.assets_dir.into_boxed_path()),
         Box::leak(args.checkpoint_dir.into_boxed_path()),
         Box::leak(args.metrics_dir.into_boxed_path()),
         args.synthetic,
-        Box::leak(Box::new(data_config)),
-        train_config.leak(),
-    )
-    .await
+        shutdown.clone(),
+    ));
+    tokio::select! {
+        result = &mut http_server => {
+            shutdown.cancel();
+            result??;
+            grpc_server.await??;
+        }
+        result = &mut grpc_server => {
+            shutdown.cancel();
+            result??;
+            http_server.await??;
+        }
+    }
+    Ok(())
+}
+
+async fn watch_shutdown_signals(shutdown: CancellationToken) {
+    if let Err(err) = receive_shutdown_signals(shutdown).await {
+        error!(error = format!("{err:#}"), "shutdown signal handler failed");
+    }
+}
+
+async fn receive_shutdown_signals(shutdown: CancellationToken) -> anyhow::Result<()> {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut interrupt = signal(SignalKind::interrupt())?;
+    let mut terminate = signal(SignalKind::terminate())?;
+    for received in 1.. {
+        tokio::select! {
+            _ = interrupt.recv() => {}
+            _ = terminate.recv() => {}
+        }
+        handle_shutdown_signal(&shutdown, received);
+    }
+    Ok(())
+}
+
+fn handle_shutdown_signal(shutdown: &CancellationToken, received: usize) {
+    match received {
+        1 => {
+            info!("shutdown requested");
+            shutdown.cancel();
+        }
+        2 => info!("shutdown still in progress; one more signal will force exit"),
+        _ => {
+            info!("received 3 signals, forcing shutdown");
+            std::process::exit(130);
+        }
+    }
 }

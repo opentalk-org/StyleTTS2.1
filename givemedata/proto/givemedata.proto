@@ -9,10 +9,12 @@ service GiveMeData {
   rpc End (EndRequest) returns (EndResponse);
 }
 
-message InitRequest {}
+message InitRequest {
+  string training_id = 1;
+}
 
 message InitResponse {
-  string session_id = 1;
+  string training_id = 1;
   // verbatim yaml passed through to the training loop, never parsed here
   string train_config = 2;
 }
@@ -23,7 +25,7 @@ enum Split {
 }
 
 message DataRequest {
-  string session_id = 1;
+  string training_id = 1;
   Split split = 2;
 }
 
@@ -40,7 +42,7 @@ message DataResponse {
 }
 
 message AssetRequest {
-  string session_id = 1;
+  string training_id = 1;
   // key into the service's assets map from the data config
   string name = 2;
 }
@@ -58,7 +60,7 @@ message AssetResponse {
 }
 
 message CheckpointMetadata {
-  string session_id = 1;
+  string training_id = 1;
   uint64 step = 2;
 }
 
@@ -73,7 +75,7 @@ message CheckpointRequest {
 message CheckpointResponse {}
 
 message MetricsStreamMetadata {
-  string session_id = 1;
+  string training_id = 1;
 }
 
 message ScalarMetric {
@@ -112,7 +114,7 @@ message MetricsResponse {
 }
 
 message EndRequest {
-  string session_id = 1;
+  string training_id = 1;
 }
 
 message EndResponse {}

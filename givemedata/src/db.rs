@@ -7,6 +7,7 @@ use crate::session;
 pub const VALIDATION_SEED_SALT: u64 = 0x76616c;
 pub const TRAINING_SEED_SALT: u64 = 0x747261;
 
+#[derive(sqlx::FromRow)]
 pub struct SampleRow {
     pub audio_id: Uuid,
     pub duration: f64,
@@ -26,8 +27,7 @@ pub async fn fetch_validation_samples(
     db: &PgPool,
     config: &session::DataConfig,
 ) -> Result<Vec<SampleRow>, sqlx::Error> {
-    let rows = sqlx::query_as!(
-        SampleRow,
+    let rows = sqlx::query_as::<_, SampleRow>(
         "
 with base as (
     select a.*,
@@ -109,11 +109,11 @@ join bucket_files b on b.id = agg.bucket_file_id
 where length(text) <= $4
 order by duration, audio_id
     ",
-        config.dataset_id,
-        config.validation.samples,
-        config.validation.max_seconds as f64,
-        config.max_text_tokens
     )
+    .bind(config.dataset_id)
+    .bind(config.validation.samples)
+    .bind(config.validation.max_seconds as f64)
+    .bind(config.max_text_tokens)
     .fetch_all(db)
     .await?;
 
@@ -125,8 +125,7 @@ pub async fn fetch_training_samples(
     excluded_ids: &[Uuid],
     config: &session::DataConfig,
 ) -> Result<Vec<SampleRow>, sqlx::Error> {
-    let rows = sqlx::query_as!(
-        SampleRow,
+    let rows = sqlx::query_as::<_, SampleRow>(
         "
 with base as (
     select a.*,
@@ -205,12 +204,11 @@ join bucket_files b on b.id = agg.bucket_file_id
 where length(text) <= $4
 order by duration, audio_id
     ",
-        config.dataset_id,
-        excluded_ids as &[Uuid],
-        // fetch once with the widest budget; each sequence narrows in the sampler
-        config.training_max_seconds() as f64,
-        config.max_text_tokens
     )
+    .bind(config.dataset_id)
+    .bind(excluded_ids)
+    .bind(config.training_max_seconds() as f64)
+    .bind(config.max_text_tokens)
     .fetch_all(db)
     .await?;
 

@@ -66,8 +66,8 @@ class MlflowLogger:
 
 def start_run(config: TrainingConfig, data_client: GiveMeDataClient) -> TrackerRun:
     logging.getLogger(__name__).info(
-        "streaming metrics through givemedata session=%s",
-        data_client.session_id,
+        "streaming metrics through givemedata training=%s",
+        data_client.training_id,
     )
     return GiveMeDataTracker(data_client.metrics())
 

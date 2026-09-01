@@ -1,0 +1,299 @@
+use std::net::{Ipv4Addr, SocketAddr};
+use std::path::Path;
+use std::pin::Pin;
+use std::sync::Arc;
+
+use crate::grpc_support::{self, AssetStore, SessionsMap};
+use crate::loader::{Loader, S3Loader, SyntheticLoader};
+use crate::metrics;
+use crate::proto::{
+    AssetRequest, AssetResponse, CheckpointRequest, CheckpointResponse, EndRequest, EndResponse,
+    InitRequest, InitResponse, MetricsRequest, MetricsResponse, checkpoint_request,
+    metrics_request,
+};
+use crate::trainings::TrainingStore;
+use futures::Stream;
+use sqlx::{PgPool, Pool, Postgres};
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_util::sync::CancellationToken;
+use tonic::transport::Server;
+use tonic::{Request, Response, Status, Streaming};
+use tracing::{debug, error, info};
+
+use crate::proto::give_me_data_server::{GiveMeData as GiveMeDataService, GiveMeDataServer};
+use crate::proto::{DataRequest, DataResponse};
+
+struct GiveMeData {
+    data_pool: PgPool,
+    trainings: TrainingStore,
+    loader: Arc<dyn Loader>,
+    assets: AssetStore,
+    cache_dir: &'static Path,
+    checkpoint_dir: &'static Path,
+    metrics_dir: &'static Path,
+    synthetic: bool,
+    sessions: SessionsMap,
+}
+
+impl GiveMeData {
+    async fn new(
+        s3_client: aws_sdk_s3::Client,
+        data_pool: Pool<Postgres>,
+        trainings: TrainingStore,
+        bucket: &'static str,
+        cache_dir: &'static Path,
+        assets_dir: &'static Path,
+        checkpoint_dir: &'static Path,
+        metrics_dir: &'static Path,
+        synthetic: bool,
+    ) -> Result<Self, sqlx::Error> {
+        let loader: Arc<dyn Loader> = if synthetic {
+            Arc::new(SyntheticLoader)
+        } else {
+            Arc::new(S3Loader::new(s3_client.clone(), bucket))
+        };
+        Ok(GiveMeData {
+            sessions: Default::default(),
+            loader,
+            assets: AssetStore::new(s3_client, bucket, assets_dir, synthetic),
+            cache_dir,
+            checkpoint_dir,
+            metrics_dir,
+            synthetic,
+            data_pool,
+            trainings,
+        })
+    }
+}
+
+#[tonic::async_trait]
+impl GiveMeDataService for GiveMeData {
+    async fn init(&self, request: Request<InitRequest>) -> Result<Response<InitResponse>, Status> {
+        let training_id = grpc_support::parse_training_id(&request.into_inner().training_id)?;
+        debug!(training = %training_id, "init request");
+        let initialized = grpc_support::initialize(
+            training_id,
+            &self.trainings,
+            &self.assets,
+            &self.data_pool,
+            self.loader.clone(),
+            self.cache_dir,
+            self.synthetic,
+        )
+        .await?;
+        self.sessions
+            .write()
+            .await
+            .insert(training_id, initialized.active);
+        info!(training = %training_id, "training session created");
+
+        Ok(Response::new(InitResponse {
+            training_id: training_id.to_string(),
+            train_config: initialized.train_config,
+        }))
+    }
+
+    type DataStream = UnboundedReceiverStream<Result<DataResponse, Status>>;
+
+    async fn data(
+        &self,
+        request: Request<Streaming<DataRequest>>,
+    ) -> Result<Response<Self::DataStream>, Status> {
+        let mut stream = request.into_inner();
+
+        let (out_tx, out_rx) = mpsc::unbounded_channel();
+        tokio::spawn({
+            let sessions = self.sessions.clone();
+            async move {
+                if let Err(err) = grpc_support::data_handler(sessions, &mut stream, &out_tx).await {
+                    error!(error = format!("{err:#}"), "data stream failed");
+                    let _ = out_tx.send(Err(Status::internal(format!("{err:#}"))));
+                }
+            }
+        });
+
+        Ok(UnboundedReceiverStream::new(out_rx).into())
+    }
+
+    type AssetStream = Pin<Box<dyn Stream<Item = Result<AssetResponse, Status>> + Send>>;
+
+    async fn asset(
+        &self,
+        request: Request<AssetRequest>,
+    ) -> Result<Response<Self::AssetStream>, Status> {
+        let request = request.into_inner();
+        let training_id = grpc_support::parse_training_id(&request.training_id)?;
+        let active = self
+            .sessions
+            .read()
+            .await
+            .get(&training_id)
+            .cloned()
+            .ok_or_else(|| Status::not_found("unknown training"))?;
+        let asset = active
+            .config
+            .assets
+            .get(&request.name)
+            .ok_or_else(|| Status::not_found(format!("unknown asset {:?}", request.name)))?;
+        info!(training = %training_id, asset = %request.name, "asset requested");
+
+        let path = self
+            .assets
+            .ensure(training_id, &request.name, &asset.object)
+            .await
+            .map_err(|err| {
+                error!(error = format!("{err:#}"), asset = %request.name, "asset fetch failed");
+                Status::internal(format!("{err:#}"))
+            })?;
+        let entrypoint = asset.entrypoint.clone();
+        Ok(Response::new(grpc_support::asset_stream(path, entrypoint)))
+    }
+
+    async fn checkpoint(
+        &self,
+        request: Request<Streaming<CheckpointRequest>>,
+    ) -> Result<Response<CheckpointResponse>, Status> {
+        let mut stream = request.into_inner();
+
+        let metadata = match stream.message().await?.and_then(|r| r.payload) {
+            Some(checkpoint_request::Payload::Metadata(metadata)) => metadata,
+            _ => {
+                return Err(Status::invalid_argument(
+                    "first checkpoint message must be metadata",
+                ));
+            }
+        };
+        let training_id = grpc_support::parse_training_id(&metadata.training_id)?;
+        if !self.sessions.read().await.contains_key(&training_id) {
+            return Err(Status::not_found("unknown training"));
+        }
+        info!(training = %training_id, step = metadata.step, "receiving checkpoint");
+
+        let result = grpc_support::receive_checkpoint(
+            self.checkpoint_dir,
+            training_id,
+            metadata.step,
+            &mut stream,
+        )
+        .await;
+
+        match result {
+            Ok((path, bytes)) => {
+                info!(
+                    training = %training_id,
+                    step = metadata.step,
+                    bytes,
+                    path = %path.display(),
+                    "checkpoint stored"
+                );
+                Ok(Response::new(CheckpointResponse {}))
+            }
+            Err(err) => {
+                error!(error = format!("{err:#}"), "storing checkpoint failed");
+                Err(Status::internal(format!("{err:#}")))
+            }
+        }
+    }
+
+    async fn metrics(
+        &self,
+        request: Request<Streaming<MetricsRequest>>,
+    ) -> Result<Response<MetricsResponse>, Status> {
+        let mut stream = request.into_inner();
+        let metadata = match stream.message().await?.and_then(|request| request.payload) {
+            Some(metrics_request::Payload::Metadata(metadata)) => metadata,
+            _ => {
+                return Err(Status::invalid_argument(
+                    "first metrics message must be stream metadata",
+                ));
+            }
+        };
+        let training_id = grpc_support::parse_training_id(&metadata.training_id)?;
+        if !self.sessions.read().await.contains_key(&training_id) {
+            return Err(Status::not_found("unknown training"));
+        }
+        info!(training = %training_id, "receiving metrics");
+
+        match metrics::receive(self.metrics_dir, &training_id.to_string(), stream).await {
+            Ok(response) => {
+                info!(
+                    training = %training_id,
+                    metrics = response.metrics_received,
+                    artifacts = response.artifacts_received,
+                    artifact_bytes = response.artifact_bytes_received,
+                    "metrics stored"
+                );
+                Ok(Response::new(response))
+            }
+            Err(status) => {
+                error!(
+                    training = %training_id,
+                    error = %status,
+                    "storing metrics failed"
+                );
+                Err(status)
+            }
+        }
+    }
+
+    async fn end(&self, request: Request<EndRequest>) -> Result<Response<EndResponse>, Status> {
+        let request = request.into_inner();
+        let training_id = grpc_support::parse_training_id(&request.training_id)?;
+        info!(training = %training_id, "ending training");
+        let removed = self.sessions.write().await.remove(&training_id);
+
+        match removed {
+            None => return Err(Status::not_found("unknown training")),
+            Some(active) => active.handle.finish().await,
+        }
+        self.trainings.finish(training_id).await.map_err(|err| {
+            error!(training = %training_id, error = format!("{err:#}"), "finishing training failed");
+            Status::internal(format!("{err:#}"))
+        })?;
+
+        Ok(Response::new(EndResponse {}))
+    }
+}
+
+pub async fn serve(
+    port: u16,
+    s3_client: aws_sdk_s3::Client,
+    data_pool: Pool<Postgres>,
+    trainings: TrainingStore,
+    bucket: &'static str,
+    cache_dir: &'static Path,
+    assets_dir: &'static Path,
+    checkpoint_dir: &'static Path,
+    metrics_dir: &'static Path,
+    synthetic: bool,
+    shutdown: CancellationToken,
+) -> anyhow::Result<()> {
+    if synthetic {
+        info!("serving synthetic sessions");
+    }
+    info!("listening on 0.0.0.0:{port}");
+
+    Server::builder()
+        .add_service(GiveMeDataServer::new(
+            GiveMeData::new(
+                s3_client,
+                data_pool,
+                trainings,
+                bucket,
+                cache_dir,
+                assets_dir,
+                checkpoint_dir,
+                metrics_dir,
+                synthetic,
+            )
+            .await?,
+        ))
+        .serve_with_shutdown(
+            SocketAddr::from((Ipv4Addr::new(0, 0, 0, 0), port)),
+            shutdown.cancelled_owned(),
+        )
+        .await?;
+
+    Ok(())
+}
