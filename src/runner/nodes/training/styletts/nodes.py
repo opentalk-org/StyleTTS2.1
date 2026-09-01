@@ -22,11 +22,6 @@ from runner.nodes.accelerator_memory import release_accelerator_memory
 from runner.nodes.datatypes import AssetBundlePort, CheckpointRefPort, JsonPort, TrainingResultPort
 from runner.nodes.models import AssetBundleRef, CheckpointRef, TrainingResult, stable_id, typed_assets, typed_checkpoint
 from runner.nodes.training.common.run_directory import claim_run_dir, remove_run_dir
-from runner.nodes.training.common.mlflow_run import (
-    TrackerRun,
-    resume_mlflow_run,
-    start_mlflow_run,
-)
 from runflow.runtime.cancellation import check_cancel
 from runner.nodes.training.styletts.finetune.node_config import build_node_config
 from runner.nodes.training.styletts.finetune.stages import (
@@ -203,14 +198,9 @@ def _run_styletts_train(config_path: Path) -> None:
         }[str(config["precision"])]
         _run_distributed_training(config_path, process_count, precision)
         return
-    run = _make_mlflow_run(config_path)
     try:
-        train(str(config_path), run=run)
+        train(str(config_path))
     finally:
-        try:
-            run.close()
-        except Exception:
-            logger.warning("failed to close MLflow run", exc_info=True)
         release_accelerator_memory()
 
 
@@ -260,21 +250,6 @@ def _run_distributed_training(
             f"{distributed_log}"
         )
     logger.info("distributed training completed\n%s", distributed_log)
-
-
-def _make_mlflow_run(config_path: Path) -> TrackerRun:
-    """Start an MLflow run named from the training configuration."""
-    styletts_yaml = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    publish = styletts_yaml["studio_publish"]
-    resume_run_id = str(publish["mlflow_run_id"])
-    if resume_run_id:
-        return resume_mlflow_run(resume_run_id)
-    run_name = str(publish["run_name"] or publish["run_id"] or "styletts_finetune")
-    return start_mlflow_run(
-        experiment="styletts2_finetune",
-        name=run_name,
-        config=styletts_yaml,
-    )
 
 
 def _latest_step_result(run_id: str) -> TrainingResult:
