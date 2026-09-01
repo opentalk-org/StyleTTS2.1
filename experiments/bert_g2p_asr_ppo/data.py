@@ -105,10 +105,11 @@ def parquet_rows(paths: Sequence[Path], config: DataConfig) -> Iterator[TextPhon
                 for row in _unpack_row(packed, config):
                     row_bytes = len(row.text.encode("utf-8"))
                     row_phonemes = len(row.phonemes)
+                    language_changes = bool(pending and pending[-1].language != row.language)
                     exceeds_text = byte_count + row_bytes + 1 > config.packed_text_bytes
                     exceeds_phonemes = phoneme_count + row_phonemes + 1 > config.max_phonemes
-                    if pending and (exceeds_text or exceeds_phonemes):
-                        yield _join_rows(pending, config.language)
+                    if pending and (language_changes or exceeds_text or exceeds_phonemes):
+                        yield _join_rows(pending)
                         pending = []
                         byte_count = 0
                         phoneme_count = 0
@@ -116,7 +117,7 @@ def parquet_rows(paths: Sequence[Path], config: DataConfig) -> Iterator[TextPhon
                     byte_count += row_bytes + int(len(pending) > 1)
                     phoneme_count += row_phonemes + int(len(pending) > 1)
         if pending:
-            yield _join_rows(pending, config.language)
+            yield _join_rows(pending)
 
 
 def shuffled_batches(rows: Iterator[TextPhonemeRow], batch_size: int, seed: int, buffer_size: int = 4096):
@@ -184,9 +185,9 @@ def _chunks(rows: list[TextPhonemeRow], size: int):
         yield rows[offset : offset + size]
 
 
-def _join_rows(rows: list[TextPhonemeRow], language: str) -> TextPhonemeRow:
+def _join_rows(rows: list[TextPhonemeRow]) -> TextPhonemeRow:
     return TextPhonemeRow(
-        language,
+        rows[0].language,
         " ".join(row.text for row in rows),
         " ".join(row.phonemes for row in rows),
     )
@@ -204,7 +205,8 @@ def _unpack_row(row: dict, config: DataConfig) -> Iterator[TextPhonemeRow]:
         text = text.strip()
         phoneme = phoneme.strip()
         offset += len(phoneme) + len("<m/>")
-        if language == config.language and len(text.encode("utf-8")) <= config.max_text_bytes and len(phoneme) <= config.max_phonemes:
+        accepts_language = config.language == "all" or language == config.language
+        if accepts_language and len(text.encode("utf-8")) <= config.max_text_bytes and len(phoneme) <= config.max_phonemes:
             yield TextPhonemeRow(language, text, phoneme)
 
 
