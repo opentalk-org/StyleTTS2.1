@@ -15,7 +15,7 @@ from runner.nodes.training.common.mlflow_run import TrackerRun
 from runner.nodes.training.f0.impl.dataset import build_f0_dataloaders
 from runner.nodes.training.f0.impl.optimizer import build_f0_optimizer
 from traintts.modules.jdc import JDCNet
-from runner.nodes.training.styletts.finetune.studio.finetune_mlflow_logger import FinetuneMlflowLogger
+from runner.nodes.training.f0.impl.mlflow_logging import FinetuneMlflowLogger
 
 logger = logging.getLogger(__name__)
 
