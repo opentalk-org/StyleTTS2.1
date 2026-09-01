@@ -1,0 +1,147 @@
+/* Element-level defaults. Everything else is expressed with utilities in components. */
+:root {
+  color-scheme: dark;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  background: var(--color-base);
+  color: var(--color-fg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  /* Barely-there vertical tone shift; it should never register as an effect. */
+  background:
+    linear-gradient(to bottom, #0a0a0d 0%, var(--color-base) 45%, #070709 100%)
+    fixed;
+  color: var(--color-fg);
+}
+
+button,
+input,
+select,
+textarea {
+  color: inherit;
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-accent-ring);
+}
+
+/* Wrappers that draw their own focus-within ring own the whole treatment; the
+   inner control must not add a second ring inside it. */
+.focus-ring-owner :focus-visible {
+  box-shadow: none;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.1);
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(255 255 255 / 0.16);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Range inputs are drawn from scratch: the native control carries OS chrome that
+   reads as foreign against these surfaces. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  margin-top: -4px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-accent-bright);
+  transition: box-shadow 150ms ease-out;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-accent-bright);
+  transition: box-shadow 150ms ease-out;
+}
+
+input[type="range"]:hover::-webkit-slider-thumb,
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px rgb(99 102 241 / 0.18);
+}
+
+input[type="range"]:hover::-moz-range-thumb,
+input[type="range"]:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 4px rgb(99 102 241 / 0.18);
+}
+
+input[type="range"]:focus-visible {
+  box-shadow: none;
+}
+
+/* Plotly is themed through layout props; these strip its remaining chrome so charts
+   read as native panels rather than embedded library output. */
+.js-plotly-plot .modebar {
+  display: none !important;
+}
+
+.js-plotly-plot .hoverlayer .hovertext {
+  filter: drop-shadow(0 8px 32px rgb(0 0 0 / 0.55));
+}
+
+.js-plotly-plot .hoverlayer .hovertext path {
+  stroke-width: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

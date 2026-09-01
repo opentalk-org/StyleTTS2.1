@@ -1,0 +1,61 @@
+/* Design tokens: premium analytics / dark technical.
+   Every token here is exposed to Tailwind as a utility (bg-*, text-*, border-*, font-*, …). */
+@theme {
+  --font-sans: "Inter", "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", "SFMono-Regular", ui-monospace, monospace;
+
+  /* Surfaces: near-black layering, hierarchy through tone rather than shadow. */
+  --color-deep: #050507;
+  --color-base: #09090b;
+  --color-elevated: #0d0d10;
+  --color-inset: #111114;
+  --color-surface: rgb(255 255 255 / 0.035);
+  --color-surface-hover: rgb(255 255 255 / 0.055);
+
+  /* Foreground ramp. */
+  --color-fg: #f4f4f5;
+  --color-fg-secondary: #a1a1aa;
+  --color-fg-muted: #71717a;
+
+  /* Single accent, reserved for selection and interaction. */
+  --color-accent: #6366f1;
+  --color-accent-bright: #818cf8;
+  --color-accent-surface: rgb(99 102 241 / 0.1);
+  --color-accent-border: rgb(99 102 241 / 0.28);
+
+  /* Hairline structure. */
+  --color-line: rgb(255 255 255 / 0.07);
+  --color-line-hover: rgb(255 255 255 / 0.12);
+
+  /* Semantic: meaning only, never decoration. */
+  --color-positive: #4ade80;
+  --color-positive-surface: rgb(74 222 128 / 0.1);
+  --color-positive-border: rgb(74 222 128 / 0.16);
+  --color-negative: #f87171;
+  --color-negative-surface: rgb(248 113 113 / 0.1);
+  --color-negative-border: rgb(248 113 113 / 0.16);
+  --color-notice: #fbbf24;
+  --color-notice-surface: rgb(251 191 36 / 0.1);
+  --color-notice-border: rgb(251 191 36 / 0.16);
+
+  --radius-control: 0.5rem;
+  --radius-card: 0.75rem;
+  --radius-panel: 1rem;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.2), 0 8px 24px rgb(0 0 0 / 0.12);
+  --shadow-overlay: 0 8px 32px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(255 255 255 / 0.05);
+  --shadow-accent-ring: 0 0 0 1px rgb(99 102 241 / 0.3), 0 0 0 3px rgb(99 102 241 / 0.08);
+
+  --ease-precise: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Chart series palette. Indigo leads; the rest stay desaturated enough to read as
+   subordinate comparison series rather than a rainbow. */
+@theme {
+  --color-series-1: #818cf8;
+  --color-series-2: #6366f1;
+  --color-series-3: #a5b4fc;
+  --color-series-4: #7dd3fc;
+  --color-series-5: #c4b5fd;
+  --color-series-6: #94a3b8;
+}
