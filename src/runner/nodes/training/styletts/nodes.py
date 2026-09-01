@@ -93,6 +93,7 @@ class StyleTtsFinetuneNode(Node):
             )
             with claim_run_dir(run_dir):
                 try:
+                    run_dir.mkdir(parents=True)
                     training_id = create_training(data_config, train_config)
                     train(
                         training_id,
