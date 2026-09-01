@@ -1,0 +1,3 @@
+schema "default" {
+  engine = Atomic
+}

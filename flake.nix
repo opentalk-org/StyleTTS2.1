@@ -17,6 +17,7 @@
     nixpkgsRust.url = "github:NixOS/nixpkgs/26.05";
     flake-parts.url = "github:hercules-ci/flake-parts";
     dnvr.url = "github:dialohq/dnvr";
+    dialo-overlays.url = "github:dialohq/nix-overlays";
   };
 
   outputs =
@@ -146,6 +147,8 @@
           };
 
           dnvr.shells.default = { config, ... }: {
+            imports = [ ./nix/clickhouse.nix ];
+
             packages = [
               python
 
@@ -164,6 +167,7 @@
               pkgsRust.rustfmt
               pkgsRust.sqlx-cli
               pkgsRust.protobuf
+              inputs.dialo-overlays.packages.${system}.atlas
             ]
             ++ runtimeLibs
             ++ runtimeExecutableDeps
