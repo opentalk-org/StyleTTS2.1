@@ -12,8 +12,8 @@ use crate::proto::{
     metrics_request,
 };
 use crate::trainings::TrainingStore;
+use clickhouse::Client;
 use futures::Stream;
-use sqlx::{PgPool, Pool, Postgres};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::sync::CancellationToken;
@@ -25,7 +25,7 @@ use crate::proto::give_me_data_server::{GiveMeData as GiveMeDataService, GiveMeD
 use crate::proto::{DataRequest, DataResponse};
 
 struct GiveMeData {
-    data_pool: PgPool,
+    database: Client,
     trainings: TrainingStore,
     loader: Arc<dyn Loader>,
     assets: AssetStore,
@@ -37,9 +37,9 @@ struct GiveMeData {
 }
 
 impl GiveMeData {
-    async fn new(
+    fn new(
         s3_client: aws_sdk_s3::Client,
-        data_pool: Pool<Postgres>,
+        database: Client,
         trainings: TrainingStore,
         bucket: &'static str,
         cache_dir: &'static Path,
@@ -47,13 +47,13 @@ impl GiveMeData {
         checkpoint_dir: &'static Path,
         metrics_dir: &'static Path,
         synthetic: bool,
-    ) -> Result<Self, sqlx::Error> {
+    ) -> Self {
         let loader: Arc<dyn Loader> = if synthetic {
             Arc::new(SyntheticLoader)
         } else {
             Arc::new(S3Loader::new(s3_client.clone(), bucket))
         };
-        Ok(GiveMeData {
+        GiveMeData {
             sessions: Default::default(),
             loader,
             assets: AssetStore::new(s3_client, bucket, assets_dir, synthetic),
@@ -61,9 +61,9 @@ impl GiveMeData {
             checkpoint_dir,
             metrics_dir,
             synthetic,
-            data_pool,
+            database,
             trainings,
-        })
+        }
     }
 }
 
@@ -76,7 +76,7 @@ impl GiveMeDataService for GiveMeData {
             training_id,
             &self.trainings,
             &self.assets,
-            &self.data_pool,
+            &self.database,
             self.loader.clone(),
             self.cache_dir,
             self.synthetic,
@@ -259,7 +259,7 @@ impl GiveMeDataService for GiveMeData {
 pub async fn serve(
     port: u16,
     s3_client: aws_sdk_s3::Client,
-    data_pool: Pool<Postgres>,
+    database: Client,
     trainings: TrainingStore,
     bucket: &'static str,
     cache_dir: &'static Path,
@@ -275,20 +275,17 @@ pub async fn serve(
     info!("listening on 0.0.0.0:{port}");
 
     Server::builder()
-        .add_service(GiveMeDataServer::new(
-            GiveMeData::new(
-                s3_client,
-                data_pool,
-                trainings,
-                bucket,
-                cache_dir,
-                assets_dir,
-                checkpoint_dir,
-                metrics_dir,
-                synthetic,
-            )
-            .await?,
-        ))
+        .add_service(GiveMeDataServer::new(GiveMeData::new(
+            s3_client,
+            database,
+            trainings,
+            bucket,
+            cache_dir,
+            assets_dir,
+            checkpoint_dir,
+            metrics_dir,
+            synthetic,
+        )))
         .serve_with_shutdown(
             SocketAddr::from((Ipv4Addr::new(0, 0, 0, 0), port)),
             shutdown.cancelled_owned(),

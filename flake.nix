@@ -474,7 +474,6 @@
           dnvr.shells.givemedata = {
             packages = [
               python
-              pkgs.postgresql_16
               pkgs.ruff
               pkgs.uv
               pkgs.pyright
@@ -483,7 +482,6 @@
               pkgsRust.rustc
               pkgsRust.rust-analyzer
               pkgsRust.rustfmt
-              pkgsRust.sqlx-cli
               pkgsRust.protobuf
             ];
 
@@ -491,7 +489,6 @@
               CLICKHOUSE_URL = "http://127.0.0.1:8123?database=gmd";
               CLICKHOUSE_USER = "default";
               CLICKHOUSE_PASSWORD = "";
-              DATA_DATABASE_URL = "postgresql://postgres@127.0.0.1:5433/givemedata";
               GRPC_PORT = "8181";
               HTTP_PORT = "8180";
               SYNTHETIC = "true";
@@ -509,7 +506,6 @@
               UV_PYTHON = lib.getExe python;
               UV_PYTHON_PREFERENCE = "only-system";
               UV_PYTHON_DOWNLOADS = "never";
-              SQLX_OFFLINE = "true";
             };
 
             shellHook = ''
@@ -523,18 +519,6 @@
                 . .venv/bin/activate
               fi
             '';
-
-            processes.givemedata-pg = {
-              imports = [ presets.postgres ];
-              package = pkgs.postgresql_16;
-              database = "givemedata";
-              port = 5433;
-              runAsUser = "user";
-              initdbArgs = [
-                "--encoding=UTF8"
-                "--locale=C.UTF-8"
-              ];
-            };
 
             processes.givemedata-clickhouse = {
               imports = [ presets.clickhouse ];

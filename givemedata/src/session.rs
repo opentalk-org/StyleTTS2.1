@@ -101,7 +101,7 @@ pub struct Session {
 impl Session {
     pub async fn new(
         id: Uuid,
-        pg_pool: &sqlx::PgPool,
+        database: &clickhouse::Client,
         loader: Arc<dyn Loader>,
         cache_dir: &'static Path,
         config: &DataConfig,
@@ -136,7 +136,7 @@ impl Session {
             );
             (validation_rows, training_rows)
         } else {
-            let validation_rows = fetch_validation_samples(pg_pool, config).await?;
+            let validation_rows = fetch_validation_samples(database, config).await?;
             info!(
                 rows = validation_rows.len(),
                 requested = config.validation.samples,
@@ -145,7 +145,7 @@ impl Session {
 
             let validation_ids: Vec<Uuid> = validation_rows.iter().map(|r| r.audio_id).collect();
 
-            let training_rows = fetch_training_samples(pg_pool, &validation_ids, config).await?;
+            let training_rows = fetch_training_samples(database, &validation_ids, config).await?;
             info!(rows = training_rows.len(), "fetched training rows");
             (validation_rows, training_rows)
         };

@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use bytes::BytesMut;
+use clickhouse::Client;
 use futures::Stream;
-use sqlx::PgPool;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::RwLock;
@@ -105,7 +105,7 @@ pub async fn initialize(
     training_id: Uuid,
     trainings: &TrainingStore,
     assets: &AssetStore,
-    data_pool: &PgPool,
+    database: &Client,
     loader: Arc<dyn Loader>,
     cache_dir: &'static Path,
     synthetic: bool,
@@ -133,15 +133,8 @@ pub async fn initialize(
                 .map(|(name, asset)| assets.ensure(training_id, name, &asset.object)),
         )
         .await?;
-        let session = Session::new(
-            training_id,
-            data_pool,
-            loader,
-            cache_dir,
-            &config,
-            synthetic,
-        )
-        .await?;
+        let session =
+            Session::new(training_id, database, loader, cache_dir, &config, synthetic).await?;
         Ok(SessionHandle::spawn(session))
     }
     .await;

@@ -11,7 +11,6 @@ use clap::{
     },
 };
 use clap_complete::{Shell, generate};
-use sqlx::PgPool;
 use tokio::fs;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -81,12 +80,6 @@ struct Args {
     clickhouse_password: String,
     #[arg(
         long,
-        env = "DATA_DATABASE_URL",
-        help = "PostgreSQL URI to the database containing dataset metadata."
-    )]
-    data_database_url: String,
-    #[arg(
-        long,
         env = "HTTP_PORT",
         help = "HTTP server binding port.",
         default_value = "8180"
@@ -141,7 +134,7 @@ enum Command {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter("debug,h2=off,hyper=off,tower=off,sqlx=off,aws_runtime=off,aws_sdk_s3=off,aws_smithy_runtime_api=off,aws_smithy_runtime=off")
+        .with_env_filter("debug,h2=off,hyper=off,tower=off,aws_runtime=off,aws_sdk_s3=off,aws_smithy_runtime_api=off,aws_smithy_runtime=off")
         .init();
 
     let matches = Args::command().get_matches();
@@ -155,16 +148,13 @@ async fn main() -> anyhow::Result<()> {
     }
     let args = Args::from_arg_matches(&matches)?;
 
-    let state_client = clickhouse::Client::default()
+    let database = clickhouse::Client::default()
         .with_url(&args.clickhouse_url)
         .with_user(&args.clickhouse_user)
         .with_password(&args.clickhouse_password)
         .with_setting("allow_experimental_json_type", "1")
         .with_setting("input_format_binary_read_json_as_string", "1")
         .with_setting("output_format_binary_write_json_as_string", "1");
-    let data_pool = PgPool::connect(&args.data_database_url)
-        .await
-        .context("failed to connect to data postgres")?;
 
     let s3_config = aws_config::defaults(BehaviorVersion::latest())
         .endpoint_url(&args.s3_endpoint)
@@ -188,7 +178,7 @@ async fn main() -> anyhow::Result<()> {
     fs::create_dir_all(&args.checkpoint_dir).await?;
     fs::create_dir_all(&args.metrics_dir).await?;
 
-    let trainings = trainings::TrainingStore::new(state_client);
+    let trainings = trainings::TrainingStore::new(database.clone());
     let shutdown = CancellationToken::new();
     tokio::spawn(watch_shutdown_signals(shutdown.clone()));
     let mut http_server = tokio::spawn(http::serve(
@@ -199,7 +189,7 @@ async fn main() -> anyhow::Result<()> {
     let mut grpc_server = tokio::spawn(grpc::serve(
         args.grpc_port,
         s3_client,
-        data_pool,
+        database,
         trainings,
         args.bucket.leak(),
         Box::leak(args.cache_dir.into_boxed_path()),
