@@ -488,7 +488,9 @@
             ];
 
             env = {
-              DATABASE_URL = "postgresql://postgres@127.0.0.1:5433/givemedata";
+              CLICKHOUSE_URL = "http://127.0.0.1:8123?database=gmd";
+              CLICKHOUSE_USER = "default";
+              CLICKHOUSE_PASSWORD = "";
               DATA_DATABASE_URL = "postgresql://postgres@127.0.0.1:5433/givemedata";
               GRPC_PORT = "8181";
               HTTP_PORT = "8180";
@@ -532,6 +534,11 @@
                 "--encoding=UTF8"
                 "--locale=C.UTF-8"
               ];
+            };
+
+            processes.givemedata-clickhouse = {
+              imports = [ presets.clickhouse ];
+              database = "gmd";
             };
 
             scripts.givemedata-gen = {

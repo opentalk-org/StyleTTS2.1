@@ -114,8 +114,8 @@ pub async fn initialize(
         error!(training = %training_id, error = format!("{err:#}"), "claiming training failed");
         Status::internal(format!("{err:#}"))
     })?;
-    let training = match claimed {
-        ClaimResult::Claimed(training) => training,
+    let (data_config, train_config) = match claimed {
+        ClaimResult::Claimed(v1, v2) => (v1, v2),
         ClaimResult::NotFound => return Err(Status::not_found("unknown training")),
         ClaimResult::Unavailable(state) => {
             return Err(Status::failed_precondition(format!(
@@ -124,7 +124,7 @@ pub async fn initialize(
             )));
         }
     };
-    let config = Arc::new(training.data_config);
+    let config = Arc::new(data_config);
     let initialized: anyhow::Result<SessionHandle> = async {
         futures::future::try_join_all(
             config
@@ -148,7 +148,7 @@ pub async fn initialize(
     match initialized {
         Ok(handle) => Ok(InitializedTraining {
             active: ActiveSession { handle, config },
-            train_config: training.train_config,
+            train_config: train_config,
         }),
         Err(err) => {
             error!(training = %training_id, error = format!("{err:#}"), "training initialization failed");

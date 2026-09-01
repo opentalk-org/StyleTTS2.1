@@ -63,10 +63,22 @@ struct Args {
     grpc_port: u16,
     #[arg(
         long,
-        env = "DATABASE_URL",
-        help = "PostgreSQL URI to the training-state database."
+        env = "CLICKHOUSE_URL",
+        help = "ClickHouse HTTP endpoint for the training-state database."
     )]
-    database_url: String,
+    clickhouse_url: String,
+    #[arg(
+        long,
+        env = "CLICKHOUSE_USER",
+        help = "ClickHouse user for the training-state database."
+    )]
+    clickhouse_user: String,
+    #[arg(
+        long,
+        env = "CLICKHOUSE_PASSWORD",
+        help = "ClickHouse password for the training-state database."
+    )]
+    clickhouse_password: String,
     #[arg(
         long,
         env = "DATA_DATABASE_URL",
@@ -143,9 +155,13 @@ async fn main() -> anyhow::Result<()> {
     }
     let args = Args::from_arg_matches(&matches)?;
 
-    let training_pool = PgPool::connect(&args.database_url)
-        .await
-        .context("failed to connect to training-state postgres")?;
+    let state_client = clickhouse::Client::default()
+        .with_url(&args.clickhouse_url)
+        .with_user(&args.clickhouse_user)
+        .with_password(&args.clickhouse_password)
+        .with_setting("allow_experimental_json_type", "1")
+        .with_setting("input_format_binary_read_json_as_string", "1")
+        .with_setting("output_format_binary_write_json_as_string", "1");
     let data_pool = PgPool::connect(&args.data_database_url)
         .await
         .context("failed to connect to data postgres")?;
@@ -172,7 +188,7 @@ async fn main() -> anyhow::Result<()> {
     fs::create_dir_all(&args.checkpoint_dir).await?;
     fs::create_dir_all(&args.metrics_dir).await?;
 
-    let trainings = trainings::TrainingStore::new(training_pool);
+    let trainings = trainings::TrainingStore::new(state_client);
     let shutdown = CancellationToken::new();
     tokio::spawn(watch_shutdown_signals(shutdown.clone()));
     let mut http_server = tokio::spawn(http::serve(
