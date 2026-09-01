@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import random
 from pathlib import Path
 from typing import Any
@@ -8,14 +9,14 @@ from uuid import UUID
 
 import numpy as np
 import torch
+import givemedata_client as gmd
 from matplotlib.figure import Figure
 from torch import nn
 
 from runflow.runtime.cancellation import check_cancel
 from runner.nodes.training.common.mlflow_run import TrackerRun
-from runner.nodes.training.styletts.finetune.training.data import build_dataloader
-from runner.nodes.training.styletts.finetune.training.modules.asr.models import ASRCNN
-from runner.nodes.training.styletts.finetune.training.utils import (
+from traintts.modules.asr.models import ASRCNN
+from traintts.utils import (
     mask_from_lens,
     maximum_path,
 )
@@ -262,28 +263,16 @@ def train_asr_model(
     if step >= total_steps:
         raise ValueError("asr_checkpoint_already_reached_total_steps")
 
-    dataset_config = {
-        "symbols": symbols,
-        "max_text_tokens": max_text_tokens,
-    }
-    train_batches = build_dataloader(
-        dataset_id,
-        validation_samples,
-        max_seconds=max_audio_seconds,
-        num_workers=num_workers,
+    data_client = gmd.GiveMeDataClient(os.environ["GIVEMEDATA_TRAINING_ID"])
+    train_batches = gmd.dataloader(
+        data_client,
         device=device.type,
-        dataset_config=dataset_config,
-        seed=seed,
     )
-    validation_batches = build_dataloader(
-        dataset_id,
-        validation_samples,
+    validation_batches = gmd.dataloader(
+        data_client,
         validation=True,
-        max_seconds=max_audio_seconds,
-        num_workers=num_workers,
         device=device.type,
-        dataset_config=dataset_config,
-        seed=seed,
+        samples_per_epoch=validation_samples,
     )
 
     weights_dir.mkdir(parents=True, exist_ok=True)
@@ -364,11 +353,14 @@ def train_asr_model(
         )
         final_saved = True
     finally:
-        if not final_saved and step > 0:
-            save_asr_checkpoint(
-                final_path,
-                model=model,
-                optimizer=optimizer,
-                scheduler=scheduler,
-                step=step,
-            )
+        try:
+            if not final_saved and step > 0:
+                save_asr_checkpoint(
+                    final_path,
+                    model=model,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    step=step,
+                )
+        finally:
+            data_client.close()

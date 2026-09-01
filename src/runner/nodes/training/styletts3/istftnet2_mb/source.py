@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from runner.nodes.training.styletts.finetune.training.modules.decoder_blocks import SourceModuleHnNSF
+from traintts.modules.decoder_blocks import SourceModuleHnNSF
 
 
 SAMPLE_RATE = 24_000
@@ -60,4 +60,3 @@ class HarmonicSourceFeatures(nn.Module):
             f"({f0.shape[0]}, {SOURCE_CHANNELS}, {expected_frames})"
         )
         return features
-

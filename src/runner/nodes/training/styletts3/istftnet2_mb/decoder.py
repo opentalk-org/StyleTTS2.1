@@ -3,8 +3,8 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from runner.nodes.training.styletts.finetune.training.modules.decoder_blocks import AdaINResBlock1, DecoderBackbone
-from runner.nodes.training.styletts.finetune.training.modules.utils import checkpoint_with_mixed_precision
+from traintts.modules.decoder_blocks import AdaINResBlock1, DecoderBackbone
+from traintts.modules.utils import checkpoint_with_mixed_precision
 from .core import INPUT_CHANNELS, ISTFTNet2MBCore, TEMPORAL_CHANNELS
 from .source import HarmonicSourceFeatures, SOURCE_CHANNELS
 
@@ -74,4 +74,3 @@ class StyleTTSISTFTNet2MBDecoder(DecoderBackbone):
             f"{prepared_f0.shape[-1]}"
         )
         return self.generator(features, prepared_f0, style)
-
