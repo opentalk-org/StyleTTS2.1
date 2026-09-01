@@ -9,6 +9,8 @@ from traintts.modules.asr.models import ASRCNN
 from traintts.modules.discriminators import (
     MultiPeriodDiscriminator,
     MultiResSpecDiscriminator,
+)
+from traintts.modules.multimodal_discriminator import (
     WavLMDiscriminator,
 )
 from traintts.modules.encoders import TextEncoder
@@ -23,8 +25,8 @@ from traintts.modules.latent.prosody import (
     ProsodyPredictor,
     TVStyleEncoder,
 )
-from traintts.modules.latent.rfsq import (
-    ResidualFiniteScalarQuantizer,
+from traintts.modules.latent.rvq import (
+    ResidualVectorQuantizer,
 )
 from traintts.modules.latent.voice import VoiceEncoder
 from traintts.state_dict_resize import merge_state_dict_with_dim0_resize
@@ -58,6 +60,7 @@ _CHECKPOINT_DIM0_RESIZE_KEYS_BY_MODULE = {
         "module.asr_s2s.project_to_n_symbols.weight",
         "module.asr_s2s.project_to_n_symbols.bias",
     }),
+    "position_embedding": frozenset({"weight"}),
 }
 
 logger = logging.getLogger(__name__)
@@ -72,12 +75,6 @@ _FACTORIZED_MODULES = frozenset({
     "quantizer",
     "duration_discriminator",
 })
-_OBSOLETE_ALPHA_FLOW_KEYS = frozenset({
-    "denoiser.fixed_embedding.embedding.weight",
-    "denoiser.fixed_feature.embedding.weight",
-})
-
-
 def _merge_checkpoint_state_with_dim0_resize(module_name, model_module, ckpt_sd):
     if module_name not in _CHECKPOINT_DIM0_RESIZE_KEYS_BY_MODULE:
         return ckpt_sd
@@ -86,7 +83,9 @@ def _merge_checkpoint_state_with_dim0_resize(module_name, model_module, ckpt_sd)
         ckpt_sd,
         _CHECKPOINT_DIM0_RESIZE_KEYS_BY_MODULE[module_name],
         error_scope=module_name,
-        appended_source_index=0,
+        appended_source_index=(
+            None if module_name == "position_embedding" else 0
+        ),
     )
 
 def _maybe_normalize_module_prefix(model_module, state_dict):
@@ -203,7 +202,8 @@ def build_model(args, text_aligner, pitch_extractor, bert):
     wd = WavLMDiscriminator(
         slm_hidden=args.slm.hidden,
         slm_layers=args.slm.nlayers,
-        initial_channel=args.slm.initial_channel,
+        hidden_dim=args.hidden_dim,
+        style_dim=args.style_dim,
     )
     mpd = MultiPeriodDiscriminator(
         gradient_checkpointing=discriminators_checkpointing,
@@ -214,16 +214,15 @@ def build_model(args, text_aligner, pitch_extractor, bert):
     prosody_encoder = TVStyleEncoder(mel_dim=514)
     duration_predictor = DurationPredictor(max_dur=50)
     prosody_predictor = ProsodyPredictor()
-    quantizer = ResidualFiniteScalarQuantizer(
+    quantizer = ResidualVectorQuantizer(
         input_dim=512,
-        latent_dim=args.prosody_quantizer.latent_dim,
         stages=args.prosody_quantizer.stages,
-        levels=args.prosody_quantizer.levels,
-        stage_dropout=args.prosody_quantizer.stage_dropout,
+        codebook_size=args.prosody_quantizer.codebook_size,
+        codebook_dim=args.prosody_quantizer.codebook_dim,
     )
     alpha_flow = AlphaFlow(
         text_dim=bert.config.hidden_size,
-        style_dim=args.prosody_quantizer.latent_dim,
+        style_dim=quantizer.latent_dim,
         style_scale=args.alpha_flow.get("style_scale", 1.0),
         transition_start=args.alpha_flow.transition_start,
         transition_end=args.alpha_flow.transition_end,
@@ -243,7 +242,10 @@ def build_model(args, text_aligner, pitch_extractor, bert):
             duration_discriminator=ProsodyDiscriminator(mel_dim=513),
             decoder=decoder,
             text_encoder=text_encoder,
-            position_embedding=nn.Embedding(512, 512),
+            position_embedding=nn.Embedding(
+                bert.config.max_position_embeddings,
+                512,
+            ),
             prosody_encoder=prosody_encoder,
             quantizer=quantizer,
             voice_encoder=voice_encoder,
@@ -273,10 +275,10 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
         name.removeprefix("module.")
         for name in quantizer_state
     }
-    if "to_latent.weight" not in quantizer_keys:
+    if "quantizers.0.in_proj.0.weight_g" not in quantizer_keys:
         ignored.update(("quantizer", "alpha_flow"))
         logger.info(
-            "initialized residual FSQ and continuous AlphaFlow; "
+            "initialized StyleTTS-ZS RVQ and AlphaFlow; "
             "checkpoint contains a different prosody bottleneck"
         )
     reinitialized = set()
@@ -297,12 +299,21 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
                 continue
             raise ValueError(f"checkpoint is missing unchanged module {key}")
         normalized_params = _maybe_normalize_module_prefix(model[key], params[source_key])
-        if key == "alpha_flow":
+        if key == "voice_encoder" and any(
+            name.startswith("conformer_pre.") for name in normalized_params
+        ):
             normalized_params = {
-                name: value
+                (
+                    f"phoneme_encoder.{name}"
+                    if name.startswith(("conformer_pre.", "conformer_body."))
+                    else name
+                ): value
                 for name, value in normalized_params.items()
-                if name not in _OBSOLETE_ALPHA_FLOW_KEYS
             }
+        if key == "wd" and "wavlm_projection.weight" not in normalized_params:
+            logger.info("initialized paper multimodal waveform discriminator")
+            reinitialized.add(key)
+            continue
         adapted_params = _merge_checkpoint_state_with_dim0_resize(key, model[key], normalized_params)
         if key == "factorization":
             current_keys = model[key].state_dict().keys()
@@ -312,6 +323,10 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
                 if name in current_keys
             }
         load_result = model[key].load_state_dict(adapted_params, strict=False)
+        if key == "voice_encoder" and "positions.weight" in load_result.missing_keys:
+            logger.info(
+                "initialized 16-token voice pooling and text conditioning"
+            )
         missing_keys = [
             item for item in load_result.missing_keys
             if not item.endswith("dummy_tensor")
@@ -322,6 +337,18 @@ def load_checkpoint(model, optimizer, path, load_only_params, ignore_modules):
             and not (
                 key == "alpha_flow"
                 and item in {"style_scale", "style_scale_updates"}
+            )
+            and not (
+                key == "voice_encoder"
+                and item.startswith(
+                    (
+                        "cross_attention.",
+                        "positions.",
+                        "embedder.",
+                        "prompt_conformer_pre.",
+                        "prompt_conformer_body.",
+                    )
+                )
             )
         ]
         unexpected_keys = [

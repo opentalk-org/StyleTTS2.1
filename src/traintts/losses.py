@@ -168,17 +168,31 @@ def slm_discriminator_loss(real_scores: Tensor, generated_scores: Tensor) -> Ten
     ).mean()
 
 
-def slm_generator_loss(generated_scores: Tensor) -> Tensor:
-    return torch.mean((1 - generated_scores) ** 2)
+def slm_generator_loss(
+    generated_scores: Tensor,
+    real_features: list[Tensor],
+    generated_features: list[Tensor],
+) -> Tensor:
+    feature_matching = sum(
+        F.l1_loss(real, generated)
+        for real, generated in zip(real_features, generated_features, strict=True)
+    )
+    return torch.mean((1 - generated_scores) ** 2) + feature_matching
 
 
 def speaker_losses(
-    real_values: Tensor,
-    generated_values: Tensor,
+    real_values: tuple[Tensor, ...],
+    generated_values: tuple[Tensor, ...],
     real_embedding: Tensor,
     generated_embedding: Tensor,
 ) -> tuple[Tensor, Tensor]:
-    feature = F.l1_loss(generated_values, real_values)
+    feature = generated_embedding.new_zeros(())
+    for real, generated in zip(
+        real_values,
+        generated_values,
+        strict=True,
+    ):
+        feature = feature + F.l1_loss(generated, real)
     similarity = 1 - F.cosine_similarity(
         F.normalize(generated_embedding, dim=-1),
         F.normalize(real_embedding, dim=-1),

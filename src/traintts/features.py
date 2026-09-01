@@ -1,12 +1,16 @@
 import torch
 import torchaudio
+from huggingface_hub import hf_hub_download
 from torch import Tensor, nn
+from torch.utils.checkpoint import checkpoint
+from torchaudio.compliance import kaldi
 from transformers import (
     AutoModel,
-    WavLMForXVector,
 )
 
-SPEAKER_MODEL = "microsoft/wavlm-base-plus-sv"
+from .modules.tidyvoice import TidyVoiceSpeakerModel
+
+SPEAKER_MODEL = "areffarhadi/Resnet34-tidyvoiceX-ASV"
 
 
 class WavLMFeatures(nn.Module):
@@ -17,10 +21,19 @@ class WavLMFeatures(nn.Module):
 
     def forward(self, waveform: Tensor):
         waveform = self.resample(waveform.float())
-        return self.model(
-            input_values=waveform,
-            output_hidden_states=True,
-        ).hidden_states
+        if waveform.requires_grad:
+            output = checkpoint(
+                self.model,
+                input_values=waveform,
+                output_hidden_states=True,
+                use_reentrant=False,
+            )
+        else:
+            output = self.model(
+                input_values=waveform,
+                output_hidden_states=True,
+            )
+        return output.hidden_states
 
     @staticmethod
     def discriminator_input(features) -> Tensor:
@@ -31,20 +44,36 @@ class SpeakerFeatures(nn.Module):
     def __init__(self, sample_rate: int) -> None:
         super().__init__()
         self.resample = torchaudio.transforms.Resample(sample_rate, 16_000)
-        self.model = (
-            WavLMForXVector.from_pretrained(SPEAKER_MODEL)
-            .requires_grad_(False)
-            .eval()
+        checkpoint = hf_hub_download(SPEAKER_MODEL, "models/avg_model.pt")
+        self.model = TidyVoiceSpeakerModel()
+        state = torch.load(checkpoint, map_location="cpu", weights_only=True)
+        del state["projection.weight"]
+        self.model.load_state_dict(
+            state,
+            strict=True,
         )
+        self.model.requires_grad_(False).eval()
 
-    def forward(self, waveform: Tensor) -> tuple[Tensor, Tensor]:
+    @staticmethod
+    def _fbank(waveform: Tensor) -> Tensor:
+        values = kaldi.fbank(
+            waveform * (1 << 15),
+            num_mel_bins=80,
+            frame_length=25,
+            frame_shift=10,
+            dither=0,
+            sample_frequency=16_000,
+            window_type="hamming",
+            use_energy=False,
+        )
+        return values - values.mean(dim=0, keepdim=True)
+
+    def forward(self, waveform: Tensor) -> tuple[tuple[Tensor, ...], Tensor]:
         waveform = waveform.squeeze(1) if waveform.dim() == 4 else waveform
         if waveform.size(1) > 1:
             waveform = waveform.mean(dim=1, keepdim=True)
-        waveform = self.resample(waveform.squeeze(1))
-        input_values = waveform.float()
-        input_values = (input_values - input_values.mean(-1, keepdim=True)) / (
-            input_values.var(-1, keepdim=True, unbiased=False) + 1e-7
-        ).sqrt()
-        embedding = self.model(input_values=input_values).embeddings
-        return input_values, embedding
+        waveform = self.resample(waveform).float()
+        fbank = torch.stack([self._fbank(item) for item in waveform])
+        if fbank.requires_grad:
+            return checkpoint(self.model, fbank, use_reentrant=False)
+        return self.model(fbank)

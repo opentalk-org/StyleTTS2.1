@@ -45,10 +45,9 @@ model_params:
     flow_matching_ratio: 0.5
     conditional_dropout: 0.1
   prosody_quantizer:
-    latent_dim: 30
-    levels: 8
-    stages: 1
-    stage_dropout: false
+    stages: 9
+    codebook_size: 1024
+    codebook_dim: 8
 optimizer_params:
   lr: 0.0001
   bert_lr: 1.0e-5

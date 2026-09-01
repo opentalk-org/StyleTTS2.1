@@ -42,6 +42,7 @@ class TrainingConfig(StrictConfigModel):
     log_every_steps: int = Field(gt=0)
     profiling_enabled: bool
     distributed_processes: int = Field(gt=0)
+    gradient_accumulation_steps: int = Field(gt=0)
     device: str
     load_only_params: bool
     reset_training_step: bool

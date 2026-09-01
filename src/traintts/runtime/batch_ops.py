@@ -9,17 +9,17 @@ from ..records import TrainingBatch
 
 
 def prosody_inputs(
-    position_embedding,
+    position_embedding: torch.nn.Embedding,
     alignment: Tensor,
     f0: Tensor,
     energy: Tensor,
 ) -> Tensor:
     positions = torch.arange(alignment.size(1), device=alignment.device)
     positions = positions.unsqueeze(0).expand(alignment.size(0), -1)
-    position_features = position_embedding(positions).transpose(1, 2) @ alignment
+    duration_features = position_embedding(positions).transpose(1, 2) @ alignment
     half_f0 = F.avg_pool1d(f0.unsqueeze(1), 2)
     half_energy = F.avg_pool1d(energy.unsqueeze(1), 2)
-    return torch.cat((position_features, half_energy, half_f0), dim=1)
+    return torch.cat((duration_features, half_energy, half_f0), dim=1)
 
 
 def sample_alpha_flow_features(
@@ -56,12 +56,8 @@ def sample_target_prosody_input(
     current: Tensor,
 ) -> tuple[Tensor, Tensor]:
     current_lengths = batch.mel_lengths.to(current.device) // 2
-    augmentation = random.random()
-    if augmentation < 0.1:
-        return current, current_lengths
-    if augmentation < 0.55:
+    if bool(random.getrandbits(1)):
         return _random_mask_batch(current, current_lengths), current_lengths
-
     return _random_crops(current, current_lengths)
 
 

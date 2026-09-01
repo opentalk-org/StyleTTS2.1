@@ -70,6 +70,7 @@ class RunSpec(BaseModel):
     log_every_steps: int = 10
     profiling_enabled: bool = False
     distributed_processes: int = 1
+    gradient_accumulation_steps: int = Field(default=1, gt=0)
     load_optimizer: bool = False
     reset_training_step: bool = False
     decoder: Literal["hifigan", "istftnet"] = "hifigan"
@@ -129,6 +130,7 @@ def build_run_config(spec: RunSpec) -> dict[str, Any]:
         log_every_steps=spec.log_every_steps,
         profiling_enabled=spec.profiling_enabled,
         distributed_processes=spec.distributed_processes,
+        gradient_accumulation_steps=spec.gradient_accumulation_steps,
         load_optimizer=spec.load_optimizer,
         reset_training_step=spec.reset_training_step,
         generator_checkpointing=spec.checkpoint_decoder_gradients,
