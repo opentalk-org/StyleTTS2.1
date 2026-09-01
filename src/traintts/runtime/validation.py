@@ -3,7 +3,6 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
-
 from ..val_sample_export import (
     ValidationArtifactRenderer,
     ValidationSample,
@@ -73,43 +72,43 @@ def resize_prosody(
     return resized
 
 
-def rfsq_usage_metrics(counts: torch.Tensor) -> dict[str, torch.Tensor]:
+def rvq_usage_metrics(counts: torch.Tensor) -> dict[str, torch.Tensor]:
     metrics = {}
     utilizations = []
     dead_fractions = []
     perplexities = []
     top_shares = []
-    level_count = counts.size(1)
-    for index, level_counts in enumerate(counts):
-        assignments = level_counts.sum()
-        probabilities = level_counts.float() / assignments
-        active = (level_counts > 0).sum()
+    code_count = counts.size(1)
+    for index, code_counts in enumerate(counts):
+        assignments = code_counts.sum()
+        probabilities = code_counts.float() / assignments
+        active = (code_counts > 0).sum()
         nonzero = probabilities > 0
         perplexity = torch.exp(
             -(probabilities[nonzero] * probabilities[nonzero].log()).sum()
         )
-        utilization = active.float() / level_count
+        utilization = active.float() / code_count
         top_share = probabilities.max()
-        prefix = f"rfsq/stage_{index:02d}"
-        metrics[f"{prefix}/active_levels"] = active.float()
+        prefix = f"rvq/stage_{index:02d}"
+        metrics[f"{prefix}/active_codes"] = active.float()
         metrics[f"{prefix}/utilization"] = utilization
-        metrics[f"{prefix}/dead_level_fraction"] = 1 - utilization
+        metrics[f"{prefix}/dead_code_fraction"] = 1 - utilization
         metrics[f"{prefix}/perplexity"] = perplexity
         metrics[f"{prefix}/normalized_perplexity"] = (
-            perplexity / level_count
+            perplexity / code_count
         )
-        metrics[f"{prefix}/top_level_share"] = top_share
+        metrics[f"{prefix}/top_code_share"] = top_share
         utilizations.append(utilization)
         dead_fractions.append(1 - utilization)
         perplexities.append(perplexity)
         top_shares.append(top_share)
-    metrics["rfsq/mean_utilization"] = torch.stack(utilizations).mean()
-    metrics["rfsq/mean_dead_level_fraction"] = torch.stack(
+    metrics["rvq/mean_utilization"] = torch.stack(utilizations).mean()
+    metrics["rvq/mean_dead_code_fraction"] = torch.stack(
         dead_fractions
     ).mean()
-    metrics["rfsq/mean_perplexity"] = torch.stack(perplexities).mean()
-    metrics["rfsq/mean_top_level_share"] = torch.stack(top_shares).mean()
-    metrics["rfsq/assignments_per_stage"] = counts.sum(1).float().mean()
+    metrics["rvq/mean_perplexity"] = torch.stack(perplexities).mean()
+    metrics["rvq/mean_top_code_share"] = torch.stack(top_shares).mean()
+    metrics["rvq/assignments_per_stage"] = counts.sum(1).float().mean()
     return metrics
 
 
@@ -123,6 +122,8 @@ def synthesize_validation(
     monotonic: torch.Tensor,
     target_f0: torch.Tensor,
     target_energy: torch.Tensor,
+    prompt_mels: torch.Tensor,
+    duration_source: ValidationDurationSource,
     alpha_flow_noise: torch.Tensor | None = None,
 ) -> tuple[
     torch.Tensor,
@@ -144,15 +145,12 @@ def synthesize_validation(
     )
     predicted_f0 = target_f0.new_zeros(target_f0.shape)
     predicted_energy = target_energy.new_zeros(target_energy.shape)
-    rfsq_indices = None
+    rvq_indices = None
     validates_predictions = (
         stage.validation.alpha_flow
         or stage.validation.f0_source is ProsodySource.PREDICTED
         or stage.validation.norm_source is ProsodySource.PREDICTED
-        or (
-            stage.validation.duration_source
-            is ValidationDurationSource.PREDICTED
-        )
+        or duration_source is ValidationDurationSource.PREDICTED
     )
     if validates_predictions:
         conditioning = prosody_inputs(
@@ -170,30 +168,25 @@ def synthesize_validation(
             if stage.style_source is StyleSource.QUANTIZED:
                 latents = modules.quantizer(encoded_style)
                 style = latents.quantized_style
-                rfsq_indices = latents.indices
+                rvq_indices = latents.indices
         if stage.validation.alpha_flow:
-            continuous_latent = modules.alpha_flow.sample(
+            style = modules.alpha_flow.sample(
                 bert,
                 conditioning,
                 batch.input_lengths,
                 noise=alpha_flow_noise,
             )
-            style = modules.quantizer.decode_continuous(continuous_latent)
         duration_predictions = modules.duration_predictor(
             duration_encoding,
             style,
             batch.input_lengths,
             duration_encoding.size(-1),
         )
-        if (
-            stage.validation.duration_source
-            is ValidationDurationSource.PREDICTED
-        ):
+        if duration_source is ValidationDurationSource.PREDICTED:
             decode_alignment, decode_lengths = predicted_alignment(
                 duration_predictions,
                 batch.input_lengths,
             )
-    prompt_mels = sample_voice_prompts(batch)
     with torch.autocast(device_type=device.type, enabled=False):
         decoder_voice, decoder_text = modules.voice_encoder(
             prompt_mels.float(),
@@ -247,7 +240,7 @@ def synthesize_validation(
         resized_energy,
         decode_alignment,
         decode_lengths,
-        rfsq_indices,
+        rvq_indices,
     )
 
 
@@ -273,6 +266,7 @@ class Validator:
             Path(config.log_dir),
             config.preprocess_params.sr,
         )
+        self.sample_cursor = 0
 
     def run(
         self,
@@ -297,45 +291,65 @@ class Validator:
         zero = torch.zeros((), device=self.runtime.accelerator.device)
         totals = {name: zero.clone() for name in metric_names}
         quantizer = modules.quantizer
-        rfsq_counts = torch.zeros(
+        rvq_counts = torch.zeros(
             (
                 quantizer.num_stages,
-                quantizer.levels,
+                quantizer.codebook_size,
             ),
             device=zero.device,
             dtype=torch.long,
         )
         samples: list[ValidationSampleArtifacts] = []
+        validation_sample_count = self.config.data_params.validation_samples
+        export_count = min(4, validation_sample_count)
+        export_positions = [
+            (self.sample_cursor + index) % validation_sample_count
+            for index in range(export_count)
+        ]
+        export_slots = {
+            position: slot for slot, position in enumerate(export_positions)
+        }
+        batch_start = 0
         count = 0
         with torch.no_grad():
             for batch in batches:
                 batch = batch.to(self.runtime.accelerator.device)
-                values, exported, rfsq_indices = self._validate_batch(
+                batch_end = batch_start + batch.texts.size(0)
+                selected = [
+                    (position - batch_start, export_slots[position])
+                    for position in export_positions
+                    if batch_start <= position < batch_end
+                ]
+                values, exported, rvq_indices = self._validate_batch(
                     batch,
                     step,
                     stage,
-                    export_samples=not samples,
+                    export_indices=[index for index, _ in selected],
+                    export_slots=[slot for _, slot in selected],
                 )
                 for name, value in values.items():
                     totals[name] += value
                 samples.extend(exported)
-                if rfsq_indices is not None:
-                    for index in range(rfsq_counts.size(0)):
-                        stage_indices = rfsq_indices[:, index].reshape(-1)
-                        stage_indices = stage_indices[stage_indices >= 0]
-                        rfsq_counts[index] += torch.bincount(
+                if rvq_indices is not None:
+                    for index in range(rvq_counts.size(0)):
+                        stage_indices = rvq_indices[:, index].reshape(-1)
+                        rvq_counts[index] += torch.bincount(
                             stage_indices,
-                            minlength=rfsq_counts.size(1),
+                            minlength=rvq_counts.size(1),
                         )
                 count += 1
+                batch_start = batch_end
         if count == 0:
             raise ValueError("validation loader produced no batches")
         reduced = {
             name: value / count
             for name, value in totals.items()
         }
-        if rfsq_counts.sum() > 0:
-            reduced.update(rfsq_usage_metrics(rfsq_counts))
+        if rvq_counts.sum() > 0:
+            reduced.update(rvq_usage_metrics(rvq_counts))
+        self.sample_cursor = (
+            self.sample_cursor + export_count
+        ) % validation_sample_count
         return ValidationResult(
             reduced,
             samples,
@@ -346,7 +360,8 @@ class Validator:
         batch: TrainingBatch,
         step: int,
         stage: TrainingStageSpec,
-        export_samples: bool,
+        export_indices: list[int],
+        export_slots: list[int],
     ) -> tuple[
         dict[str, torch.Tensor],
         list[ValidationSampleArtifacts],
@@ -417,6 +432,7 @@ class Validator:
             target_norm.masked_fill_(full_mask, 0.0)
             source_target_f0 = target_f0
             source_target_norm = target_norm
+            prompt_mels = sample_voice_prompts(batch)
             alpha_flow_noise = self._alpha_flow_noise(
                 batch.texts,
                 batch.input_lengths,
@@ -432,7 +448,7 @@ class Validator:
                 target_norm,
                 decode_alignment,
                 decode_lengths,
-                rfsq_indices,
+                rvq_indices,
             ) = synthesize_validation(
                 self.runtime,
                 batch,
@@ -443,6 +459,8 @@ class Validator:
                 monotonic if validate_predictions else soft_alignment,
                 source_target_f0,
                 source_target_norm,
+                prompt_mels,
+                ValidationDurationSource.GROUND_TRUTH,
                 alpha_flow_noise,
             )
             waveform = waveform.unsqueeze(1)
@@ -499,17 +517,6 @@ class Validator:
                     duration_targets,
                     batch.input_lengths,
                 )
-                free_run_stage = stage.model_copy(
-                    update={
-                        "validation": stage.validation.model_copy(
-                            update={
-                                "duration_source": (
-                                    ValidationDurationSource.PREDICTED
-                                ),
-                            }
-                        )
-                    }
-                )
                 (
                     free_reconstructed,
                     _,
@@ -523,13 +530,15 @@ class Validator:
                 ) = synthesize_validation(
                     self.runtime,
                     batch,
-                    free_run_stage,
+                    stage,
                     text_encoding,
                     duration_encoding,
                     bert,
                     monotonic,
                     source_target_f0,
                     source_target_norm,
+                    prompt_mels,
+                    ValidationDurationSource.PREDICTED,
                     alpha_flow_noise,
                 )
                 free_prediction_sample_lengths = [
@@ -559,8 +568,7 @@ class Validator:
                     }
                 )
         samples = []
-        if export_samples:
-            sample_count = min(4, waveform.size(0))
+        if export_indices:
             validation_samples = [
                 ValidationSample(
                     ground_truth=waveform[
@@ -602,12 +610,13 @@ class Validator:
                         : batch.mel_lengths[index] // (2**n_down),
                     ],
                 )
-                for index in range(sample_count)
+                for index in export_indices
             ]
             teacher_forced_samples = self.artifacts.render(
                 step,
                 validation_samples,
                 mode="teacher_forced_timing",
+                sample_indices=export_slots,
             )
             samples = teacher_forced_samples
             if validate_predictions:
@@ -650,14 +659,15 @@ class Validator:
                             : free_lengths[index],
                         ],
                     )
-                    for index in range(sample_count)
+                    for index in export_indices
                 ]
                 samples += self.artifacts.render(
                     step,
                     free_run_samples,
                     mode="free_running",
+                    sample_indices=export_slots,
                 )
-        return metrics, samples, rfsq_indices
+        return metrics, samples, rvq_indices
 
     def _acoustic_reconstruction_loss(
         self,

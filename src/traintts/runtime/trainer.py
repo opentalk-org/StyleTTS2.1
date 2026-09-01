@@ -41,6 +41,7 @@ from .gradient_norms import gradient_norm_metrics
 
 
 logger = logging.getLogger(__name__)
+SPEAKER_LOSS_SECONDS = 3
 
 
 class Trainer:
@@ -54,6 +55,10 @@ class Trainer:
             self.alpha_flow_start += training_stage.steps
         self.skipped_steps = 0
         self.step = runtime.initial_step
+        self.accumulation_steps = config.gradient_accumulation_steps
+        self.accumulation_microstep = 0
+        self.update_completed = False
+        self._generator_accumulation_finite = True
 
     def set_training_mode(self) -> None:
         stage = stage_for_step(self.config.training_stages, self.step)
@@ -70,6 +75,9 @@ class Trainer:
         self.runtime.models.set_training_mode(training_modules)
 
     def train_step(self, batch: TrainingBatch) -> dict[str, torch.Tensor | float]:
+        first_microbatch = self.accumulation_microstep == 0
+        update_due = self.accumulation_microstep + 1 == self.accumulation_steps
+        self.update_completed = False
         set_profiling_step(self.step)
         runtime = self.runtime
         accelerator = runtime.accelerator
@@ -197,17 +205,13 @@ class Trainer:
                 )
             encoder_inputs = style_inputs
             encoder_lengths = batch.mel_lengths.to(device) // 2
-            if (
-                stage.style_source is StyleSource.QUANTIZED
-                and TrainableModule.PROSODY_ENCODER in stage.trainable_modules
-            ):
+            if TrainableModule.PROSODY_ENCODER in stage.trainable_modules:
                 encoder_inputs, encoder_lengths = sample_target_prosody_input(
                     batch,
                     style_inputs,
                 )
 
             style_target = batch.mels.new_zeros((batch.mels.size(0), 512, 1))
-            continuous_decode_style = style_target
             continuous_latent = batch.mels.new_zeros(
                 (
                     batch.mels.size(0),
@@ -215,8 +219,8 @@ class Trainer:
                     1,
                 )
             )
-            quantization_error = batch.mels.new_zeros(())
-            dual_decode = False
+            commitment_loss = batch.mels.new_zeros(())
+            codebook_loss = batch.mels.new_zeros(())
             if style_required:
                 with torch.autocast(device_type=device.type, enabled=False):
                     encoded_style = modules.prosody_encoder(
@@ -226,12 +230,9 @@ class Trainer:
                     if stage.style_source is StyleSource.QUANTIZED:
                         latents = modules.quantizer(encoded_style)
                         continuous_latent = latents.continuous
-                        continuous_decode_style = latents.continuous_style
                         style_target = latents.quantized_style
-                        quantization_error = latents.quantization_error
-                        dual_decode = (
-                            TrainableModule.QUANTIZER in stage.trainable_modules
-                        )
+                        commitment_loss = latents.commitment_loss
+                        codebook_loss = latents.codebook_loss
                     else:
                         style_target = encoded_style
 
@@ -246,7 +247,7 @@ class Trainer:
                     target_energy,
                 )
                 alpha_loss = modules.alpha_flow(
-                    continuous_latent.detach(),
+                    style_target.detach(),
                     bert,
                     alpha_features,
                     batch.input_lengths,
@@ -258,9 +259,6 @@ class Trainer:
             )
             predicted_f0 = target_f0.new_zeros(target_f0.shape)
             predicted_energy = target_energy.new_zeros(target_energy.shape)
-            continuous_duration_predictions = duration_predictions
-            continuous_predicted_f0 = predicted_f0
-            continuous_predicted_energy = predicted_energy
             if duration_required or prosody_required:
                 duration_encoding = modules.bert_encoder(bert).transpose(-1, -2)
                 if duration_required:
@@ -270,13 +268,6 @@ class Trainer:
                         batch.input_lengths,
                         duration_encoding.size(-1),
                     )
-                    if dual_decode:
-                        continuous_duration_predictions = modules.duration_predictor(
-                            duration_encoding,
-                            continuous_decode_style,
-                            batch.input_lengths,
-                            duration_encoding.size(-1),
-                        )
                 if prosody_required:
                     aligned_duration = duration_encoding @ monotonic
                     predicted_f0, predicted_energy = modules.prosody_predictor(
@@ -285,26 +276,8 @@ class Trainer:
                         batch.mel_lengths.to(device) // 2,
                         monotonic.size(-1),
                     )
-                    if dual_decode:
-                        (
-                            continuous_predicted_f0,
-                            continuous_predicted_energy,
-                        ) = modules.prosody_predictor(
-                            aligned_duration,
-                            continuous_decode_style,
-                            batch.mel_lengths.to(device) // 2,
-                            monotonic.size(-1),
-                        )
             predicted_f0 = predicted_f0.masked_fill(full_mask, 0.0)
             predicted_energy = predicted_energy.masked_fill(full_mask, 0.0)
-            continuous_predicted_f0 = continuous_predicted_f0.masked_fill(
-                full_mask,
-                0.0,
-            )
-            continuous_predicted_energy = continuous_predicted_energy.masked_fill(
-                full_mask,
-                0.0,
-            )
 
             prosody_fake = style_inputs.new_zeros(style_inputs.shape)
             duration_shape = (batch.texts.size(0), 513, monotonic.size(1))
@@ -317,21 +290,15 @@ class Trainer:
                     predicted_f0,
                     predicted_energy,
                 )
-                positions = torch.arange(monotonic.size(1), device=device)
-                position_features = modules.position_embedding(positions).transpose(0, 1)
-                position_features = position_features.unsqueeze(0).expand(
-                    batch.texts.size(0),
-                    -1,
-                    -1,
-                )
+            if prosody_adversarial:
                 predicted_duration = torch.sigmoid(duration_predictions).sum(-1)
                 predicted_duration = predicted_duration.masked_fill(text_mask, 0.0)
                 duration_real = torch.cat(
-                    (position_features, duration_targets.unsqueeze(1)),
+                    (text_encoding, duration_targets.unsqueeze(1)),
                     dim=1,
                 )
                 duration_fake = torch.cat(
-                    (position_features, predicted_duration.unsqueeze(1)),
+                    (text_encoding, predicted_duration.unsqueeze(1)),
                     dim=1,
                 )
 
@@ -361,9 +328,9 @@ class Trainer:
                         with torch.no_grad():
                             null_voice, null_text = modules.voice_encoder(
                                 torch.zeros_like(prompt_mels).float(),
-                                decoder_text,
+                                text_encoding.float(),
                                 batch.input_lengths,
-                                decoder_text.size(-1),
+                                text_encoding.size(-1),
                             )
                         if bool(random.getrandbits(1)):
                             decoder_voice = null_voice
@@ -420,6 +387,12 @@ class Trainer:
                     decoder_energy,
                     decoder_voice,
                 )
+            waveform_condition = (
+                aligned_crop.detach(),
+                decoder_voice.detach(),
+                decoder_f0.detach(),
+                decoder_energy.detach(),
+            )
         gan_metrics: dict[str, torch.Tensor | float] = {}
         prosody_discriminator_total = reconstructed.new_zeros(())
         slm_discriminator_loss = reconstructed.new_zeros(())
@@ -429,7 +402,8 @@ class Trainer:
                 ("mpd", modules.mpd),
                 ("msd", modules.msd),
             ):
-                optimizer.zero_grad(name)
+                if first_microbatch:
+                    optimizer.zero_grad(name)
                 with accelerator.autocast():
                     real_scores, generated_scores, _, _ = discriminator(
                         waveform.detach().float(),
@@ -463,13 +437,17 @@ class Trainer:
                             ),
                         }
                     )
-                accelerator.backward(discriminator_losses.total)
-                synchronize_gradients(accelerator, modules, (name,))
-                if measure_gradient_norms:
+                accelerator.backward(
+                    discriminator_losses.total / self.accumulation_steps
+                )
+                if update_due:
+                    synchronize_gradients(accelerator, modules, (name,))
+                if update_due and measure_gradient_norms:
                     gradient_metrics.update(
                         gradient_norm_metrics(accelerator, modules, (name,))
                     )
-                optimizer.step(name)
+                if update_due:
+                    optimizer.step(name)
                 discriminator.requires_grad_(False)
 
         if prosody_adversarial:
@@ -490,7 +468,8 @@ class Trainer:
                 ),
             )
             for name, discriminator, fake, real, lengths in prosody_items:
-                optimizer.zero_grad(name)
+                if first_microbatch:
+                    optimizer.zero_grad(name)
                 generated_scores, _ = discriminator(
                     fake.detach().float(),
                     style_target.detach().float(),
@@ -508,18 +487,21 @@ class Trainer:
                     generated_scores,
                     lengths,
                 )
-                accelerator.backward(loss)
-                synchronize_gradients(accelerator, modules, (name,))
-                if measure_gradient_norms:
+                accelerator.backward(loss / self.accumulation_steps)
+                if update_due:
+                    synchronize_gradients(accelerator, modules, (name,))
+                if update_due and measure_gradient_norms:
                     gradient_metrics.update(
                         gradient_norm_metrics(accelerator, modules, (name,))
                     )
-                optimizer.step(name)
+                if update_due:
+                    optimizer.step(name)
                 modules[name].requires_grad_(False)
                 prosody_discriminator_total += loss.detach()
 
         if slm_adversarial:
-            optimizer.zero_grad("wd")
+            if first_microbatch:
+                optimizer.zero_grad("wd")
             with accelerator.autocast():
                 with torch.no_grad():
                     real_features = self.runtime.features.wavlm(
@@ -534,29 +516,36 @@ class Trainer:
                     generated_input = self.runtime.features.wavlm.discriminator_input(
                         generated_features
                     )
-                real_scores = modules.wd(real_input)
-                generated_scores = modules.wd(generated_input)
+                real_scores, _ = modules.wd(real_input, *waveform_condition)
+                generated_scores, _ = modules.wd(generated_input, *waveform_condition)
                 slm_discriminator_loss = compute_slm_discriminator_loss(
                     real_scores,
                     generated_scores,
                 )
-            accelerator.backward(slm_discriminator_loss)
-            synchronize_gradients(accelerator, modules, ("wd",))
-            if measure_gradient_norms:
+            accelerator.backward(
+                slm_discriminator_loss / self.accumulation_steps
+            )
+            if update_due:
+                synchronize_gradients(accelerator, modules, ("wd",))
+            if update_due and measure_gradient_norms:
                 gradient_metrics.update(
                     gradient_norm_metrics(accelerator, modules, ("wd",))
                 )
-            optimizer.step("wd")
+            if update_due:
+                optimizer.step("wd")
             modules.wd.requires_grad_(False)
             slm_discriminator_loss = slm_discriminator_loss.detach()
 
-        for name in trainable:
-            optimizer.zero_grad(name)
-        dual_metrics: dict[str, torch.Tensor] = {}
+        if first_microbatch:
+            for name in trainable:
+                optimizer.zero_grad(name)
+        quantizer_metrics: dict[str, torch.Tensor] = {}
         if style_required and stage.style_source is StyleSource.QUANTIZED:
-            dual_metrics["rfsq_quantization_error"] = (
-                quantization_error.detach()
-            )
+            quantizer_metrics["rvq_commitment"] = commitment_loss.detach()
+            quantizer_metrics["rvq_codebook"] = codebook_loss.detach()
+        auxiliary_finite = True
+        auxiliary_waveform_gradient = None
+        feature_waveform = reconstructed.detach().requires_grad_(True)
         with accelerator.autocast():
             zero = reconstructed.new_zeros(())
             losses = {item.value: zero for item in TrainingLoss}
@@ -573,16 +562,6 @@ class Trainer:
                     divisor=10,
                 )
                 losses["f0"] = quantized_f0
-                if dual_decode:
-                    continuous_f0 = reconstruction_loss(
-                        target_f0,
-                        continuous_predicted_f0,
-                        batch.mel_lengths,
-                        divisor=10,
-                    )
-                    losses["f0"] = (quantized_f0 + continuous_f0) / 2
-                    dual_metrics["f0_quantized"] = quantized_f0.detach()
-                    dual_metrics["f0_continuous"] = continuous_f0.detach()
             if weights.norm > 0:
                 quantized_norm = reconstruction_loss(
                     target_energy,
@@ -590,15 +569,6 @@ class Trainer:
                     batch.mel_lengths,
                 )
                 losses["norm"] = quantized_norm
-                if dual_decode:
-                    continuous_norm = reconstruction_loss(
-                        target_energy,
-                        continuous_predicted_energy,
-                        batch.mel_lengths,
-                    )
-                    losses["norm"] = (quantized_norm + continuous_norm) / 2
-                    dual_metrics["norm_quantized"] = quantized_norm.detach()
-                    dual_metrics["norm_continuous"] = continuous_norm.detach()
             if weights.duration > 0 or weights.duration_ce > 0:
                 duration, duration_ce = self._duration_losses(
                     reconstructed,
@@ -606,25 +576,6 @@ class Trainer:
                     duration_targets,
                     batch,
                 )
-                if dual_decode:
-                    continuous_duration, continuous_duration_ce = (
-                        self._duration_losses(
-                            reconstructed,
-                            continuous_duration_predictions,
-                            duration_targets,
-                            batch,
-                        )
-                    )
-                    dual_metrics["duration_quantized"] = duration.detach()
-                    dual_metrics["duration_continuous"] = (
-                        continuous_duration.detach()
-                    )
-                    dual_metrics["duration_ce_quantized"] = duration_ce.detach()
-                    dual_metrics["duration_ce_continuous"] = (
-                        continuous_duration_ce.detach()
-                    )
-                    duration = (duration + continuous_duration) / 2
-                    duration_ce = (duration_ce + continuous_duration_ce) / 2
                 losses["duration"] = duration
                 losses["duration_ce"] = duration_ce
             if (
@@ -673,13 +624,15 @@ class Trainer:
             if weights.wavlm > 0 or slm_adversarial:
                 real_features = None
                 if weights.wavlm > 0:
-                    with torch.no_grad():
-                        real_features = self.runtime.features.wavlm(
-                            waveform.detach().squeeze(1)
-                        )
-                generated_features = self.runtime.features.wavlm(
-                    reconstructed.squeeze(1)
-                )
+                    with profiling_fn("wavlm_real_forward"):
+                        with torch.no_grad():
+                            real_features = self.runtime.features.wavlm(
+                                waveform.detach().squeeze(1)
+                            )
+                with profiling_fn("wavlm_generated_forward"):
+                    generated_features = self.runtime.features.wavlm(
+                        feature_waveform.squeeze(1)
+                    )
                 if real_features is not None:
                     losses["wavlm"] = wavlm_feature_loss(
                         real_features,
@@ -691,18 +644,70 @@ class Trainer:
                             generated_features
                         )
                     )
+                    with torch.no_grad():
+                        real_scores, real_hidden = modules.wd(
+                            real_input,
+                            *waveform_condition,
+                        )
+                    generated_scores, generated_hidden = modules.wd(
+                        generated_input,
+                        *waveform_condition,
+                    )
                     losses["slm_adversarial"] = slm_generator_loss(
-                        modules.wd(generated_input)
+                        generated_scores,
+                        real_hidden,
+                        generated_hidden,
+                    )
+                wavlm_branch = (
+                    losses["wavlm"] * weights.wavlm
+                    + losses["slm_adversarial"] * weights.slm_adversarial
+                )
+                wavlm_finite = bool(torch.isfinite(wavlm_branch).item())
+                auxiliary_finite = auxiliary_finite and wavlm_finite
+                if wavlm_finite:
+                    with profiling_fn("wavlm_backward"):
+                        auxiliary_waveform_gradient = torch.autograd.grad(
+                            wavlm_branch,
+                            feature_waveform,
+                        )[0]
+                losses["wavlm"] = losses["wavlm"].detach()
+                losses["slm_adversarial"] = losses[
+                    "slm_adversarial"
+                ].detach()
+                del generated_features, real_features, wavlm_branch
+                if slm_adversarial:
+                    del (
+                        generated_input,
+                        generated_scores,
+                        generated_hidden,
+                        real_scores,
+                        real_hidden,
                     )
             if weights.speaker_feature > 0 or weights.speaker_similarity > 0:
                 speaker = self.runtime.features.speaker
                 if speaker is None:
                     raise RuntimeError("speaker features were not initialized")
-                with torch.no_grad():
-                    real_values, real_embedding = speaker(waveform.detach())
-                generated_values, generated_embedding = (
-                    speaker(reconstructed)
+                speaker_frames = min(
+                    reconstructed.size(-1),
+                    self.config.preprocess_params.sr * SPEAKER_LOSS_SECONDS,
                 )
+                speaker_start = random.randint(
+                    0,
+                    reconstructed.size(-1) - speaker_frames,
+                )
+                speaker_slice = slice(
+                    speaker_start,
+                    speaker_start + speaker_frames,
+                )
+                with profiling_fn("speaker_real_forward"):
+                    with torch.no_grad():
+                        real_values, real_embedding = speaker(
+                            waveform[..., speaker_slice].detach()
+                        )
+                with profiling_fn("speaker_generated_forward"):
+                    generated_values, generated_embedding = speaker(
+                        feature_waveform[..., speaker_slice]
+                    )
                 speaker_feature, speaker_similarity = speaker_losses(
                     real_values,
                     generated_values,
@@ -711,6 +716,34 @@ class Trainer:
                 )
                 losses["speaker_feature"] = speaker_feature
                 losses["speaker_similarity"] = speaker_similarity
+                speaker_branch = (
+                    speaker_feature * weights.speaker_feature
+                    + speaker_similarity * weights.speaker_similarity
+                )
+                speaker_finite = bool(torch.isfinite(speaker_branch).item())
+                auxiliary_finite = auxiliary_finite and speaker_finite
+                if speaker_finite:
+                    with profiling_fn("speaker_backward"):
+                        speaker_gradient = torch.autograd.grad(
+                            speaker_branch,
+                            feature_waveform,
+                        )[0]
+                    if auxiliary_waveform_gradient is None:
+                        auxiliary_waveform_gradient = speaker_gradient
+                    else:
+                        auxiliary_waveform_gradient.add_(speaker_gradient)
+                    del speaker_gradient
+                losses["speaker_feature"] = speaker_feature.detach()
+                losses["speaker_similarity"] = speaker_similarity.detach()
+                del (
+                    generated_values,
+                    generated_embedding,
+                    real_values,
+                    real_embedding,
+                    speaker_feature,
+                    speaker_similarity,
+                    speaker_branch,
+                )
             if prosody_adversarial:
                 prosody_lengths = batch.mel_lengths.to(reconstructed.device) // 2
                 prosody_scores, prosody_fake_features = (
@@ -792,33 +825,53 @@ class Trainer:
             unbiased=False,
         ).mean()
         total = self._weighted_total(losses, weights)
+        if style_required and stage.style_source is StyleSource.QUANTIZED:
+            total = total + commitment_loss + codebook_loss
+        backward_total = total
+        if auxiliary_waveform_gradient is not None:
+            waveform_surrogate = (
+                reconstructed * auxiliary_waveform_gradient.detach()
+            ).sum()
+            backward_total = (
+                total + waveform_surrogate - waveform_surrogate.detach()
+            )
         with profiling_fn("loss_finite_check"):
-            finite = bool(torch.isfinite(total).item())
+            finite = auxiliary_finite and bool(torch.isfinite(total).item())
         if finite:
             with profiling_fn("generator_backward"):
-                accelerator.backward(total)
-        else:
-            self.skipped_steps += 1
-            logger.warning("non-finite generator loss at step=%s", self.step)
-            for name in trainable:
-                for parameter in modules[name].parameters():
-                    if parameter.requires_grad:
-                        parameter.grad = torch.zeros_like(parameter)
-        with profiling_fn("generator_gradient_sync"):
-            synchronize_gradients(accelerator, modules, trainable)
-        with profiling_fn("generator_gradient_metrics"):
-            if measure_gradient_norms:
-                gradient_metrics.update(
-                    gradient_norm_metrics(
-                        accelerator,
-                        modules,
-                        trainable,
-                        group_name="generator",
-                    )
+                accelerator.backward(
+                    backward_total / self.accumulation_steps
                 )
-        with profiling_fn("generator_optimizer_step"):
+        else:
+            logger.warning("non-finite generator loss at step=%s", self.step)
+        self._generator_accumulation_finite &= finite
+        update_finite = self._generator_accumulation_finite
+        if update_due and update_finite:
+            with profiling_fn("generator_gradient_sync"):
+                synchronize_gradients(accelerator, modules, trainable)
+            with profiling_fn("generator_gradient_metrics"):
+                if measure_gradient_norms:
+                    gradient_metrics.update(
+                        gradient_norm_metrics(
+                            accelerator,
+                            modules,
+                            trainable,
+                            group_name="generator",
+                        )
+                    )
+            with profiling_fn("generator_optimizer_step"):
+                for name in trainable:
+                    optimizer.step(name)
+        elif update_due:
+            self.skipped_steps += 1
             for name in trainable:
-                optimizer.step(name)
+                optimizer.zero_grad(name)
+        if update_due:
+            self.accumulation_microstep = 0
+            self._generator_accumulation_finite = True
+            self.update_completed = True
+        else:
+            self.accumulation_microstep += 1
         metrics = self._reported_metrics(
             voice,
             style_target,
@@ -828,11 +881,11 @@ class Trainer:
             prosody_discriminator_total,
             slm_discriminator_loss,
             style_batch_std,
-            finite,
+            update_finite,
             gradient_metrics,
             gan_metrics,
         )
-        metrics.update(dual_metrics)
+        metrics.update(quantizer_metrics)
         if style_required and stage.style_source is StyleSource.QUANTIZED:
             metrics["continuous_latent_batch_std"] = (
                 continuous_latent.mean(-1).std(0, unbiased=False).mean()

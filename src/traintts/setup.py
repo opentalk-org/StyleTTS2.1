@@ -165,7 +165,11 @@ def _build_models(
 ) -> Munch:
     aligner = load_ASR_models(config.ASR_path, config.ASR_config)
     pitch = load_F0_models(config.F0_path)
-    plbert = load_plbert(config.PLBERT_path, config.PLBERT_config)
+    plbert = load_plbert(
+        config.PLBERT_path,
+        config.PLBERT_config,
+        config.pretrained_model,
+    )
     modules = build_model(parameters, aligner, pitch, plbert)
     for module in modules.values():
         module.to(device)
