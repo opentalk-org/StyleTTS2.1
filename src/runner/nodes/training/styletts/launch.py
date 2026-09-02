@@ -11,7 +11,7 @@ from uuid import UUID
 from runflow.runtime.cancellation import check_cancel
 
 
-def create_training(data_config: dict, train_config: str) -> UUID:
+def create_run(data_config: dict, train_config: str) -> UUID:
     address = os.environ["GIVEMEDATA_HTTP_ADDR"].rstrip("/")
     request = Request(
         f"{address}/trainings",
@@ -34,11 +34,11 @@ def create_training(data_config: dict, train_config: str) -> UUID:
         raise RuntimeError(
             f"givemedata HTTP service is unavailable at {address}: {error.reason}"
         ) from error
-    return UUID(payload["training_id"])
+    return UUID(payload["run_id"])
 
 
 def train(
-    training_id: UUID,
+    run_id: UUID,
     process_count: int,
     precision: str,
     output_dir: Path,
@@ -65,7 +65,7 @@ def train(
         command.append("--multi_gpu")
     command.extend(("-m", "traintts.main"))
     environment = os.environ.copy()
-    environment["GIVEMEDATA_TRAINING_ID"] = str(training_id)
+    environment["GIVEMEDATA_RUN_ID"] = str(run_id)
     log_path = output_dir / "training.log"
     with log_path.open(mode="w+") as output:
         process = subprocess.Popen(

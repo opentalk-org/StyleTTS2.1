@@ -3,6 +3,8 @@ import { create } from "zustand";
 import type { PlotSettings, Workspace } from "@/shared/types";
 
 const STORAGE_KEY = "runflow.metrics.workspaces.v4";
+
+const STARS_KEY = "runflow.metrics.stars.v1";
 const DEFAULT_COLUMNS = [
   "name",
   "status",
@@ -12,7 +14,7 @@ const DEFAULT_COLUMNS = [
   "metric:val/mel_loss",
 ];
 
-/** Applied to any plot the query produces that has no saved settings yet. */
+
 export const DEFAULT_PLOT_SETTINGS: PlotSettings = {
   xScale: "linear",
   yScale: "linear",
@@ -24,30 +26,37 @@ export const DEFAULT_PLOT_SETTINGS: PlotSettings = {
   showLegend: true,
 };
 
-/** The query that decides which plots exist. Every view starts from this. */
+
 export const DEFAULT_SQL = `SELECT
-  name      AS plot,
+  plot,
   run_id,
-  step      AS x,
-  value     AS y
-FROM metrics(
-  names => ['val/mel_loss', 'train/generator_total', 'system/gpu_utilization_percent'],
-  runs  => selected()
+  point.1 AS x,
+  point.2 AS y
+FROM (
+  SELECT
+    name AS plot,
+    run_id,
+    arrayJoin(largestTriangleThreeBuckets(1000)(step, value)) AS point
+  FROM metrics
+  WHERE run_id IN {run_ids:Array(UUID)}
+  GROUP BY plot, run_id
 )`;
 
 interface ViewerState {
   projectId: string | null;
   selectedRunIds: string[];
   columns: string[];
-  /** Per-run plot color overrides, keyed by run id. Unset runs fall back to the palette. */
+
   runColors: Record<string, string>;
-  /** Display settings per plot name, as produced by the query. */
+
   plotSettings: Record<string, PlotSettings>;
-  /** Plots dropped from this view without editing the query. */
+
   hiddenPlots: string[];
-  /** The editor buffer. Editing it does not move the plots. */
+
+  starredRunIds: string[];
+
   sql: string;
-  /** The query the plots are actually drawn from; only Run promotes sql into it. */
+
   runningSql: string;
   workspaces: Workspace[];
   selectProject: (id: string | null) => void;
@@ -55,6 +64,7 @@ interface ViewerState {
   selectRuns: (ids: string[]) => void;
   setColumns: (columns: string[]) => void;
   setRunColor: (runId: string, color: string | null) => void;
+  toggleStar: (runId: string) => void;
   setSql: (sql: string) => void;
   commitSql: () => void;
   updatePlot: (plot: string, patch: Partial<PlotSettings>) => void;
@@ -64,6 +74,15 @@ interface ViewerState {
   saveWorkspace: (name: string) => void;
   loadWorkspace: (id: string) => void;
   deleteWorkspace: (id: string) => void;
+}
+
+function loadStars(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(STARS_KEY) ?? "[]") as string[];
+  } catch {
+    localStorage.removeItem(STARS_KEY);
+    return [];
+  }
 }
 
 function loadWorkspaces(): Workspace[] {
@@ -82,6 +101,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   runColors: {},
   plotSettings: {},
   hiddenPlots: [],
+  starredRunIds: loadStars(),
   sql: DEFAULT_SQL,
   runningSql: DEFAULT_SQL,
   workspaces: loadWorkspaces(),
@@ -100,6 +120,14 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       if (color === null) delete runColors[runId];
       else runColors[runId] = color;
       return { runColors };
+    }),
+  toggleStar: (runId) =>
+    set((state) => {
+      const starredRunIds = state.starredRunIds.includes(runId)
+        ? state.starredRunIds.filter((item) => item !== runId)
+        : [...state.starredRunIds, runId];
+      localStorage.setItem(STARS_KEY, JSON.stringify(starredRunIds));
+      return { starredRunIds };
     }),
   setSql: (sql) => set({ sql }),
   commitSql: () => set((state) => ({ runningSql: state.sql })),

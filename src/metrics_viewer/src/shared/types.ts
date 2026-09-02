@@ -1,4 +1,4 @@
-export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+export type RunStatus = "awaiting" | "running" | "succeeded" | "failed" | "cancelled";
 export type Scalar = string | number | boolean;
 export type ArtifactKind = "audio" | "image" | "text" | "plot";
 
@@ -6,8 +6,8 @@ export interface Project {
   id: string;
   name: string;
   description: string;
-  createdAt: string;
-  lastRunAt: string;
+  createdAt: number;
+  lastRunAt: number;
   runCount: number;
   runningCount: number;
 }
@@ -17,8 +17,8 @@ export interface Run {
   projectId: string;
   name: string;
   status: RunStatus;
-  startedAt: string;
-  endedAt: string | null;
+  startedAt: number;
+  endedAt: number;
   params: Record<string, Scalar>;
   summary: Record<string, number>;
 }
@@ -43,24 +43,20 @@ export interface Artifact {
   source: string;
 }
 
-/** One point of one series, as returned by the plots query. */
-export interface PlotRow {
-  /** Chart this point belongs to; one chart per distinct value. */
-  plot: string;
-  runId: string;
-  x: number;
-  y: number;
-}
+
+
+
 
 export interface PlotQueryResult {
-  rows: PlotRow[];
+
+  plot: string[];
+  runId: string[];
+  x: number[];
+  y: number[];
   elapsedMs: number;
-  readRows: number;
-  /** What the x column was selected from, so axes can be labelled honestly. */
-  xLabel: string;
 }
 
-/** Display settings for one chart, kept per plot name rather than per chart id. */
+
 export interface PlotSettings {
   xScale: "linear" | "log";
   yScale: "linear" | "log";
@@ -79,7 +75,7 @@ export interface Workspace {
   selectedRunIds: string[];
   columns: string[];
   runColors: Record<string, string>;
-  /** The query that defines which plots exist. */
+
   sql: string;
   plotSettings: Record<string, PlotSettings>;
   hiddenPlots: string[];

@@ -18,12 +18,12 @@ CHECKPOINT_CHUNK_BYTES = 2 * 1024 * 1024
 
 
 class GiveMeDataClient:
-    def __init__(self, training_id: str, addr: str | None = None) -> None:
+    def __init__(self, run_id: str, addr: str | None = None) -> None:
         addr = addr or os.environ.get("GIVEMEDATA_ADDR", DEFAULT_ADDR)
         self._channel = grpc.insecure_channel(addr, options=[("grpc.max_receive_message_length", 67136000)])
         self._stub = pb_grpc.GiveMeDataStub(self._channel)
-        response = self._stub.Init(pb.InitRequest(training_id=training_id))
-        self.training_id: str = response.training_id
+        response = self._stub.Init(pb.InitRequest(run_id=run_id))
+        self.run_id: str = response.run_id
         # verbatim yaml the service passes through, untouched, for the training loop
         self.train_config: str = response.train_config
         self._metrics: MetricsStream | None = None
@@ -32,7 +32,7 @@ class GiveMeDataClient:
     def batches(self, split: int, prefetch: int = 4) -> Iterator[pb.DataResponse]:
         requests: queue.SimpleQueue[pb.DataRequest | None] = queue.SimpleQueue()
         stopped = threading.Event()
-        request = pb.DataRequest(training_id=self.training_id, split=split)
+        request = pb.DataRequest(run_id=self.run_id, split=split)
         for _ in range(prefetch):
             requests.put(request)
 
@@ -61,7 +61,7 @@ class GiveMeDataClient:
         dest_dir.mkdir(parents=True, exist_ok=True)
         part = dest_dir / f"{name}.part"
         responses = iter(
-            self._stub.Asset(pb.AssetRequest(training_id=self.training_id, name=name))
+            self._stub.Asset(pb.AssetRequest(run_id=self.run_id, name=name))
         )
         first = next(responses)
         if first.WhichOneof("payload") != "metadata":
@@ -108,7 +108,7 @@ class GiveMeDataClient:
 
             def requests() -> Iterator[pb.CheckpointRequest]:
                 yield pb.CheckpointRequest(
-                    metadata=pb.CheckpointMetadata(training_id=self.training_id, step=step)
+                    metadata=pb.CheckpointMetadata(run_id=self.run_id, step=step)
                 )
                 with open(tar_path, "rb") as f:
                     while chunk := f.read(CHECKPOINT_CHUNK_BYTES):
@@ -122,7 +122,7 @@ class GiveMeDataClient:
         if self._closed:
             raise RuntimeError("givemedata client is closed")
         if self._metrics is None:
-            self._metrics = MetricsStream(self._stub, self.training_id)
+            self._metrics = MetricsStream(self._stub, self.run_id)
         return self._metrics
 
     def close(self) -> None:
@@ -136,7 +136,7 @@ class GiveMeDataClient:
         except BaseException as error:
             metrics_error = error
         try:
-            self._stub.End(pb.EndRequest(training_id=self.training_id))
+            self._stub.End(pb.EndRequest(run_id=self.run_id))
         finally:
             self._channel.close()
         if metrics_error is not None:

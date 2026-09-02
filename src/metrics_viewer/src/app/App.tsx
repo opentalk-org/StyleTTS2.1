@@ -47,7 +47,7 @@ export function App() {
 }
 
 const LAYOUT_KEY = "runflow.metrics.layout.v1";
-/** Height of the sticky app header; panes and dividers offset against it. */
+
 const HEADER_HEIGHT = "3.5rem";
 
 interface Layout {
@@ -83,7 +83,7 @@ function Viewer() {
     localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
   }, [layout]);
 
-  // Plotly sizes itself from window resize alone, so a pane change has to say so.
+
   useEffect(() => {
     const frame = requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
     return () => cancelAnimationFrame(frame);
@@ -110,8 +110,8 @@ function Viewer() {
   const project = projectsQuery.data?.find((candidate) => candidate.id === viewer.projectId);
   const isColumns = layout.orientation === "columns";
 
-  // The document scrolls, not the panes, so long tables and plot stacks read as one
-  // page rather than a grid of nested scrollbars.
+
+
   return (
     <main className="flex min-h-dvh flex-col">
       <header className="sticky top-0 z-40 flex h-14 flex-none items-center justify-between gap-4 border-b border-line bg-elevated px-3">
@@ -192,12 +192,14 @@ function Viewer() {
             selected={viewer.selectedRunIds}
             columns={viewer.columns}
             runColors={viewer.runColors}
+            starred={viewer.starredRunIds}
             loading={runsQuery.isPending}
             scroll={isColumns ? "page" : "self"}
             onToggle={viewer.toggleRun}
             onSelect={viewer.selectRuns}
             onColumns={viewer.setColumns}
             onRunColor={viewer.setRunColor}
+            onStar={viewer.toggleStar}
             className={isColumns ? "border-r border-line" : "border-b border-line"}
           />
         }

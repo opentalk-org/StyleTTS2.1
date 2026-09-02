@@ -5,7 +5,7 @@ import { cn } from "./cn";
 export interface SegmentedOption<T extends string | number> {
   value: T;
   label: ReactNode;
-  /** Accessible name when `label` is only an icon or a bare digit. */
+
   title?: string;
 }
 
@@ -14,14 +14,14 @@ export interface SegmentedControlProps<T extends string | number> {
   options: SegmentedOption<T>[];
   value: T;
   onValue: (value: T) => void;
-  /** Rendered inside the container, before the segments. */
+
   leading?: ReactNode;
-  /** Segments share the full width instead of hugging their labels. */
+
   fill?: boolean;
   className?: string;
 }
 
-/** Inset container, transparent segments, one slightly elevated active segment. */
+
 export function SegmentedControl<T extends string | number>({
   label,
   options,

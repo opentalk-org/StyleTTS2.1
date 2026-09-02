@@ -1,14 +1,15 @@
 import type { SearchOption } from "@/shared/ui";
 
-/** Metric series available for plotting. Mirrors what the metrics API can serve. */
+
 export const METRIC_NAMES = [
-  "val/mel_loss",
-  "train/generator_total",
-  "system/gpu_utilization_percent",
-  "learning_rate",
+  "train/total",
+  "train/mel",
+  "train/wavlm",
+  "performance/steps_per_second",
+  "performance/eta_hours",
 ] as const;
 
-/** Hyperparameters recorded on every run. */
+
 export const PARAM_NAMES = [
   "decoder",
   "learning_rate",
@@ -24,13 +25,13 @@ const RUN_FIELDS: { id: string; label: string }[] = [
   { id: "duration", label: "Duration" },
 ];
 
-/** The namespace a metric is filed under, e.g. `val/mel_loss` → `val`. */
+
 export function metricGroup(name: string): string {
   const separator = name.indexOf("/");
   return separator === -1 ? "other" : name.slice(0, separator);
 }
 
-/** Every column the run table can show: run fields, then params, then metrics. */
+
 export function runColumnOptions(): SearchOption[] {
   return [
     ...RUN_FIELDS.map((field) => ({ value: field.id, label: field.label, group: "Run" })),

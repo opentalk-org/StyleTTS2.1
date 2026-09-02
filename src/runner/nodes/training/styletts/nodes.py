@@ -14,7 +14,7 @@ from runner.nodes.datatypes import AssetBundlePort, CheckpointRefPort, JsonPort
 from runner.nodes.models import typed_assets, typed_checkpoint
 from runner.nodes.training.common.run_directory import claim_run_dir, remove_run_dir
 from runner.nodes.training.styletts.config import build_configs
-from runner.nodes.training.styletts.launch import create_training, train
+from runner.nodes.training.styletts.launch import create_run, train
 from traintts.stages import TrainingStageSpec, default_training_stages
 
 
@@ -94,9 +94,9 @@ class StyleTtsFinetuneNode(Node):
             with claim_run_dir(run_dir):
                 try:
                     run_dir.mkdir(parents=True)
-                    training_id = create_training(data_config, train_config)
+                    run_id = create_run(data_config, train_config)
                     train(
-                        training_id,
+                        run_id,
                         self.settings.distributed_processes,
                         self.settings.numeric_precision.value,
                         run_dir,
@@ -105,7 +105,7 @@ class StyleTtsFinetuneNode(Node):
                     remove_run_dir(run_dir)
             outputs.append({
                 "training": {
-                    "training_id": str(training_id),
+                    "run_id": str(run_id),
                     "dataset_id": data_config["dataset_id"],
                 }
             })

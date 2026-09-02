@@ -5,7 +5,7 @@ import { cn } from "./cn";
 
 export interface SearchInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "type"> {
-  /** Accessible name; the icon alone is not one. */
+
   label: string;
   value: string;
   onValue: (value: string) => void;
@@ -15,8 +15,8 @@ export function SearchInput({ label, value, onValue, className, ...rest }: Searc
   return (
     <div
       className={cn(
-        // focus-ring-owner: this wrapper draws the focus treatment, so the inner
-        // input must not paint a second ring inside it.
+
+
         "focus-ring-owner group flex h-8 min-w-0 items-center gap-2 rounded-lg border border-line-hover",
         "bg-inset px-2.5 text-fg-muted transition-colors duration-150 ease-out",
         "focus-within:border-accent/65 focus-within:shadow-[0_0_0_3px_rgb(99_102_241/0.12)]",
@@ -48,7 +48,7 @@ export function SearchInput({ label, value, onValue, className, ...rest }: Searc
 }
 
 export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
-  /** Grows with its content instead of scrolling inside a fixed box. */
+
   autoGrow?: boolean;
 }
 
@@ -58,7 +58,7 @@ export function Textarea({ autoGrow = false, className, value, ...rest }: Textar
   useLayoutEffect(() => {
     const node = ref.current;
     if (!autoGrow || node === null) return;
-    // Collapse first: scrollHeight never shrinks below the current height.
+
     node.style.height = "auto";
     node.style.height = `${node.scrollHeight}px`;
   }, [autoGrow, value]);
@@ -111,19 +111,19 @@ export function Checkbox({ children, className, ...rest }: CheckboxProps) {
 
 export interface FieldProps {
   label: ReactNode;
-  /** Current value, shown in mono next to the label for range-style controls. */
+
   value?: ReactNode;
-  /**
-   * Set when the control is a composite (e.g. a segmented control) rather than a
-   * single labelable element — clicking a <label> would otherwise activate its
-   * first button. Composite controls carry their own accessible name.
-   */
+
+
+
+
+
   group?: boolean;
   children: ReactNode;
   className?: string;
 }
 
-/** Label-left / control-right row used inside settings popovers. */
+
 export function Field({ label, value, group = false, children, className }: FieldProps) {
   const Row = group ? "div" : "label";
   return (

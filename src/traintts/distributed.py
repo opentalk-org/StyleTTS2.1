@@ -14,7 +14,7 @@ def main() -> None:
     parser.add_argument("config")
     arguments = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
-    data_client = GiveMeDataClient(os.environ["GIVEMEDATA_TRAINING_ID"])
+    data_client = GiveMeDataClient(os.environ["GIVEMEDATA_RUN_ID"])
     try:
         train(arguments.config, run=None, data_client=data_client)
     finally:

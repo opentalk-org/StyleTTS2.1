@@ -37,7 +37,6 @@ interface MetricChartProps {
   runs: Run[];
   settings: PlotSettings;
   runColors: Record<string, string>;
-  xLabel: string;
   cursorIndex: number | null;
   onCursorIndex: (index: number | null) => void;
   onChange: (patch: Partial<PlotSettings>) => void;
@@ -50,7 +49,6 @@ export function MetricChart({
   runs,
   settings,
   runColors,
-  xLabel,
   cursorIndex,
   onCursorIndex,
   onChange,
@@ -61,8 +59,8 @@ export function MetricChart({
   const [hiddenRuns, setHiddenRuns] = useState<Set<string>>(new Set());
   const [plotKey, setPlotKey] = useState(0);
 
-  // Traces are the expensive part and do not depend on the hovered point, so they
-  // stay stable while the cursor moves: Plotly then only re-draws the cursor line.
+
+
   const traces = useMemo(
     () => buildTraces(plot, runs, hiddenRuns, settings, runColors),
     [plot, runs, hiddenRuns, settings, runColors],
@@ -86,7 +84,7 @@ export function MetricChart({
         <div className="flex min-w-0 flex-col gap-1">
           <h3 className="m-0 truncate text-sm font-semibold tracking-tight text-fg">{plot.name}</h3>
           <span className="truncate font-mono text-[10px] text-fg-muted">
-            {xLabel} · {plot.series.length} series · {plot.pointCount.toLocaleString()} points
+            {plot.series.length} series · {plot.pointCount.toLocaleString()} points
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -158,7 +156,7 @@ interface PlotSettingsDialogProps {
   onSave: () => void;
 }
 
-/** Full-viewport editor: live plot on the left, settings on the right. */
+
 function PlotSettingsDialog({
   name,
   draft,
@@ -251,10 +249,10 @@ const SMOOTHING_OPTIONS = [
   { value: "mean" as const, label: "Rolling", title: "Rolling mean" },
 ];
 
-/**
- * A scale is one bit per axis, so it lives next to that axis rather than in its own
- * radio row. The label is the current state — no second element to read it from.
- */
+
+
+
+
 function ScaleToggle({
   axis,
   value,
@@ -285,7 +283,7 @@ function ScaleToggle({
   );
 }
 
-/** Label above the control, for controls that use the panel's full width. */
+
 function StackedField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5 py-1.5">

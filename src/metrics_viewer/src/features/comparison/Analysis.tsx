@@ -47,7 +47,7 @@ export function Analysis({ runs }: { runs: Run[] }) {
 
   const { refetch } = plotsQuery;
   const { sql, runningSql, commitSql } = viewer;
-  // Run promotes the buffer; when it already matches, re-ask for the same key.
+
   const runQuery = useCallback(() => {
     if (sql === runningSql) void refetch();
     else commitSql();
@@ -123,8 +123,8 @@ interface PlotsProps {
   onColumns: (value: 1 | 2 | 3) => void;
 }
 
-// Container queries, not viewport ones: the analysis pane is resizable, so a wide
-// screen with a narrow pane must still drop to a single column.
+
+
 const COLUMN_CLASSES: Record<1 | 2 | 3, string> = {
   1: "grid-cols-1",
   2: "grid-cols-1 @3xl:grid-cols-2",
@@ -147,7 +147,7 @@ function Plots({
   const [cursorIndex, setCursorIndex] = useState<number | null>(null);
   const onCursorIndex = useThrottledCursor(setCursorIndex);
 
-  const plots = useMemo(() => groupPlots(result?.rows ?? []), [result]);
+  const plots = useMemo(() => groupPlots(result), [result]);
   const visible = useMemo(
     () =>
       plots.filter(
@@ -175,7 +175,7 @@ function Plots({
         summary={
           result === null
             ? null
-            : `${plots.length} plots · ${result.rows.length.toLocaleString()} rows · ${result.readRows.toLocaleString()} read · ${result.elapsedMs} ms`
+            : `${plots.length} plots · ${result.x.length.toLocaleString()} points · ${result.elapsedMs} ms`
         }
         dirty={viewer.sql !== viewer.runningSql}
         onReset={() => {
@@ -250,7 +250,6 @@ function Plots({
                         runs={runs}
                         settings={settingsFor(viewer.plotSettings, plot.name)}
                         runColors={viewer.runColors}
-                        xLabel={result?.xLabel ?? "x"}
                         cursorIndex={cursorIndex}
                         onCursorIndex={onCursorIndex}
                         onChange={(patch) => viewer.updatePlot(plot.name, patch)}
@@ -293,10 +292,10 @@ function PlotGroup({ name, count, children }: { name: string; count: number; chi
   );
 }
 
-/**
- * Plotly fires hover on every mouse move and the cursor line is shared by all
- * charts, so updates are coalesced to one per frame and dropped when unchanged.
- */
+
+
+
+
 function useThrottledCursor(setCursor: (index: number | null) => void) {
   const frame = useRef<number | null>(null);
   const pending = useRef<number | null>(null);
@@ -326,7 +325,7 @@ interface GroupContent {
   artifacts: Artifact[];
 }
 
-/** Charts and artifacts share the `namespace/name` convention, so they group together. */
+
 function groupByNamespace(
   plots: Plot[],
   artifacts: Artifact[],

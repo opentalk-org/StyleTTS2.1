@@ -37,10 +37,10 @@ struct PendingArtifact {
 
 pub async fn receive(
     root: &Path,
-    training_id: &str,
+    run_id: &str,
     mut stream: Streaming<MetricsRequest>,
 ) -> Result<MetricsResponse, Status> {
-    let training_dir = root.join(training_id);
+    let training_dir = root.join(run_id);
     fs::create_dir_all(&training_dir).await.map_err(internal)?;
     let metrics_path = training_dir.join("metrics.jsonl");
     let artifacts_path = training_dir.join("artifacts.jsonl");
@@ -60,7 +60,7 @@ pub async fn receive(
                 Some(metrics_request::Payload::Metric(metric)) => {
                     store_metric(&metrics_path, &metric).await?;
                     trace!(
-                        training = training_id,
+                        run = run_id,
                         step = metric.step,
                         timestamp_unix_ms = metric.timestamp_unix_ms,
                         metric = %metric.name,
@@ -80,7 +80,7 @@ pub async fn receive(
                         discard_artifact(previous).await?;
                     }
                     debug!(
-                        training = training_id,
+                        run = run_id,
                         step = artifact.step,
                         timestamp_unix_ms = artifact.timestamp_unix_ms,
                         artifact = %artifact.name,
@@ -94,7 +94,7 @@ pub async fn receive(
                         let step = artifact.metadata.step;
                         finish_artifact(artifact, &artifacts_path).await?;
                         debug!(
-                            training = training_id,
+                            run = run_id,
                             step,
                             artifact = %name,
                             bytes = 0,
@@ -130,7 +130,7 @@ pub async fn receive(
                         let bytes = artifact.metadata.size_bytes;
                         finish_artifact(artifact, &artifacts_path).await?;
                         debug!(
-                            training = training_id,
+                            run = run_id,
                             step,
                             artifact = %name,
                             bytes,

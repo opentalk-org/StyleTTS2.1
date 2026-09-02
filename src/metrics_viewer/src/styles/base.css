@@ -1,4 +1,4 @@
-/* Element-level defaults. Everything else is expressed with utilities in components. */
+
 :root {
   color-scheme: dark;
   font-family: var(--font-sans);
@@ -16,7 +16,7 @@
 body {
   margin: 0;
   min-height: 100dvh;
-  /* Barely-there vertical tone shift; it should never register as an effect. */
+
   background:
     linear-gradient(to bottom, #0a0a0d 0%, var(--color-base) 45%, #070709 100%)
     fixed;
@@ -40,8 +40,8 @@ button {
   box-shadow: var(--shadow-accent-ring);
 }
 
-/* Wrappers that draw their own focus-within ring own the whole treatment; the
-   inner control must not add a second ring inside it. */
+
+
 .focus-ring-owner :focus-visible {
   box-shadow: none;
 }
@@ -64,8 +64,8 @@ button {
   background: transparent;
 }
 
-/* Range inputs are drawn from scratch: the native control carries OS chrome that
-   reads as foreign against these surfaces. */
+
+
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
@@ -121,8 +121,8 @@ input[type="range"]:focus-visible {
   box-shadow: none;
 }
 
-/* Plotly is themed through layout props; these strip its remaining chrome so charts
-   read as native panels rather than embedded library output. */
+
+
 .js-plotly-plot .modebar {
   display: none !important;
 }

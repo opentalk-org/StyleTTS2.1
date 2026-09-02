@@ -2,7 +2,7 @@ import type { HTMLAttributes } from "react";
 
 import { cn } from "./cn";
 
-/** Elevated application surface: one tonal step above the canvas, hairline bordered. */
+
 export function Card({ className, children, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
@@ -17,7 +17,7 @@ export function Card({ className, children, ...rest }: HTMLAttributes<HTMLDivEle
   );
 }
 
-/** Card header strip: title block on the left, controls on the right. */
+
 export function CardHeader({ className, children, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
@@ -29,7 +29,7 @@ export function CardHeader({ className, children, ...rest }: HTMLAttributes<HTML
   );
 }
 
-/** Structural navigation/group label: uppercase, wide tracking, muted. */
+
 export function GroupLabel({ className, children, ...rest }: HTMLAttributes<HTMLSpanElement>) {
   return (
     <span

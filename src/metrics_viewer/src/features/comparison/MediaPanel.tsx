@@ -103,7 +103,7 @@ interface StepControlProps {
   className?: string;
 }
 
-/** Prev / slider / next over the logged steps, shared by the card and the lightbox. */
+
 function StepControl({ label, steps, index, onIndex, className }: StepControlProps) {
   return (
     <div className={`flex min-w-0 items-center gap-2 ${className ?? ""}`}>
@@ -199,11 +199,11 @@ interface ImageLightboxProps {
   onClose: () => void;
 }
 
-/** Full-viewport view of one run's image, with the step control kept in reach. */
+
 function ImageLightbox({ run, name, artifact, steps, index, onIndex, onClose }: ImageLightboxProps) {
   const frameRef = useRef<HTMLDivElement>(null);
 
-  // autoFocus applies to form controls only, so the key handler is focused here.
+
   useEffect(() => {
     frameRef.current?.focus();
   }, []);
@@ -220,7 +220,7 @@ function ImageLightbox({ run, name, artifact, steps, index, onIndex, onClose }: 
 
   return (
     <Modal open onClose={onClose} label={`${run.name} ${entryName(name)}`}>
-      {/* Arrow keys step through without having to aim at the control. */}
+
       <div
         ref={frameRef}
         className="flex min-h-0 flex-1 flex-col focus:outline-none"

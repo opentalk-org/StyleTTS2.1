@@ -10,7 +10,7 @@ interface ProjectsProps {
   onOpen: (id: string) => void;
 }
 
-/** Column template shared by the header row and every project row so edges align. */
+
 const GRID =
   "grid min-w-[900px] grid-cols-[minmax(240px,2fr)_80px_120px_140px_110px_32px] items-center gap-3 px-4";
 
@@ -117,7 +117,8 @@ function ProjectRow({ project, onOpen }: { project: Project; onOpen: (id: string
   );
 }
 
-function relativeTime(value: string): string {
-  const hours = Math.max(1, Math.round((Date.now() - Date.parse(value)) / 3.6e6));
+function relativeTime(value: number): string {
+  if (value === 0) return "never";
+  const hours = Math.max(1, Math.round((Date.now() - value) / 3.6e6));
   return hours < 24 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`;
 }

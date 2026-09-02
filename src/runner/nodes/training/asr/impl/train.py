@@ -263,7 +263,7 @@ def train_asr_model(
     if step >= total_steps:
         raise ValueError("asr_checkpoint_already_reached_total_steps")
 
-    data_client = gmd.GiveMeDataClient(os.environ["GIVEMEDATA_TRAINING_ID"])
+    data_client = gmd.GiveMeDataClient(os.environ["GIVEMEDATA_RUN_ID"])
     train_batches = gmd.dataloader(
         data_client,
         device=device.type,

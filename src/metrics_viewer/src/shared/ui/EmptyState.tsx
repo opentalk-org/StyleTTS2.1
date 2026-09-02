@@ -6,7 +6,7 @@ export interface EmptyStateProps {
   icon: ReactNode;
   title: string;
   description?: ReactNode;
-  /** Compact variant for empty regions inside a panel rather than a whole pane. */
+
   compact?: boolean;
   children?: ReactNode;
   className?: string;

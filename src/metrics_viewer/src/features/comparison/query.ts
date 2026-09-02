@@ -13,12 +13,12 @@ export function useArtifactsQuery(runs: Run[]) {
   });
 }
 
-/**
- * The plots query. Everything it depends on is in the key — the committed SQL and
- * the selected runs that `selected()` resolves to — so changing the selection
- * refetches on its own. The editor buffer is deliberately absent: typing must not
- * move the plots until Run promotes it.
- */
+
+
+
+
+
+
 export function usePlotsQuery(projectId: string | null, sql: string, selectedRunIds: string[]) {
   const runIds = [...selectedRunIds].sort();
   return useQuery({
