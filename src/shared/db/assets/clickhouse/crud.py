@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import timedelta
 from uuid import UUID
 
 from shared.db.assets.clickhouse.models import (
@@ -8,6 +9,7 @@ from shared.db.assets.clickhouse.models import (
     ConfigRecord,
 )
 from shared.db.clickhouse import clickhouse_client, delete_rows
+
 
 def create_bucket_files(items: Sequence[BucketFileRecord]) -> None:
     if not items:
@@ -34,6 +36,21 @@ def get_bucket_file(bucket_file_id: UUID) -> BucketFileRecord:
     return BucketFileRecord.model_validate(rows[0])
 
 
+def get_bucket_files(bucket_file_ids: Sequence[UUID]) -> list[BucketFileRecord]:
+    ids = list(dict.fromkeys(bucket_file_ids))
+    if not ids:
+        return []
+    result = clickhouse_client().query(
+        """
+        SELECT id, kind, path, size
+        FROM bucket_files
+        WHERE id IN {ids:Array(UUID)}
+        """,
+        parameters={"ids": ids},
+    )
+    return [BucketFileRecord.model_validate(row) for row in result.named_results()]
+
+
 def list_bucket_files() -> list[BucketFileRecord]:
     result = clickhouse_client().query(
         """
@@ -43,6 +60,56 @@ def list_bucket_files() -> list[BucketFileRecord]:
         """
     )
     return [BucketFileRecord.model_validate(row) for row in result.named_results()]
+
+
+def delete_bucket_file(bucket_file_id: UUID) -> None:
+    delete_bucket_files([bucket_file_id])
+
+
+def delete_bucket_files(bucket_file_ids: Sequence[UUID]) -> None:
+    ids = list(dict.fromkeys(bucket_file_ids))
+    if not ids:
+        return
+    delete_rows(
+        clickhouse_client(),
+        "bucket_files",
+        "id IN {ids:Array(UUID)}",
+        {"ids": ids},
+    )
+
+
+def referenced_bucket_file_ids(bucket_file_ids: Sequence[UUID]) -> set[UUID]:
+    ids = list(dict.fromkeys(bucket_file_ids))
+    if not ids:
+        return set()
+    result = clickhouse_client().query(
+        """
+        SELECT bucket_file_id
+        FROM (
+            SELECT argMax(bucket_file_id, updated_at) AS bucket_file_id
+            FROM audio_files
+            WHERE id IN (
+                SELECT DISTINCT id
+                FROM audio_files
+                WHERE bucket_file_id IN {ids:Array(UUID)}
+            )
+            GROUP BY id
+            HAVING bucket_file_id IN {ids:Array(UUID)}
+            UNION DISTINCT
+            SELECT argMax(pack_id, updated_at) AS bucket_file_id
+            FROM audio_waveforms
+            WHERE audio_file_id IN (
+                SELECT DISTINCT audio_file_id
+                FROM audio_waveforms
+                WHERE pack_id IN {ids:Array(UUID)}
+            )
+            GROUP BY audio_file_id
+            HAVING bucket_file_id IN {ids:Array(UUID)}
+        )
+        """,
+        parameters={"ids": ids},
+    )
+    return {row[0] for row in result.result_rows}
 
 
 def create_assets(items: Sequence[AssetRecord]) -> None:
@@ -82,6 +149,11 @@ def create_assets(items: Sequence[AssetRecord]) -> None:
 
 
 def update_asset(item: AssetRecord) -> AssetRecord:
+    current = get_asset(item.id)
+    if item.updated_at <= current.updated_at:
+        item = item.model_copy(
+            update={"updated_at": current.updated_at + timedelta(microseconds=1)}
+        )
     create_assets([item])
     return get_asset(item.id)
 
@@ -139,6 +211,11 @@ def create_config(item: ConfigRecord) -> ConfigRecord:
 
 
 def update_config(item: ConfigRecord) -> ConfigRecord:
+    current = get_config(item.id)
+    if item.updated_at <= current.updated_at:
+        item = item.model_copy(
+            update={"updated_at": current.updated_at + timedelta(microseconds=1)}
+        )
     return create_config(item)
 
 

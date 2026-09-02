@@ -9,7 +9,11 @@ from botocore.exceptions import ClientError
 from urllib3.exceptions import ProtocolError
 
 from runner.nodes.assets.catalog_runtime.persistence import ensure_checkpoint_bundle
-from runner.nodes.assets.catalog_runtime.types import CatalogFile, CheckpointSpec, CheckpointType
+from runner.nodes.assets.catalog_runtime.types import (
+    CatalogFile,
+    CheckpointSpec,
+    CheckpointType,
+)
 from runner.nodes.assets.checkpoints import resolve_checkpoint_ref
 from runner.nodes.models import CheckpointRef
 from runner.nodes.tts.piper_catalog import PIPER_VOICES_BASE_URL, PiperVoiceEntry
@@ -66,7 +70,8 @@ def resolve_downloaded_piper_voice(voice_id: str) -> CheckpointRef:
     catalog_key = f"piper:{voice_id}"
     with database_session() as session:
         matches = [
-            checkpoint for checkpoint in asset_crud.list_checkpoints(session)
+            checkpoint
+            for checkpoint in asset_crud.list_checkpoints(session)
             if checkpoint.type_ == CheckpointType.PIPER.value
             and checkpoint.metadata_["catalog_key"] == catalog_key
         ]
@@ -76,10 +81,13 @@ def resolve_downloaded_piper_voice(voice_id: str) -> CheckpointRef:
 
 
 def _piper_bundle_valid(folder: Path) -> bool:
-    return len(tuple(folder.glob("*.onnx"))) == 1 and len(tuple(folder.glob("*.onnx.json"))) == 1
+    return (
+        len(tuple(folder.glob("*.onnx"))) == 1
+        and len(tuple(folder.glob("*.onnx.json"))) == 1
+    )
 
 
 def _sample_rate_metadata(folder: Path) -> dict[str, int]:
-    config_path, = tuple(folder.glob("*.onnx.json"))
+    (config_path,) = tuple(folder.glob("*.onnx.json"))
     payload = json.loads(config_path.read_text(encoding="utf-8"))
     return {"sample_rate": int(payload["audio"]["sample_rate"])}

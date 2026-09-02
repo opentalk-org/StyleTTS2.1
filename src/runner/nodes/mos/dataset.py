@@ -12,7 +12,7 @@ from runner.nodes.mos.audio import MosFeatureExtractor, MosInputs, prepare_audio
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 from shared.db.mos import crud as mos_crud
-from shared.db.mos.models import MosComparison
+from shared.db.mos.clickhouse.models import MosComparisonRecord
 
 
 class MosPairRow(BaseModel):
@@ -29,9 +29,7 @@ class MosPairRow(BaseModel):
             return 1.0
         if self.preferred_audio_id == self.audio_b_id:
             return -1.0
-        raise ValueError(
-            f"MOS preference is outside pair: {self.comparison_id}"
-        )
+        raise ValueError(f"MOS preference is outside pair: {self.comparison_id}")
 
 
 class MosPairIterableDataset(IterableDataset[MosPairRow]):
@@ -97,22 +95,31 @@ class MosPairCollator:
         self.feature_extractor = feature_extractor
 
     def __call__(self, rows: list[MosPairRow]) -> MosPairBatch:
-        audio_ids = list(dict.fromkeys(
-            [row.audio_a_id for row in rows] + [row.audio_b_id for row in rows]
-        ))
+        audio_ids = list(
+            dict.fromkeys(
+                [row.audio_a_id for row in rows] + [row.audio_b_id for row in rows]
+            )
+        )
         with database_session() as session:
             audio_bytes = audio_crud.bulk_read_audio_files(session, audio_ids)
         combined = prepare_audio_batch(
             self.feature_extractor,
-            [audio_bytes[row.audio_a_id] for row in rows] + [audio_bytes[row.audio_b_id] for row in rows],
+            [audio_bytes[row.audio_a_id] for row in rows]
+            + [audio_bytes[row.audio_b_id] for row in rows],
         )
         count = len(rows)
         return MosPairBatch(
-            inputs_a=MosInputs(combined.input_values[:count], combined.attention_mask[:count]),
-            inputs_b=MosInputs(combined.input_values[count:], combined.attention_mask[count:]),
+            inputs_a=MosInputs(
+                combined.input_values[:count], combined.attention_mask[:count]
+            ),
+            inputs_b=MosInputs(
+                combined.input_values[count:], combined.attention_mask[count:]
+            ),
             score_a=torch.tensor([row.score_a for row in rows], dtype=torch.float32),
             score_b=torch.tensor([row.score_b for row in rows], dtype=torch.float32),
-            preferred_sign=torch.tensor([row.preferred_sign for row in rows], dtype=torch.float32),
+            preferred_sign=torch.tensor(
+                [row.preferred_sign for row in rows], dtype=torch.float32
+            ),
         )
 
 
@@ -138,7 +145,7 @@ def build_mos_dataloader(
     )
 
 
-def _pair_row(comparison: MosComparison) -> MosPairRow:
+def _pair_row(comparison: MosComparisonRecord) -> MosPairRow:
     return MosPairRow(
         comparison_id=comparison.id,
         audio_a_id=comparison.audio_a_id,

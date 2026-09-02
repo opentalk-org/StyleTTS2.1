@@ -7,7 +7,11 @@ from typing import Any
 import numpy as np
 
 from runner.nodes.asr.audio import write_temp_wav
-from runner.nodes.tts.engines.base import EngineRuntime, require_checkpoint_dir, resolve_device
+from runner.nodes.tts.engines.base import (
+    EngineRuntime,
+    require_checkpoint_dir,
+    resolve_device,
+)
 from runner.nodes.tts.voices import Voice
 
 CHATTERBOX_REPO_ID = "ResembleAI/chatterbox"
@@ -24,7 +28,9 @@ class ChatterboxRuntime(EngineRuntime):
         self._active_clone_digest: bytes | None = None
         self.SAMPLE_RATE = int(model.sr)
 
-    def synthesize(self, text: str, voice: Voice, language: str) -> tuple[np.ndarray, int]:
+    def synthesize(
+        self, text: str, voice: Voice, language: str
+    ) -> tuple[np.ndarray, int]:
         kwargs: dict[str, Any] = {}
         if voice.clone is not None:
             clone_digest = hashlib.blake2b(
@@ -44,7 +50,9 @@ class ChatterboxRuntime(EngineRuntime):
         return _to_mono_float(wav), self.SAMPLE_RATE
 
 
-def load(checkpoint_dir: Path, device: str | None = None, multilingual: bool = True) -> ChatterboxRuntime:
+def load(
+    checkpoint_dir: Path, device: str | None = None, multilingual: bool = True
+) -> ChatterboxRuntime:
     device = device or resolve_device()
     try:
         if multilingual:

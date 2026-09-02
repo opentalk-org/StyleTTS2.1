@@ -37,7 +37,6 @@ class JobSummary(BaseModel):
     finished_at: datetime | None
     error: str | None
     updated_at: datetime
-    review_count: int = Field(ge=0)
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -52,6 +51,7 @@ class NodeLogUpsert(BaseModel):
     content: str
     truncated: bool
     error: str | None = None
+
 
 class ClaimedJob(BaseModel):
     run_id: str

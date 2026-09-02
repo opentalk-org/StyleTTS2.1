@@ -5,7 +5,7 @@ from uuid import UUID
 
 from torch import Tensor
 
-from shared.db.audio.segment_catalog import SegmentReference
+from shared.db.audio.clickhouse.references import SegmentReference
 from shared.db.audio.ranges.wav import WavClip
 
 from .audio import ProcessedAudio

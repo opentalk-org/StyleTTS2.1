@@ -1,7 +1,9 @@
+from datetime import timedelta
 from uuid import UUID, uuid4
 
 from shared.db.clickhouse import clickhouse_client, delete_rows
 from shared.db.mos.clickhouse.models import MosComparisonRecord, MosPairIds
+
 
 def create_comparison(item: MosComparisonRecord) -> MosComparisonRecord:
     if item.audio_a_id == item.audio_b_id:
@@ -14,7 +16,6 @@ def create_comparison(item: MosComparisonRecord) -> MosComparisonRecord:
             [
                 item.id,
                 item.updated_at,
-                item.dataset_id,
                 item.audio_a_id,
                 item.audio_b_id,
                 item.preferred_audio_id,
@@ -26,7 +27,6 @@ def create_comparison(item: MosComparisonRecord) -> MosComparisonRecord:
         column_names=[
             "id",
             "updated_at",
-            "dataset_id",
             "audio_a_id",
             "audio_b_id",
             "preferred_audio_id",
@@ -40,8 +40,12 @@ def create_comparison(item: MosComparisonRecord) -> MosComparisonRecord:
 
 def update_comparison(item: MosComparisonRecord) -> MosComparisonRecord:
     current = get_comparison(item.id)
-    if current.dataset_id != item.dataset_id or current.created_at != item.created_at:
-        raise ValueError("MOS dataset and creation time are immutable")
+    if current.created_at != item.created_at:
+        raise ValueError("MOS creation time is immutable")
+    if item.updated_at <= current.updated_at:
+        item = item.model_copy(
+            update={"updated_at": current.updated_at + timedelta(microseconds=1)}
+        )
     return create_comparison(item)
 
 
@@ -49,17 +53,16 @@ def get_comparison(comparison_id: UUID) -> MosComparisonRecord:
     result = clickhouse_client().query(
         """
         SELECT
-            id,
-            updated_at,
-            dataset_id,
-            audio_a_id,
-            audio_b_id,
-            preferred_audio_id,
-            score_a,
-            score_b,
-            created_at
-        FROM mos_comparisons FINAL
-        WHERE id = {id:UUID}
+            m.id AS id,
+            m.updated_at AS updated_at,
+            m.audio_a_id AS audio_a_id,
+            m.audio_b_id AS audio_b_id,
+            m.preferred_audio_id AS preferred_audio_id,
+            m.score_a AS score_a,
+            m.score_b AS score_b,
+            m.created_at AS created_at
+        FROM mos_comparisons AS m FINAL
+        WHERE m.id = {id:UUID}
         """,
         parameters={"id": comparison_id},
     )
@@ -77,23 +80,60 @@ def list_comparisons(
     result = clickhouse_client().query(
         """
         SELECT
-            id,
-            updated_at,
-            dataset_id,
-            audio_a_id,
-            audio_b_id,
-            preferred_audio_id,
-            score_a,
-            score_b,
-            created_at
-        FROM mos_comparisons FINAL
-        WHERE dataset_id = {dataset_id:UUID}
-        ORDER BY created_at DESC, id DESC
+            m.id AS id,
+            m.updated_at AS updated_at,
+            m.audio_a_id AS audio_a_id,
+            m.audio_b_id AS audio_b_id,
+            m.preferred_audio_id AS preferred_audio_id,
+            m.score_a AS score_a,
+            m.score_b AS score_b,
+            m.created_at AS created_at
+        FROM mos_comparisons AS m FINAL
+        INNER JOIN dataset_audio_files AS a_membership FINAL
+          ON a_membership.audio_file_id = m.audio_a_id
+        INNER JOIN dataset_audio_files AS b_membership FINAL
+          ON b_membership.audio_file_id = m.audio_b_id
+        WHERE a_membership.dataset_id = {dataset_id:UUID}
+          AND b_membership.dataset_id = {dataset_id:UUID}
+        ORDER BY m.created_at DESC, m.id DESC
         LIMIT {limit:UInt32} OFFSET {offset:UInt64}
         """,
         parameters={"dataset_id": dataset_id, "limit": limit, "offset": offset},
     )
     return [MosComparisonRecord.model_validate(row) for row in result.named_results()]
+
+
+def count_comparisons(dataset_id: UUID) -> int:
+    result = clickhouse_client().query(
+        """
+        SELECT count()
+        FROM mos_comparisons AS m FINAL
+        INNER JOIN dataset_audio_files AS a_membership FINAL
+          ON a_membership.audio_file_id = m.audio_a_id
+        INNER JOIN dataset_audio_files AS b_membership FINAL
+          ON b_membership.audio_file_id = m.audio_b_id
+        WHERE a_membership.dataset_id = {dataset_id:UUID}
+          AND b_membership.dataset_id = {dataset_id:UUID}
+        """,
+        parameters={"dataset_id": dataset_id},
+    )
+    return int(result.result_rows[0][0])
+
+
+def validate_pair_membership(
+    dataset_id: UUID, audio_a_id: UUID, audio_b_id: UUID
+) -> None:
+    result = clickhouse_client().query(
+        """
+        SELECT countDistinct(audio_file_id)
+        FROM dataset_audio_files FINAL
+        WHERE dataset_id = {dataset_id:UUID}
+          AND audio_file_id IN {audio_ids:Array(UUID)}
+        """,
+        parameters={"dataset_id": dataset_id, "audio_ids": [audio_a_id, audio_b_id]},
+    )
+    if int(result.result_rows[0][0]) != 2:
+        raise ValueError("both MOS audio files must belong to the selected dataset")
 
 
 def delete_comparison(comparison_id: UUID) -> None:

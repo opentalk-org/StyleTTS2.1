@@ -9,9 +9,21 @@ from runflow.core.node import Node
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import JsonPort
-from runner.nodes.tts.piper_catalog import PiperSelection, fetch_piper_catalog, select_voices
-from runner.nodes.tts.piper_download import download_piper_voice, resolve_downloaded_piper_voice
-from runner.nodes.tts.voices import PiperVoiceModel, TtsEngine, piper_voice_payload, voice_batch_payload
+from runner.nodes.tts.piper_catalog import (
+    PiperSelection,
+    fetch_piper_catalog,
+    select_voices,
+)
+from runner.nodes.tts.piper_download import (
+    download_piper_voice,
+    resolve_downloaded_piper_voice,
+)
+from runner.nodes.tts.voices import (
+    PiperVoiceModel,
+    TtsEngine,
+    piper_voice_payload,
+    voice_batch_payload,
+)
 
 
 class PiperSelectionMode(StrEnum):
@@ -26,7 +38,9 @@ class PiperVoiceSelectionSettings(StrictSettings):
         json_schema_extra={"x-piper-catalog-url": "/piper/voices"},
     )
 
-    mode: PiperSelectionMode = Field(default=PiperSelectionMode.EXPLICIT, title="Selection mode")
+    mode: PiperSelectionMode = Field(
+        default=PiperSelectionMode.EXPLICIT, title="Selection mode"
+    )
     voice_ids: list[str] = Field(default_factory=list, title="Piper voices")
     languages: list[str] = Field(default_factory=list, title="Language families")
     locales: list[str] = Field(default_factory=list, title="Locales")
@@ -62,10 +76,21 @@ class PiperVoiceSelectionNode(Node):
 
     def _select_payload(self, check_cancel):
         catalog = fetch_piper_catalog()
-        if self.settings.mode is PiperSelectionMode.EXPLICIT and not self.settings.voice_ids:
+        if (
+            self.settings.mode is PiperSelectionMode.EXPLICIT
+            and not self.settings.voice_ids
+        ):
             raise ValueError("piper_explicit_selection_requires_voice_ids")
-        count = self.settings.count if self.settings.mode is PiperSelectionMode.RANDOM else None
-        voice_ids = tuple(self.settings.voice_ids) if self.settings.mode is PiperSelectionMode.EXPLICIT else ()
+        count = (
+            self.settings.count
+            if self.settings.mode is PiperSelectionMode.RANDOM
+            else None
+        )
+        voice_ids = (
+            tuple(self.settings.voice_ids)
+            if self.settings.mode is PiperSelectionMode.EXPLICIT
+            else ()
+        )
         selected = select_voices(
             catalog,
             PiperSelection(
@@ -100,4 +125,6 @@ class PiperVoiceSelectionNode(Node):
             )
         if len(payloads) == 1 and self.settings.samples_per_voice == 1:
             return payloads[0]
-        return voice_batch_payload(TtsEngine.PIPER, payloads, self.settings.samples_per_voice)
+        return voice_batch_payload(
+            TtsEngine.PIPER, payloads, self.settings.samples_per_voice
+        )

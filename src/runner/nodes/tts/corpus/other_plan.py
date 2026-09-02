@@ -11,10 +11,25 @@ from runner.nodes.tts.corpus.references import RegisteredReference
 from runner.nodes.tts.voices import PRESET_VOICES, TtsEngine
 
 
-ALL_LANGUAGES = frozenset({
-    "en", "de", "fr", "nl", "zh", "ja", "hi", "es",
-    "pt", "it", "ru", "pl", "ar", "tr", "ko",
-})
+ALL_LANGUAGES = frozenset(
+    {
+        "en",
+        "de",
+        "fr",
+        "nl",
+        "zh",
+        "ja",
+        "hi",
+        "es",
+        "pt",
+        "it",
+        "ru",
+        "pl",
+        "ar",
+        "tr",
+        "ko",
+    }
+)
 ENGINE_LANGUAGES = {
     TtsEngine.CHATTERBOX: ALL_LANGUAGES,
     TtsEngine.F5_TTS: frozenset({"en", "zh"}),
@@ -115,7 +130,7 @@ def _orpheus_jobs(
                 text,
             ),
         )
-        for preset, voice in zip(presets, english[:len(presets)], strict=True)
+        for preset, voice in zip(presets, english[: len(presets)], strict=True)
         for index, text in enumerate(_voice_lines(root, voice))
     )
 
@@ -156,9 +171,7 @@ def _voice_lines(root: Path, voice: VoiceRecord) -> tuple[str, ...]:
     path = root / voice.path
     lines = tuple(path.read_text(encoding="utf-8").splitlines())
     if len(lines) != voice.lines:
-        raise ValueError(
-            f"{path}: expected {voice.lines} lines, found {len(lines)}"
-        )
+        raise ValueError(f"{path}: expected {voice.lines} lines, found {len(lines)}")
     if any(not line.strip() or line != line.strip() for line in lines):
         raise ValueError(f"{path}: lines must be nonempty and trimmed")
     return lines
@@ -177,7 +190,4 @@ def _source_key(
         digest_size=12,
     ).hexdigest()
     reference = str(reference_audio_id) if reference_audio_id is not None else "preset"
-    return (
-        f"{engine.value}:{voice_id}:{reference}:"
-        f"{sentence_index:04d}:{digest}"
-    )
+    return f"{engine.value}:{voice_id}:{reference}:{sentence_index:04d}:{digest}"

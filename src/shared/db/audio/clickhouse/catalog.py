@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -11,18 +12,36 @@ def list_audio_files(
     *,
     limit: int,
     order: AudioOrder = "updated",
-    after_value: str | float | None = None,
+    after_value: datetime | float | None = None,
     after_id: UUID | None = None,
-    dataset_id: UUID | None = None,
+    dataset: str = "all",
+    query: str = "",
+    language: str = "",
+    run_id: str | None = None,
 ) -> list[AudioFileRecord]:
     order_column, order_type = _ORDER_COLUMNS[order]
     filters = []
     parameters: dict[str, object] = {"limit": limit}
     join = ""
-    if dataset_id is not None:
+    if dataset == "unassigned":
+        join = "LEFT JOIN dataset_audio_files AS d FINAL ON d.audio_file_id = a.id"
+        filters.append("d.audio_file_id IS NULL")
+    elif dataset != "all":
         join = "INNER JOIN dataset_audio_files AS d FINAL ON d.audio_file_id = a.id"
         filters.append("d.dataset_id = {dataset_id:UUID}")
-        parameters["dataset_id"] = dataset_id
+        parameters["dataset_id"] = UUID(dataset)
+    if query:
+        filters.append(
+            "(positionCaseInsensitiveUTF8(a.name, {query:String}) > 0 OR "
+            "positionCaseInsensitiveUTF8(toString(a.metadata), {query:String}) > 0)"
+        )
+        parameters["query"] = query
+    if language.strip():
+        filters.append("lower(a.language) = lower({language:String})")
+        parameters["language"] = language.strip()
+    if run_id is not None:
+        filters.append("JSONExtractString(a.metadata, 'run_id') = {run_id:String}")
+        parameters["run_id"] = run_id
     if after_value is not None:
         assert after_id is not None, "catalog cursor requires an audio ID"
         filters.append(
@@ -45,6 +64,7 @@ def list_audio_files(
             a.style_prompt,
             a.voice_prompt,
             a.virtual,
+            a.storage_kind,
             a.storage_ref,
             a.metadata
         FROM (
@@ -61,8 +81,9 @@ def list_audio_files(
                 latest.9 AS style_prompt,
                 latest.10 AS voice_prompt,
                 latest.11 AS virtual,
-                latest.12 AS storage_ref,
-                latest.13 AS metadata
+                latest.12 AS storage_kind,
+                latest.13 AS storage_ref,
+                latest.14 AS metadata
             FROM (
                 SELECT
                     id,
@@ -79,6 +100,7 @@ def list_audio_files(
                             style_prompt,
                             voice_prompt,
                             virtual,
+                            storage_kind,
                             storage_ref,
                             metadata
                         ),
@@ -96,6 +118,22 @@ def list_audio_files(
         parameters=parameters,
     )
     return [AudioFileRecord.model_validate(row) for row in result.named_results()]
+
+
+def search_audio_file_ids(query: str, dataset: str, language: str) -> list[UUID]:
+    return [
+        item.id
+        for item in list_audio_files(
+            limit=4_294_967_295,
+            dataset=dataset,
+            query=query,
+            language=language,
+        )
+    ]
+
+
+def list_audio_files_by_run(run_id: str) -> list[AudioFileRecord]:
+    return list_audio_files(limit=4_294_967_295, run_id=run_id)
 
 
 _ORDER_COLUMNS = {

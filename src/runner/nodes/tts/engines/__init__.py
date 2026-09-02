@@ -3,7 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from runner.nodes.tts.engines import chatterbox, dia, f5_tts, fish_speech, kokoro, orpheus, raon_opentts
+from runner.nodes.tts.engines import (
+    chatterbox,
+    dia,
+    f5_tts,
+    fish_speech,
+    kokoro,
+    orpheus,
+    raon_opentts,
+)
 from runner.nodes.tts.engines.base import EngineRuntime
 from runner.nodes.tts.voices import TtsEngine
 

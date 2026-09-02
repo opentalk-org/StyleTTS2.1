@@ -97,7 +97,9 @@ def fetch_piper_catalog() -> PiperCatalog:
 def select_voices(catalog: PiperCatalog, selection: PiperSelection) -> PiperCatalog:
     by_id = {voice.key: voice for voice in catalog}
     if selection.voice_ids:
-        missing = [voice_id for voice_id in selection.voice_ids if voice_id not in by_id]
+        missing = [
+            voice_id for voice_id in selection.voice_ids if voice_id not in by_id
+        ]
         if missing:
             raise ValueError(f"piper_unknown_voice_ids:{','.join(missing)}")
         return tuple(by_id[voice_id] for voice_id in selection.voice_ids)
@@ -112,7 +114,9 @@ def select_voices(catalog: PiperCatalog, selection: PiperSelection) -> PiperCata
 
 
 def _matches(voice: PiperVoiceEntry, selection: PiperSelection) -> bool:
-    language_matches = not selection.languages or voice.language.family in selection.languages
+    language_matches = (
+        not selection.languages or voice.language.family in selection.languages
+    )
     locale_matches = not selection.locales or voice.language.code in selection.locales
     quality_matches = not selection.qualities or voice.quality in selection.qualities
     return language_matches and locale_matches and quality_matches

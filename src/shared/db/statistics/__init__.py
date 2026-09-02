@@ -6,8 +6,14 @@ from shared.db.statistics.crud import (
     list_statistics_entries,
     list_statistics_summaries,
 )
-from shared.db.statistics.models import StatisticsEntry
-from shared.db.statistics.schemas import StatisticsEntryCreate, StatisticsEntryRead, StatisticsEntrySummary
+from shared.db.statistics.clickhouse.models import (
+    StatisticsEntryRecord as StatisticsEntry,
+)
+from shared.db.statistics.schemas import (
+    StatisticsEntryCreate,
+    StatisticsEntryRead,
+    StatisticsEntrySummary,
+)
 
 __all__ = [
     "StatisticsEntry",

@@ -1,8 +1,10 @@
 from collections.abc import Sequence
+from datetime import timedelta
 from uuid import UUID
 
 from shared.db.audio.clickhouse.models import AudioFileRecord, AudioFileUpdate
 from shared.db.clickhouse import clickhouse_client, delete_rows
+
 
 def create_audio_files(items: Sequence[AudioFileRecord]) -> None:
     if not items:
@@ -21,6 +23,7 @@ def create_audio_files(items: Sequence[AudioFileRecord]) -> None:
             item.style_prompt,
             item.voice_prompt,
             item.virtual,
+            item.storage_kind.value,
             item.storage_ref,
             item.metadata,
         ]
@@ -42,6 +45,7 @@ def create_audio_files(items: Sequence[AudioFileRecord]) -> None:
             "style_prompt",
             "voice_prompt",
             "virtual",
+            "storage_kind",
             "storage_ref",
             "metadata",
         ],
@@ -73,8 +77,9 @@ def get_audio_files(audio_file_ids: Sequence[UUID]) -> list[AudioFileRecord]:
             latest.9 AS style_prompt,
             latest.10 AS voice_prompt,
             latest.11 AS virtual,
-            latest.12 AS storage_ref,
-            latest.13 AS metadata
+            latest.12 AS storage_kind,
+            latest.13 AS storage_ref,
+            latest.14 AS metadata
         FROM (
             SELECT
                 id,
@@ -91,6 +96,7 @@ def get_audio_files(audio_file_ids: Sequence[UUID]) -> list[AudioFileRecord]:
                         style_prompt,
                         voice_prompt,
                         virtual,
+                        storage_kind,
                         storage_ref,
                         metadata
                     ),
@@ -107,7 +113,11 @@ def get_audio_files(audio_file_ids: Sequence[UUID]) -> list[AudioFileRecord]:
 
 
 def update_audio_file(audio_file_id: UUID, item: AudioFileUpdate) -> AudioFileRecord:
-    get_audio_file(audio_file_id)
+    current = get_audio_file(audio_file_id)
+    if item.updated_at <= current.updated_at:
+        item = item.model_copy(
+            update={"updated_at": current.updated_at + timedelta(microseconds=1)}
+        )
     create_audio_files([AudioFileRecord(id=audio_file_id, **item.model_dump())])
     return get_audio_file(audio_file_id)
 
@@ -115,9 +125,26 @@ def update_audio_file(audio_file_id: UUID, item: AudioFileUpdate) -> AudioFileRe
 def delete_audio_files(audio_file_ids: Sequence[UUID]) -> None:
     if not audio_file_ids:
         return
+    parameters = {"ids": list(audio_file_ids)}
+    client = clickhouse_client()
     delete_rows(
-        clickhouse_client(),
+        client,
+        "mos_comparisons",
+        "audio_a_id IN {ids:Array(UUID)} OR audio_b_id IN {ids:Array(UUID)}",
+        parameters,
+    )
+    delete_rows(
+        client, "audio_segments", "audio_file_id IN {ids:Array(UUID)}", parameters
+    )
+    delete_rows(
+        client, "audio_waveforms", "audio_file_id IN {ids:Array(UUID)}", parameters
+    )
+    delete_rows(
+        client, "dataset_audio_files", "audio_file_id IN {ids:Array(UUID)}", parameters
+    )
+    delete_rows(
+        client,
         "audio_files",
         "id IN {ids:Array(UUID)}",
-        {"ids": list(audio_file_ids)},
+        parameters,
     )

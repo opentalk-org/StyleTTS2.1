@@ -9,7 +9,7 @@ import shutil
 import tarfile
 import tempfile
 
-from shared.db.assets.models import Checkpoint, ExtraFile
+from shared.db.assets.clickhouse.models import AssetRecord
 from shared.storage import ObjectStore
 
 
@@ -66,7 +66,7 @@ def stored_path(path: Path) -> StoredPath:
     return StoredPath(path=path, size=size, content_hash=digest.hexdigest())
 
 
-def checkpoint_cache_path(item: Checkpoint, store: ObjectStore) -> Path:
+def checkpoint_cache_path(item: AssetRecord, store: ObjectStore) -> Path:
     target = _cache_root() / "checkpoints" / item.content_hash
     if target.exists():
         return target
@@ -107,7 +107,7 @@ def populate_checkpoint_cache(folder_path: Path, content_hash: str) -> Path:
     return target
 
 
-def extra_file_cache_path(item: ExtraFile, store: ObjectStore) -> Path:
+def extra_file_cache_path(item: AssetRecord, store: ObjectStore) -> Path:
     target = _cache_root() / "extra-files" / item.content_hash / item.name
     if target.exists():
         return target

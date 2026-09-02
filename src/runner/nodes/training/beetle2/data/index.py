@@ -5,12 +5,8 @@ from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
-from shared.db.audio.segment_catalog import (
-    SegmentCursor,
-    SegmentReference,
-    count_segment_references,
-    list_segment_references_page,
-)
+from shared.db.audio import crud as audio_crud
+from shared.db.audio.clickhouse.references import SegmentCursor, SegmentReference
 from shared.db.connection import database_session
 
 from ..config.data import DatabaseSelection
@@ -83,10 +79,10 @@ class DatabaseSegmentIndex:
         references: list[SegmentReference] = []
         cursor: SegmentCursor | None = None
         with database_session() as session:
-            total = count_segment_references(session, selection.dataset_id)
+            total = audio_crud.count_segment_references(session, selection.dataset_id)
             while True:
                 callbacks.check_cancel()
-                page = list_segment_references_page(
+                page = audio_crud.list_segment_references_page(
                     session,
                     selection.dataset_id,
                     cursor,

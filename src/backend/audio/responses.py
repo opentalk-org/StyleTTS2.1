@@ -1,4 +1,5 @@
 from typing import Any
+from uuid import UUID
 
 from fastapi import HTTPException, UploadFile, status
 
@@ -8,22 +9,28 @@ from backend.audio.schemas import (
     WordAlignment,
 )
 from shared.audio_annotations import AudioAnnotations
-from shared.db.audio import crud as audio_crud
-from shared.db.audio.models import AudioFile
+from shared.db.audio.clickhouse import AudioFileRecord, AudioSegmentRecord, StorageKind
 from shared.db.audio.schemas import AudioCreate
 
 DEFAULT_STREAM_CHUNK = 1024 * 1024
 
 
-def audio_response(item: AudioFile, segment_limit: int | None) -> AudioFileListItem:
-    segments = item.segments if segment_limit is None else item.segments[:segment_limit]
-    return _audio_item(item, len(item.segments), segments)
+def audio_response(
+    item: AudioFileRecord,
+    segments: list[AudioSegmentRecord],
+    dataset_ids: list[UUID],
+    segment_limit: int | None,
+) -> AudioFileListItem:
+    preview = segments if segment_limit is None else segments[:segment_limit]
+    return _audio_item(item, len(segments), preview, dataset_ids)
 
 
 def audio_list_response(
-    item: AudioFile,
+    item: AudioFileRecord,
     segment_count: int,
     preview_sample_rate: int | None,
+    segment_preview: list[AudioSegmentRecord],
+    dataset_ids: list[UUID],
 ) -> AudioFileListItem:
     return AudioFileListItem(
         id=item.id,
@@ -31,7 +38,7 @@ def audio_list_response(
         annotations=AudioAnnotations(
             score=item.score,
             accuracy=None,
-            metadata={},
+            metadata=item.metadata,
         ),
         duration=item.duration,
         language=item.language,
@@ -41,10 +48,10 @@ def audio_list_response(
         byte_length=item.byte_length,
         size_mb=f"{item.byte_length / 1024 / 1024:.1f}",
         segments=segment_count,
-        segment_preview=[],
-        dataset_ids=[dataset.id for dataset in item.datasets],
+        segment_preview=[segment_response(segment) for segment in segment_preview],
+        dataset_ids=dataset_ids,
         virtual=item.virtual,
-        storage_kind=item.storage_kind,
+        storage_kind=item.storage_kind.value,
         updated_at=item.updated_at,
     )
 
@@ -55,6 +62,7 @@ def audio_payload(
     duration: float,
     sample_rate: int,
 ) -> AudioCreate:
+    assert file.filename is not None, "audio filename is required"
     metadata: dict[str, Any] = {"sample_rate": sample_rate}
     if file.content_type is not None:
         metadata["content_type"] = file.content_type
@@ -69,21 +77,34 @@ def audio_payload(
     )
 
 
-def segment_response(segment: dict[str, Any]) -> AudioSegmentRead:
+def segment_response(segment: AudioSegmentRecord) -> AudioSegmentRead:
     return AudioSegmentRead(
-        id=str(segment["id"]),
-        start=float(segment["start"]),
-        end=float(segment["end"]),
-        text=str(segment["text"]),
-        phon=str(segment["phon"]),
-        annotations=AudioAnnotations.model_validate(segment["annotations"]),
-        type_=str(segment["type_"]),
-        alignment=_segment_alignment(segment),
+        id=segment.id,
+        start=segment.start_seconds,
+        end=segment.end_seconds,
+        text=segment.text,
+        phon=segment.phon,
+        annotations=AudioAnnotations(
+            speaker_id=segment.speaker_id,
+            accuracy=segment.accuracy,
+            metadata=segment.metadata,
+        ),
+        type_=segment.kind,
+        alignment=_segment_alignment(segment.alignment),
     )
 
 
-def audio_annotations(item: AudioFile) -> AudioAnnotations:
-    return audio_crud.audio_file_annotations(item)
+def audio_annotations(
+    item: AudioFileRecord,
+    segments: list[AudioSegmentRecord],
+) -> AudioAnnotations:
+    speakers = {segment.speaker_id for segment in segments if segment.speaker_id}
+    return AudioAnnotations(
+        speaker_id=speakers.pop() if len(speakers) == 1 else None,
+        score=item.score,
+        accuracy=None,
+        metadata=item.metadata,
+    )
 
 
 def sample_rate(metadata: dict[str, Any]) -> int | None:
@@ -98,8 +119,8 @@ def content_type(metadata: dict[str, Any]) -> str:
     return "application/octet-stream"
 
 
-def require_packed_audio(item: AudioFile) -> None:
-    if item.storage_kind != "packed":
+def require_packed_audio(item: AudioFileRecord) -> None:
+    if item.storage_kind != StorageKind.PACKED:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
@@ -134,15 +155,16 @@ def content_range(range_header: str | None, byte_length: int) -> tuple[int, int]
 
 
 def _audio_item(
-    item: AudioFile,
+    item: AudioFileRecord,
     segment_count: int,
-    segment_preview: list[dict[str, Any]],
+    segment_preview: list[AudioSegmentRecord],
+    dataset_ids: list[UUID],
 ) -> AudioFileListItem:
-    metadata = dict(item.metadata_)
+    metadata = item.metadata
     return AudioFileListItem(
         id=item.id,
         name=item.name,
-        annotations=audio_annotations(item),
+        annotations=audio_annotations(item, segment_preview),
         duration=item.duration,
         language=item.language,
         style_prompt=item.style_prompt,
@@ -151,20 +173,15 @@ def _audio_item(
         byte_length=item.byte_length,
         size_mb=f"{item.byte_length / 1024 / 1024:.1f}",
         segments=segment_count,
-        segment_preview=[
-            segment_response(segment)
-            for segment in segment_preview
-            if all(field in segment for field in ("id", "type_", "alignment"))
-        ],
-        dataset_ids=[dataset.id for dataset in item.datasets],
+        segment_preview=[segment_response(segment) for segment in segment_preview],
+        dataset_ids=dataset_ids,
         virtual=item.virtual,
-        storage_kind=item.storage_kind,
+        storage_kind=item.storage_kind.value,
         updated_at=item.updated_at,
     )
 
 
-def _segment_alignment(segment: dict[str, Any]) -> list[WordAlignment] | None:
-    raw = segment["alignment"]
+def _segment_alignment(raw: list[dict[str, Any]] | None) -> list[WordAlignment] | None:
     if raw is None:
         return None
     return [

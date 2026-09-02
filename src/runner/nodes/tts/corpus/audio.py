@@ -39,9 +39,7 @@ def other_corpus_audio(
         "engine": job.engine.value,
         "voice": job.voice_id,
         "reference_audio_id": (
-            str(job.reference_audio_id)
-            if job.reference_audio_id is not None
-            else None
+            str(job.reference_audio_id) if job.reference_audio_id is not None else None
         ),
         "language": job.language,
         "text": job.text,

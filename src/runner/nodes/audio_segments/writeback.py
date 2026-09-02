@@ -9,7 +9,13 @@ from runflow.core.node import Node
 from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runner.nodes.datatypes import AudioPort, SaveResultPort
-from runner.nodes.models import Audio, AudioRecordRef, SaveResult, SegmentGroup, stable_id
+from runner.nodes.models import (
+    Audio,
+    AudioRecordRef,
+    SaveResult,
+    SegmentGroup,
+    stable_id,
+)
 from runner.nodes.audio_segments.writeback_helpers import (
     audio_ref_from_audio as _audio_ref_from_audio,
     audio_segment_from_dict as _audio_segment_from_dict,
@@ -17,11 +23,14 @@ from runner.nodes.audio_segments.writeback_helpers import (
     save_result as _save_result,
     segment_group_from_audio as _segment_group_from_audio,
 )
-from runner.nodes.audio_segments.external_record import external_output, external_payload
+from runner.nodes.audio_segments.external_record import (
+    external_output,
+    external_payload,
+)
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 from shared.db.audio.external import bulk_create_external_audio_files
-from shared.db.audio.models import AudioFile
+from shared.db.audio.clickhouse.models import AudioFileRecord
 from shared.db.audio.schemas import AudioCreate, AudioUpdate
 from shared.db.datasets import crud as dataset_crud
 
@@ -51,10 +60,10 @@ class SaveAudioRecordNode(Node):
         audios: list[Audio] = [inputs["audio"] for inputs in batch]
         if self.settings.storage_mode == "external":
             if self.settings.dataset_id is not None:
-                raise ValueError(
-                    "SaveAudioRecord dataset_id requires stored mode"
-                )
-            payloads = [external_payload(audio) for audio in context.cancellable(audios)]
+                raise ValueError("SaveAudioRecord dataset_id requires stored mode")
+            payloads = [
+                external_payload(audio) for audio in context.cancellable(audios)
+            ]
             with database_session() as session:
                 inserted = bulk_create_external_audio_files(session, payloads)
             await context.report_progress(
@@ -65,7 +74,10 @@ class SaveAudioRecordNode(Node):
             )
             return [external_output(audio) for audio in audios]
 
-        payloads = [_stored_payload(audio, self.settings.virtual) for audio in context.cancellable(audios)]
+        payloads = [
+            _stored_payload(audio, self.settings.virtual)
+            for audio in context.cancellable(audios)
+        ]
         with database_session() as session:
             items = audio_crud.bulk_create_audio_files(
                 session,
@@ -75,14 +87,15 @@ class SaveAudioRecordNode(Node):
             )
             if self.settings.dataset_id is not None:
                 dataset_crud.bulk_add_audio_files_to_dataset(
-                    session,
                     self.settings.dataset_id,
                     [item.id for item in items],
-                    commit=False,
                 )
             session.commit()
         context.check_cancel()
-        return [_audio_writeback_output(item, audio, "created") for item, audio in zip(items, audios, strict=True)]
+        return [
+            _audio_writeback_output(item, audio, "created")
+            for item, audio in zip(items, audios, strict=True)
+        ]
 
 
 class UpdateAudioRecordBytesNode(Node):
@@ -111,19 +124,31 @@ class UpdateAudioRecordBytesNode(Node):
                     name=item.name,
                     wav_bytes=audio.data,
                     duration=audio.duration,
-                    annotations=audio.annotations.model_copy(update={
-                        "score": audio.score if audio.score is not None else item.score,
-                        "metadata": _audio_metadata(audio),
-                    }),
+                    annotations=audio.annotations.model_copy(
+                        update={
+                            "score": audio.score
+                            if audio.score is not None
+                            else item.score,
+                            "metadata": _audio_metadata(audio),
+                        }
+                    ),
                     language=_audio_language(audio, fallback=item.language),
-                    style_prompt=audio.style_prompt if audio.style_prompt is not None else item.style_prompt,
-                    voice_prompt=audio.voice_prompt if audio.voice_prompt is not None else item.voice_prompt,
-                    segments=item.segments,
+                    style_prompt=audio.style_prompt
+                    if audio.style_prompt is not None
+                    else item.style_prompt,
+                    voice_prompt=audio.voice_prompt
+                    if audio.voice_prompt is not None
+                    else item.voice_prompt,
+                    segments=audio_crud.list_audio_segments_bulk(session, [item.id])[
+                        item.id
+                    ],
                     virtual=item.virtual,
                 )
             updated_by_id = audio_crud.bulk_update_audio_files(session, payloads)
         return [
-            _audio_writeback_output(updated_by_id[audio.audio_file_id], audio, "updated")
+            _audio_writeback_output(
+                updated_by_id[audio.audio_file_id], audio, "updated"
+            )
             for audio in context.cancellable(audios)
         ]
 
@@ -149,7 +174,9 @@ class LoadAudioSegmentsNode(Node):
             context.check_cancel()
             audio: Audio = inputs["audio"]
             segments = segments_by_id.get(ref.audio_file_id, [])
-            audio_segments = [_audio_segment_from_dict(ref, segment) for segment in segments]
+            audio_segments = [
+                _audio_segment_from_dict(ref, segment) for segment in segments
+            ]
             outputs.append({"audio": replace(audio, segments=audio_segments)})
         return outputs
 
@@ -167,13 +194,18 @@ class SaveAudioSegmentsNode(Node):
     async def execute(self, batch, context):
         audios: list[Audio] = [inputs["audio"] for inputs in batch]
         assert_unique_audio_ids(audios, self.NODE_TYPE)
-        records: list[tuple[Audio, AudioRecordRef, SegmentGroup, list[dict[str, Any]]]] = []
+        records: list[
+            tuple[Audio, AudioRecordRef, SegmentGroup, list[dict[str, Any]]]
+        ] = []
         with database_session() as session:
             existing_by_id: dict[UUID, list[dict[str, Any]]] = {}
             if self.settings.mode == "append":
                 existing_by_id = audio_crud.list_audio_segments_bulk(
                     session,
-                    [_audio_ref_from_audio(inputs["audio"]).audio_file_id for inputs in batch],
+                    [
+                        _audio_ref_from_audio(inputs["audio"]).audio_file_id
+                        for inputs in batch
+                    ],
                 )
             for inputs in batch:
                 context.check_cancel()
@@ -181,7 +213,14 @@ class SaveAudioSegmentsNode(Node):
                 ref = _audio_ref_from_audio(audio)
                 group = _segment_group_from_audio(audio)
                 existing = existing_by_id.get(ref.audio_file_id, [])
-                records.append((audio, ref, group, _new_group_segments(group, self.settings.mode, existing)))
+                records.append(
+                    (
+                        audio,
+                        ref,
+                        group,
+                        _new_group_segments(group, self.settings.mode, existing),
+                    )
+                )
             saved_by_id = audio_crud.bulk_replace_audio_segments(
                 session,
                 {ref.audio_file_id: segments for _, ref, _, segments in records},
@@ -190,22 +229,35 @@ class SaveAudioSegmentsNode(Node):
         for audio, ref, group, _ in records:
             segments = saved_by_id[ref.audio_file_id]
             saved = [_audio_segment_from_dict(ref, segment) for segment in segments]
-            outputs.append({
-                "audio": replace(audio, segments=saved),
-                "save_result": _save_result(f"db/audio/{ref.audio_file_id}/segments", "audio_segments", group.lineage_id, {"count": len(saved)}),
-            })
+            outputs.append(
+                {
+                    "audio": replace(audio, segments=saved),
+                    "save_result": _save_result(
+                        f"db/audio/{ref.audio_file_id}/segments",
+                        "audio_segments",
+                        group.lineage_id,
+                        {"count": len(saved)},
+                    ),
+                }
+            )
         return outputs
 
 
 def assert_unique_audio_ids(audios: list[Audio], operation: str) -> None:
     ids = [audio.audio_file_id for audio in audios]
-    duplicates = sorted(str(audio_id) for audio_id, count in Counter(ids).items() if count > 1)
+    duplicates = sorted(
+        str(audio_id) for audio_id, count in Counter(ids).items() if count > 1
+    )
     if duplicates:
         raise ValueError(f"{operation} received duplicate audio ids: {duplicates}")
 
 
 def _audio_metadata(audio: Audio) -> dict[str, Any]:
-    return {**audio.metadata, "sample_rate": audio.sample_rate, "channels": audio.channels}
+    return {
+        **audio.metadata,
+        "sample_rate": audio.sample_rate,
+        "channels": audio.channels,
+    }
 
 
 def _stored_payload(audio: Audio, virtual: bool) -> AudioCreate:
@@ -215,7 +267,9 @@ def _stored_payload(audio: Audio, virtual: bool) -> AudioCreate:
         name=audio.name,
         wav_bytes=audio.data,
         duration=audio.duration,
-        annotations=audio.annotations.model_copy(update={"metadata": _audio_metadata(audio)}),
+        annotations=audio.annotations.model_copy(
+            update={"metadata": _audio_metadata(audio)}
+        ),
         language=_audio_language(audio),
         style_prompt=audio.style_prompt,
         voice_prompt=audio.voice_prompt,
@@ -243,8 +297,17 @@ def _audio_language(audio: Audio, fallback: str | None = None) -> str | None:
     return str(value)
 
 
-def _audio_writeback_output(item: AudioFile, source: Audio, action: str) -> dict[str, Audio | SaveResult]:
-    ref = AudioRecordRef(item.id, item.name, item.duration, item.byte_length, item.virtual, audio_crud.audio_file_annotations(item))
+def _audio_writeback_output(
+    item: AudioFileRecord, source: Audio, action: str
+) -> dict[str, Audio | SaveResult]:
+    ref = AudioRecordRef(
+        item.id,
+        item.name,
+        item.duration,
+        item.byte_length,
+        item.virtual,
+        audio_crud.audio_file_annotations(item),
+    )
     audio = replace(
         source,
         audio_file_id=item.id,
@@ -260,5 +323,7 @@ def _audio_writeback_output(item: AudioFile, source: Audio, action: str) -> dict
     )
     return {
         "audio": audio,
-        "save_result": _save_result(f"db/audio/{item.id}", "audio_record", source.lineage_id, {"action": action}),
+        "save_result": _save_result(
+            f"db/audio/{item.id}", "audio_record", source.lineage_id, {"action": action}
+        ),
     }

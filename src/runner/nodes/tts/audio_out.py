@@ -48,7 +48,12 @@ def audio_from_samples(
         start=0.0,
         end=duration,
         annotations=AudioAnnotations(
-            metadata={"node_type": node_type, "request_id": request_id, "byte_length": len(wav_bytes), **metadata},
+            metadata={
+                "node_type": node_type,
+                "request_id": request_id,
+                "byte_length": len(wav_bytes),
+                **metadata,
+            },
         ),
         id=audio_id,
         lineage_id=audio_id,

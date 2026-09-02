@@ -3,7 +3,6 @@ from uuid import UUID
 
 from torch.utils.data import IterableDataset, get_worker_info
 
-from shared.db import database_session
 from shared.db.datasets import crud as dataset_crud
 
 
@@ -22,11 +21,7 @@ class DatabaseAudioDataset(IterableDataset):
         self.seed = seed
         self.epoch = 0
         self.validation_ids = self._validation_ids(validation_samples)
-        with database_session() as session:
-            total = dataset_crud.count_dataset_training_audio(
-                session,
-                dataset_id,
-            )
+        total = dataset_crud.count_dataset_training_audio(dataset_id)
         self.count = (
             len(self.validation_ids)
             if validation
@@ -52,32 +47,28 @@ class DatabaseAudioDataset(IterableDataset):
         if count == 0:
             return set()
         selected = set()
-        with database_session() as session:
-            rows = dataset_crud.iter_dataset_training_audio(
-                session,
-                self.dataset_id,
-                descending=True,
-            )
-            for row in rows:
-                if not self.require_phonemes or self.phoneme_text(row):
-                    selected.add(row.audio_id)
-                if len(selected) == count:
-                    return selected
+        rows = dataset_crud.iter_dataset_training_audio(
+            self.dataset_id,
+            descending=True,
+        )
+        for row in rows:
+            if not self.require_phonemes or self.phoneme_text(row):
+                selected.add(row.audio_id)
+            if len(selected) == count:
+                return selected
         raise ValueError("training dataset has fewer usable validation rows")
 
     def _selected_rows(self):
-        with database_session() as session:
-            rows = dataset_crud.iter_dataset_training_audio(
-                session,
-                self.dataset_id,
-                descending=self.validation,
-            )
-            for row in rows:
-                if (row.audio_id in self.validation_ids) != self.validation:
-                    continue
-                if self.require_phonemes and not self.phoneme_text(row):
-                    continue
-                yield row
+        rows = dataset_crud.iter_dataset_training_audio(
+            self.dataset_id,
+            descending=self.validation,
+        )
+        for row in rows:
+            if (row.audio_id in self.validation_ids) != self.validation:
+                continue
+            if self.require_phonemes and not self.phoneme_text(row):
+                continue
+            yield row
 
     def _shuffled(self, rows):
         randomizer = random.Random(self.seed + self.epoch)

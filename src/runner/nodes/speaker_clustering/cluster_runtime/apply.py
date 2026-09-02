@@ -13,7 +13,7 @@ from runner.nodes.models import SaveResult, SpeakerAuditRef, stable_id
 from shared.db import database_session
 from shared.db.assets import crud as asset_crud
 from shared.db.audio import crud as audio_crud
-from shared.db.audio.speaker_annotations import AcceptedSpeakerAssignment
+from shared.db.audio.clickhouse.annotations import AcceptedSpeakerAssignment
 from shared.db.reviews import crud as review_crud
 from shared.db.reviews.schemas import ReviewState
 from shared.db.speakers import crud as speaker_crud
@@ -64,8 +64,11 @@ class AssignmentSpool:
         self._db.close()
 
     def ingest(
-        self, paths: Sequence[Path], batch_rows: int,
-        check_cancel: Callable[[], None], report_progress: ProgressReporter,
+        self,
+        paths: Sequence[Path],
+        batch_rows: int,
+        check_cancel: Callable[[], None],
+        report_progress: ProgressReporter,
     ) -> ApplyOutcomeCounts:
         if batch_rows <= 0:
             raise ValueError("assignment spool batch_rows must be positive")
@@ -80,7 +83,11 @@ class AssignmentSpool:
             ):
                 check_cancel()
                 self._ingest_batch(batch.to_pydict(), counts)
-            report_progress(shard_index, len(paths), f"validated assignment shard {shard_index}/{len(paths)}")
+            report_progress(
+                shard_index,
+                len(paths),
+                f"validated assignment shard {shard_index}/{len(paths)}",
+            )
         self._db.commit()
         return ApplyOutcomeCounts(*counts)
 
@@ -116,14 +123,17 @@ class AssignmentSpool:
         while True:
             rows = self._db.execute(
                 "SELECT DISTINCT audio_id FROM accepted_assignments "
-                "WHERE audio_id > ? ORDER BY audio_id LIMIT ?", (cursor, page_size)
+                "WHERE audio_id > ? ORDER BY audio_id LIMIT ?",
+                (cursor, page_size),
             ).fetchall()
             if not rows:
                 return
             yield [UUID(row[0]) for row in rows]
             cursor = rows[-1][0]
 
-    def assignments_for(self, audio_ids: Sequence[UUID]) -> list[AcceptedSpeakerAssignment]:
+    def assignments_for(
+        self, audio_ids: Sequence[UUID]
+    ) -> list[AcceptedSpeakerAssignment]:
         if not audio_ids:
             return []
         placeholders = ",".join("?" for _value in audio_ids)
@@ -133,7 +143,10 @@ class AssignmentSpool:
             f"WHERE a.audio_id IN ({placeholders}) ORDER BY a.audio_id, a.segment_id",
             [str(value) for value in audio_ids],
         ).fetchall()
-        return [AcceptedSpeakerAssignment(UUID(a), segment, speaker) for a, segment, speaker in rows]
+        return [
+            AcceptedSpeakerAssignment(UUID(a), segment, speaker)
+            for a, segment, speaker in rows
+        ]
 
     def _ingest_batch(self, values: dict[str, list[object]], counts: list[int]) -> None:
         for index, raw_outcome in enumerate(values["outcome"]):
@@ -146,15 +159,22 @@ class AssignmentSpool:
                 raise ValueError("accepted speaker assignment has no cluster ID")
             self._db.execute(
                 "INSERT INTO accepted_assignments VALUES (?, ?, ?)",
-                (str(UUID(str(values["audio_id"][index]))),
-                 str(values["segment_id"][index]), str(cluster_id)),
+                (
+                    str(UUID(str(values["audio_id"][index]))),
+                    str(values["segment_id"][index]),
+                    str(cluster_id),
+                ),
             )
         self._db.commit()
 
 
 def apply_speaker_audit(
-    audit_ref: SpeakerAuditRef, spool_path: Path, page_size: int, batch_rows: int,
-    check_cancel: Callable[[], None], report_progress: ProgressReporter,
+    audit_ref: SpeakerAuditRef,
+    spool_path: Path,
+    page_size: int,
+    batch_rows: int,
+    check_cancel: Callable[[], None],
+    report_progress: ProgressReporter,
 ) -> SaveResult:
     paths, expected, checkpoint = _apply_inputs(audit_ref)
     total = checkpoint.updated_audio_count
@@ -162,34 +182,56 @@ def apply_speaker_audit(
         with AssignmentSpool(spool_path) as spool:
             counts = spool.ingest(paths, batch_rows, check_cancel, report_progress)
             if counts != expected:
-                raise ValueError(f"assignment artifact counts {counts} do not match durable run {expected}")
+                raise ValueError(
+                    f"assignment artifact counts {counts} do not match durable run {expected}"
+                )
             audio_total = spool.audio_count()
             _record_apply_progress(audit_ref.audit_id, checkpoint, audio_total)
             reconcile_cluster_speakers(
-                spool, audit_ref.cluster_run_id, page_size, check_cancel, report_progress
+                spool,
+                audit_ref.cluster_run_id,
+                page_size,
+                check_cancel,
+                report_progress,
             )
             spool.require_cluster_speakers()
             total = _apply_pages(
-                spool, audit_ref.audit_id, page_size, checkpoint,
-                check_cancel, report_progress,
+                spool,
+                audit_ref.audit_id,
+                page_size,
+                checkpoint,
+                check_cancel,
+                report_progress,
             )
     except BaseException as error:
         _record_apply_terminal(audit_ref.audit_id, error)
         raise
     _record_apply_terminal(audit_ref.audit_id, None)
     metadata = {
-        "audit_id": str(audit_ref.audit_id), "cluster_run_id": str(audit_ref.cluster_run_id),
-        "accepted_count": counts.accepted, "provisional_new_count": counts.provisional_new,
-        "ambiguous_count": counts.ambiguous, "rejected_count": counts.rejected,
+        "audit_id": str(audit_ref.audit_id),
+        "cluster_run_id": str(audit_ref.cluster_run_id),
+        "accepted_count": counts.accepted,
+        "provisional_new_count": counts.provisional_new,
+        "ambiguous_count": counts.ambiguous,
+        "rejected_count": counts.rejected,
         "updated_audio_count": total,
     }
     lineage = stable_id("speaker_audit_apply", audit_ref.audit_id)
-    return SaveResult(spool_path, "speaker_assignment_apply", stable_id("save", lineage), lineage, metadata)
+    return SaveResult(
+        spool_path,
+        "speaker_assignment_apply",
+        stable_id("save", lineage),
+        lineage,
+        metadata,
+    )
 
 
 def reconcile_cluster_speakers(
-    spool: AssignmentSpool, run_id: UUID, page_size: int,
-    check_cancel: Callable[[], None], report_progress: ProgressReporter,
+    spool: AssignmentSpool,
+    run_id: UUID,
+    page_size: int,
+    check_cancel: Callable[[], None],
+    report_progress: ProgressReporter,
 ) -> None:
     after = None
     pages = 0
@@ -207,13 +249,17 @@ def reconcile_cluster_speakers(
         report_progress(pages, pages + 1, f"reconciled speaker page {pages}")
 
 
-def _apply_inputs(audit_ref: SpeakerAuditRef) -> tuple[list[Path], ApplyOutcomeCounts, ApplyCheckpoint]:
+def _apply_inputs(
+    audit_ref: SpeakerAuditRef,
+) -> tuple[list[Path], ApplyOutcomeCounts, ApplyCheckpoint]:
     with database_session() as session:
         audit = speaker_crud.get_audit(session, audit_ref.audit_id)
         stored = (audit.cluster_run_id, audit.review_id)
         incoming = (audit_ref.cluster_run_id, audit_ref.review_id)
         if audit.state != SpeakerAuditState.COMPLETED.value or stored != incoming:
-            raise ValueError(f"speaker audit {audit.id} is not a completed durable match")
+            raise ValueError(
+                f"speaker audit {audit.id} is not a completed durable match"
+            )
         assert audit.review_id is not None
         review = review_crud.get_review(session, audit.review_id)
         if review.state != ReviewState.APPROVED.value:
@@ -224,19 +270,30 @@ def _apply_inputs(audit_ref: SpeakerAuditRef) -> tuple[list[Path], ApplyOutcomeC
         artifacts = speaker_crud.list_clustering_artifacts(
             session, run.id, ClusteringArtifactRole.ASSIGNMENT
         )
-        paths = [asset_crud.get_extra_file_path(session, item.artifact_id) for item in artifacts]
+        paths = [
+            asset_crud.get_extra_file_path(session, item.artifact_id)
+            for item in artifacts
+        ]
         assert run.outcome_counts is not None, "completed run has no outcome counts"
         expected = ApplyOutcomeCounts(**run.outcome_counts)
         progress = speaker_crud.get_audit_apply_progress(audit)
-    checkpoint = ApplyCheckpoint(None, 0, "pending") if progress is None else ApplyCheckpoint(
-        progress.last_audio_id, progress.updated_audio_count, progress.state.value
+    checkpoint = (
+        ApplyCheckpoint(None, 0, "pending")
+        if progress is None
+        else ApplyCheckpoint(
+            progress.last_audio_id, progress.updated_audio_count, progress.state.value
+        )
     )
     return paths, expected, checkpoint
 
 
 def _apply_pages(
-    spool: AssignmentSpool, audit_id: UUID, page_size: int, checkpoint: ApplyCheckpoint,
-    check_cancel: Callable[[], None], report_progress: ProgressReporter,
+    spool: AssignmentSpool,
+    audit_id: UUID,
+    page_size: int,
+    checkpoint: ApplyCheckpoint,
+    check_cancel: Callable[[], None],
+    report_progress: ProgressReporter,
 ) -> int:
     total = spool.audio_count()
     updated = checkpoint.updated_audio_count
@@ -249,17 +306,25 @@ def _apply_pages(
         updated += result.updated_audio_count
         current = ApplyCheckpoint(audio_ids[-1], updated, "running")
         _record_apply_progress(audit_id, current, total)
-        report_progress(updated, total, f"updated speaker assignments for {updated}/{total} audio files")
+        report_progress(
+            updated,
+            total,
+            f"updated speaker assignments for {updated}/{total} audio files",
+        )
     return updated
 
 
 def _record_apply_progress(audit_id: UUID, value: ApplyCheckpoint, total: int) -> None:
     with database_session() as session:
         speaker_crud.record_audit_apply_progress(
-            session, audit_id,
+            session,
+            audit_id,
             speaker_crud.SpeakerAuditApplyProgress(
-                speaker_crud.SpeakerAuditApplyState.RUNNING, value.last_audio_id,
-                value.updated_audio_count, total, None,
+                speaker_crud.SpeakerAuditApplyState.RUNNING,
+                value.last_audio_id,
+                value.updated_audio_count,
+                total,
+                None,
             ),
         )
 
@@ -273,16 +338,21 @@ def _record_apply_terminal(audit_id: UUID, error: BaseException | None) -> None:
                 speaker_crud.SpeakerAuditApplyState.RUNNING, None, 0, 0, None
             )
         state = (
-            speaker_crud.SpeakerAuditApplyState.COMPLETED if error is None else
-            speaker_crud.SpeakerAuditApplyState.CANCELLED
-            if isinstance(error, asyncio.CancelledError) else
-            speaker_crud.SpeakerAuditApplyState.FAILED
+            speaker_crud.SpeakerAuditApplyState.COMPLETED
+            if error is None
+            else speaker_crud.SpeakerAuditApplyState.CANCELLED
+            if isinstance(error, asyncio.CancelledError)
+            else speaker_crud.SpeakerAuditApplyState.FAILED
         )
         speaker_crud.record_audit_apply_progress(
-            session, audit_id,
+            session,
+            audit_id,
             speaker_crud.SpeakerAuditApplyProgress(
-                state, progress.last_audio_id, progress.updated_audio_count,
-                progress.total_audio_count, None if error is None else str(error),
+                state,
+                progress.last_audio_id,
+                progress.updated_audio_count,
+                progress.total_audio_count,
+                None if error is None else str(error),
             ),
         )
 

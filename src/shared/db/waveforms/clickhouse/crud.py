@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import timedelta
 from uuid import UUID
 
 from shared.db.clickhouse import clickhouse_client, delete_rows
@@ -6,6 +7,14 @@ from shared.db.waveforms.clickhouse.models import AudioWaveformRecord
 
 
 def replace_waveform(item: AudioWaveformRecord) -> AudioWaveformRecord:
+    try:
+        current = get_waveform(item.audio_file_id)
+    except KeyError:
+        current = None
+    if current is not None and item.updated_at <= current.updated_at:
+        item = item.model_copy(
+            update={"updated_at": current.updated_at + timedelta(microseconds=1)}
+        )
     clickhouse_client().insert(
         "audio_waveforms",
         [
@@ -37,6 +46,16 @@ def replace_waveform(item: AudioWaveformRecord) -> AudioWaveformRecord:
 
 
 def get_waveform(audio_file_id: UUID) -> AudioWaveformRecord:
+    rows = get_waveforms([audio_file_id])
+    if not rows:
+        raise KeyError(f"Waveform not found: {audio_file_id}")
+    return rows[0]
+
+
+def get_waveforms(audio_file_ids: Sequence[UUID]) -> list[AudioWaveformRecord]:
+    ids = list(dict.fromkeys(audio_file_ids))
+    if not ids:
+        return []
     result = clickhouse_client().query(
         """
         SELECT
@@ -50,14 +69,11 @@ def get_waveform(audio_file_id: UUID) -> AudioWaveformRecord:
             points_per_second,
             point_count
         FROM audio_waveforms FINAL
-        WHERE audio_file_id = {audio_file_id:UUID}
+        WHERE audio_file_id IN {ids:Array(UUID)}
         """,
-        parameters={"audio_file_id": audio_file_id},
+        parameters={"ids": ids},
     )
-    rows = list(result.named_results())
-    if not rows:
-        raise KeyError(f"Waveform not found: {audio_file_id}")
-    return AudioWaveformRecord.model_validate(rows[0])
+    return [AudioWaveformRecord.model_validate(row) for row in result.named_results()]
 
 
 def delete_waveforms(audio_file_ids: Sequence[UUID]) -> None:

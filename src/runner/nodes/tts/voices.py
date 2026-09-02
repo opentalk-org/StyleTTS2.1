@@ -21,22 +21,73 @@ class TtsEngine(str, Enum):
 
 PRESET_VOICES: dict[TtsEngine, tuple[str, ...]] = {
     TtsEngine.KOKORO: (
-        "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica", "af_kore",
-        "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky", "am_adam",
-        "am_echo", "am_eric", "am_fenrir", "am_liam", "am_michael", "am_onyx",
-        "am_puck", "am_santa", "bf_alice", "bf_emma", "bf_isabella", "bf_lily",
-        "bm_daniel", "bm_fable", "bm_george", "bm_lewis", "ef_dora", "em_alex",
-        "em_santa", "ff_siwis", "hf_alpha", "hf_beta", "hm_omega", "hm_psi",
-        "if_sara", "im_nicola", "jf_alpha", "jf_gongitsune", "jf_nezumi",
-        "jf_tebukuro", "jm_kumo", "pf_dora", "pm_alex", "pm_santa", "zf_xiaobei",
-        "zf_xiaoni", "zf_xiaoxiao", "zf_xiaoyi", "zm_yunjian", "zm_yunxi",
-        "zm_yunxia", "zm_yunyang",
+        "af_alloy",
+        "af_aoede",
+        "af_bella",
+        "af_heart",
+        "af_jessica",
+        "af_kore",
+        "af_nicole",
+        "af_nova",
+        "af_river",
+        "af_sarah",
+        "af_sky",
+        "am_adam",
+        "am_echo",
+        "am_eric",
+        "am_fenrir",
+        "am_liam",
+        "am_michael",
+        "am_onyx",
+        "am_puck",
+        "am_santa",
+        "bf_alice",
+        "bf_emma",
+        "bf_isabella",
+        "bf_lily",
+        "bm_daniel",
+        "bm_fable",
+        "bm_george",
+        "bm_lewis",
+        "ef_dora",
+        "em_alex",
+        "em_santa",
+        "ff_siwis",
+        "hf_alpha",
+        "hf_beta",
+        "hm_omega",
+        "hm_psi",
+        "if_sara",
+        "im_nicola",
+        "jf_alpha",
+        "jf_gongitsune",
+        "jf_nezumi",
+        "jf_tebukuro",
+        "jm_kumo",
+        "pf_dora",
+        "pm_alex",
+        "pm_santa",
+        "zf_xiaobei",
+        "zf_xiaoni",
+        "zf_xiaoxiao",
+        "zf_xiaoyi",
+        "zm_yunjian",
+        "zm_yunxi",
+        "zm_yunxia",
+        "zm_yunyang",
     ),
     TtsEngine.ORPHEUS: ("tara", "leah", "jess", "leo", "dan", "mia", "zac", "zoe"),
 }
 
 CLONING_ENGINES: frozenset[TtsEngine] = frozenset(
-    {TtsEngine.CHATTERBOX, TtsEngine.F5_TTS, TtsEngine.ORPHEUS, TtsEngine.DIA, TtsEngine.FISH_SPEECH, TtsEngine.RAON_OPENTTS}
+    {
+        TtsEngine.CHATTERBOX,
+        TtsEngine.F5_TTS,
+        TtsEngine.ORPHEUS,
+        TtsEngine.DIA,
+        TtsEngine.FISH_SPEECH,
+        TtsEngine.RAON_OPENTTS,
+    }
 )
 
 
@@ -118,7 +169,9 @@ def clone_voice_payload(engine: TtsEngine, reference: CloneReference) -> dict[st
     }
 
 
-def voice_batch_payload(engine: TtsEngine, voices: list[dict[str, Any]], samples_per_voice: int) -> dict[str, Any]:
+def voice_batch_payload(
+    engine: TtsEngine, voices: list[dict[str, Any]], samples_per_voice: int
+) -> dict[str, Any]:
     return {
         "kind": "tts_voice_batch",
         "engine": engine.value,
@@ -132,11 +185,17 @@ def parse_voice(payload: dict[str, Any], expected_engine: TtsEngine) -> Voice:
         raise ValueError(f"expected_tts_voice_got:{payload['kind']}")
     engine = TtsEngine(payload["engine"])
     if engine != expected_engine:
-        raise ValueError(f"voice_engine_mismatch:{engine.value}!={expected_engine.value}")
+        raise ValueError(
+            f"voice_engine_mismatch:{engine.value}!={expected_engine.value}"
+        )
     clone_raw = payload.get("clone")
     clone = None
     if clone_raw is not None:
-        clone = CloneReference(clone_raw["wav_base64"], int(clone_raw["sample_rate"]), clone_raw["transcript"])
+        clone = CloneReference(
+            clone_raw["wav_base64"],
+            int(clone_raw["sample_rate"]),
+            clone_raw["transcript"],
+        )
     piper_raw = payload.get("piper")
     piper = None
     if piper_raw is not None:
@@ -150,16 +209,22 @@ def parse_voice(payload: dict[str, Any], expected_engine: TtsEngine) -> Voice:
         )
     if engine is TtsEngine.PIPER and piper is None:
         raise ValueError("piper_voice_missing_model")
-    return Voice(engine=engine, preset=payload.get("voice_id"), clone=clone, piper=piper)
+    return Voice(
+        engine=engine, preset=payload.get("voice_id"), clone=clone, piper=piper
+    )
 
 
-def expand_voice_batch(payload: dict[str, Any], expected_engine: TtsEngine) -> tuple[list[Voice], int]:
+def expand_voice_batch(
+    payload: dict[str, Any], expected_engine: TtsEngine
+) -> tuple[list[Voice], int]:
     """Return (voices, samples_per_voice) from a voice_batch payload."""
     if payload["kind"] != "tts_voice_batch":
         raise ValueError(f"expected_tts_voice_batch_got:{payload['kind']}")
     engine = TtsEngine(payload["engine"])
     if engine != expected_engine:
-        raise ValueError(f"voice_batch_engine_mismatch:{engine.value}!={expected_engine.value}")
+        raise ValueError(
+            f"voice_batch_engine_mismatch:{engine.value}!={expected_engine.value}"
+        )
     voices = [parse_voice(item, expected_engine) for item in payload["voices"]]
     samples = int(payload["samples_per_voice"])
     if not voices:

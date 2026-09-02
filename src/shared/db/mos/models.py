@@ -11,7 +11,9 @@ from shared.db.base import Base
 class MosComparison(Base):
     __tablename__ = "mos_comparisons"
     __table_args__ = (
-        CheckConstraint("audio_a_id <> audio_b_id", name="ck_mos_comparisons_distinct_audio"),
+        CheckConstraint(
+            "audio_a_id <> audio_b_id", name="ck_mos_comparisons_distinct_audio"
+        ),
         CheckConstraint(
             "preferred_audio_id = audio_a_id OR preferred_audio_id = audio_b_id",
             name="ck_mos_comparisons_preferred_member",
@@ -19,7 +21,9 @@ class MosComparison(Base):
         Index("ix_mos_comparisons_dataset_created", "dataset_id", "created_at"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
     dataset_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("datasets.id", ondelete="CASCADE"),
