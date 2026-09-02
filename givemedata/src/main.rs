@@ -23,10 +23,10 @@ mod http;
 mod loader;
 mod metrics;
 mod prefetch;
+mod run;
+mod run_manager;
 mod sampling;
-mod session;
 mod symbols;
-mod trainings;
 
 mod proto {
     tonic::include_proto!("_");
@@ -63,19 +63,19 @@ struct Args {
     #[arg(
         long,
         env = "CLICKHOUSE_URL",
-        help = "ClickHouse HTTP endpoint for the training-state database."
+        help = "ClickHouse HTTP endpoint for runs and training data metadata."
     )]
     clickhouse_url: String,
     #[arg(
         long,
         env = "CLICKHOUSE_USER",
-        help = "ClickHouse user for the training-state database."
+        help = "ClickHouse user for runs and training data metadata."
     )]
     clickhouse_user: String,
     #[arg(
         long,
         env = "CLICKHOUSE_PASSWORD",
-        help = "ClickHouse password for the training-state database."
+        help = "ClickHouse password for runs and training data metadata."
     )]
     clickhouse_password: String,
     #[arg(
@@ -102,7 +102,7 @@ struct Args {
     #[arg(
         long,
         env = "SYNTHETIC",
-        help = "Serve synthetic sessions: fabricated samples instead of database rows and bucket audio."
+        help = "Serve synthetic runs: fabricated samples instead of database rows and bucket audio."
     )]
     synthetic: bool,
     #[arg(
@@ -178,19 +178,19 @@ async fn main() -> anyhow::Result<()> {
     fs::create_dir_all(&args.checkpoint_dir).await?;
     fs::create_dir_all(&args.metrics_dir).await?;
 
-    let trainings = trainings::TrainingStore::new(database.clone());
+    let run_manager = run_manager::RunManager::new(database.clone());
     let shutdown = CancellationToken::new();
     tokio::spawn(watch_shutdown_signals(shutdown.clone()));
     let mut http_server = tokio::spawn(http::serve(
         args.http_port,
-        trainings.clone(),
+        run_manager.clone(),
         shutdown.clone(),
     ));
     let mut grpc_server = tokio::spawn(grpc::serve(
         args.grpc_port,
         s3_client,
         database,
-        trainings,
+        run_manager,
         args.bucket.leak(),
         Box::leak(args.cache_dir.into_boxed_path()),
         Box::leak(args.assets_dir.into_boxed_path()),

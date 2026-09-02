@@ -20,25 +20,25 @@ use crate::proto::{
     self, AssetResponse, CheckpointRequest, DataRequest, DataResponse, Split, asset_response,
     checkpoint_request,
 };
-use crate::session::{DataConfig, Session, SessionHandle};
-use crate::trainings::{ClaimResult, TrainingStore};
+use crate::run::{DataConfig, RunHandle, RunState};
+use crate::run_manager::{RunManager, RunStatus};
 
 const ASSET_CHUNK_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Clone)]
-pub struct ActiveSession {
-    pub handle: SessionHandle,
+pub struct ActiveRun {
+    pub handle: RunHandle,
     pub config: Arc<DataConfig>,
 }
 
-pub type SessionsMap = Arc<RwLock<HashMap<Uuid, ActiveSession>>>;
+pub type ActiveRuns = Arc<RwLock<HashMap<Uuid, ActiveRun>>>;
 
 pub fn parse_run_id(value: &str) -> Result<Uuid, Status> {
     Uuid::parse_str(value).map_err(|_| Status::invalid_argument("invalid run ID"))
 }
 
-pub struct InitializedTraining {
-    pub active: ActiveSession,
+pub struct InitializedRun {
+    pub active: ActiveRun,
     pub train_config: String,
 }
 
@@ -65,14 +65,14 @@ impl AssetStore {
     }
 
     pub async fn ensure(&self, run_id: Uuid, name: &str, key: &str) -> anyhow::Result<PathBuf> {
-        let training_dir = self.root.join(run_id.to_string());
-        fs::create_dir_all(&training_dir).await?;
-        let path = training_dir.join(name);
+        let run_dir = self.root.join(run_id.to_string());
+        fs::create_dir_all(&run_dir).await?;
+        let path = run_dir.join(name);
         if fs::try_exists(&path).await? {
             return Ok(path);
         }
 
-        let part = training_dir.join(format!("{name}.part"));
+        let part = run_dir.join(format!("{name}.part"));
         info!(run = %run_id, asset = name, key, "downloading asset");
         if self.synthetic {
             fs::write(&part, format!("synthetic asset {name}\n").repeat(1024)).await?;
@@ -98,29 +98,32 @@ impl AssetStore {
 
 pub async fn initialize(
     run_id: Uuid,
-    trainings: &TrainingStore,
+    run_manager: &RunManager,
     assets: &AssetStore,
     database: &Client,
     loader: Arc<dyn Loader>,
     cache_dir: &'static Path,
     synthetic: bool,
-) -> Result<InitializedTraining, Status> {
-    let claimed = trainings.claim(run_id).await.map_err(|err| {
-        error!(run = %run_id, error = format!("{err:#}"), "claiming training failed");
-        Status::internal(format!("{err:#}"))
-    })?;
-    let (data_config, train_config) = match claimed {
-        ClaimResult::Claimed(v1, v2) => (v1, v2),
-        ClaimResult::NotFound => return Err(Status::not_found("unknown training")),
-        ClaimResult::Unavailable(state) => {
-            return Err(Status::failed_precondition(format!(
-                "training is {}",
-                state.as_str()
-            )));
-        }
-    };
-    let config = Arc::new(data_config);
-    let initialized: anyhow::Result<SessionHandle> = async {
+) -> Result<InitializedRun, Status> {
+    let run = run_manager
+        .get(run_id)
+        .await
+        .map_err(|err| {
+            error!(run = %run_id, error = format!("{err:#}"), "loading run failed");
+            Status::internal(format!("{err:#}"))
+        })?
+        .ok_or_else(|| Status::not_found("unknown run"))?;
+    let train_config = serde_json::to_string(&run.train_config)
+        .map_err(|err| Status::internal(format!("{err:#}")))?;
+    let config = Arc::new(run.data_config);
+    run_manager
+        .append_status(run_id, RunStatus::Running)
+        .await
+        .map_err(|err| {
+            error!(run = %run_id, error = format!("{err:#}"), "recording running status failed");
+            Status::internal(format!("{err:#}"))
+        })?;
+    let initialized: anyhow::Result<RunHandle> = async {
         futures::future::try_join_all(
             config
                 .assets
@@ -128,19 +131,19 @@ pub async fn initialize(
                 .map(|(name, asset)| assets.ensure(run_id, name, &asset.object)),
         )
         .await?;
-        let session = Session::new(run_id, database, loader, cache_dir, &config, synthetic).await?;
-        Ok(SessionHandle::spawn(session))
+        let run = RunState::new(run_id, database, loader, cache_dir, &config, synthetic).await?;
+        Ok(RunHandle::spawn(run))
     }
     .await;
     match initialized {
-        Ok(handle) => Ok(InitializedTraining {
-            active: ActiveSession { handle, config },
-            train_config: train_config,
+        Ok(handle) => Ok(InitializedRun {
+            active: ActiveRun { handle, config },
+            train_config,
         }),
         Err(err) => {
-            error!(run = %run_id, error = format!("{err:#}"), "training initialization failed");
-            if let Err(reset_err) = trainings.reset(run_id).await {
-                error!(run = %run_id, error = format!("{reset_err:#}"), "resetting training state failed");
+            error!(run = %run_id, error = format!("{err:#}"), "run initialization failed");
+            if let Err(status_err) = run_manager.append_status(run_id, RunStatus::Failed).await {
+                error!(run = %run_id, error = format!("{status_err:#}"), "recording failed status failed");
             }
             Err(Status::internal(format!("{err:#}")))
         }
@@ -148,19 +151,19 @@ pub async fn initialize(
 }
 
 pub async fn data_handler(
-    sessions: SessionsMap,
+    active_runs: ActiveRuns,
     req_stream: &mut Streaming<DataRequest>,
     resp_stream: &UnboundedSender<Result<DataResponse, Status>>,
 ) -> anyhow::Result<()> {
     while let Some(req) = req_stream.message().await? {
         let run_id = parse_run_id(&req.run_id)?;
         debug!(run = %run_id, split = ?req.split(), "data request");
-        let active = sessions
+        let active = active_runs
             .read()
             .await
             .get(&run_id)
             .cloned()
-            .context("unknown training")?;
+            .context("unknown run")?;
         let Some(loaded_batch) = active
             .handle
             .next_batch(req.split() == Split::Validation)

@@ -20,14 +20,16 @@
     },
     "dnvr": {
       "inputs": {
-        "nixpkgs": "nixpkgs_2"
+        "nixpkgs": [
+          "nixpkgsClickhouse"
+        ]
       },
       "locked": {
-        "lastModified": 1787839778,
-        "narHash": "sha256-gs8g3KHRJgVGwgPzt/v23prmDTbvb0hE6uHx05tRLB0=",
+        "lastModified": 1788363328,
+        "narHash": "sha256-QGe1JdFHEHxMresTZ9OOkihfFkzcE6It2rw3zR1cr8M=",
         "owner": "dialohq",
         "repo": "dnvr",
-        "rev": "d092e1fdc1434d1f845c9557479dcc4f12324f09",
+        "rev": "868cc300739246c722be10e86cb291ae80cb3441",
         "type": "github"
       },
       "original": {
@@ -85,6 +87,22 @@
         "type": "github"
       }
     },
+    "nixpkgsClickhouse": {
+      "locked": {
+        "lastModified": 1787498568,
+        "narHash": "sha256-9i/VTdusq/+NM/tz+J1Re+ojkMB8MBf0QshnYfzHz30=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "56c02bc00adcf003215cc4bd996d6efaf4cff188",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "56c02bc00adcf003215cc4bd996d6efaf4cff188",
+        "type": "github"
+      }
+    },
     "nixpkgsRust": {
       "locked": {
         "lastModified": 1780145889,
@@ -102,22 +120,6 @@
       }
     },
     "nixpkgs_2": {
-      "locked": {
-        "lastModified": 1787498568,
-        "narHash": "sha256-9i/VTdusq/+NM/tz+J1Re+ojkMB8MBf0QshnYfzHz30=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "56c02bc00adcf003215cc4bd996d6efaf4cff188",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "ref": "nixos-unstable",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
-    "nixpkgs_3": {
       "locked": {
         "lastModified": 1767313136,
         "narHash": "sha256-16KkgfdYqjaeRGBaYsNrhPRRENs0qzkQVUooNHtoy2w=",
@@ -138,7 +140,8 @@
         "dialo-overlays": "dialo-overlays",
         "dnvr": "dnvr",
         "flake-parts": "flake-parts",
-        "nixpkgs": "nixpkgs_3",
+        "nixpkgs": "nixpkgs_2",
+        "nixpkgsClickhouse": "nixpkgsClickhouse",
         "nixpkgsRust": "nixpkgsRust"
       }
     }

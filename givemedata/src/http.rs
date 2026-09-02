@@ -7,45 +7,50 @@ use axum::{
     routing::get,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+use time::OffsetDateTime;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::{
-    session::DataConfig,
-    trainings::{Training, TrainingState, TrainingStore},
+    run::DataConfig,
+    run_manager::{Run, RunManager, RunStatus},
 };
 
 #[derive(Deserialize)]
-struct CreateTrainingRequest {
+struct CreateRunRequest {
+    project_id: Uuid,
     data_config: DataConfig,
-    train_config: String,
+    train_config: Map<String, Value>,
 }
 
 #[derive(Serialize)]
-struct CreateTrainingResponse {
+struct CreateRunResponse {
     run_id: Uuid,
-    state: TrainingState,
+    status: RunStatus,
 }
 
 #[derive(Serialize)]
-struct TrainingResponse {
+struct RunResponse {
     run_id: Uuid,
+    project_id: Uuid,
     data_config: DataConfig,
-    train_config: String,
-    state: TrainingState,
-    version: u64,
+    train_config: Map<String, Value>,
+    status: Option<RunStatus>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    status_timestamp: Option<OffsetDateTime>,
 }
 
 pub async fn serve(
     port: u16,
-    trainings: TrainingStore,
+    run_manager: RunManager,
     shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
     let app = Router::new()
-        .route("/trainings", get(list_trainings).post(create_training))
-        .route("/trainings/{run_id}", get(get_training))
-        .with_state(trainings);
+        .route("/runs", get(list_runs).post(create_run))
+        .route("/runs/{run_id}", get(get_run))
+        .with_state(run_manager);
     let address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, port));
     let listener = tokio::net::TcpListener::bind(address).await?;
     info!(%address, "HTTP server listening");
@@ -55,64 +60,69 @@ pub async fn serve(
     Ok(())
 }
 
-async fn create_training(
-    State(trainings): State<TrainingStore>,
-    Json(request): Json<CreateTrainingRequest>,
-) -> Result<(StatusCode, Json<CreateTrainingResponse>), StatusCode> {
-    let run_id = trainings
-        .create(&request.data_config, &request.train_config)
+async fn create_run(
+    State(run_manager): State<RunManager>,
+    Json(request): Json<CreateRunRequest>,
+) -> Result<(StatusCode, Json<CreateRunResponse>), StatusCode> {
+    let run_id = run_manager
+        .create(
+            request.project_id,
+            &request.data_config,
+            &request.train_config,
+        )
         .await
         .map_err(|err| {
-            error!(error = format!("{err:#}"), "creating training failed");
+            error!(error = format!("{err:#}"), "creating run failed");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    info!(run = %run_id, "training created");
+    info!(run = %run_id, "run created");
     Ok((
         StatusCode::CREATED,
-        Json(CreateTrainingResponse {
+        Json(CreateRunResponse {
             run_id,
-            state: TrainingState::AwaitingTraining,
+            status: RunStatus::Queued,
         }),
     ))
 }
 
-async fn get_training(
-    State(trainings): State<TrainingStore>,
+async fn get_run(
+    State(run_manager): State<RunManager>,
     Path(run_id): Path<Uuid>,
-) -> Result<Json<TrainingResponse>, StatusCode> {
-    let training = trainings.get(run_id).await.map_err(|err| {
+) -> Result<Json<RunResponse>, StatusCode> {
+    let run = run_manager.get(run_id).await.map_err(|err| {
         error!(
             run = %run_id,
             error = format!("{err:#}"),
-            "getting training failed"
+            "getting run failed"
         );
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    match training {
-        Some(training) => Ok(Json(training.into())),
+    match run {
+        Some(run) => Ok(Json(run.into())),
         None => Err(StatusCode::NOT_FOUND),
     }
 }
 
-async fn list_trainings(
-    State(trainings): State<TrainingStore>,
-) -> Result<Json<Vec<TrainingResponse>>, StatusCode> {
-    let trainings = trainings.list().await.map_err(|err| {
-        error!(error = format!("{err:#}"), "listing trainings failed");
+async fn list_runs(
+    State(run_manager): State<RunManager>,
+) -> Result<Json<Vec<RunResponse>>, StatusCode> {
+    let runs = run_manager.list().await.map_err(|err| {
+        error!(error = format!("{err:#}"), "listing runs failed");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    Ok(Json(trainings.into_iter().map(Into::into).collect()))
+    Ok(Json(runs.into_iter().map(Into::into).collect()))
 }
 
-impl From<Training> for TrainingResponse {
-    fn from(training: Training) -> Self {
+impl From<Run> for RunResponse {
+    fn from(run: Run) -> Self {
         Self {
-            run_id: training.id,
-            data_config: training.data_config,
-            train_config: training.train_config,
-            state: training.state,
-            version: training.version,
+            run_id: run.id,
+            project_id: run.project_id,
+            data_config: run.data_config,
+            train_config: run.train_config,
+            status: run.status,
+            status_timestamp: run.status_timestamp,
         }
     }
 }
