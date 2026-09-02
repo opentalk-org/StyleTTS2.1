@@ -21,7 +21,7 @@ from shared.db.audio.clickhouse import (
     StorageKind,
 )
 from shared.db.audio.schemas import AudioCreate
-from shared.db.datasets import clickhouse as datasets
+from shared.db.datasets import crud as datasets
 from shared.db.settings import crud as settings_crud
 from shared.db.waveforms.clickhouse import get_waveforms
 
@@ -67,7 +67,7 @@ def persist_uploaded_audio(payload: AudioCreate, dataset_id: str) -> AudioFileLi
         audio.create_audio_files([item])
         memberships = []
         if parsed_dataset_id is not None:
-            datasets.add_audio_files(parsed_dataset_id, [audio_id], now, now)
+            datasets.bulk_add_audio_files_to_dataset(parsed_dataset_id, [audio_id])
             memberships.append(parsed_dataset_id)
     except Exception:
         audio.delete_audio_files([audio_id])

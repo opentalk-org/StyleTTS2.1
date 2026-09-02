@@ -299,10 +299,9 @@ def _apply_pages(
     updated = checkpoint.updated_audio_count
     for audio_ids in spool.audio_id_pages(page_size, checkpoint.last_audio_id):
         check_cancel()
-        with database_session() as session:
-            result = audio_crud.bulk_apply_speaker_assignments(
-                session, spool.assignments_for(audio_ids)
-            )
+        result = audio_crud.bulk_apply_speaker_assignments(
+            spool.assignments_for(audio_ids)
+        )
         updated += result.updated_audio_count
         current = ApplyCheckpoint(audio_ids[-1], updated, "running")
         _record_apply_progress(audit_id, current, total)

@@ -42,8 +42,7 @@ class MosPairIterableDataset(IterableDataset[MosPairRow]):
         super().__init__()
         self.dataset_id = dataset_id
         self.validation = validation
-        with database_session() as session:
-            comparison_count = mos_crud.count_comparisons(session, dataset_id)
+        comparison_count = mos_crud.count_comparisons(dataset_id)
         if comparison_count < 2:
             raise ValueError(
                 f"MOS training requires at least two comparisons: {dataset_id}"
@@ -62,14 +61,13 @@ class MosPairIterableDataset(IterableDataset[MosPairRow]):
         worker = get_worker_info()
         worker_id = worker.id if worker is not None else 0
         worker_count = worker.num_workers if worker is not None else 1
-        with database_session() as session:
-            rows = mos_crud.iter_comparisons(session, self.dataset_id)
-            for index, comparison in enumerate(rows):
-                selected = index >= self.train_count
-                if selected != self.validation:
-                    continue
-                if index % worker_count == worker_id:
-                    yield _pair_row(comparison)
+        rows = mos_crud.iter_comparisons(self.dataset_id)
+        for index, comparison in enumerate(rows):
+            selected = index >= self.train_count
+            if selected != self.validation:
+                continue
+            if index % worker_count == worker_id:
+                yield _pair_row(comparison)
 
 
 @dataclass(frozen=True)

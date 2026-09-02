@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, status
 
-from shared.db.speakers import crud as speaker_crud
+from shared.db.speakers import catalog_crud as speaker_crud
 from shared.db.speakers.schemas import SpeakerPage, SpeakerRename
 
 

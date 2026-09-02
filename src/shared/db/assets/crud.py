@@ -34,16 +34,16 @@ from shared.db.assets.schemas import (
 from shared.db.settings import crud as settings_crud
 
 
-def list_bucket_files(_session: Session) -> Sequence[BucketFileRecord]:
+def list_bucket_files() -> Sequence[BucketFileRecord]:
     return ch.list_bucket_files()
 
 
-def get_bucket_file(_session: Session, bucket_file_id: UUID) -> BucketFileRecord:
+def get_bucket_file(bucket_file_id: UUID) -> BucketFileRecord:
     return ch.get_bucket_file(bucket_file_id)
 
 
 def create_bucket_file(
-    _session: Session, payload: BucketFileCreate
+    payload: BucketFileCreate,
 ) -> BucketFileRecord:
     item = BucketFileRecord(
         id=uuid4(), kind=BucketKind.AUDIO, path=payload.path, size=payload.size
@@ -87,29 +87,29 @@ def create_checkpoint(session: Session, payload: CheckpointCreate) -> AssetRecor
     return item
 
 
-def get_checkpoint(_session: Session, checkpoint_id: UUID) -> AssetRecord:
+def get_checkpoint(checkpoint_id: UUID) -> AssetRecord:
     item = ch.get_asset(checkpoint_id)
     if item.kind != AssetKind.CHECKPOINT:
         raise KeyError(f"Checkpoint not found: {checkpoint_id}")
     return item
 
 
-def list_checkpoints(_session: Session) -> Sequence[AssetRecord]:
+def list_checkpoints() -> Sequence[AssetRecord]:
     return ch.list_assets(AssetKind.CHECKPOINT)
 
 
 def list_extra_files(
-    _session: Session, type_: str | None = None
+    type_: str | None = None,
 ) -> Sequence[AssetRecord]:
     return ch.list_assets(AssetKind.FILE, type_)
 
 
-def list_configs(_session: Session, type_: str | None = None) -> Sequence[ConfigRecord]:
+def list_configs(type_: str | None = None) -> Sequence[ConfigRecord]:
     return ch.list_configs(type_)
 
 
 def update_config(
-    _session: Session, config_id: UUID, payload: ConfigUpdate
+    config_id: UUID, payload: ConfigUpdate
 ) -> ConfigRecord:
     item = ch.get_config(config_id).model_copy(
         update={
@@ -124,20 +124,20 @@ def update_config(
 
 def read_checkpoint(session: Session, checkpoint_id: UUID) -> bytes:
     return settings_crud.object_store(session).download(
-        get_checkpoint(session, checkpoint_id).path
+        get_checkpoint(checkpoint_id).path
     )
 
 
 def get_checkpoint_path(session: Session, checkpoint_id: UUID) -> Path:
     return checkpoint_cache_path(
-        get_checkpoint(session, checkpoint_id), settings_crud.object_store(session)
+        get_checkpoint(checkpoint_id), settings_crud.object_store(session)
     )
 
 
 def update_checkpoint(
     session: Session, checkpoint_id: UUID, payload: CheckpointUpdate
 ) -> AssetRecord:
-    item = get_checkpoint(session, checkpoint_id)
+    item = get_checkpoint(checkpoint_id)
     changes = {
         "updated_at": datetime.now(UTC),
         "name": payload.name,
@@ -154,7 +154,7 @@ def update_checkpoint(
 
 
 def delete_checkpoint(session: Session, checkpoint_id: UUID) -> None:
-    item = get_checkpoint(session, checkpoint_id)
+    item = get_checkpoint(checkpoint_id)
     settings_crud.object_store(session).delete(item.path)
     ch.delete_asset(item.id)
 
@@ -209,7 +209,7 @@ def bulk_create_extra_files_from_paths(
     return items
 
 
-def get_extra_file(_session: Session, extra_file_id: UUID) -> AssetRecord:
+def get_extra_file(extra_file_id: UUID) -> AssetRecord:
     item = ch.get_asset(extra_file_id)
     if item.kind != AssetKind.FILE:
         raise KeyError(f"File asset not found: {extra_file_id}")
@@ -222,14 +222,14 @@ def read_extra_file(session: Session, extra_file_id: UUID) -> bytes:
 
 def get_extra_file_path(session: Session, extra_file_id: UUID) -> Path:
     return extra_file_cache_path(
-        get_extra_file(session, extra_file_id), settings_crud.object_store(session)
+        get_extra_file(extra_file_id), settings_crud.object_store(session)
     )
 
 
 def update_extra_file(
     session: Session, extra_file_id: UUID, payload: ExtraFileUpdate
 ) -> AssetRecord:
-    item = get_extra_file(session, extra_file_id)
+    item = get_extra_file(extra_file_id)
     changes = {
         "updated_at": datetime.now(UTC),
         "name": payload.name,
@@ -244,12 +244,12 @@ def update_extra_file(
 
 
 def delete_extra_file(session: Session, extra_file_id: UUID) -> None:
-    item = get_extra_file(session, extra_file_id)
+    item = get_extra_file(extra_file_id)
     settings_crud.object_store(session).delete(item.path)
     ch.delete_asset(item.id)
 
 
-def create_config(_session: Session, payload: ConfigCreate) -> ConfigRecord:
+def create_config(payload: ConfigCreate) -> ConfigRecord:
     return ch.create_config(
         ConfigRecord(
             id=uuid4(),

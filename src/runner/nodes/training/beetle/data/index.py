@@ -79,11 +79,10 @@ class DatabaseSegmentIndex:
         references: list[SegmentReference] = []
         cursor: SegmentCursor | None = None
         with database_session() as session:
-            total = audio_crud.count_segment_references(session, selection.dataset_id)
+            total = audio_crud.count_segment_references(selection.dataset_id)
             while True:
                 callbacks.check_cancel()
                 page = audio_crud.list_segment_references_page(
-                    session,
                     selection.dataset_id,
                     cursor,
                     page_size,

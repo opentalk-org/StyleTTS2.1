@@ -6,7 +6,8 @@ from shared.db.datasets.clickhouse.crud import (
     add_audio_files,
     create_dataset as _create_dataset,
     delete_dataset as _delete_dataset,
-    get_dataset,
+    dataset_ids_by_audio_file as _dataset_ids_by_audio_file,
+    get_dataset as _get_dataset,
     list_dataset_file_counts as _list_counts,
     list_datasets as _list_datasets,
     remove_audio_files,
@@ -25,6 +26,16 @@ from shared.db.datasets.schemas import DatasetCreate
 
 def list_datasets() -> list[DatasetRecord]:
     return _list_datasets()
+
+
+def get_dataset(dataset_id: UUID) -> DatasetRecord:
+    return _get_dataset(dataset_id)
+
+
+def dataset_ids_by_audio_file(
+    audio_file_ids: Sequence[UUID],
+) -> dict[UUID, list[UUID]]:
+    return _dataset_ids_by_audio_file(audio_file_ids)
 
 
 def list_dataset_file_counts():
@@ -55,20 +66,20 @@ def bulk_add_audio_files_to_dataset(
 
 def add_audio_file_to_dataset(dataset_id: UUID, audio_file_id: UUID) -> DatasetRecord:
     bulk_add_audio_files_to_dataset(dataset_id, [audio_file_id])
-    return get_dataset(dataset_id)
+    return _get_dataset(dataset_id)
 
 
 def bulk_remove_audio_files_from_dataset(
     dataset_id: UUID,
     audio_file_ids: Sequence[UUID],
 ) -> None:
-    get_dataset(dataset_id)
+    _get_dataset(dataset_id)
     remove_audio_files(dataset_id, audio_file_ids)
 
 
 def remove_audio_file_from_dataset(dataset_id: UUID, audio_file_id: UUID) -> DatasetRecord:
     bulk_remove_audio_files_from_dataset(dataset_id, [audio_file_id])
-    return get_dataset(dataset_id)
+    return _get_dataset(dataset_id)
 
 
 def count_dataset_training_audio(dataset_id: UUID) -> int:
@@ -112,7 +123,7 @@ def dataset_training_minimum_duration(
 
 
 def list_dataset_metadata_values(dataset_id: UUID, key: str) -> set[str]:
-    get_dataset(dataset_id)
+    _get_dataset(dataset_id)
     return _metadata_values(dataset_id, key)
 
 

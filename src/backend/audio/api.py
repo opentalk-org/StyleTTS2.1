@@ -34,7 +34,7 @@ from backend.audio.schemas import (
 )
 from shared.db.audio import clickhouse as audio
 from shared.db.audio.catalog_pagination import AudioCursor, cursor_for_row
-from shared.db.datasets import clickhouse as datasets
+from shared.db.datasets import crud as datasets
 
 router = APIRouter(prefix="/audio-files", tags=["audio-files"])
 
@@ -107,9 +107,8 @@ async def add_audio_files_to_dataset(payload: AddToDatasetRequest) -> None:
         if payload.mode == "filter"
         else payload.audio_file_ids
     )
-    now = datetime.now(UTC)
     try:
-        datasets.add_audio_files(payload.dataset_id, ids, now, now)
+        datasets.bulk_add_audio_files_to_dataset(payload.dataset_id, ids)
     except (KeyError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 

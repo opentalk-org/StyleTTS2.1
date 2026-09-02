@@ -71,7 +71,7 @@ def resolve_downloaded_piper_voice(voice_id: str) -> CheckpointRef:
     with database_session() as session:
         matches = [
             checkpoint
-            for checkpoint in asset_crud.list_checkpoints(session)
+            for checkpoint in asset_crud.list_checkpoints()
             if checkpoint.type_ == CheckpointType.PIPER.value
             and checkpoint.metadata_["catalog_key"] == catalog_key
         ]

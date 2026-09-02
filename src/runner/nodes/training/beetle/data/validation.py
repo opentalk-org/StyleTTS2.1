@@ -143,8 +143,8 @@ def _load_stored_audio(
     audio_file_ids: tuple[UUID, ...],
 ) -> dict[UUID, StoredValidationAudio]:
     with database_session() as session:
-        rows = audio_crud.get_audio_files_bulk(session, audio_file_ids)
-        segments = audio_crud.list_audio_segments_bulk(session, audio_file_ids)
+        rows = audio_crud.get_audio_files_bulk(audio_file_ids)
+        segments = audio_crud.list_audio_segments_bulk(audio_file_ids)
         for audio_id, row in rows.items():
             if row.virtual or row.storage_kind != "packed":
                 raise ValueError(f"validation audio is not stored: {audio_id}")

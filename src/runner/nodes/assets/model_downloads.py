@@ -102,7 +102,7 @@ def ensure_model_checkpoint(
 
 def _find_model_checkpoint_id(kind: str, model_id: str) -> UUID | None:
     with database_session() as session:
-        for checkpoint in asset_crud.list_checkpoints(session):
+        for checkpoint in asset_crud.list_checkpoints():
             metadata = checkpoint.metadata_ or {}
             if checkpoint.type_ == kind and metadata.get("model_id") == model_id:
                 return checkpoint.id

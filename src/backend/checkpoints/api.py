@@ -3,9 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 
 from shared.db import database_session
-from shared.db.assets import clickhouse as assets
 from shared.db.assets import crud as asset_crud
-from shared.db.assets.clickhouse import AssetKind
 from shared.db.assets.schemas import CheckpointRead, CheckpointUpdate
 
 router = APIRouter(prefix="/checkpoints", tags=["checkpoints"])
@@ -15,7 +13,7 @@ router = APIRouter(prefix="/checkpoints", tags=["checkpoints"])
 async def list_checkpoints() -> list[CheckpointRead]:
     return [
         CheckpointRead.model_validate(item)
-        for item in assets.list_assets(AssetKind.CHECKPOINT)
+        for item in asset_crud.list_checkpoints()
     ]
 
 

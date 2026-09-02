@@ -1,6 +1,3 @@
-from datetime import UTC, datetime
-from uuid import uuid4
-
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
@@ -9,12 +6,11 @@ from runner.nodes.text.runtime.symbols import (
     MODEL_BERT_STYLETTS_SYMBOLS,
 )
 from shared.db import database_session
-from shared.db.assets import clickhouse as assets
 from shared.db.assets import crud as asset_crud
-from shared.db.assets.clickhouse import AssetKind, ConfigRecord
 from shared.db.assets.schemas import (
     ConfigCreate,
     ConfigRead,
+    ConfigUpdate,
     ExtraFileCreate,
     FileAssetRead,
 )
@@ -33,7 +29,7 @@ class TextFileAssetCreate(BaseModel):
 async def list_file_assets(type_: str | None = None) -> list[FileAssetRead]:
     return [
         FileAssetRead.model_validate(item)
-        for item in assets.list_assets(AssetKind.FILE, _asset_type(type_))
+        for item in asset_crud.list_extra_files(_asset_type(type_))
     ]
 
 
@@ -64,20 +60,12 @@ async def list_asset_configs(type_: str | None = None) -> list[ConfigRead]:
     canonical = _config_type(type_)
     if canonical == "phoneme_alphabet":
         _ensure_default_phoneme_alphabets()
-    return [ConfigRead.model_validate(item) for item in assets.list_configs(canonical)]
+    return [ConfigRead.model_validate(item) for item in asset_crud.list_configs(canonical)]
 
 
 @router.post("/configs", response_model=ConfigRead, status_code=status.HTTP_201_CREATED)
 async def create_asset_config(request: ConfigCreate) -> ConfigRead:
-    item = assets.create_config(
-        ConfigRecord(
-            id=uuid4(),
-            updated_at=datetime.now(UTC),
-            name=request.name,
-            type=request.type_,
-            metadata=request.metadata,
-        )
-    )
+    item = asset_crud.create_config(request)
     return ConfigRead.model_validate(item)
 
 
@@ -110,7 +98,7 @@ def _config_type(type_: str | None) -> str | None:
 def _ensure_default_phoneme_alphabets() -> None:
     existing = {
         str(item.metadata_["preset"]): item
-        for item in assets.list_configs("phoneme_alphabet")
+        for item in asset_crud.list_configs("phoneme_alphabet")
         if item.metadata_.get("builtin") and "preset" in item.metadata_
     }
     presets = (
@@ -130,23 +118,19 @@ def _ensure_default_phoneme_alphabets() -> None:
         if preset in existing:
             item = existing[preset]
             if item.name != name or item.metadata_ != metadata:
-                assets.update_config(
-                    item.model_copy(
-                        update={
-                            "updated_at": datetime.now(UTC),
-                            "name": name,
-                            "type": "phoneme_alphabet",
-                            "metadata": metadata,
-                        }
-                    )
+                asset_crud.update_config(
+                    item.id,
+                    ConfigUpdate(
+                        name=name,
+                        type_="phoneme_alphabet",
+                        metadata=metadata,
+                    ),
                 )
         else:
-            assets.create_config(
-                ConfigRecord(
-                    id=uuid4(),
-                    updated_at=datetime.now(UTC),
+            asset_crud.create_config(
+                ConfigCreate(
                     name=name,
-                    type="phoneme_alphabet",
+                    type_="phoneme_alphabet",
                     metadata=metadata,
                 ),
             )

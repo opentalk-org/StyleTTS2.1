@@ -59,13 +59,6 @@ from runner.nodes.libritts import LibriTtsSourceNode
 from runner.nodes.mos import MosModelTrainingNode, PredictMosScoreNode
 from runner.nodes.smart_turn import SmartTurnPredictNode
 from runner.nodes.speaker_clustering import (
-    ApplySpeakerClustersNode,
-    AuditSpeakerClustersNode,
-    ClusterSpeakerEmbeddingsNode,
-    CollectSpeakerEmbeddingsNode,
-    ECAPASpeakerEmbedNode,
-    SpeakerEmbeddingSetSourceNode,
-    SpeakerAuditSourceNode,
     SpeakerSegmentSource,
 )
 from runner.nodes.youtube_source import YouTubeAudioSourceNode
@@ -122,13 +115,6 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         PredictMosScoreNode,
         SmartTurnPredictNode,
         SpeakerSegmentSource,
-        SpeakerEmbeddingSetSourceNode,
-        SpeakerAuditSourceNode,
-        ECAPASpeakerEmbedNode,
-        CollectSpeakerEmbeddingsNode,
-        ClusterSpeakerEmbeddingsNode,
-        AuditSpeakerClustersNode,
-        ApplySpeakerClustersNode,
         AnalyzeAudioFeaturesNode,
         DatabaseStatisticsFeaturesNode,
         EmbedVoicesPcaPlotNode,

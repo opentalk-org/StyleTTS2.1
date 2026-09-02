@@ -47,7 +47,7 @@ class ExtractSegmentGroupAudioNode(Node):
         groups = [_group_from_audio(audio) for audio in audios]
         source_ids = [_group_source_audio_id(group) for group in groups]
         with database_session() as session:
-            items = audio_crud.get_audio_files_bulk(session, source_ids)
+            items = audio_crud.get_audio_files_bulk(source_ids)
             stored = audio_crud.bulk_read_audio_files(session, source_ids)
         outputs = []
         for group, source_id in context.cancellable(

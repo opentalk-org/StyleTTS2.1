@@ -112,7 +112,6 @@ class UpdateAudioRecordBytesNode(Node):
         assert_unique_audio_ids(audios, self.NODE_TYPE)
         with database_session() as session:
             items = audio_crud.get_audio_files_bulk(
-                session,
                 [audio.audio_file_id for audio in audios],
             )
             payloads = {}
@@ -139,7 +138,7 @@ class UpdateAudioRecordBytesNode(Node):
                     voice_prompt=audio.voice_prompt
                     if audio.voice_prompt is not None
                     else item.voice_prompt,
-                    segments=audio_crud.list_audio_segments_bulk(session, [item.id])[
+                    segments=audio_crud.list_audio_segments_bulk([item.id])[
                         item.id
                     ],
                     virtual=item.virtual,
@@ -164,11 +163,10 @@ class LoadAudioSegmentsNode(Node):
 
     async def execute(self, batch, context):
         refs = [_audio_ref_from_audio(inputs["audio"]) for inputs in batch]
-        with database_session() as session:
-            context.check_cancel()
-            segments_by_id = audio_crud.list_audio_segments_bulk(
-                session, [ref.audio_file_id for ref in refs]
-            )
+        context.check_cancel()
+        segments_by_id = audio_crud.list_audio_segments_bulk(
+            [ref.audio_file_id for ref in refs]
+        )
         outputs = []
         for inputs, ref in zip(batch, refs, strict=True):
             context.check_cancel()
@@ -197,34 +195,31 @@ class SaveAudioSegmentsNode(Node):
         records: list[
             tuple[Audio, AudioRecordRef, SegmentGroup, list[dict[str, Any]]]
         ] = []
-        with database_session() as session:
-            existing_by_id: dict[UUID, list[dict[str, Any]]] = {}
-            if self.settings.mode == "append":
-                existing_by_id = audio_crud.list_audio_segments_bulk(
-                    session,
-                    [
-                        _audio_ref_from_audio(inputs["audio"]).audio_file_id
-                        for inputs in batch
-                    ],
-                )
-            for inputs in batch:
-                context.check_cancel()
-                audio: Audio = inputs["audio"]
-                ref = _audio_ref_from_audio(audio)
-                group = _segment_group_from_audio(audio)
-                existing = existing_by_id.get(ref.audio_file_id, [])
-                records.append(
-                    (
-                        audio,
-                        ref,
-                        group,
-                        _new_group_segments(group, self.settings.mode, existing),
-                    )
-                )
-            saved_by_id = audio_crud.bulk_replace_audio_segments(
-                session,
-                {ref.audio_file_id: segments for _, ref, _, segments in records},
+        existing_by_id: dict[UUID, list[dict[str, Any]]] = {}
+        if self.settings.mode == "append":
+            existing_by_id = audio_crud.list_audio_segments_bulk(
+                [
+                    _audio_ref_from_audio(inputs["audio"]).audio_file_id
+                    for inputs in batch
+                ],
             )
+        for inputs in batch:
+            context.check_cancel()
+            audio: Audio = inputs["audio"]
+            ref = _audio_ref_from_audio(audio)
+            group = _segment_group_from_audio(audio)
+            existing = existing_by_id.get(ref.audio_file_id, [])
+            records.append(
+                (
+                    audio,
+                    ref,
+                    group,
+                    _new_group_segments(group, self.settings.mode, existing),
+                )
+            )
+        saved_by_id = audio_crud.bulk_replace_audio_segments(
+            {ref.audio_file_id: segments for _, ref, _, segments in records},
+        )
         outputs = []
         for audio, ref, group, _ in records:
             segments = saved_by_id[ref.audio_file_id]

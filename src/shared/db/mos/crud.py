@@ -2,8 +2,6 @@ from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy.orm import Session
-
 from shared.db.audio.clickhouse.files import get_audio_files
 from shared.db.mos.clickhouse.crud import (
     count_comparisons as _count_comparisons,
@@ -19,7 +17,7 @@ from shared.db.mos.clickhouse.models import MosComparisonRecord, MosPairIds
 from shared.db.mos.schemas import MosRatingCreate, MosRatingUpdate
 
 
-def sample_pair(_session: Session, dataset_ids: Sequence[UUID]) -> MosPairIds:
+def sample_pair(dataset_ids: Sequence[UUID]) -> MosPairIds:
     if not dataset_ids:
         raise ValueError("MOS pair requires at least one dataset")
     errors = []
@@ -33,7 +31,7 @@ def sample_pair(_session: Session, dataset_ids: Sequence[UUID]) -> MosPairIds:
     ) from errors[-1]
 
 
-def create_rating(_session: Session, payload: MosRatingCreate) -> MosComparisonRecord:
+def create_rating(payload: MosRatingCreate) -> MosComparisonRecord:
     validate_pair_membership(payload.dataset_id, payload.audio_a_id, payload.audio_b_id)
     now = datetime.now(UTC)
     return create_comparison(
@@ -50,22 +48,20 @@ def create_rating(_session: Session, payload: MosRatingCreate) -> MosComparisonR
     )
 
 
-def list_comparisons(_session: Session, dataset_id: UUID) -> list[MosComparisonRecord]:
+def list_comparisons(dataset_id: UUID) -> list[MosComparisonRecord]:
     return list(reversed(_list_comparisons(dataset_id, 4_294_967_295)))
 
 
-def count_comparisons(_session: Session, dataset_id: UUID) -> int:
+def count_comparisons(dataset_id: UUID) -> int:
     return _count_comparisons(dataset_id)
 
 
-def iter_comparisons(
-    _session: Session, dataset_id: UUID
-) -> Iterator[MosComparisonRecord]:
-    yield from list_comparisons(_session, dataset_id)
+def iter_comparisons(dataset_id: UUID) -> Iterator[MosComparisonRecord]:
+    yield from list_comparisons(dataset_id)
 
 
 def list_comparisons_page(
-    _session: Session, dataset_ids: Sequence[UUID], limit: int, offset: int
+    dataset_ids: Sequence[UUID], limit: int, offset: int
 ) -> tuple[list[MosComparisonRecord], int]:
     if len(dataset_ids) != 1:
         raise ValueError("exactly one dataset is required")
@@ -74,9 +70,7 @@ def list_comparisons_page(
     )
 
 
-def comparison_audio_files(
-    _session: Session, comparisons: Sequence[MosComparisonRecord]
-):
+def comparison_audio_files(comparisons: Sequence[MosComparisonRecord]):
     ids = [
         audio_id
         for item in comparisons
@@ -86,7 +80,7 @@ def comparison_audio_files(
 
 
 def update_latest_rating(
-    _session: Session, comparison_id: UUID, payload: MosRatingUpdate
+    comparison_id: UUID, payload: MosRatingUpdate
 ) -> MosComparisonRecord:
     current = get_comparison(comparison_id)
     return update_comparison(
@@ -96,6 +90,6 @@ def update_latest_rating(
     )
 
 
-def undo_latest_rating(_session: Session, comparison_id: UUID) -> None:
+def undo_latest_rating(comparison_id: UUID) -> None:
     get_comparison(comparison_id)
     delete_comparison(comparison_id)

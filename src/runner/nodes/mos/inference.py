@@ -76,8 +76,7 @@ class PredictMosScoreNode(Node):
                 f"MOS scored {min(start + len(chunk), len(audios))}/{len(audios)} audio files",
             )
         scores = {audio.audio_file_id: score for audio, score in zip(audios, predictions, strict=True)}
-        with database_session() as session:
-            audio_crud.bulk_update_audio_scores(session, scores)
+        audio_crud.bulk_update_audio_scores(scores)
         return [
             {
                 "audio": replace(

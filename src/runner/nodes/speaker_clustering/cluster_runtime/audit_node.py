@@ -173,7 +173,7 @@ def _review_media(
 ) -> dict[tuple[str, str], AudioSegmentReviewMedia]:
     entries = _unique_entries(document)
     audio_ids = [UUID(entry.audio_id) for entry in entries]
-    audio_files = audio_crud.get_audio_files_bulk(session, audio_ids)
+    audio_files = audio_crud.get_audio_files_bulk(audio_ids)
     result = {}
     for entry in entries:
         audio_id = UUID(entry.audio_id)

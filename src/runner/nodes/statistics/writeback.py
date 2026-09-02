@@ -9,7 +9,6 @@ from runflow.core.node import Node
 from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import JsonPort
-from shared.db import database_session
 from shared.db.statistics import StatisticsEntryCreate, StatisticsEntryRead
 from shared.db.statistics import crud as statistics_crud
 
@@ -40,8 +39,7 @@ class SaveStatisticsEntryNode(Node):
                 payload=payload,
                 metadata=self.settings.metadata,
             ))
-        with database_session() as session:
-            entries = statistics_crud.bulk_create_statistics_entries(session, payloads)
+        entries = statistics_crud.bulk_create_statistics_entries(payloads)
         return [
             {
                 "statistics_entry": StatisticsEntryRead.model_validate(entry).model_dump(

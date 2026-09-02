@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 
-from shared.db.statistics.clickhouse import (
+from shared.db.statistics.crud import (
     delete_statistics_entry,
     get_statistics_entry,
     list_statistics_entries,

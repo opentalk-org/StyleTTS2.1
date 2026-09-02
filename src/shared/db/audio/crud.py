@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from shared.db.audio.clickhouse.annotations import (
     AcceptedSpeakerAssignment,
     SpeakerAssignmentWriteCounts,
+    audio_file_annotations as _audio_file_annotations,
     bulk_apply_speaker_assignments as _apply_speakers,
     bulk_update_audio_scores as _update_scores,
     iter_dataset_audio_scores as _iter_scores,
@@ -35,6 +36,7 @@ from shared.db.audio.clickhouse.segments import (
     replace_audio_segments_bulk as _replace_segments_bulk,
 )
 from shared.db.audio.clickhouse.storage import bulk_create_audio_files as _create_files
+from shared.db.audio.clickhouse.storage import bulk_read_audio_files as _read_files
 from shared.db.audio.clickhouse.storage import bulk_update_audio_files as _update_files
 from shared.db.audio.catalog_pagination import AudioCursor, cursor_for_row
 from shared.db.audio.schemas import AudioBucketLocation, AudioCreate, AudioUpdate
@@ -53,12 +55,22 @@ class AudioPackConfig:
     remote_workers: int = 9
 
 
-def get_audio_file(_session: Session, audio_file_id: UUID) -> AudioFileRecord:
+def get_audio_file(audio_file_id: UUID) -> AudioFileRecord:
     return _get_audio_file(audio_file_id)
 
 
+def audio_file_annotations(item: AudioFileRecord):
+    return _audio_file_annotations(item)
+
+
+def bulk_read_audio_files(
+    session: Session, audio_file_ids: Iterable[UUID]
+) -> dict[UUID, bytes]:
+    return _read_files(session, list(audio_file_ids))
+
+
 def get_audio_files_bulk(
-    _session: Session, audio_file_ids: Sequence[UUID]
+    audio_file_ids: Sequence[UUID],
 ) -> dict[UUID, AudioFileRecord]:
     rows = {item.id: item for item in get_audio_files(audio_file_ids)}
     missing = set(audio_file_ids).difference(rows)
@@ -103,7 +115,7 @@ def bulk_delete_audio_files(
 
 
 def list_audio_segments_bulk(
-    _session: Session, audio_file_ids: Sequence[UUID]
+    audio_file_ids: Sequence[UUID],
 ) -> dict[UUID, list[dict[str, Any]]]:
     return {
         audio_id: [item.as_payload() for item in items]
@@ -112,10 +124,7 @@ def list_audio_segments_bulk(
 
 
 def bulk_replace_audio_segments(
-    _session: Session,
     payloads: dict[UUID, Sequence[dict[str, Any]]],
-    commit: bool = True,
-    fallback_accuracy: dict[UUID, float | None] | None = None,
 ) -> dict[UUID, list[dict[str, Any]]]:
     now = datetime.now(UTC)
     saved = _replace_segments_bulk(
@@ -131,7 +140,6 @@ def bulk_replace_audio_segments(
 
 
 def count_audio_file_references(
-    _session: Session,
     dataset_id: UUID | None,
     audio_file_ids: Sequence[UUID] | None,
     include_virtual: bool,
@@ -140,7 +148,6 @@ def count_audio_file_references(
 
 
 def list_audio_file_references_page(
-    _session: Session,
     dataset_id: UUID | None,
     audio_file_ids: Sequence[UUID] | None,
     include_virtual: bool,
@@ -152,42 +159,41 @@ def list_audio_file_references_page(
     )
 
 
-def count_segment_references(_session: Session, dataset_id: UUID) -> int:
+def count_segment_references(dataset_id: UUID) -> int:
     return _count_segment_refs(dataset_id)
 
 
 def list_segment_references_page(
-    _session: Session, dataset_id: UUID, after: SegmentCursor | None, limit: int
+    dataset_id: UUID, after: SegmentCursor | None, limit: int
 ) -> list[SegmentReference]:
     return _list_segment_refs(dataset_id, after, limit)
 
 
-def bulk_update_audio_scores(_session: Session, scores: dict[UUID, float]):
+def bulk_update_audio_scores(scores: dict[UUID, float]):
     return _update_scores(scores)
 
 
-def iter_dataset_audio_scores(_session: Session, dataset_id: UUID):
+def iter_dataset_audio_scores(dataset_id: UUID):
     return _iter_scores(dataset_id)
 
 
-def list_audio_segment_accuracies(_session: Session, audio_file_ids: list[UUID]):
+def list_audio_segment_accuracies(audio_file_ids: list[UUID]):
     return _segment_accuracies(audio_file_ids)
 
 
 def bulk_apply_speaker_assignments(
-    _session: Session, assignments: Iterable[AcceptedSpeakerAssignment]
+    assignments: Iterable[AcceptedSpeakerAssignment],
 ) -> SpeakerAssignmentWriteCounts:
     return _apply_speakers(assignments)
 
 
 def search_audio_file_ids(
-    _session: Session, query: str, dataset: str, language: str = ""
+    query: str, dataset: str, language: str = ""
 ) -> list[UUID]:
     return _search_ids(query, dataset, language)
 
 
 def search_audio_files(
-    _session: Session,
     query: str,
     dataset: str,
     sort: str,
@@ -226,7 +232,7 @@ def search_audio_files(
 
 
 def audio_bucket_locations(
-    _session: Session, audio_file_ids: Sequence[UUID]
+    audio_file_ids: Sequence[UUID],
 ) -> list[AudioBucketLocation]:
     rows = {item.id: item for item in get_audio_files(audio_file_ids)}
     locations = []
@@ -244,7 +250,7 @@ def audio_bucket_locations(
     return locations
 
 
-def list_audio_files(_session: Session):
+def list_audio_files():
     return _list_audio_files(limit=4_294_967_295)
 
 

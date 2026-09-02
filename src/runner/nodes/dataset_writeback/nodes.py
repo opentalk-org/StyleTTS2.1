@@ -82,7 +82,6 @@ class AssignSpeakerNode(Node):
             if not speaker_id:
                 raise ValueError("AssignSpeaker requires speaker_id")
             items = audio_crud.get_audio_files_bulk(
-                session,
                 [audio.audio_file_id for audio in audios],
             )
             payloads = {}
@@ -90,7 +89,7 @@ class AssignSpeakerNode(Node):
                 context.check_cancel()
                 item = items[audio.audio_file_id]
                 stored_segments = audio_crud.list_audio_segments_bulk(
-                    session, [item.id]
+                    [item.id]
                 )[item.id]
                 segments = [
                     _assigned_segment(segment, speaker_id)

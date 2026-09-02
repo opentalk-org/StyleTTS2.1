@@ -38,7 +38,7 @@ class DatabaseBatchLoader:
         audio_ids = tuple(sorted({key.audio_file_id for key in keys}, key=str))
         requests = _batch_requests(planned)
         with database_session() as session:
-            payloads = audio_crud.list_audio_segments_bulk(session, audio_ids)
+            payloads = audio_crud.list_audio_segments_bulk(audio_ids)
             clips = bulk_read_wav_segments(session, requests)
         current = {key: self._resolve_segment(key, payloads) for key in keys}
         clip_map = dict(zip(requests, clips, strict=True))

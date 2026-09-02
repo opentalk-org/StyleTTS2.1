@@ -24,12 +24,10 @@ def persist_split_records(
     with database_session() as session:
         items = audio_crud.bulk_create_audio_files(session, payloads, commit=False)
         segments_by_id = audio_crud.bulk_replace_audio_segments(
-            session,
             {
                 item.id: segments
                 for item, segments in zip(items, segment_payloads, strict=True)
             },
-            commit=False,
         )
         completed_source_ids = completed_replace_source_ids(
             session,

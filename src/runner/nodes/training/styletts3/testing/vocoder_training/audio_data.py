@@ -206,7 +206,6 @@ def _list_dataset_references(dataset_id: UUID) -> list[AudioFileReference]:
     with database_session() as session:
         while True:
             page = audio_crud.list_audio_file_references_page(
-                session,
                 dataset_id=dataset_id,
                 audio_file_ids=None,
                 include_virtual=False,
@@ -234,7 +233,7 @@ def _cache_backend_wavs(
     if not missing_ids:
         return
     with database_session() as session:
-        locations = audio_crud.audio_bucket_locations(session, missing_ids)
+        locations = audio_crud.audio_bucket_locations(missing_ids)
     grouped: dict[UUID, list[UUID]] = {}
     for location in locations:
         grouped.setdefault(location.bucket_file_id, []).append(location.audio_file_id)

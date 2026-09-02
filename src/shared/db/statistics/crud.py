@@ -2,8 +2,6 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy.orm import Session
-
 from shared.db.statistics.clickhouse.crud import (
     create_statistics_entries,
     delete_statistics_entry as _delete_entry,
@@ -14,14 +12,12 @@ from shared.db.statistics.clickhouse.models import StatisticsEntryRecord
 from shared.db.statistics.schemas import StatisticsEntryCreate
 
 
-def create_statistics_entry(
-    session: Session, payload: StatisticsEntryCreate
-) -> StatisticsEntryRecord:
-    return bulk_create_statistics_entries(session, [payload])[0]
+def create_statistics_entry(payload: StatisticsEntryCreate) -> StatisticsEntryRecord:
+    return bulk_create_statistics_entries([payload])[0]
 
 
 def bulk_create_statistics_entries(
-    _session: Session, payloads: Sequence[StatisticsEntryCreate]
+    payloads: Sequence[StatisticsEntryCreate],
 ) -> list[StatisticsEntryRecord]:
     now = datetime.now(UTC)
     records = [
@@ -34,20 +30,18 @@ def bulk_create_statistics_entries(
     return records
 
 
-def get_statistics_entry(
-    _session: Session, statistics_entry_id: UUID
-) -> StatisticsEntryRecord:
+def get_statistics_entry(statistics_entry_id: UUID) -> StatisticsEntryRecord:
     return _get_entry(statistics_entry_id)
 
 
 def list_statistics_entries(
-    _session: Session, dataset_id: UUID | None = None
+    dataset_id: UUID | None = None,
 ) -> list[StatisticsEntryRecord]:
     return _list_entries(dataset_id)
 
 
 def list_statistics_summaries(
-    _session: Session, dataset_id: UUID | None = None
+    dataset_id: UUID | None = None,
 ) -> list[dict[str, object]]:
     return [
         {
@@ -61,6 +55,6 @@ def list_statistics_summaries(
     ]
 
 
-def delete_statistics_entry(_session: Session, statistics_entry_id: UUID) -> None:
+def delete_statistics_entry(statistics_entry_id: UUID) -> None:
     _get_entry(statistics_entry_id)
     _delete_entry(statistics_entry_id)

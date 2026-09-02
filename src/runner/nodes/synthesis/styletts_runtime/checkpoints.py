@@ -37,7 +37,7 @@ def resolve_main_checkpoint(value: CheckpointRef) -> ResolvedCheckpoint:
 
 def resolve_slot_checkpoint(checkpoint_id: UUID, expected_type: str) -> ResolvedCheckpoint:
     with database_session() as session:
-        item = asset_crud.get_checkpoint(session, checkpoint_id)
+        item = asset_crud.get_checkpoint(checkpoint_id)
         root = asset_crud.get_checkpoint_path(session, checkpoint_id)
     if item.type_ != expected_type:
         raise ValueError(f"checkpoint {checkpoint_id} has type {item.type_}, expected {expected_type}")

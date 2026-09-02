@@ -32,7 +32,7 @@ def ensure_checkpoint_bundle(
 ) -> tuple[AssetRecord, bool]:
     log = logger or _LOGGER
     with database_session() as session:
-        existing = _find_checkpoint(session, spec.key)
+        existing = _find_checkpoint(spec.key)
         if existing is not None:
             try:
                 path = asset_crud.get_checkpoint_path(session, existing.id)
@@ -104,7 +104,7 @@ def ensure_extra_file(
 ) -> tuple[AssetRecord, bool]:
     log = logger or _LOGGER
     with database_session() as session:
-        existing = _find_extra_file(session, spec.key)
+        existing = _find_extra_file(spec.key)
         metadata = {**spec.metadata, "catalog_key": spec.key}
         if existing is not None:
             path = asset_crud.get_extra_file_path(session, existing.id)
@@ -213,16 +213,16 @@ def _checkpoint_metadata(
     }
 
 
-def _find_checkpoint(session, key: str) -> AssetRecord | None:
-    for checkpoint in asset_crud.list_checkpoints(session):
+def _find_checkpoint(key: str) -> AssetRecord | None:
+    for checkpoint in asset_crud.list_checkpoints():
         metadata = checkpoint.metadata_
         if "catalog_key" in metadata and metadata["catalog_key"] == key:
             return checkpoint
     return None
 
 
-def _find_extra_file(session, key: str) -> AssetRecord | None:
-    for extra_file in asset_crud.list_extra_files(session):
+def _find_extra_file(key: str) -> AssetRecord | None:
+    for extra_file in asset_crud.list_extra_files():
         metadata = extra_file.metadata_
         if "catalog_key" in metadata and metadata["catalog_key"] == key:
             return extra_file

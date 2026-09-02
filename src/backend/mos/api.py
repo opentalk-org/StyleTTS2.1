@@ -1,5 +1,4 @@
-from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
 
@@ -11,8 +10,8 @@ from backend.mos.schemas import (
     MosRatingRead,
 )
 from shared.audio_annotations import AudioAnnotations
-from shared.db.audio.clickhouse import AudioFileRecord, get_audio_file, get_audio_files
-from shared.db.mos import clickhouse as mos_crud
+from shared.db.audio.clickhouse import AudioFileRecord, get_audio_file
+from shared.db.mos import crud as mos_crud
 from shared.db.mos.clickhouse import MosComparisonRecord
 from shared.db.mos.schemas import MosComparisonRead, MosRatingCreate, MosRatingUpdate
 
@@ -25,7 +24,7 @@ async def get_mos_pair(dataset_id: list[UUID] = Query()) -> MosPairRead:
     try:
         if not dataset_id:
             raise ValueError("at least one dataset is required")
-        pair = mos_crud.sample_pair(dataset_id[0])
+        pair = mos_crud.sample_pair(dataset_id)
         return MosPairRead(
             dataset_id=pair.dataset_id,
             audio_a=_audio_response(get_audio_file(pair.audio_a_id)),
@@ -42,22 +41,7 @@ async def get_mos_pair(dataset_id: list[UUID] = Query()) -> MosPairRead:
 )
 async def create_mos_rating(payload: MosRatingCreate) -> MosRatingRead:
     try:
-        mos_crud.validate_pair_membership(
-            payload.dataset_id, payload.audio_a_id, payload.audio_b_id
-        )
-        now = datetime.now(UTC)
-        comparison = mos_crud.create_comparison(
-            MosComparisonRecord(
-                id=uuid4(),
-                updated_at=now,
-                audio_a_id=payload.audio_a_id,
-                audio_b_id=payload.audio_b_id,
-                preferred_audio_id=payload.preferred_audio_id,
-                score_a=payload.score_a,
-                score_b=payload.score_b,
-                created_at=now,
-            )
-        )
+        comparison = mos_crud.create_rating(payload)
         return MosRatingRead.model_validate(comparison.model_dump())
     except (KeyError, ValueError) as error:
         raise HTTPException(
@@ -74,11 +58,11 @@ async def list_mos_ratings(
     try:
         if len(dataset_id) != 1:
             raise ValueError("exactly one dataset is required")
-        rows = mos_crud.list_comparisons(dataset_id[0], limit, offset)
+        rows, total = mos_crud.list_comparisons_page(dataset_id, limit, offset)
         audio_files = _comparison_audio_files(rows)
         return MosRatingPage(
             rows=[_rating_response(row, audio_files, True) for row in rows],
-            total=mos_crud.count_comparisons(dataset_id[0]),
+            total=total,
             limit=limit,
             offset=offset,
         )
@@ -93,12 +77,7 @@ async def update_mos_rating(
     comparison_id: UUID, payload: MosRatingUpdate
 ) -> MosRatingDetailRead:
     try:
-        current = mos_crud.get_comparison(comparison_id)
-        comparison = mos_crud.update_comparison(
-            current.model_copy(
-                update={**payload.model_dump(), "updated_at": datetime.now(UTC)}
-            )
-        )
+        comparison = mos_crud.update_latest_rating(comparison_id, payload)
         return _rating_response(comparison, _comparison_audio_files([comparison]), True)
     except (KeyError, ValueError) as error:
         raise HTTPException(
@@ -109,8 +88,7 @@ async def update_mos_rating(
 @router.delete("/ratings/{comparison_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_mos_rating(comparison_id: UUID) -> None:
     try:
-        mos_crud.get_comparison(comparison_id)
-        mos_crud.delete_comparison(comparison_id)
+        mos_crud.undo_latest_rating(comparison_id)
     except (KeyError, ValueError) as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
@@ -147,9 +125,4 @@ def _rating_response(
 def _comparison_audio_files(
     comparisons: list[MosComparisonRecord],
 ) -> dict[UUID, AudioFileRecord]:
-    ids = [
-        audio_id
-        for item in comparisons
-        for audio_id in (item.audio_a_id, item.audio_b_id)
-    ]
-    return {item.id: item for item in get_audio_files(ids)}
+    return mos_crud.comparison_audio_files(comparisons)
