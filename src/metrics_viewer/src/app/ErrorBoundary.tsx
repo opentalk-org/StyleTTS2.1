@@ -7,10 +7,10 @@ interface State {
   error: Error | null;
 }
 
-/**
- * A render error anywhere below here would otherwise leave a blank page with the
- * workspace still in local storage, and no way back other than clearing it.
- */
+
+
+
+
 export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   state: State = { error: null };
 

@@ -33,8 +33,8 @@ pub struct ActiveSession {
 
 pub type SessionsMap = Arc<RwLock<HashMap<Uuid, ActiveSession>>>;
 
-pub fn parse_training_id(value: &str) -> Result<Uuid, Status> {
-    Uuid::parse_str(value).map_err(|_| Status::invalid_argument("invalid training ID"))
+pub fn parse_run_id(value: &str) -> Result<Uuid, Status> {
+    Uuid::parse_str(value).map_err(|_| Status::invalid_argument("invalid run ID"))
 }
 
 pub struct InitializedTraining {
@@ -64,13 +64,8 @@ impl AssetStore {
         }
     }
 
-    pub async fn ensure(
-        &self,
-        training_id: Uuid,
-        name: &str,
-        key: &str,
-    ) -> anyhow::Result<PathBuf> {
-        let training_dir = self.root.join(training_id.to_string());
+    pub async fn ensure(&self, run_id: Uuid, name: &str, key: &str) -> anyhow::Result<PathBuf> {
+        let training_dir = self.root.join(run_id.to_string());
         fs::create_dir_all(&training_dir).await?;
         let path = training_dir.join(name);
         if fs::try_exists(&path).await? {
@@ -78,7 +73,7 @@ impl AssetStore {
         }
 
         let part = training_dir.join(format!("{name}.part"));
-        info!(training = %training_id, asset = name, key, "downloading asset");
+        info!(run = %run_id, asset = name, key, "downloading asset");
         if self.synthetic {
             fs::write(&part, format!("synthetic asset {name}\n").repeat(1024)).await?;
         } else {
@@ -102,7 +97,7 @@ impl AssetStore {
 }
 
 pub async fn initialize(
-    training_id: Uuid,
+    run_id: Uuid,
     trainings: &TrainingStore,
     assets: &AssetStore,
     database: &Client,
@@ -110,8 +105,8 @@ pub async fn initialize(
     cache_dir: &'static Path,
     synthetic: bool,
 ) -> Result<InitializedTraining, Status> {
-    let claimed = trainings.claim(training_id).await.map_err(|err| {
-        error!(training = %training_id, error = format!("{err:#}"), "claiming training failed");
+    let claimed = trainings.claim(run_id).await.map_err(|err| {
+        error!(run = %run_id, error = format!("{err:#}"), "claiming training failed");
         Status::internal(format!("{err:#}"))
     })?;
     let (data_config, train_config) = match claimed {
@@ -130,11 +125,10 @@ pub async fn initialize(
             config
                 .assets
                 .iter()
-                .map(|(name, asset)| assets.ensure(training_id, name, &asset.object)),
+                .map(|(name, asset)| assets.ensure(run_id, name, &asset.object)),
         )
         .await?;
-        let session =
-            Session::new(training_id, database, loader, cache_dir, &config, synthetic).await?;
+        let session = Session::new(run_id, database, loader, cache_dir, &config, synthetic).await?;
         Ok(SessionHandle::spawn(session))
     }
     .await;
@@ -144,9 +138,9 @@ pub async fn initialize(
             train_config: train_config,
         }),
         Err(err) => {
-            error!(training = %training_id, error = format!("{err:#}"), "training initialization failed");
-            if let Err(reset_err) = trainings.reset(training_id).await {
-                error!(training = %training_id, error = format!("{reset_err:#}"), "resetting training state failed");
+            error!(run = %run_id, error = format!("{err:#}"), "training initialization failed");
+            if let Err(reset_err) = trainings.reset(run_id).await {
+                error!(run = %run_id, error = format!("{reset_err:#}"), "resetting training state failed");
             }
             Err(Status::internal(format!("{err:#}")))
         }
@@ -159,12 +153,12 @@ pub async fn data_handler(
     resp_stream: &UnboundedSender<Result<DataResponse, Status>>,
 ) -> anyhow::Result<()> {
     while let Some(req) = req_stream.message().await? {
-        let training_id = parse_training_id(&req.training_id)?;
-        debug!(training = %training_id, split = ?req.split(), "data request");
+        let run_id = parse_run_id(&req.run_id)?;
+        debug!(run = %run_id, split = ?req.split(), "data request");
         let active = sessions
             .read()
             .await
-            .get(&training_id)
+            .get(&run_id)
             .cloned()
             .context("unknown training")?;
         let Some(loaded_batch) = active
@@ -172,7 +166,7 @@ pub async fn data_handler(
             .next_batch(req.split() == Split::Validation)
             .await?
         else {
-            debug!(training = %training_id, split = ?req.split(), "data stream exhausted");
+            debug!(run = %run_id, split = ?req.split(), "data stream exhausted");
             return Ok(());
         };
         let batch = loaded_batch.into_iter().map(proto::Sample::from).collect();
@@ -216,11 +210,11 @@ pub fn asset_stream(
 
 pub async fn receive_checkpoint(
     root: &Path,
-    training_id: Uuid,
+    run_id: Uuid,
     step: u64,
     stream: &mut Streaming<CheckpointRequest>,
 ) -> anyhow::Result<(PathBuf, u64)> {
-    let dir = root.join(training_id.to_string());
+    let dir = root.join(run_id.to_string());
     fs::create_dir_all(&dir).await?;
     let path = dir.join(format!("step_{step:09}.tar"));
     let part = dir.join(format!("step_{step:09}.tar.part"));

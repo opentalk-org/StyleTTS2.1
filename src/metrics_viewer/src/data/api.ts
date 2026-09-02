@@ -1,30 +1,30 @@
-import * as mock from "@/data/mock";
-import { runPlotQuery } from "@/data/plotQuery";
-import { cached } from "@/shared/cache";
-import type { PlotQueryResult } from "@/shared/types";
+import { request } from "@/data/backend";
+import type { Artifact, PlotQueryResult, Project, Run } from "@/shared/types";
 
-export const { getArtifacts, listProjects, listRuns } = mock;
+export function listProjects(): Promise<Project[]> {
+  return request<Project[]>("/api/projects");
+}
 
-/**
- * Runs the query that defines the plots. A real deployment posts the SQL to
- * ClickHouse — which is what the cache is for; here it is evaluated locally
- * against the generated series.
- */
-export async function runPlotsQuery(
+export function listRuns(projectId: string): Promise<Run[]> {
+  return request<Run[]>(`/api/projects/${encodeURIComponent(projectId)}/runs`);
+}
+
+export function getArtifacts(runIds: string[]): Promise<Artifact[]> {
+  if (runIds.length === 0) return Promise.resolve([]);
+  return request<Artifact[]>(`/api/artifacts?run_ids=${encodeURIComponent(runIds.join(","))}`);
+}
+
+
+
+
+
+export function runPlotsQuery(
   sql: string,
   projectId: string,
   selectedRunIds: string[],
 ): Promise<PlotQueryResult> {
-  const key = `plots:${projectId}:${[...selectedRunIds].sort().join(",")}:${hash(sql)}`;
-  return cached(key, async () =>
-    runPlotQuery(sql, {
-      selectedRunIds,
-      projectRunIds: mock.runIdsForProject(projectId),
-      loadPoints: mock.pointsFor,
-    }),
-  );
-}
-
-function hash(value: string): number {
-  return Array.from(value).reduce((total, char) => ((total << 5) - total + char.charCodeAt(0)) | 0, 0);
+  return request<PlotQueryResult>(`/api/projects/${encodeURIComponent(projectId)}/plots`, {
+    method: "POST",
+    body: JSON.stringify({ sql, runIds: selectedRunIds }),
+  });
 }

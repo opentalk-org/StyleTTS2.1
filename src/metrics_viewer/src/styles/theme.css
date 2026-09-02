@@ -1,10 +1,10 @@
-/* Design tokens: premium analytics / dark technical.
-   Every token here is exposed to Tailwind as a utility (bg-*, text-*, border-*, font-*, …). */
+
+
 @theme {
   --font-sans: "Inter", "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono", "JetBrains Mono", "SFMono-Regular", ui-monospace, monospace;
 
-  /* Surfaces: near-black layering, hierarchy through tone rather than shadow. */
+
   --color-deep: #050507;
   --color-base: #09090b;
   --color-elevated: #0d0d10;
@@ -12,22 +12,22 @@
   --color-surface: rgb(255 255 255 / 0.035);
   --color-surface-hover: rgb(255 255 255 / 0.055);
 
-  /* Foreground ramp. */
+
   --color-fg: #f4f4f5;
   --color-fg-secondary: #a1a1aa;
   --color-fg-muted: #71717a;
 
-  /* Single accent, reserved for selection and interaction. */
+
   --color-accent: #6366f1;
   --color-accent-bright: #818cf8;
   --color-accent-surface: rgb(99 102 241 / 0.1);
   --color-accent-border: rgb(99 102 241 / 0.28);
 
-  /* Hairline structure. */
+
   --color-line: rgb(255 255 255 / 0.07);
   --color-line-hover: rgb(255 255 255 / 0.12);
 
-  /* Semantic: meaning only, never decoration. */
+
   --color-positive: #4ade80;
   --color-positive-surface: rgb(74 222 128 / 0.1);
   --color-positive-border: rgb(74 222 128 / 0.16);
@@ -49,8 +49,8 @@
   --ease-precise: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Chart series palette. Indigo leads; the rest stay desaturated enough to read as
-   subordinate comparison series rather than a rainbow. */
+
+
 @theme {
   --color-series-1: #818cf8;
   --color-series-2: #6366f1;

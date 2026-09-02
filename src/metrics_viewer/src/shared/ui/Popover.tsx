@@ -6,20 +6,20 @@ import { cn } from "./cn";
 export interface PopoverProps {
   open: boolean;
   onClose: () => void;
-  /** The control that toggles the panel; kept inside the outside-click boundary. */
+
   trigger: ReactNode;
   children: ReactNode;
   align?: "start" | "end";
-  /**
-   * Renders the panel in a portal, positioned against the trigger. Use inside
-   * scrolling or clipping containers, where an absolute panel would be cut off.
-   */
+
+
+
+
   portal?: boolean;
   className?: string;
   panelClassName?: string;
 }
 
-/** Floating application panel: dismisses on outside pointer-down and on Escape. */
+
 export function Popover({
   open,
   onClose,
@@ -59,8 +59,8 @@ export function Popover({
     }
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
-    // A portal panel is positioned once, so scrolling would detach it from its
-    // trigger; closing is the honest response.
+
+
     if (portal) {
       document.addEventListener("scroll", onClose, true);
       window.addEventListener("resize", onClose);

@@ -15,29 +15,29 @@ import { Popover } from "./Popover";
 export interface SearchOption {
   value: string;
   label: string;
-  /** Heading the option is filed under; also searchable. */
+
   group?: string;
-  /** Trailing metadata, e.g. the fully qualified metric name. */
+
   hint?: string;
 }
 
 export interface SearchOptionListProps {
   options: SearchOption[];
-  /** Values currently chosen. Single-select pickers pass one. */
+
   selected: string[];
   onSelect: (value: string) => void;
-  /** Keeps the list open after a choice and shows checkboxes instead of a check. */
+
   multiple?: boolean;
   placeholder?: string;
   emptyMessage?: string;
-  /** Set false only for short fixed lists where filtering adds nothing. */
+
   searchable?: boolean;
 }
 
-/**
- * The one searchable option list behind every metric, axis, and column picker:
- * filter-as-you-type over label, value, hint and group, with full keyboard control.
- */
+
+
+
+
 export function SearchOptionList({
   options,
   selected,
@@ -63,7 +63,7 @@ export function SearchOptionList({
     );
   }, [options, query]);
 
-  // Groups keep their first-seen order so related metrics stay together.
+
   const groups = useMemo(() => {
     const byGroup = new Map<string, SearchOption[]>();
     for (const option of matches) {
@@ -77,7 +77,7 @@ export function SearchOptionList({
     setActiveIndex(0);
   }, [query]);
 
-  // autoFocus only applies to form controls, so a search-less list is focused here.
+
   useEffect(() => {
     if (!showSearch) rootRef.current?.focus();
   }, [showSearch]);
@@ -115,7 +115,7 @@ export function SearchOptionList({
     <div
       ref={rootRef}
       className="flex w-full min-w-0 flex-col focus:outline-none"
-      // Short lists have no search field, so the panel itself takes the arrow keys.
+
       tabIndex={showSearch ? undefined : -1}
       onKeyDown={showSearch ? undefined : onKeyDown}
     >
@@ -214,7 +214,7 @@ export function SearchOptionList({
   );
 }
 
-/** Marks the matched run so the reason a row survived the filter is visible. */
+
 function Highlight({ text, query }: { text: string; query: string }): ReactNode {
   const normalized = query.trim().toLowerCase();
   const start = normalized.length === 0 ? -1 : text.toLowerCase().indexOf(normalized);
@@ -243,7 +243,7 @@ export interface SearchSelectProps {
   portal?: boolean;
 }
 
-/** Single-choice picker: a compact control that opens the searchable list. */
+
 export function SearchSelect({
   label,
   options,

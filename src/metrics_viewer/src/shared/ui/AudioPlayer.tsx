@@ -5,7 +5,7 @@ import { cn } from "./cn";
 
 export interface AudioPlayerProps {
   src: string;
-  /** Accessible name, e.g. the run and artifact this clip belongs to. */
+
   label: string;
   className?: string;
 }
@@ -13,17 +13,17 @@ export interface AudioPlayerProps {
 const BARS = 120;
 const VIEW_HEIGHT = 40;
 
-/** Decoded peaks keyed by source, so stepping back and forth does not refetch. */
+
 const peakCache = new Map<string, number[]>();
-/** Runs comparing the same clip mount together; they should decode it once. */
+
 const inFlight = new Map<string, Promise<number[]>>();
 let sharedContext: AudioContext | null = null;
 
-/**
- * Reduces a clip to one peak per bar. Decoding needs the whole file, which is fine
- * for short validation clips and is cached; anything that fails falls back to a
- * plain progress bar rather than blocking playback.
- */
+
+
+
+
+
 function loadPeaks(src: string): Promise<number[]> {
   const cached = peakCache.get(src);
   if (cached !== undefined) return Promise.resolve(cached);
@@ -55,13 +55,13 @@ async function decodePeaks(src: string): Promise<number[]> {
     peaks.push(peak);
     if (peak > loudest) loudest = peak;
   }
-  // Normalise so quiet clips still fill the strip.
+
   const normalised = loudest === 0 ? peaks : peaks.map((peak) => peak / loudest);
   peakCache.set(src, normalised);
   return normalised;
 }
 
-/** Compact transport with a waveform scrubber, built on a headless audio element. */
+
 export function AudioPlayer({ src, label, className }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -77,7 +77,7 @@ export function AudioPlayer({ src, label, className }: AudioPlayerProps) {
       .then((values) => {
         if (current) setPeaks(values);
       })
-      // A missing waveform is cosmetic; playback is unaffected.
+
       .catch(() => undefined);
     return () => {
       current = false;
@@ -140,8 +140,8 @@ export function AudioPlayer({ src, label, className }: AudioPlayerProps) {
         )}
       </button>
 
-      {/* The range sits transparently on top: it keeps native drag and arrow-key
-          seeking while the waveform below does the drawing. */}
+
+
       <div className="relative h-8 min-w-0 flex-1">
         {peaks === null ? (
           <>

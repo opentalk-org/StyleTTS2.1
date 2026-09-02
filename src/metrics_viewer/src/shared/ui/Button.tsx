@@ -24,7 +24,7 @@ const SIZES: Record<ControlSize, string> = {
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ControlSize;
-  /** Rendered before the label at the control's icon size. */
+
   icon?: ReactNode;
 }
 
@@ -38,11 +38,11 @@ export function Button({ variant = "secondary", size = "md", icon, className, ch
 }
 
 export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  /** Accessible name and native tooltip; icon-only controls always need one. */
+
   label: string;
   variant?: ButtonVariant;
   size?: ControlSize;
-  /** Toggle buttons only: renders the accent selected treatment and exposes aria-pressed. */
+
   active?: boolean;
 }
 

@@ -24,13 +24,13 @@ struct CreateTrainingRequest {
 
 #[derive(Serialize)]
 struct CreateTrainingResponse {
-    training_id: Uuid,
+    run_id: Uuid,
     state: TrainingState,
 }
 
 #[derive(Serialize)]
 struct TrainingResponse {
-    training_id: Uuid,
+    run_id: Uuid,
     data_config: DataConfig,
     train_config: String,
     state: TrainingState,
@@ -44,7 +44,7 @@ pub async fn serve(
 ) -> anyhow::Result<()> {
     let app = Router::new()
         .route("/trainings", get(list_trainings).post(create_training))
-        .route("/trainings/{training_id}", get(get_training))
+        .route("/trainings/{run_id}", get(get_training))
         .with_state(trainings);
     let address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, port));
     let listener = tokio::net::TcpListener::bind(address).await?;
@@ -59,18 +59,18 @@ async fn create_training(
     State(trainings): State<TrainingStore>,
     Json(request): Json<CreateTrainingRequest>,
 ) -> Result<(StatusCode, Json<CreateTrainingResponse>), StatusCode> {
-    let training_id = trainings
+    let run_id = trainings
         .create(&request.data_config, &request.train_config)
         .await
         .map_err(|err| {
             error!(error = format!("{err:#}"), "creating training failed");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    info!(training = %training_id, "training created");
+    info!(run = %run_id, "training created");
     Ok((
         StatusCode::CREATED,
         Json(CreateTrainingResponse {
-            training_id,
+            run_id,
             state: TrainingState::AwaitingTraining,
         }),
     ))
@@ -78,11 +78,11 @@ async fn create_training(
 
 async fn get_training(
     State(trainings): State<TrainingStore>,
-    Path(training_id): Path<Uuid>,
+    Path(run_id): Path<Uuid>,
 ) -> Result<Json<TrainingResponse>, StatusCode> {
-    let training = trainings.get(training_id).await.map_err(|err| {
+    let training = trainings.get(run_id).await.map_err(|err| {
         error!(
-            training = %training_id,
+            run = %run_id,
             error = format!("{err:#}"),
             "getting training failed"
         );
@@ -108,7 +108,7 @@ async fn list_trainings(
 impl From<Training> for TrainingResponse {
     fn from(training: Training) -> Self {
         Self {
-            training_id: training.id,
+            run_id: training.id,
             data_config: training.data_config,
             train_config: training.train_config,
             state: training.state,

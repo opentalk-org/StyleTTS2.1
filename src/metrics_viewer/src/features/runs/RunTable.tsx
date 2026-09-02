@@ -1,5 +1,5 @@
 import { useVirtualizer, useWindowVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, ArrowUp, Check, Columns3, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Columns3, Star, X } from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -28,7 +28,7 @@ import {
 const ROW_HEIGHT = 40;
 const HEAD_HEIGHT = 32;
 const CHECK_WIDTH = 32;
-/** Horizontal padding on the header and every row; part of the scrollable width. */
+
 const ROW_PADDING = 16;
 
 type SortDirection = "asc" | "desc";
@@ -42,13 +42,15 @@ interface RunTableProps {
   selected: string[];
   columns: string[];
   runColors: Record<string, string>;
+  starred: string[];
   loading?: boolean;
-  /** "page" lets the document scroll the rows; "self" keeps them in an inner box. */
+
   scroll?: "self" | "page";
   onToggle: (id: string) => void;
   onSelect: (ids: string[]) => void;
   onColumns: (items: string[]) => void;
   onRunColor: (runId: string, color: string | null) => void;
+  onStar: (runId: string) => void;
   className?: string;
 }
 
@@ -57,12 +59,14 @@ export function RunTable({
   selected,
   columns,
   runColors,
+  starred,
   loading = false,
   scroll = "self",
   onToggle,
   onSelect,
   onColumns,
   onRunColor,
+  onStar,
   className,
 }: RunTableProps) {
   const [query, setQuery] = useState("");
@@ -71,9 +75,9 @@ export function RunTable({
   const [focusIndex, setFocusIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
-  // Anchor for shift-click ranges: the last row picked without a modifier.
+
   const anchorRef = useRef<string | null>(null);
-  // Set when the keyboard moved the focus, so the effect below can follow it.
+
   const focusPending = useRef(false);
 
   const filtered = useMemo(() => {
@@ -83,16 +87,24 @@ export function RunTable({
         .toLowerCase()
         .includes(normalized),
     );
-    if (sort === null) return matches;
-    const direction = sort.direction === "asc" ? 1 : -1;
-    return [...matches].sort(
-      (a, b) => direction * compare(sortValue(a, sort.column), sortValue(b, sort.column)),
-    );
-  }, [query, runs, sort]);
+    const ordered =
+      sort === null
+        ? matches
+        : [...matches].sort(
+            (a, b) =>
+              (sort.direction === "asc" ? 1 : -1) *
+              compare(sortValue(a, sort.column), sortValue(b, sort.column)),
+          );
+
+    return [
+      ...ordered.filter((run) => starred.includes(run.id)),
+      ...ordered.filter((run) => !starred.includes(run.id)),
+    ];
+  }, [query, runs, sort, starred]);
 
   const paged = scroll === "page";
-  // Where the row list starts in the document; the window virtualizer needs it to
-  // map page scroll onto row positions.
+
+
   const [listTop, setListTop] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -108,7 +120,7 @@ export function RunTable({
     return () => window.removeEventListener("resize", measure);
   }, [paged, columns.length, query]);
 
-  // Both hooks must run every render; only the active one is read.
+
   const containerVirtualizer = useVirtualizer({
     count: filtered.length,
     getScrollElement: () => scrollRef.current,
@@ -122,7 +134,7 @@ export function RunTable({
     scrollMargin: listTop,
   });
   const virtualizer = paged ? windowVirtualizer : containerVirtualizer;
-  // Window virtualizer measures from the document; the container one from itself.
+
   const scrollMargin = paged ? listTop : 0;
 
   useEffect(() => {
@@ -133,21 +145,21 @@ export function RunTable({
       node?.focus({ preventScroll: true });
       return node !== null && node !== undefined;
     };
-    // The row may only exist after the virtualizer reacts to the scroll.
+
     if (!focusRow()) requestAnimationFrame(focusRow);
   }, [focusIndex, filtered.length]);
 
   const gridTemplateColumns = `${CHECK_WIDTH}px ${columns.map(columnWidth).join(" ")}`;
-  // Without an explicit floor the minmax() columns collapse and the last ones get
-  // clipped by the pane; this lets the table scroll horizontally instead.
+
+
   const minWidth =
     CHECK_WIDTH + ROW_PADDING + columns.reduce((total, column) => total + columnMinWidth(column), 0);
   const allSelected = filtered.length > 0 && selected.length === filtered.length;
 
-  /**
-   * Plain pick toggles one run and moves the anchor; shift extends from the anchor
-   * to the clicked row over the current order, adding the whole span.
-   */
+
+
+
+
   function pickRun(id: string, extend: boolean) {
     const anchor = anchorRef.current;
     if (extend && anchor !== null && anchor !== id) {
@@ -163,7 +175,7 @@ export function RunTable({
     onToggle(id);
   }
 
-  /** Arrow keys walk the rows; only the focused row is tabbable. */
+
   function moveFocus(index: number) {
     const next = Math.min(filtered.length - 1, Math.max(0, index));
     focusPending.current = true;
@@ -248,8 +260,8 @@ export function RunTable({
         </span>
       </div>
 
-      {/* The column header lives outside the horizontal scroller: nesting it inside
-          would tie its stickiness to that box instead of to the page. */}
+
+
       <div
         ref={headerRef}
         className={cn(
@@ -308,6 +320,8 @@ export function RunTable({
                   active={active}
                   columns={columns}
                   color={runColor(run.id, row.index, runColors)}
+                  starred={starred.includes(run.id)}
+                  onStar={() => onStar(run.id)}
                   hasCustomColor={runColors[run.id] !== undefined}
                   gridTemplateColumns={gridTemplateColumns}
                   offset={row.start - scrollMargin}
@@ -370,6 +384,8 @@ interface RunRowProps {
   active: boolean;
   columns: string[];
   color: string;
+  starred: boolean;
+  onStar: () => void;
   hasCustomColor: boolean;
   gridTemplateColumns: string;
   offset: number;
@@ -387,6 +403,8 @@ function RunRow({
   active,
   columns,
   color,
+  starred,
+  onStar,
   hasCustomColor,
   gridTemplateColumns,
   offset,
@@ -417,17 +435,17 @@ function RunRow({
   }
 
   return (
-    // A row is selectable and also holds its own color control, so it is a grid row
-    // with a keyboard handler rather than a button (buttons cannot nest).
+
+
     <div
       role="row"
       data-row={rowIndex}
       aria-selected={active}
       aria-rowindex={rowIndex + 1}
-      // Roving tabindex: Tab reaches the table once, then arrows walk the rows.
+
       tabIndex={tabbable ? 0 : -1}
       onFocus={onFocusRow}
-      // Shift-clicking would otherwise start a text selection across the rows.
+
       onMouseDown={(event: MouseEvent<HTMLDivElement>) => {
         if (event.shiftKey) event.preventDefault();
       }}
@@ -463,6 +481,26 @@ function RunRow({
           )}
         >
           {column === "name" ? (
+            <button
+              type="button"
+              aria-pressed={starred}
+              title={starred ? "Unstar this run" : "Star this run, pinning it to the top"}
+              aria-label={starred ? `Unstar ${run.name}` : `Star ${run.name}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onStar();
+              }}
+              className={cn(
+                "grid size-5 shrink-0 place-items-center rounded-md transition-colors duration-150",
+                starred
+                  ? "text-notice hover:text-notice/80"
+                  : "text-fg-muted/50 hover:bg-surface hover:text-fg-secondary",
+              )}
+            >
+              <Star size={12} fill={starred ? "currentColor" : "none"} />
+            </button>
+          ) : null}
+          {column === "name" ? (
             <ColorPicker
               label={`Plot color for ${run.name}`}
               value={color}
@@ -491,15 +529,15 @@ function columnMinWidth(column: string): number {
 }
 
 function durationMs(run: Run): number {
-  if (run.endedAt === null) return Number.POSITIVE_INFINITY;
-  return Date.parse(run.endedAt) - Date.parse(run.startedAt);
+  if (run.endedAt === 0) return Number.POSITIVE_INFINITY;
+  return run.endedAt - run.startedAt;
 }
 
-/** The comparable behind a cell, so sorting follows the value, not its formatting. */
+
 function sortValue(run: Run, column: string): Scalar {
   if (column === "name") return run.name;
   if (column === "status") return run.status;
-  if (column === "startedAt") return Date.parse(run.startedAt);
+  if (column === "startedAt") return run.startedAt;
   if (column === "duration") return durationMs(run);
   if (column.startsWith("param:")) return run.params[column.slice(6)] ?? "";
   if (column.startsWith("metric:")) return run.summary[column.slice(7)] ?? Number.NaN;
@@ -526,11 +564,11 @@ function cellValue(run: Run, column: string): ReactNode {
       minute: "2-digit",
     });
   if (column === "duration")
-    return run.endedAt === null
+    return run.endedAt === 0
       ? "—"
       : `${Math.round(durationMs(run) / 60000)}m`;
   if (column.startsWith("param:")) return String(run.params[column.slice(6)] ?? "—");
   if (column.startsWith("metric:")) return run.summary[column.slice(7)]?.toFixed(4) ?? "—";
-  // A saved view can name a column this build no longer knows; that is not a crash.
+
   return "—";
 }

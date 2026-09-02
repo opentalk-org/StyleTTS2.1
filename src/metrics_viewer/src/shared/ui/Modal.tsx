@@ -7,12 +7,12 @@ export interface ModalProps {
   onClose: () => void;
   label: string;
   children: ReactNode;
-  /** Centers a self-sized dialog instead of filling the viewport height. */
+
   centered?: boolean;
   className?: string;
 }
 
-/** Full-viewport working surface: dimmed canvas, one elevated panel, Escape to close. */
+
 export function Modal({ open, onClose, label, children, centered = false, className }: ModalProps) {
   useEffect(() => {
     if (!open) return;

@@ -70,10 +70,10 @@ impl GiveMeData {
 #[tonic::async_trait]
 impl GiveMeDataService for GiveMeData {
     async fn init(&self, request: Request<InitRequest>) -> Result<Response<InitResponse>, Status> {
-        let training_id = grpc_support::parse_training_id(&request.into_inner().training_id)?;
-        debug!(training = %training_id, "init request");
+        let run_id = grpc_support::parse_run_id(&request.into_inner().run_id)?;
+        debug!(run = %run_id, "init request");
         let initialized = grpc_support::initialize(
-            training_id,
+            run_id,
             &self.trainings,
             &self.assets,
             &self.database,
@@ -85,11 +85,11 @@ impl GiveMeDataService for GiveMeData {
         self.sessions
             .write()
             .await
-            .insert(training_id, initialized.active);
-        info!(training = %training_id, "training session created");
+            .insert(run_id, initialized.active);
+        info!(run = %run_id, "training session created");
 
         Ok(Response::new(InitResponse {
-            training_id: training_id.to_string(),
+            run_id: run_id.to_string(),
             train_config: initialized.train_config,
         }))
     }
@@ -123,12 +123,12 @@ impl GiveMeDataService for GiveMeData {
         request: Request<AssetRequest>,
     ) -> Result<Response<Self::AssetStream>, Status> {
         let request = request.into_inner();
-        let training_id = grpc_support::parse_training_id(&request.training_id)?;
+        let run_id = grpc_support::parse_run_id(&request.run_id)?;
         let active = self
             .sessions
             .read()
             .await
-            .get(&training_id)
+            .get(&run_id)
             .cloned()
             .ok_or_else(|| Status::not_found("unknown training"))?;
         let asset = active
@@ -136,11 +136,11 @@ impl GiveMeDataService for GiveMeData {
             .assets
             .get(&request.name)
             .ok_or_else(|| Status::not_found(format!("unknown asset {:?}", request.name)))?;
-        info!(training = %training_id, asset = %request.name, "asset requested");
+        info!(run = %run_id, asset = %request.name, "asset requested");
 
         let path = self
             .assets
-            .ensure(training_id, &request.name, &asset.object)
+            .ensure(run_id, &request.name, &asset.object)
             .await
             .map_err(|err| {
                 error!(error = format!("{err:#}"), asset = %request.name, "asset fetch failed");
@@ -164,15 +164,15 @@ impl GiveMeDataService for GiveMeData {
                 ));
             }
         };
-        let training_id = grpc_support::parse_training_id(&metadata.training_id)?;
-        if !self.sessions.read().await.contains_key(&training_id) {
+        let run_id = grpc_support::parse_run_id(&metadata.run_id)?;
+        if !self.sessions.read().await.contains_key(&run_id) {
             return Err(Status::not_found("unknown training"));
         }
-        info!(training = %training_id, step = metadata.step, "receiving checkpoint");
+        info!(run = %run_id, step = metadata.step, "receiving checkpoint");
 
         let result = grpc_support::receive_checkpoint(
             self.checkpoint_dir,
-            training_id,
+            run_id,
             metadata.step,
             &mut stream,
         )
@@ -181,7 +181,7 @@ impl GiveMeDataService for GiveMeData {
         match result {
             Ok((path, bytes)) => {
                 info!(
-                    training = %training_id,
+                    run = %run_id,
                     step = metadata.step,
                     bytes,
                     path = %path.display(),
@@ -209,16 +209,16 @@ impl GiveMeDataService for GiveMeData {
                 ));
             }
         };
-        let training_id = grpc_support::parse_training_id(&metadata.training_id)?;
-        if !self.sessions.read().await.contains_key(&training_id) {
+        let run_id = grpc_support::parse_run_id(&metadata.run_id)?;
+        if !self.sessions.read().await.contains_key(&run_id) {
             return Err(Status::not_found("unknown training"));
         }
-        info!(training = %training_id, "receiving metrics");
+        info!(run = %run_id, "receiving metrics");
 
-        match metrics::receive(self.metrics_dir, &training_id.to_string(), stream).await {
+        match metrics::receive(self.metrics_dir, &run_id.to_string(), stream).await {
             Ok(response) => {
                 info!(
-                    training = %training_id,
+                    run = %run_id,
                     metrics = response.metrics_received,
                     artifacts = response.artifacts_received,
                     artifact_bytes = response.artifact_bytes_received,
@@ -228,7 +228,7 @@ impl GiveMeDataService for GiveMeData {
             }
             Err(status) => {
                 error!(
-                    training = %training_id,
+                    run = %run_id,
                     error = %status,
                     "storing metrics failed"
                 );
@@ -239,16 +239,16 @@ impl GiveMeDataService for GiveMeData {
 
     async fn end(&self, request: Request<EndRequest>) -> Result<Response<EndResponse>, Status> {
         let request = request.into_inner();
-        let training_id = grpc_support::parse_training_id(&request.training_id)?;
-        info!(training = %training_id, "ending training");
-        let removed = self.sessions.write().await.remove(&training_id);
+        let run_id = grpc_support::parse_run_id(&request.run_id)?;
+        info!(run = %run_id, "ending training");
+        let removed = self.sessions.write().await.remove(&run_id);
 
         match removed {
             None => return Err(Status::not_found("unknown training")),
             Some(active) => active.handle.finish().await,
         }
-        self.trainings.finish(training_id).await.map_err(|err| {
-            error!(training = %training_id, error = format!("{err:#}"), "finishing training failed");
+        self.trainings.finish(run_id).await.map_err(|err| {
+            error!(run = %run_id, error = format!("{err:#}"), "finishing training failed");
             Status::internal(format!("{err:#}"))
         })?;
 

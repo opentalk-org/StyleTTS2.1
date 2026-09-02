@@ -3,7 +3,7 @@
 Replicates what the training workflow's node graph used to assemble, without
 the runner/backend/DB machinery. Data comes from the givemedata service
 (GIVEMEDATA_ADDR, default localhost:8181) using the training selected by
-GIVEMEDATA_TRAINING_ID. Named assets are downloaded through the same service;
+GIVEMEDATA_RUN_ID. Named assets are downloaded through the same service;
 checkpoints, metrics, and metric artifacts are streamed back to givemedata.
 
 The run spec (RunSpec yaml) is not a local file anymore: it is fetched from the
@@ -211,8 +211,8 @@ def main(argv: list[str] | None = None) -> None:
     arguments = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
-    training_id = os.environ["GIVEMEDATA_TRAINING_ID"]
-    data_client = GiveMeDataClient(training_id)
+    run_id = os.environ["GIVEMEDATA_RUN_ID"]
+    data_client = GiveMeDataClient(run_id)
     try:
         _run(arguments, data_client)
     finally:
@@ -220,7 +220,7 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _run(arguments: argparse.Namespace, data_client: GiveMeDataClient) -> None:
-    logger.info("fetched train config from givemedata training=%s", data_client.training_id)
+    logger.info("fetched train config from givemedata training=%s", data_client.run_id)
     spec = RunSpec.model_validate(yaml.safe_load(data_client.train_config))
     if not arguments.dry_run:
         # dry-run keeps the asset names as-is; nothing is downloaded

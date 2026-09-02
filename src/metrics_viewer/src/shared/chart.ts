@@ -1,16 +1,16 @@
 import type { Layout } from "plotly.js";
 
-/** Series palette. Indigo leads; later series stay subordinate. Mirrors --color-series-* in theme.css. */
+
 export const SERIES_COLORS = ["#818cf8", "#6366f1", "#a5b4fc", "#7dd3fc", "#c4b5fd", "#94a3b8"] as const;
 
 export function seriesColor(index: number): string {
   return SERIES_COLORS[index % SERIES_COLORS.length];
 }
 
-/**
- * Colors offered when a run's plot line is recolored by hand. Kept to muted,
- * jewel-tone values so a hand-picked chart still reads as one system.
- */
+
+
+
+
 export const RUN_COLOR_PALETTE = [
   "#818cf8",
   "#6366f1",
@@ -24,7 +24,7 @@ export const RUN_COLOR_PALETTE = [
   "#94a3b8",
 ] as const;
 
-/** A run's plot color: the user's override when set, otherwise its palette slot. */
+
 export function runColor(runId: string, index: number, overrides: Record<string, string>): string {
   return overrides[runId] ?? seriesColor(index);
 }
@@ -35,8 +35,8 @@ const MONO = "Geist Mono, JetBrains Mono, SFMono-Regular, ui-monospace, monospac
 const GRID = "rgba(255,255,255,0.05)";
 const AXIS_TEXT = "#71717a";
 
-/** Layout defaults shared by every plot so charts read as part of the interface.
- *  Omit `height` to let the plot fill its container. */
+
+
 export function baseLayout(height?: number): Partial<Layout> {
   return {
     autosize: true,
@@ -56,7 +56,7 @@ export function baseLayout(height?: number): Partial<Layout> {
   };
 }
 
-/** Horizontal-only gridlines, no heavy axis line, muted tick labels. */
+
 export function axis(overrides: Partial<Layout["xaxis"]> = {}): Partial<Layout["xaxis"]> {
   return {
     gridcolor: GRID,

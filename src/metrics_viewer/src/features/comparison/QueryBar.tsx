@@ -1,7 +1,6 @@
 import { AlertCircle, ChevronDown, ChevronRight, Database, Play, RotateCcw } from "lucide-react";
 import { useState } from "react";
 
-import { METRIC_NAMES } from "@/shared/metrics";
 import { Badge, Button, Card, cn, GroupLabel, IconButton, Textarea } from "@/shared/ui";
 
 export interface QueryBarProps {
@@ -10,17 +9,17 @@ export interface QueryBarProps {
   onRun: () => void;
   running: boolean;
   error: Error | null;
-  /** Result summary, shown once a query has succeeded. */
+
   summary: string | null;
-  /** The editor holds edits that have not been run yet. */
+
   dirty: boolean;
   onReset: () => void;
 }
 
-/**
- * The query that defines the plots. It sits above the charts because editing it is
- * how you choose what is plotted — there is no separate chart builder.
- */
+
+
+
+
 export function QueryBar({ sql, onSql, onRun, running, error, summary, dirty, onReset }: QueryBarProps) {
   const [open, setOpen] = useState(false);
 
@@ -101,30 +100,30 @@ export function QueryBar({ sql, onSql, onRun, running, error, summary, dirty, on
   );
 }
 
-/** The contract is small enough to state in full, so it is stated in full. */
+
 function QueryHelp() {
   return (
     <div className="flex flex-col gap-2 border-t border-line bg-elevated px-3 py-2.5">
       <GroupLabel>Contract</GroupLabel>
       <p className="m-0 text-xs leading-relaxed text-fg-muted">
-        Alias one column <Token>AS plot</Token> (one chart per distinct value), one{" "}
-        <Token>AS x</Token> and one <Token>AS y</Token>, and select <Token>run_id</Token> to
-        split each chart into one line per run.
+        Plain ClickHouse SQL. Alias one column <Token>AS plot</Token> (one chart per distinct
+        value), one <Token>AS x</Token> and one <Token>AS y</Token>, and select{" "}
+        <Token>run_id</Token> to split each chart into one line per run.
       </p>
       <dl className="m-0 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-xs text-fg-muted">
-        <dt className="font-mono text-fg-secondary">metrics(names =&gt; [], runs =&gt; …)</dt>
-        <dd className="m-0">Source rows: name, run_id, step, timestamp, value</dd>
-        <dt className="font-mono text-fg-secondary">selected()</dt>
+        <dt className="font-mono text-fg-secondary">metrics</dt>
+        <dd className="m-0">run_id, name, step, timestamp_unix_ms, value</dd>
+        <dt className="font-mono text-fg-secondary">{"{run_ids:Array(UUID)}"}</dt>
         <dd className="m-0">The runs ticked in the table</dd>
-        <dt className="font-mono text-fg-secondary">all_runs()</dt>
-        <dd className="m-0">Every run in the project</dd>
-        <dt className="font-mono text-fg-secondary">WHERE x BETWEEN a AND b</dt>
-        <dd className="m-0">Clip the x range</dd>
-        <dt className="font-mono text-fg-secondary">LIMIT n</dt>
-        <dd className="m-0">Cap the returned rows</dd>
+        <dt className="font-mono text-fg-secondary">{"{project_id:UUID}"}</dt>
+        <dd className="m-0">The open project</dd>
+        <dt className="font-mono text-fg-secondary">largestTriangleThreeBuckets(n)(x, y)</dt>
+        <dd className="m-0">Downsample long runs in the database</dd>
       </dl>
-      <p className="m-0 text-xs text-fg-muted">
-        Metrics available: <span className="font-mono">{METRIC_NAMES.join(", ")}</span>
+      <p className="m-0 text-xs leading-relaxed text-fg-muted">
+        The default plots every metric a run logged, downsampled to 1000 points per
+        series. Narrow it with <Token>AND name IN [...]</Token>, or raise the bucket
+        count for more detail.
       </p>
     </div>
   );

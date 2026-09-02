@@ -4,18 +4,18 @@ import { cn } from "./cn";
 import { Popover } from "./Popover";
 
 export interface ColorPickerProps {
-  /** Current color; also the swatch fill. */
+
   value: string;
   colors: readonly string[];
   onValue: (color: string) => void;
-  /** Restores the palette default. Omitted when there is nothing to reset. */
+
   onReset?: () => void;
-  /** Accessible name, e.g. "Plot color for aurora-004". */
+
   label: string;
   className?: string;
 }
 
-/** Small circular swatch that opens a compact palette. */
+
 export function ColorPicker({ value, colors, onValue, onReset, label, className }: ColorPickerProps) {
   const [open, setOpen] = useState(false);
 
@@ -39,7 +39,7 @@ export function ColorPicker({ value, colors, onValue, onReset, label, className 
           }}
           className="group/swatch grid size-5 shrink-0 place-items-center rounded-full"
         >
-          {/* Small dot, larger hit area: the target stays clickable at this density. */}
+
           <span
             className={cn(
               "block size-2.5 rounded-full ring-offset-2 ring-offset-elevated",

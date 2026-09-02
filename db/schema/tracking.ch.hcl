@@ -40,14 +40,19 @@ table "runs" {
     type = String
   }
   column "status" {
-    type = sql("Enum8('running' = 1, 'succeeded' = 2, 'failed' = 3, 'cancelled' = 4)")
+    type = sql("Enum8('running' = 1, 'succeeded' = 2, 'failed' = 3, 'cancelled' = 4, 'queued' = 5)")
   }
-  column "started_at" {
-    type = DateTime64(3, "UTC")
+  column "data_config" {
+    type = sql("JSON")
   }
-  column "ended_at" {
-    null = true
-    type = sql("Nullable(DateTime64(3, 'UTC'))")
+  column "train_config" {
+    type = sql("JSON")
+  }
+  column "started_at_unix_ms" {
+    type = Int64
+  }
+  column "ended_at_unix_ms" {
+    type = Int64
   }
   column "version" {
     type = UInt64
@@ -126,9 +131,6 @@ table "logs" {
   }
   column "level" {
     type = sql("Enum8('debug' = 1, 'info' = 2, 'warning' = 3, 'error' = 4, 'critical' = 5)")
-  }
-  column "logger" {
-    type = sql("LowCardinality(String)")
   }
   column "message" {
     type = String

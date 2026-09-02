@@ -14,26 +14,26 @@ TRAINING: Split
 VALIDATION: Split
 
 class InitRequest(_message.Message):
-    __slots__ = ("training_id",)
-    TRAINING_ID_FIELD_NUMBER: _ClassVar[int]
-    training_id: str
-    def __init__(self, training_id: _Optional[str] = ...) -> None: ...
+    __slots__ = ("run_id",)
+    RUN_ID_FIELD_NUMBER: _ClassVar[int]
+    run_id: str
+    def __init__(self, run_id: _Optional[str] = ...) -> None: ...
 
 class InitResponse(_message.Message):
-    __slots__ = ("training_id", "train_config")
-    TRAINING_ID_FIELD_NUMBER: _ClassVar[int]
+    __slots__ = ("run_id", "train_config")
+    RUN_ID_FIELD_NUMBER: _ClassVar[int]
     TRAIN_CONFIG_FIELD_NUMBER: _ClassVar[int]
-    training_id: str
+    run_id: str
     train_config: str
-    def __init__(self, training_id: _Optional[str] = ..., train_config: _Optional[str] = ...) -> None: ...
+    def __init__(self, run_id: _Optional[str] = ..., train_config: _Optional[str] = ...) -> None: ...
 
 class DataRequest(_message.Message):
-    __slots__ = ("training_id", "split")
-    TRAINING_ID_FIELD_NUMBER: _ClassVar[int]
+    __slots__ = ("run_id", "split")
+    RUN_ID_FIELD_NUMBER: _ClassVar[int]
     SPLIT_FIELD_NUMBER: _ClassVar[int]
-    training_id: str
+    run_id: str
     split: Split
-    def __init__(self, training_id: _Optional[str] = ..., split: _Optional[_Union[Split, str]] = ...) -> None: ...
+    def __init__(self, run_id: _Optional[str] = ..., split: _Optional[_Union[Split, str]] = ...) -> None: ...
 
 class Sample(_message.Message):
     __slots__ = ("wave", "duration", "speaker_id", "language_id", "text")
@@ -56,12 +56,12 @@ class DataResponse(_message.Message):
     def __init__(self, batch: _Optional[_Iterable[_Union[Sample, _Mapping]]] = ...) -> None: ...
 
 class AssetRequest(_message.Message):
-    __slots__ = ("training_id", "name")
-    TRAINING_ID_FIELD_NUMBER: _ClassVar[int]
+    __slots__ = ("run_id", "name")
+    RUN_ID_FIELD_NUMBER: _ClassVar[int]
     NAME_FIELD_NUMBER: _ClassVar[int]
-    training_id: str
+    run_id: str
     name: str
-    def __init__(self, training_id: _Optional[str] = ..., name: _Optional[str] = ...) -> None: ...
+    def __init__(self, run_id: _Optional[str] = ..., name: _Optional[str] = ...) -> None: ...
 
 class AssetMetadata(_message.Message):
     __slots__ = ("entrypoint",)
@@ -78,12 +78,12 @@ class AssetResponse(_message.Message):
     def __init__(self, metadata: _Optional[_Union[AssetMetadata, _Mapping]] = ..., chunk: _Optional[bytes] = ...) -> None: ...
 
 class CheckpointMetadata(_message.Message):
-    __slots__ = ("training_id", "step")
-    TRAINING_ID_FIELD_NUMBER: _ClassVar[int]
+    __slots__ = ("run_id", "step")
+    RUN_ID_FIELD_NUMBER: _ClassVar[int]
     STEP_FIELD_NUMBER: _ClassVar[int]
-    training_id: str
+    run_id: str
     step: int
-    def __init__(self, training_id: _Optional[str] = ..., step: _Optional[int] = ...) -> None: ...
+    def __init__(self, run_id: _Optional[str] = ..., step: _Optional[int] = ...) -> None: ...
 
 class CheckpointRequest(_message.Message):
     __slots__ = ("metadata", "chunk")
@@ -98,10 +98,10 @@ class CheckpointResponse(_message.Message):
     def __init__(self) -> None: ...
 
 class MetricsStreamMetadata(_message.Message):
-    __slots__ = ("training_id",)
-    TRAINING_ID_FIELD_NUMBER: _ClassVar[int]
-    training_id: str
-    def __init__(self, training_id: _Optional[str] = ...) -> None: ...
+    __slots__ = ("run_id",)
+    RUN_ID_FIELD_NUMBER: _ClassVar[int]
+    run_id: str
+    def __init__(self, run_id: _Optional[str] = ...) -> None: ...
 
 class ScalarMetric(_message.Message):
     __slots__ = ("step", "timestamp_unix_ms", "name", "value")
@@ -158,10 +158,10 @@ class MetricsResponse(_message.Message):
     def __init__(self, metrics_received: _Optional[int] = ..., artifacts_received: _Optional[int] = ..., artifact_bytes_received: _Optional[int] = ...) -> None: ...
 
 class EndRequest(_message.Message):
-    __slots__ = ("training_id",)
-    TRAINING_ID_FIELD_NUMBER: _ClassVar[int]
-    training_id: str
-    def __init__(self, training_id: _Optional[str] = ...) -> None: ...
+    __slots__ = ("run_id",)
+    RUN_ID_FIELD_NUMBER: _ClassVar[int]
+    run_id: str
+    def __init__(self, run_id: _Optional[str] = ...) -> None: ...
 
 class EndResponse(_message.Message):
     __slots__ = ()

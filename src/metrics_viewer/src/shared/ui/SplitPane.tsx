@@ -8,31 +8,31 @@ export type SplitCollapsed = "start" | "end" | null;
 export interface SplitPaneProps {
   label: string;
   orientation: SplitOrientation;
-  /** Fraction of the container given to the start pane, 0–1. */
+
   ratio: number;
   onRatio: (ratio: number) => void;
-  /** Which pane is hidden, if any. The remaining pane takes the whole area. */
+
   collapsed?: SplitCollapsed;
   start: ReactNode;
   end: ReactNode;
   minRatio?: number;
   maxRatio?: number;
-  /**
-   * The document scrolls instead of each pane. In columns the two panes flow to
-   * their natural height side by side; in rows the start pane keeps a viewport
-   * fraction of its own and the end pane flows on down the page.
-   */
+
+
+
+
+
   pageScroll?: boolean;
-  /** Sticky offset for the divider in page mode, e.g. an app header height. */
+
   stickyTop?: string;
-  /** Called once a resize gesture finishes, for consumers that must re-measure. */
+
   onResizeEnd?: () => void;
   className?: string;
 }
 
 const KEYBOARD_STEP = 0.02;
 
-/** Two panes with a draggable divider; either pane can be collapsed away. */
+
 export function SplitPane({
   label,
   orientation,
@@ -51,8 +51,8 @@ export function SplitPane({
   const containerRef = useRef<HTMLDivElement>(null);
   const startRef = useRef<HTMLDivElement>(null);
   const isColumns = orientation === "columns";
-  // In page mode the start pane is sized against the viewport, not the container,
-  // whose height is the whole (scrolling) document.
+
+
   const rowsAgainstViewport = pageScroll && !isColumns;
 
   function clamp(value: number): number {
@@ -96,7 +96,7 @@ export function SplitPane({
       className={cn(
         "flex min-h-0 min-w-0 flex-1",
         isColumns ? "flex-row" : "flex-col",
-        // A scroll container here would trap the page scroll and break sticky.
+
         pageScroll ? "items-stretch" : "overflow-hidden",
         className,
       )}
@@ -106,7 +106,7 @@ export function SplitPane({
           ref={startRef}
           className={cn(
             "flex min-h-0 min-w-0 flex-col",
-            // Columns flow with the page; a row pane keeps its own scrolling box.
+
             pageScroll && isColumns ? "" : "overflow-hidden",
           )}
           style={collapsed === "end" ? { flex: "1 1 0%" } : startSize}
@@ -139,7 +139,7 @@ export function SplitPane({
           className={cn(
             "group relative z-10 flex-none touch-none bg-transparent",
             isColumns ? "w-1.5 cursor-col-resize" : "h-1.5 cursor-row-resize",
-            // The column divider must stay reachable however far the page scrolls.
+
             pageScroll && isColumns ? "sticky self-start" : "",
           )}
           style={
@@ -148,7 +148,7 @@ export function SplitPane({
               : undefined
           }
         >
-          {/* The hairline stays 1px; the grab area around it is what gets wider. */}
+
           <span
             aria-hidden
             className={cn(

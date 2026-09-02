@@ -1,9 +1,9 @@
 import type { Data, Layout } from "plotly.js";
 
 import { axis, baseLayout, runColor } from "@/shared/chart";
-import type { PlotRow, PlotSettings, Run } from "@/shared/types";
+import type { PlotQueryResult, PlotSettings, Run } from "@/shared/types";
 
-/** One run's line inside one plot, in the order the query returned it. */
+
 export interface PlotSeries {
   runId: string;
   x: number[];
@@ -16,19 +16,22 @@ export interface Plot {
   pointCount: number;
 }
 
-/**
- * Pivots the flat query result into charts. The query owns which plots exist and
- * what lands on each axis; this only groups by plot, then by run.
- */
-export function groupPlots(rows: PlotRow[]): Plot[] {
+
+
+
+
+export function groupPlots(result: PlotQueryResult | null): Plot[] {
+  if (result === null) return [];
   const plots = new Map<string, Map<string, PlotSeries>>();
-  for (const row of rows) {
-    const byRun = plots.get(row.plot) ?? new Map<string, PlotSeries>();
-    const series = byRun.get(row.runId) ?? { runId: row.runId, x: [], y: [] };
-    series.x.push(row.x);
-    series.y.push(row.y);
-    byRun.set(row.runId, series);
-    plots.set(row.plot, byRun);
+  for (let index = 0; index < result.x.length; index += 1) {
+    const name = result.plot[index];
+    const runId = result.runId[index];
+    const byRun = plots.get(name) ?? new Map<string, PlotSeries>();
+    const series = byRun.get(runId) ?? { runId, x: [], y: [] };
+    series.x.push(result.x[index]);
+    series.y.push(result.y[index]);
+    byRun.set(runId, series);
+    plots.set(name, byRun);
   }
   return [...plots.entries()].map(([name, byRun]) => {
     const series = [...byRun.values()];
@@ -40,7 +43,7 @@ export function groupPlots(rows: PlotRow[]): Plot[] {
   });
 }
 
-/** Plotly traces for one plot, ordered and coloured by the run table's order. */
+
 export function buildTraces(
   plot: Plot,
   runs: Run[],
@@ -104,7 +107,7 @@ function seriesTraces(
   ];
 }
 
-/** The x position of a hovered point, used to draw the cursor line on every plot. */
+
 export function cursorXAt(plot: Plot, runs: Run[], pointIndex: number | null): number | null {
   if (pointIndex === null) return null;
   const first = runs.map((run) => plot.series.find((item) => item.runId === run.id)).find(Boolean);
@@ -145,7 +148,7 @@ export function plotLayout(
     hovermode: "x unified",
     hoverdistance: -1,
     dragmode: "zoom",
-    // Horizontal gridlines only: vertical divisions add noise to step-indexed curves.
+
     xaxis: axis({ showgrid: false, type: settings.xScale, fixedrange: false }),
     yaxis: axis({ showgrid: true, type: settings.yScale, fixedrange: false }),
     shapes:
