@@ -21,12 +21,20 @@ SELECT
 FROM projects AS p FINAL
 LEFT JOIN (
   SELECT
-    project_id,
-    max(started_at_unix_ms) AS last_run_at,
+    r.project_id,
+    max(toUnixTimestamp64Milli(s.started_at)) AS last_run_at,
     count() AS run_count,
-    countIf(status = 'running') AS running_count
-  FROM runs FINAL
-  GROUP BY project_id
+    countIf(s.status = 'running') AS running_count
+  FROM runs AS r
+  INNER JOIN (
+    SELECT
+      run_id,
+      min(timestamp) AS started_at,
+      argMax(status, timestamp) AS status
+    FROM run_status
+    GROUP BY run_id
+  ) AS s ON s.run_id = r.id
+  GROUP BY r.project_id
 ) AS r ON r.project_id = p.id
 ORDER BY lastRunAt DESC, p.name ASC`;
 
@@ -56,12 +64,27 @@ export class Database {
 
   async runs(projectId: string) {
     const rows = await this.query<RunRow>(`
-      SELECT toString(id) AS id, toString(project_id) AS projectId, name,
-        toString(status) AS status, started_at_unix_ms AS startedAt,
-        ended_at_unix_ms AS endedAt, train_config AS trainingConfig
-      FROM runs FINAL
-      WHERE project_id = {project_id:UUID}
-      ORDER BY started_at_unix_ms DESC`, { project_id: projectId });
+      SELECT toString(r.id) AS id, toString(r.project_id) AS projectId, r.name,
+        toString(s.status) AS status,
+        toUnixTimestamp64Milli(s.started_at) AS startedAt,
+        if(
+          s.status IN ('succeeded', 'failed', 'cancelled'),
+          toUnixTimestamp64Milli(s.last_status_at),
+          0
+        ) AS endedAt,
+        r.train_config AS trainingConfig
+      FROM runs AS r
+      INNER JOIN (
+        SELECT
+          run_id,
+          min(timestamp) AS started_at,
+          max(timestamp) AS last_status_at,
+          argMax(status, timestamp) AS status
+        FROM run_status
+        GROUP BY run_id
+      ) AS s ON s.run_id = r.id
+      WHERE r.project_id = {project_id:UUID}
+      ORDER BY s.started_at DESC`, { project_id: projectId });
     const ids = rows.map((row) => row.id);
     const summaries = new Map<string, Record<string, number>>();
     if (ids.length > 0) {
@@ -88,7 +111,8 @@ export class Database {
   async artifacts(runIds: string[]) {
     if (runIds.length === 0) return [];
     return this.query<ArtifactRow>(`
-      SELECT toString(run_id) AS runId, step, timestamp_unix_ms AS timestamp,
+      SELECT toString(run_id) AS runId, step,
+        toUnixTimestamp64Milli(timestamp) AS timestamp,
         name, path, content_type AS contentType, size_bytes AS sizeBytes
       FROM artifacts
       WHERE run_id IN {run_ids:Array(UUID)}

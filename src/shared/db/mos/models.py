@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import CheckConstraint, DateTime, Float, ForeignKey, Index
+from sqlalchemy import REAL, CheckConstraint, DateTime, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -43,10 +43,10 @@ class MosComparison(Base):
         nullable=False,
         index=True,
     )
-    score_a: Mapped[float] = mapped_column(Float, nullable=False)
-    score_b: Mapped[float] = mapped_column(Float, nullable=False)
-    previous_score_a: Mapped[float | None] = mapped_column(Float, nullable=True)
-    previous_score_b: Mapped[float | None] = mapped_column(Float, nullable=True)
+    score_a: Mapped[float] = mapped_column(REAL, nullable=False)
+    score_b: Mapped[float] = mapped_column(REAL, nullable=False)
+    previous_score_a: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    previous_score_b: Mapped[float | None] = mapped_column(REAL, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

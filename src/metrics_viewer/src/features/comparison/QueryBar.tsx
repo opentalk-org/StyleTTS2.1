@@ -112,7 +112,7 @@ function QueryHelp() {
       </p>
       <dl className="m-0 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-xs text-fg-muted">
         <dt className="font-mono text-fg-secondary">metrics</dt>
-        <dd className="m-0">run_id, name, step, timestamp_unix_ms, value</dd>
+        <dd className="m-0">run_id, name, step, timestamp, value</dd>
         <dt className="font-mono text-fg-secondary">{"{run_ids:Array(UUID)}"}</dt>
         <dd className="m-0">The runs ticked in the table</dd>
         <dt className="font-mono text-fg-secondary">{"{project_id:UUID}"}</dt>

@@ -25,7 +25,7 @@ type SettingsForm = {
 const DEFAULT_STORAGE_FORM: StorageSettingsPayload = {
   bucket: "runflow",
   folder: "/",
-  endpoint_url: "http://127.0.0.1:9000",
+  endpoint_url: "http://127.0.0.1:9001",
   region_name: "us-east-1",
   access_key_id: "runflow",
   secret_access_key: "runflow-secret",

@@ -1,0 +1,136 @@
+from collections.abc import Sequence
+from uuid import UUID
+
+from shared.db.audio.clickhouse.models import AudioSegmentRecord
+from shared.db.clickhouse import clickhouse_client, delete_rows
+
+
+def list_audio_segments(audio_file_id: UUID) -> list[AudioSegmentRecord]:
+    result = clickhouse_client().query(
+        """
+        SELECT
+            id,
+            audio_file_id,
+            latest.1 AS updated_at,
+            latest.2 AS position,
+            latest.3 AS start_seconds,
+            latest.4 AS end_seconds,
+            latest.5 AS text,
+            latest.6 AS phon,
+            latest.7 AS kind,
+            latest.8 AS accuracy,
+            latest.9 AS speaker_id,
+            latest.10 AS metadata,
+            latest.11 AS alignment
+        FROM (
+            SELECT
+                id,
+                audio_file_id,
+                argMax(
+                    tuple(
+                        updated_at,
+                        position,
+                        start_seconds,
+                        end_seconds,
+                        text,
+                        phon,
+                        kind,
+                        accuracy,
+                        speaker_id,
+                        metadata,
+                        alignment
+                    ),
+                    updated_at
+                ) AS latest
+            FROM audio_segments
+            WHERE audio_file_id = {audio_file_id:UUID}
+            GROUP BY audio_file_id, id
+        )
+        ORDER BY position, id
+        """,
+        parameters={"audio_file_id": audio_file_id},
+    )
+    return [AudioSegmentRecord.model_validate(row) for row in result.named_results()]
+
+
+def insert_audio_segments(items: Sequence[AudioSegmentRecord]) -> None:
+    if not items:
+        return
+    rows = [
+        [
+            item.id,
+            item.audio_file_id,
+            item.updated_at,
+            item.position,
+            item.start_seconds,
+            item.end_seconds,
+            item.text,
+            item.phon,
+            item.kind,
+            item.accuracy,
+            item.speaker_id,
+            item.metadata,
+            item.alignment,
+        ]
+        for item in items
+    ]
+    clickhouse_client().insert(
+        "audio_segments",
+        rows,
+        column_names=[
+            "id",
+            "audio_file_id",
+            "updated_at",
+            "position",
+            "start_seconds",
+            "end_seconds",
+            "text",
+            "phon",
+            "kind",
+            "accuracy",
+            "speaker_id",
+            "metadata",
+            "alignment",
+        ],
+    )
+
+
+def replace_audio_segments(
+    audio_file_id: UUID,
+    items: Sequence[AudioSegmentRecord],
+) -> list[AudioSegmentRecord]:
+    assert all(item.audio_file_id == audio_file_id for item in items), (
+        "segment belongs to another audio file"
+    )
+    delete_rows(
+        clickhouse_client(),
+        "audio_segments",
+        "audio_file_id = {audio_file_id:UUID}",
+        {"audio_file_id": audio_file_id},
+    )
+    insert_audio_segments(items)
+    return list_audio_segments(audio_file_id)
+
+
+def update_audio_segment(item: AudioSegmentRecord) -> AudioSegmentRecord:
+    current = list_audio_segments(item.audio_file_id)
+    if not any(segment.id == item.id for segment in current):
+        raise KeyError(f"Audio segment not found: {item.audio_file_id}/{item.id}")
+    insert_audio_segments([item])
+    rows = [
+        segment
+        for segment in list_audio_segments(item.audio_file_id)
+        if segment.id == item.id
+    ]
+    if not rows:
+        raise KeyError(f"Audio segment not found: {item.audio_file_id}/{item.id}")
+    return rows[0]
+
+
+def delete_audio_segment(audio_file_id: UUID, segment_id: str) -> None:
+    delete_rows(
+        clickhouse_client(),
+        "audio_segments",
+        "audio_file_id = {audio_file_id:UUID} AND id = {id:String}",
+        {"audio_file_id": audio_file_id, "id": segment_id},
+    )
