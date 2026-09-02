@@ -120,9 +120,6 @@ table "logs" {
   column "timestamp" {
     type = DateTime64(9)
   }
-  column "level" {
-    type = sql("Enum8('debug' = 1, 'info' = 2, 'warning' = 3, 'error' = 4, 'critical' = 5)")
-  }
   column "message" {
     type = String
   }
