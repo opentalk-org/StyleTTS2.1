@@ -7,7 +7,7 @@ use tonic::{Status, Streaming};
 use tracing::{debug, trace, warn};
 
 use crate::proto::{
-    ArtifactMetric, MetricsRequest, MetricsResponse, ScalarMetric, metrics_request,
+    ArrayMetric, ArtifactMetric, MetricsRequest, MetricsResponse, ScalarMetric, metrics_request,
 };
 
 #[derive(Serialize)]
@@ -16,6 +16,14 @@ struct ScalarRecord<'a> {
     timestamp_unix_ms: i64,
     name: &'a str,
     value: f64,
+}
+
+#[derive(Serialize)]
+struct ArrayRecord<'a> {
+    step: u64,
+    timestamp_unix_ms: i64,
+    name: &'a str,
+    value: &'a [f64],
 }
 
 #[derive(Serialize)]
@@ -43,6 +51,7 @@ pub async fn receive(
     let training_dir = root.join(run_id);
     fs::create_dir_all(&training_dir).await.map_err(internal)?;
     let metrics_path = training_dir.join("metrics.jsonl");
+    let array_metrics_path = training_dir.join("array_metrics.jsonl");
     let artifacts_path = training_dir.join("artifacts.jsonl");
     let artifacts_dir = training_dir.join("artifacts");
     fs::create_dir_all(&artifacts_dir).await.map_err(internal)?;
@@ -68,6 +77,18 @@ pub async fn receive(
                         "metric received"
                     );
                     response.metrics_received += 1;
+                }
+                Some(metrics_request::Payload::ArrayMetric(metric)) => {
+                    store_array_metric(&array_metrics_path, &metric).await?;
+                    trace!(
+                        run = run_id,
+                        step = metric.step,
+                        timestamp_unix_ms = metric.timestamp_unix_ms,
+                        metric = %metric.name,
+                        values = metric.value.len(),
+                        "array metric received"
+                    );
+                    response.array_metrics_received += 1;
                 }
                 Some(metrics_request::Payload::Artifact(artifact)) => {
                     if let Some(previous) = pending.take() {
@@ -174,6 +195,22 @@ async fn store_metric(path: &Path, metric: &ScalarMetric) -> Result<(), Status> 
             timestamp_unix_ms: metric.timestamp_unix_ms,
             name: &metric.name,
             value: metric.value,
+        },
+    )
+    .await
+}
+
+async fn store_array_metric(path: &Path, metric: &ArrayMetric) -> Result<(), Status> {
+    if metric.name.is_empty() {
+        return Err(Status::invalid_argument("metric name cannot be empty"));
+    }
+    append_json(
+        path,
+        &ArrayRecord {
+            step: metric.step,
+            timestamp_unix_ms: metric.timestamp_unix_ms,
+            name: &metric.name,
+            value: &metric.value,
         },
     )
     .await

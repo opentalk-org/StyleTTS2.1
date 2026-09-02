@@ -2,6 +2,8 @@ import { createClient, type ClickHouseClient } from "@clickhouse/client";
 
 import type {
   ArtifactRow,
+  ArrayMetricNameRow,
+  ArrayMetricRow,
   PlotRow,
   ProjectRow,
   RunRow,
@@ -117,6 +119,43 @@ export class Database {
       FROM artifacts
       WHERE run_id IN {run_ids:Array(UUID)}
       ORDER BY name, step`, { run_ids: runIds });
+  }
+
+  async modelGraphArtifact(runId: string) {
+    const rows = await this.query<ArtifactRow>(`
+      SELECT toString(run_id) AS runId, step,
+        toUnixTimestamp64Milli(timestamp) AS timestamp,
+        name, path, content_type AS contentType, size_bytes AS sizeBytes
+      FROM artifacts
+      WHERE run_id = {run_id:UUID} AND name = 'monitor/model_graph.json'
+      ORDER BY timestamp DESC
+      LIMIT 1`, { run_id: runId });
+    return rows[0];
+  }
+
+  async arrayMetricNames(runId: string) {
+    const rows = await this.query<ArrayMetricNameRow>(`
+      SELECT DISTINCT name
+      FROM array_metrics
+      WHERE run_id = {run_id:UUID}
+      ORDER BY name`, { run_id: runId });
+    return rows.map((row) => row.name);
+  }
+
+  async arrayMetric(runId: string, name: string) {
+    const rows = await this.query<ArrayMetricRow>(`
+      SELECT step, toUnixTimestamp64Milli(max(timestamp)) AS timestampMs,
+        argMax(value, timestamp) AS value
+      FROM array_metrics
+      WHERE run_id = {run_id:UUID} AND name = {name:String}
+      GROUP BY step
+      ORDER BY step`, { run_id: runId, name });
+    return {
+      name,
+      steps: rows.map((row) => Number(row.step)),
+      timestamps: rows.map((row) => Number(row.timestampMs)),
+      values: rows.map((row) => row.value.map(Number)),
+    };
   }
 
   async plots(sql: string, projectId: string, runIds: string[]) {

@@ -115,6 +115,18 @@ class ScalarMetric(_message.Message):
     value: float
     def __init__(self, step: _Optional[int] = ..., timestamp_unix_ms: _Optional[int] = ..., name: _Optional[str] = ..., value: _Optional[float] = ...) -> None: ...
 
+class ArrayMetric(_message.Message):
+    __slots__ = ("step", "timestamp_unix_ms", "name", "value")
+    STEP_FIELD_NUMBER: _ClassVar[int]
+    TIMESTAMP_UNIX_MS_FIELD_NUMBER: _ClassVar[int]
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    VALUE_FIELD_NUMBER: _ClassVar[int]
+    step: int
+    timestamp_unix_ms: int
+    name: str
+    value: _containers.RepeatedScalarFieldContainer[float]
+    def __init__(self, step: _Optional[int] = ..., timestamp_unix_ms: _Optional[int] = ..., name: _Optional[str] = ..., value: _Optional[_Iterable[float]] = ...) -> None: ...
+
 class ArtifactMetric(_message.Message):
     __slots__ = ("step", "timestamp_unix_ms", "name", "content_type", "size_bytes")
     STEP_FIELD_NUMBER: _ClassVar[int]
@@ -136,26 +148,30 @@ class ArtifactChunk(_message.Message):
     def __init__(self, data: _Optional[bytes] = ...) -> None: ...
 
 class MetricsRequest(_message.Message):
-    __slots__ = ("metadata", "metric", "artifact", "artifact_chunk")
+    __slots__ = ("metadata", "metric", "artifact", "artifact_chunk", "array_metric")
     METADATA_FIELD_NUMBER: _ClassVar[int]
     METRIC_FIELD_NUMBER: _ClassVar[int]
     ARTIFACT_FIELD_NUMBER: _ClassVar[int]
     ARTIFACT_CHUNK_FIELD_NUMBER: _ClassVar[int]
+    ARRAY_METRIC_FIELD_NUMBER: _ClassVar[int]
     metadata: MetricsStreamMetadata
     metric: ScalarMetric
     artifact: ArtifactMetric
     artifact_chunk: ArtifactChunk
-    def __init__(self, metadata: _Optional[_Union[MetricsStreamMetadata, _Mapping]] = ..., metric: _Optional[_Union[ScalarMetric, _Mapping]] = ..., artifact: _Optional[_Union[ArtifactMetric, _Mapping]] = ..., artifact_chunk: _Optional[_Union[ArtifactChunk, _Mapping]] = ...) -> None: ...
+    array_metric: ArrayMetric
+    def __init__(self, metadata: _Optional[_Union[MetricsStreamMetadata, _Mapping]] = ..., metric: _Optional[_Union[ScalarMetric, _Mapping]] = ..., artifact: _Optional[_Union[ArtifactMetric, _Mapping]] = ..., artifact_chunk: _Optional[_Union[ArtifactChunk, _Mapping]] = ..., array_metric: _Optional[_Union[ArrayMetric, _Mapping]] = ...) -> None: ...
 
 class MetricsResponse(_message.Message):
-    __slots__ = ("metrics_received", "artifacts_received", "artifact_bytes_received")
+    __slots__ = ("metrics_received", "artifacts_received", "artifact_bytes_received", "array_metrics_received")
     METRICS_RECEIVED_FIELD_NUMBER: _ClassVar[int]
     ARTIFACTS_RECEIVED_FIELD_NUMBER: _ClassVar[int]
     ARTIFACT_BYTES_RECEIVED_FIELD_NUMBER: _ClassVar[int]
+    ARRAY_METRICS_RECEIVED_FIELD_NUMBER: _ClassVar[int]
     metrics_received: int
     artifacts_received: int
     artifact_bytes_received: int
-    def __init__(self, metrics_received: _Optional[int] = ..., artifacts_received: _Optional[int] = ..., artifact_bytes_received: _Optional[int] = ...) -> None: ...
+    array_metrics_received: int
+    def __init__(self, metrics_received: _Optional[int] = ..., artifacts_received: _Optional[int] = ..., artifact_bytes_received: _Optional[int] = ..., array_metrics_received: _Optional[int] = ...) -> None: ...
 
 class EndRequest(_message.Message):
     __slots__ = ("run_id",)

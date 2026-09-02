@@ -3,13 +3,10 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { showToast } from "@/shared/feedback/Toast";
 import {
   type JobQuery,
-  decideReview,
   deleteAllJobs,
   deleteJob,
   deleteJobs,
   fetchJobs,
-  fetchReview,
-  fetchReviews,
   renameJob,
   stopJob,
 } from "./api";
@@ -24,35 +21,6 @@ export function useJobsQuery(params: JobQuery) {
   });
 }
 
-export function useReviewsQuery(runId: string) {
-  return useQuery({
-    queryKey: ["reviews", runId],
-    queryFn: () => fetchReviews(runId),
-  });
-}
-
-export function useReviewQuery(reviewId: string | null) {
-  return useQuery({
-    queryKey: ["review", reviewId],
-    queryFn: () => fetchReview(reviewId!),
-    enabled: reviewId !== null,
-  });
-}
-
-export function useReviewDecision() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ reviewId, decision }: { reviewId: string; decision: "approved" | "rejected" }) =>
-      decideReview(reviewId, decision),
-    onSuccess: (result) => {
-      showToast(result.review.state === "approved" ? "Review approved" : "Review rejected");
-      queryClient.setQueryData(["review", result.review.id], result.review);
-      queryClient.invalidateQueries({ queryKey: ["reviews", result.review.producer_run_id] });
-      queryClient.invalidateQueries({ queryKey: [JOBS_KEY] });
-      queryClient.invalidateQueries({ queryKey: ["runs"] });
-    },
-  });
-}
 
 export function useJobActions() {
   const queryClient = useQueryClient();

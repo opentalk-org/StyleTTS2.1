@@ -45,7 +45,6 @@ class ConvNorm(torch.nn.Module):
     ):
         super(ConvNorm, self).__init__()
         if padding is None:
-            assert kernel_size % 2 == 1
             padding = int(dilation * (kernel_size - 1) / 2)
 
         self.conv = torch.nn.Conv1d(

@@ -1,5 +1,8 @@
-import torch
+from __future__ import annotations
+
 from functools import reduce
+
+import torch
 from torch.optim import AdamW
 
 class MultiOptimizer:
@@ -37,6 +40,7 @@ class MultiOptimizer:
             scaler.update()
         else:
             self.optimizers[key].step()
+        self.monitor(key)
 
     def zero_grad(self, key=None):
         if key is not None:

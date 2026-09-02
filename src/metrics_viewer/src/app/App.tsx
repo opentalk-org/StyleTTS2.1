@@ -16,6 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { Analysis } from "@/features/comparison/Analysis";
+import { ModelMonitor } from "@/features/model-monitor/ModelMonitor";
 import { Projects } from "@/features/projects/Projects";
 import { useProjectsQuery } from "@/features/projects/query";
 import { RunTable } from "@/features/runs/RunTable";
@@ -27,6 +28,7 @@ import {
   IconButton,
   Modal,
   SplitPane,
+  StatusBadge,
   type SplitCollapsed,
   type SplitOrientation,
 } from "@/shared/ui";
@@ -73,6 +75,7 @@ function Viewer() {
   const runsQuery = useRunsQuery(viewer.projectId);
   const [layout, setLayout] = useState<Layout>(loadLayout);
   const [viewsOpen, setViewsOpen] = useState(false);
+  const [modelMonitorOpen, setModelMonitorOpen] = useState(false);
   const runs = runsQuery.data ?? [];
   const selectedRuns = useMemo(
     () => runs.filter((run) => viewer.selectedRunIds.includes(run.id)),
@@ -113,25 +116,28 @@ function Viewer() {
 
 
   return (
-    <main className="flex min-h-dvh flex-col">
+    <main className="flex h-dvh flex-col overflow-hidden">
       <header className="sticky top-0 z-40 flex h-14 flex-none items-center justify-between gap-4 border-b border-line bg-elevated px-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <IconButton label="Back to projects" onClick={() => viewer.selectProject(null)} variant="secondary">
+          <IconButton label="Back to projects" onClick={() => modelMonitorOpen ? setModelMonitorOpen(false) : viewer.selectProject(null)} variant="secondary">
             <ArrowLeft size={15} />
           </IconButton>
           <div className="flex min-w-0 flex-col">
-            <GroupLabel>Project</GroupLabel>
+            <GroupLabel>{modelMonitorOpen ? selectedRuns[0]?.name : "Project"}</GroupLabel>
             <h1 className="m-0 truncate text-sm leading-tight font-semibold tracking-tight text-fg">
-              {project?.name ?? "Project"}
+              {modelMonitorOpen ? "Model graph" : project?.name ?? "Project"}
             </h1>
           </div>
+          {modelMonitorOpen && selectedRuns.length === 1 ? (
+            <StatusBadge status={selectedRuns[0].status} />
+          ) : null}
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="hidden font-mono text-xs tabular-nums text-fg-muted md:inline">
+          {!modelMonitorOpen ? <span className="hidden font-mono text-xs tabular-nums text-fg-muted md:inline">
             {viewer.selectedRunIds.length} / {runs.length} runs
-          </span>
-          {viewer.selectedRunIds.length > 0 ? (
+          </span> : null}
+          {!modelMonitorOpen && viewer.selectedRunIds.length > 0 ? (
             <Button
               variant="secondary"
               icon={<X size={13} />}
@@ -141,7 +147,7 @@ function Viewer() {
               Clear
             </Button>
           ) : null}
-          <div className="flex items-center gap-0.5 rounded-lg border border-line bg-inset p-0.5">
+          {!modelMonitorOpen ? <div className="flex items-center gap-0.5 rounded-lg border border-line bg-inset p-0.5">
             <IconButton
               label={layout.collapsed === "start" ? "Show runs table" : "Hide runs table"}
               size="sm"
@@ -165,25 +171,26 @@ function Viewer() {
             >
               {layout.collapsed === "end" ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />}
             </IconButton>
-          </div>
-          <Button
+          </div> : null}
+          {!modelMonitorOpen ? <Button
             variant="secondary"
             icon={<LayoutGrid size={14} />}
             aria-expanded={viewsOpen}
             onClick={() => setViewsOpen(true)}
           >
             Views
-          </Button>
+          </Button> : null}
         </div>
       </header>
 
-      <SplitPane
+      {modelMonitorOpen && selectedRuns.length === 1 ? (
+        <ModelMonitor run={selectedRuns[0]} />
+      ) : <SplitPane
         label="Runs and analysis"
         orientation={layout.orientation}
         ratio={layout.ratio}
         onRatio={(ratio) => patchLayout({ ratio })}
         collapsed={layout.collapsed}
-        pageScroll
         stickyTop={HEADER_HEIGHT}
         onResizeEnd={() => window.dispatchEvent(new Event("resize"))}
         start={
@@ -194,7 +201,7 @@ function Viewer() {
             runColors={viewer.runColors}
             starred={viewer.starredRunIds}
             loading={runsQuery.isPending}
-            scroll={isColumns ? "page" : "self"}
+            scroll="self"
             onToggle={viewer.toggleRun}
             onSelect={viewer.selectRuns}
             onColumns={viewer.setColumns}
@@ -203,8 +210,11 @@ function Viewer() {
             className={isColumns ? "border-r border-line" : "border-b border-line"}
           />
         }
-        end={<Analysis runs={selectedRuns} />}
-      />
+        end={<Analysis
+          runs={selectedRuns}
+          onModelGraph={selectedRuns.length === 1 ? () => setModelMonitorOpen(true) : undefined}
+        />}
+      />}
 
       <ViewsDialog
         open={viewsOpen}

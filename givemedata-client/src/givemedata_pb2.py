@@ -24,15 +24,15 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10givemedata.proto\"\x1d\n\x0bInitRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\"4\n\x0cInitResponse\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x14\n\x0ctrain_config\x18\x02 \x01(\t\"4\n\x0b\x44\x61taRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x15\n\x05split\x18\x02 \x01(\x0e\x32\x06.Split\"_\n\x06Sample\x12\x0c\n\x04wave\x18\x01 \x01(\x0c\x12\x10\n\x08\x64uration\x18\x02 \x01(\x01\x12\x12\n\nspeaker_id\x18\x03 \x01(\x03\x12\x13\n\x0blanguage_id\x18\x04 \x01(\x05\x12\x0c\n\x04text\x18\x05 \x01(\x0c\"&\n\x0c\x44\x61taResponse\x12\x16\n\x05\x62\x61tch\x18\x01 \x03(\x0b\x32\x07.Sample\",\n\x0c\x41ssetRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\"7\n\rAssetMetadata\x12\x17\n\nentrypoint\x18\x01 \x01(\tH\x00\x88\x01\x01\x42\r\n\x0b_entrypoint\"O\n\rAssetResponse\x12\"\n\x08metadata\x18\x01 \x01(\x0b\x32\x0e.AssetMetadataH\x00\x12\x0f\n\x05\x63hunk\x18\x02 \x01(\x0cH\x00\x42\t\n\x07payload\"2\n\x12\x43heckpointMetadata\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x0c\n\x04step\x18\x02 \x01(\x04\"X\n\x11\x43heckpointRequest\x12\'\n\x08metadata\x18\x01 \x01(\x0b\x32\x13.CheckpointMetadataH\x00\x12\x0f\n\x05\x63hunk\x18\x02 \x01(\x0cH\x00\x42\t\n\x07payload\"\x14\n\x12\x43heckpointResponse\"\'\n\x15MetricsStreamMetadata\x12\x0e\n\x06run_id\x18\x01 \x01(\t\"T\n\x0cScalarMetric\x12\x0c\n\x04step\x18\x01 \x01(\x04\x12\x19\n\x11timestamp_unix_ms\x18\x02 \x01(\x03\x12\x0c\n\x04name\x18\x03 \x01(\t\x12\r\n\x05value\x18\x04 \x01(\x01\"q\n\x0e\x41rtifactMetric\x12\x0c\n\x04step\x18\x01 \x01(\x04\x12\x19\n\x11timestamp_unix_ms\x18\x02 \x01(\x03\x12\x0c\n\x04name\x18\x03 \x01(\t\x12\x14\n\x0c\x63ontent_type\x18\x04 \x01(\t\x12\x12\n\nsize_bytes\x18\x05 \x01(\x04\"\x1d\n\rArtifactChunk\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\"\xb7\x01\n\x0eMetricsRequest\x12*\n\x08metadata\x18\x01 \x01(\x0b\x32\x16.MetricsStreamMetadataH\x00\x12\x1f\n\x06metric\x18\x02 \x01(\x0b\x32\r.ScalarMetricH\x00\x12#\n\x08\x61rtifact\x18\x03 \x01(\x0b\x32\x0f.ArtifactMetricH\x00\x12(\n\x0e\x61rtifact_chunk\x18\x04 \x01(\x0b\x32\x0e.ArtifactChunkH\x00\x42\t\n\x07payload\"h\n\x0fMetricsResponse\x12\x18\n\x10metrics_received\x18\x01 \x01(\x04\x12\x1a\n\x12\x61rtifacts_received\x18\x02 \x01(\x04\x12\x1f\n\x17\x61rtifact_bytes_received\x18\x03 \x01(\x04\"\x1c\n\nEndRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\"\r\n\x0b\x45ndResponse*%\n\x05Split\x12\x0c\n\x08TRAINING\x10\x00\x12\x0e\n\nVALIDATION\x10\x01\x32\x8f\x02\n\nGiveMeData\x12#\n\x04Init\x12\x0c.InitRequest\x1a\r.InitResponse\x12\'\n\x04\x44\x61ta\x12\x0c.DataRequest\x1a\r.DataResponse(\x01\x30\x01\x12(\n\x05\x41sset\x12\r.AssetRequest\x1a\x0e.AssetResponse0\x01\x12\x37\n\nCheckpoint\x12\x12.CheckpointRequest\x1a\x13.CheckpointResponse(\x01\x12.\n\x07Metrics\x12\x0f.MetricsRequest\x1a\x10.MetricsResponse(\x01\x12 \n\x03\x45nd\x12\x0b.EndRequest\x1a\x0c.EndResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10givemedata.proto\"\x1d\n\x0bInitRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\"4\n\x0cInitResponse\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x14\n\x0ctrain_config\x18\x02 \x01(\t\"4\n\x0b\x44\x61taRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x15\n\x05split\x18\x02 \x01(\x0e\x32\x06.Split\"_\n\x06Sample\x12\x0c\n\x04wave\x18\x01 \x01(\x0c\x12\x10\n\x08\x64uration\x18\x02 \x01(\x01\x12\x12\n\nspeaker_id\x18\x03 \x01(\x03\x12\x13\n\x0blanguage_id\x18\x04 \x01(\x05\x12\x0c\n\x04text\x18\x05 \x01(\x0c\"&\n\x0c\x44\x61taResponse\x12\x16\n\x05\x62\x61tch\x18\x01 \x03(\x0b\x32\x07.Sample\",\n\x0c\x41ssetRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\"7\n\rAssetMetadata\x12\x17\n\nentrypoint\x18\x01 \x01(\tH\x00\x88\x01\x01\x42\r\n\x0b_entrypoint\"O\n\rAssetResponse\x12\"\n\x08metadata\x18\x01 \x01(\x0b\x32\x0e.AssetMetadataH\x00\x12\x0f\n\x05\x63hunk\x18\x02 \x01(\x0cH\x00\x42\t\n\x07payload\"2\n\x12\x43heckpointMetadata\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x0c\n\x04step\x18\x02 \x01(\x04\"X\n\x11\x43heckpointRequest\x12\'\n\x08metadata\x18\x01 \x01(\x0b\x32\x13.CheckpointMetadataH\x00\x12\x0f\n\x05\x63hunk\x18\x02 \x01(\x0cH\x00\x42\t\n\x07payload\"\x14\n\x12\x43heckpointResponse\"\'\n\x15MetricsStreamMetadata\x12\x0e\n\x06run_id\x18\x01 \x01(\t\"T\n\x0cScalarMetric\x12\x0c\n\x04step\x18\x01 \x01(\x04\x12\x19\n\x11timestamp_unix_ms\x18\x02 \x01(\x03\x12\x0c\n\x04name\x18\x03 \x01(\t\x12\r\n\x05value\x18\x04 \x01(\x01\"S\n\x0b\x41rrayMetric\x12\x0c\n\x04step\x18\x01 \x01(\x04\x12\x19\n\x11timestamp_unix_ms\x18\x02 \x01(\x03\x12\x0c\n\x04name\x18\x03 \x01(\t\x12\r\n\x05value\x18\x04 \x03(\x01\"q\n\x0e\x41rtifactMetric\x12\x0c\n\x04step\x18\x01 \x01(\x04\x12\x19\n\x11timestamp_unix_ms\x18\x02 \x01(\x03\x12\x0c\n\x04name\x18\x03 \x01(\t\x12\x14\n\x0c\x63ontent_type\x18\x04 \x01(\t\x12\x12\n\nsize_bytes\x18\x05 \x01(\x04\"\x1d\n\rArtifactChunk\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\"\xdd\x01\n\x0eMetricsRequest\x12*\n\x08metadata\x18\x01 \x01(\x0b\x32\x16.MetricsStreamMetadataH\x00\x12\x1f\n\x06metric\x18\x02 \x01(\x0b\x32\r.ScalarMetricH\x00\x12#\n\x08\x61rtifact\x18\x03 \x01(\x0b\x32\x0f.ArtifactMetricH\x00\x12(\n\x0e\x61rtifact_chunk\x18\x04 \x01(\x0b\x32\x0e.ArtifactChunkH\x00\x12$\n\x0c\x61rray_metric\x18\x05 \x01(\x0b\x32\x0c.ArrayMetricH\x00\x42\t\n\x07payload\"\x88\x01\n\x0fMetricsResponse\x12\x18\n\x10metrics_received\x18\x01 \x01(\x04\x12\x1a\n\x12\x61rtifacts_received\x18\x02 \x01(\x04\x12\x1f\n\x17\x61rtifact_bytes_received\x18\x03 \x01(\x04\x12\x1e\n\x16\x61rray_metrics_received\x18\x04 \x01(\x04\"\x1c\n\nEndRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\"\r\n\x0b\x45ndResponse*%\n\x05Split\x12\x0c\n\x08TRAINING\x10\x00\x12\x0e\n\nVALIDATION\x10\x01\x32\x8f\x02\n\nGiveMeData\x12#\n\x04Init\x12\x0c.InitRequest\x1a\r.InitResponse\x12\'\n\x04\x44\x61ta\x12\x0c.DataRequest\x1a\r.DataResponse(\x01\x30\x01\x12(\n\x05\x41sset\x12\r.AssetRequest\x1a\x0e.AssetResponse0\x01\x12\x37\n\nCheckpoint\x12\x12.CheckpointRequest\x1a\x13.CheckpointResponse(\x01\x12.\n\x07Metrics\x12\x0f.MetricsRequest\x1a\x10.MetricsResponse(\x01\x12 \n\x03\x45nd\x12\x0b.EndRequest\x1a\x0c.EndResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'givemedata_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_SPLIT']._serialized_start=1254
-  _globals['_SPLIT']._serialized_end=1291
+  _globals['_SPLIT']._serialized_start=1410
+  _globals['_SPLIT']._serialized_end=1447
   _globals['_INITREQUEST']._serialized_start=20
   _globals['_INITREQUEST']._serialized_end=49
   _globals['_INITRESPONSE']._serialized_start=51
@@ -59,18 +59,20 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_METRICSSTREAMMETADATA']._serialized_end=683
   _globals['_SCALARMETRIC']._serialized_start=685
   _globals['_SCALARMETRIC']._serialized_end=769
-  _globals['_ARTIFACTMETRIC']._serialized_start=771
-  _globals['_ARTIFACTMETRIC']._serialized_end=884
-  _globals['_ARTIFACTCHUNK']._serialized_start=886
-  _globals['_ARTIFACTCHUNK']._serialized_end=915
-  _globals['_METRICSREQUEST']._serialized_start=918
-  _globals['_METRICSREQUEST']._serialized_end=1101
-  _globals['_METRICSRESPONSE']._serialized_start=1103
-  _globals['_METRICSRESPONSE']._serialized_end=1207
-  _globals['_ENDREQUEST']._serialized_start=1209
-  _globals['_ENDREQUEST']._serialized_end=1237
-  _globals['_ENDRESPONSE']._serialized_start=1239
-  _globals['_ENDRESPONSE']._serialized_end=1252
-  _globals['_GIVEMEDATA']._serialized_start=1294
-  _globals['_GIVEMEDATA']._serialized_end=1565
+  _globals['_ARRAYMETRIC']._serialized_start=771
+  _globals['_ARRAYMETRIC']._serialized_end=854
+  _globals['_ARTIFACTMETRIC']._serialized_start=856
+  _globals['_ARTIFACTMETRIC']._serialized_end=969
+  _globals['_ARTIFACTCHUNK']._serialized_start=971
+  _globals['_ARTIFACTCHUNK']._serialized_end=1000
+  _globals['_METRICSREQUEST']._serialized_start=1003
+  _globals['_METRICSREQUEST']._serialized_end=1224
+  _globals['_METRICSRESPONSE']._serialized_start=1227
+  _globals['_METRICSRESPONSE']._serialized_end=1363
+  _globals['_ENDREQUEST']._serialized_start=1365
+  _globals['_ENDREQUEST']._serialized_end=1393
+  _globals['_ENDRESPONSE']._serialized_start=1395
+  _globals['_ENDRESPONSE']._serialized_end=1408
+  _globals['_GIVEMEDATA']._serialized_start=1450
+  _globals['_GIVEMEDATA']._serialized_end=1721
 # @@protoc_insertion_point(module_scope)

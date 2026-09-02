@@ -41,6 +41,16 @@ export interface PlotRow {
   y: number;
 }
 
+export interface ArrayMetricNameRow {
+  name: string;
+}
+
+export interface ArrayMetricRow {
+  step: string;
+  timestampMs: string;
+  value: number[];
+}
+
 export type Scalar = string | number | boolean;
 
 export function params(config: Record<string, unknown>) {

@@ -415,6 +415,19 @@
               };
             };
 
+            processes.metrics-viewer-api = {
+              command = "cd $DNVR_ROOT/src/metrics_viewer && npm run backend";
+              env = {
+                CLICKHOUSE_HTTP_URL = "http://127.0.0.1:8123/default";
+                CLICKHOUSE_USER = "default";
+                CLICKHOUSE_PASSWORD = "";
+                METRICS_DIR = "$DNVR_ROOT/.givemedata/metrics";
+              };
+            };
+            processes.metrics-viewer = {
+              command = "cd $DNVR_ROOT/src/metrics_viewer && npm run dev -- --host 127.0.0.1 --port 5174 --strictPort";
+            };
+
             processes.runner = {
               env = {
                 RUNFLOW_PGBOUNCER_DATABASE_URL = "dnvr://pgbouncer/url";

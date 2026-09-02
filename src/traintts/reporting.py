@@ -6,11 +6,11 @@ import torch
 from givemedata_client import GiveMeDataClient
 
 from .config import TrainingConfig
-from .tracking import GiveMeDataTracker, TrackerRun
+from .tracking import GiveMeDataTracker, MetricValue, TrackerRun
 from .val_sample_export import ValidationSampleArtifacts
 
 
-class MlflowLogger:
+class TrainingReporter:
     def __init__(self, run: TrackerRun, total_steps: int) -> None:
         self.run = run
         self.total_steps = total_steps
@@ -18,15 +18,23 @@ class MlflowLogger:
     def log_train(
         self,
         step: int,
-        metrics: dict[str, torch.Tensor | float],
+        metrics: dict[str, torch.Tensor | float | list[float]],
     ) -> None:
-        tracked_metrics = {}
+        tracked_metrics: dict[str, MetricValue] = {}
         for name, value in metrics.items():
+            if isinstance(value, list):
+                tracked_metrics[name] = value
+                continue
             scalar = _scalar(value)
             if math.isfinite(scalar):
                 metric_name = (
                     name
-                    if name.startswith(("overhead/", "performance/"))
+                    if name.startswith((
+                        "overhead/",
+                        "performance/",
+                        "param_nonfinite/",
+                        "grad_nonfinite/",
+                    ))
                     else f"train/{name}"
                 )
                 tracked_metrics[metric_name] = scalar
@@ -56,9 +64,8 @@ class MlflowLogger:
                 f"validation/step_{step:09d}/{sample.mode}/sample_{sample.index}"
             )
             for relative_path in sample.paths:
-                path = base / relative_path
                 self.run.log_artifact(
-                    path,
+                    base / relative_path,
                     artifact_path=artifact_path,
                     step=step,
                 )

@@ -14,6 +14,7 @@
     "@tanstack/react-query": "latest",
     "@tanstack/react-table": "latest",
     "@tanstack/react-virtual": "latest",
+    "@xyflow/react": "^12.11.6",
     "lucide-react": "latest",
     "plotly.js-basic-dist-min": "^3.7.0",
     "react": "latest",

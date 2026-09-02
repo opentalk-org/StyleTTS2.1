@@ -1,5 +1,12 @@
 import { request } from "@/data/backend";
-import type { Artifact, PlotQueryResult, Project, Run } from "@/shared/types";
+import type {
+  ArrayMetricSeries,
+  Artifact,
+  ModelComponent,
+  PlotQueryResult,
+  Project,
+  Run,
+} from "@/shared/types";
 
 export function listProjects(): Promise<Project[]> {
   return request<Project[]>("/api/projects");
@@ -27,4 +34,18 @@ export function runPlotsQuery(
     method: "POST",
     body: JSON.stringify({ sql, runIds: selectedRunIds }),
   });
+}
+
+export function getModelGraph(runId: string): Promise<ModelComponent[]> {
+  return request<ModelComponent[]>(`/api/runs/${encodeURIComponent(runId)}/model-graph`);
+}
+
+export function getArrayMetricNames(runId: string): Promise<string[]> {
+  return request<string[]>(`/api/runs/${encodeURIComponent(runId)}/array-metrics/names`);
+}
+
+export function getArrayMetric(runId: string, name: string): Promise<ArrayMetricSeries> {
+  return request<ArrayMetricSeries>(
+    `/api/runs/${encodeURIComponent(runId)}/array-metrics?name=${encodeURIComponent(name)}`,
+  );
 }

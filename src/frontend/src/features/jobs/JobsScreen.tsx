@@ -16,7 +16,6 @@ import { Select } from "@/shared/ui/Select";
 import { cn } from "@/shared/ui/cn";
 import { fetchJobGraph, type Job } from "./api";
 import { useJobActions, useJobsQuery } from "./query";
-import { ReviewDrawer } from "./ReviewDrawer";
 import { useJobsSelection } from "./store";
 
 const STATE_LABEL: Record<Job["state"], string> = {
@@ -40,7 +39,6 @@ function Checkbox({ on }: { on: boolean }) {
 }
 
 export function JobsScreen() {
-  const [reviewRunId, setReviewRunId] = useState<string | null>(null);
   const { selection, limit, offset, setLimit, setOffset, toggleSelect, selectMany, clearSelection } = useJobsSelection();
   const jobs = useJobsQuery({ limit, offset });
   const { removeMany, removeAll, removingMany, removingAll } = useJobActions();
@@ -142,7 +140,7 @@ export function JobsScreen() {
                 }
                 renderRow={(index) => {
                   const job = rows[index]!;
-                  return <JobRow job={job} selected={!!selection[job.run_id]} onToggle={() => toggleSelect(job.run_id)} onReview={() => setReviewRunId(job.run_id)} />;
+                  return <JobRow job={job} selected={!!selection[job.run_id]} onToggle={() => toggleSelect(job.run_id)} />;
                 }}
               />
             </Card>
@@ -153,12 +151,11 @@ export function JobsScreen() {
           )}
         </div>
       )}
-      {reviewRunId ? <ReviewDrawer runId={reviewRunId} onClose={() => setReviewRunId(null)} /> : null}
     </div>
   );
 }
 
-function JobRow({ job, selected, onToggle, onReview }: { job: Job; selected: boolean; onToggle: () => void; onReview: () => void }) {
+function JobRow({ job, selected, onToggle }: { job: Job; selected: boolean; onToggle: () => void }) {
   const [opening, setOpening] = useState(false);
   const [editing, setEditing] = useState(false);
   const { remove, removing, stop, stopping, rename } = useJobActions();
@@ -229,11 +226,6 @@ function JobRow({ job, selected, onToggle, onReview }: { job: Job; selected: boo
       </div>
       <span className="text-xs text-txt-mute">{Number.isNaN(updatedAt) ? "-" : fmtAgo(updatedAt)}</span>
       <div className="flex justify-end gap-2">
-        {job.review_count > 0 ? (
-          <Button variant="secondary" size="sm" icon="check-circle" onClick={onReview}>
-            Review {job.review_count > 1 ? job.review_count : ""}
-          </Button>
-        ) : null}
         <IconButton icon="edit" title="Rename" onClick={() => setEditing((v) => !v)} />
         <Button variant="secondary" size="sm" icon="folder-open" onClick={openJob} disabled={opening}>
           Open

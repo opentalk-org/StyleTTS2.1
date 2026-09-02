@@ -1,21 +1,19 @@
-"""Tracker protocol and optional local adapter.
-The MLflow adapter is commented out for now."""
+"""Tracker protocol and local or GiveMeData-backed adapters."""
 
 from __future__ import annotations
 
 import json
 import logging
-# import os  # mlflow disabled for now
 import shutil
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath
 from typing import Protocol
 
 from givemedata_client import MetricsStream
 
 logger = logging.getLogger(__name__)
-# MAX_PENDING_OPERATIONS = 256  # mlflow disabled for now
+MetricValue = float | Sequence[float]
 
 
 class TrackerRun(Protocol):
@@ -24,7 +22,7 @@ class TrackerRun(Protocol):
     def track(self, value: object, name: str, step: int, epoch: int | None = None) -> None: ...
 
     def track_metrics(
-        self, metrics: Mapping[str, float], step: int, epoch: int | None = None
+        self, metrics: Mapping[str, MetricValue], step: int, epoch: int | None = None
     ) -> None: ...
 
     def log_artifact(self, path: Path, artifact_path: str, step: int) -> None: ...
@@ -50,18 +48,21 @@ class GiveMeDataTracker:
 
     def track_metrics(
         self,
-        metrics: Mapping[str, float],
+        metrics: Mapping[str, MetricValue],
         step: int,
         epoch: int | None = None,
     ) -> None:
         timestamp_unix_ms = time.time_ns() // 1_000_000
-        record: dict[str, float] = {
+        record: dict[str, float | list[float]] = {
             "step": float(step),
             "time": timestamp_unix_ms / 1000.0,
         }
         if epoch is not None:
             record["epoch"] = float(epoch)
-        record.update({name: float(value) for name, value in metrics.items()})
+        record.update({
+            name: float(value) if isinstance(value, (int, float)) else list(value)
+            for name, value in metrics.items()
+        })
         logger.info("METRICS %s", json.dumps(record, sort_keys=True))
         self._stream.log_metrics(
             metrics,
@@ -94,12 +95,18 @@ class LocalTracker:
             self.track_metrics({name: float(value)}, step=step, epoch=epoch)
 
     def track_metrics(
-        self, metrics: Mapping[str, float], step: int, epoch: int | None = None
+        self, metrics: Mapping[str, MetricValue], step: int, epoch: int | None = None
     ) -> None:
-        record: dict[str, float] = {"step": float(step), "time": time.time()}
+        record: dict[str, float | list[float]] = {
+            "step": float(step),
+            "time": time.time(),
+        }
         if epoch is not None:
             record["epoch"] = float(epoch)
-        record.update({name: float(value) for name, value in metrics.items()})
+        record.update({
+            name: float(value) if isinstance(value, (int, float)) else list(value)
+            for name, value in metrics.items()
+        })
         serialized = json.dumps(record, sort_keys=True)
         self._metrics.write(serialized + "\n")
         self._metrics.flush()

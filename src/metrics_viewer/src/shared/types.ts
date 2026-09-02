@@ -68,6 +68,22 @@ export interface PlotSettings {
   showLegend: boolean;
 }
 
+export interface ModelComponent {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  module_type: string;
+  parameter_names: string[];
+  parameter_count: number;
+}
+
+export interface ArrayMetricSeries {
+  name: string;
+  steps: number[];
+  timestamps: number[];
+  values: number[][];
+}
+
 export interface Workspace {
   id: string;
   name: string;

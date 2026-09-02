@@ -221,6 +221,7 @@ impl GiveMeDataService for GiveMeData {
                 info!(
                     run = %run_id,
                     metrics = response.metrics_received,
+                    array_metrics = response.array_metrics_received,
                     artifacts = response.artifacts_received,
                     artifact_bytes = response.artifact_bytes_received,
                     "metrics stored"

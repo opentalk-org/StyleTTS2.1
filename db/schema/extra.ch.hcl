@@ -110,9 +110,6 @@ table "mos_comparisons" {
   column "updated_at" {
     type = DateTime64(6)
   }
-  column "dataset_id" {
-    type = UUID
-  }
   column "audio_a_id" {
     type = UUID
   }

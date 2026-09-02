@@ -62,6 +62,22 @@ async function route(request: IncomingMessage, response: ServerResponse) {
   if (request.method === "GET" && url.pathname === "/api/artifacts/content") {
     return artifact(response, url.searchParams.get("run_id") ?? "", url.searchParams.get("path") ?? "");
   }
+  const modelGraph = url.pathname.match(/^\/api\/runs\/([^/]+)\/model-graph$/);
+  if (request.method === "GET" && modelGraph) {
+    const row = await database.modelGraphArtifact(decodeURIComponent(modelGraph[1]));
+    if (row === undefined) return json(response, 404, { detail: "Not found" });
+    return artifact(response, row.runId, row.path);
+  }
+  const arrayNames = url.pathname.match(/^\/api\/runs\/([^/]+)\/array-metrics\/names$/);
+  if (request.method === "GET" && arrayNames) {
+    return json(response, 200, await database.arrayMetricNames(decodeURIComponent(arrayNames[1])));
+  }
+  const arraySeries = url.pathname.match(/^\/api\/runs\/([^/]+)\/array-metrics$/);
+  if (request.method === "GET" && arraySeries) {
+    const name = url.searchParams.get("name");
+    if (name === null) return json(response, 400, { detail: "name is required" });
+    return json(response, 200, await database.arrayMetric(decodeURIComponent(arraySeries[1]), name));
+  }
   json(response, 404, { detail: "Not found" });
 }
 

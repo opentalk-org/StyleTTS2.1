@@ -12,8 +12,6 @@ export function datasetOptions(datasets: Dataset[]): Option[] {
 export function sortOptions(): Option[] {
   return [
     { value: "updated", label: "Sort: Recent" },
-    { value: "name", label: "Sort: Name" },
     { value: "duration", label: "Sort: Duration" },
-    { value: "segments", label: "Sort: Segments" },
   ];
 }

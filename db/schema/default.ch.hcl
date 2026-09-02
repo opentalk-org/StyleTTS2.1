@@ -113,6 +113,39 @@ table "metrics" {
   }
 }
 
+table "array_metrics" {
+  schema = schema.default
+  engine = MergeTree
+
+  column "timestamp" {
+    type = DateTime64(9)
+  }
+  column "run_id" {
+    type = UUID
+  }
+  column "step" {
+    type = UInt64
+  }
+  column "name" {
+    type = sql("LowCardinality(String)")
+  }
+  column "value" {
+    type = sql("Array(Float32)")
+  }
+
+  partition {
+    on {
+      expr = "toYYYYMM(timestamp)"
+    }
+  }
+  primary_key {
+    columns = [column.run_id, column.name, column.step, column.timestamp]
+  }
+  sort {
+    columns = [column.run_id, column.name, column.step, column.timestamp]
+  }
+}
+
 table "logs" {
   schema = schema.default
   engine = MergeTree
@@ -216,6 +249,9 @@ table "audio_files" {
   }
   column "virtual" {
     type = Bool
+  }
+  column "storage_kind" {
+    type = sql("Enum8('packed' = 1, 'external' = 2)")
   }
   column "storage_ref" {
     type = sql("Nullable(JSON)")
