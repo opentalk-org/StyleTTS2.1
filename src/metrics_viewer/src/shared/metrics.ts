@@ -1,22 +1,5 @@
 import type { SearchOption } from "@/shared/ui";
-
-
-export const METRIC_NAMES = [
-  "train/total",
-  "train/mel",
-  "train/wavlm",
-  "performance/steps_per_second",
-  "performance/eta_hours",
-] as const;
-
-
-export const PARAM_NAMES = [
-  "decoder",
-  "learning_rate",
-  "batch_seconds",
-  "seed",
-  "mixed_precision",
-] as const;
+import type { Run } from "@/shared/types";
 
 const RUN_FIELDS: { id: string; label: string }[] = [
   { id: "name", label: "Run" },
@@ -32,11 +15,13 @@ export function metricGroup(name: string): string {
 }
 
 
-export function runColumnOptions(): SearchOption[] {
+export function runColumnOptions(runs: Run[]): SearchOption[] {
+  const params = [...new Set(runs.flatMap((run) => Object.keys(run.params)))].sort();
+  const metrics = [...new Set(runs.flatMap((run) => Object.keys(run.summary)))].sort();
   return [
     ...RUN_FIELDS.map((field) => ({ value: field.id, label: field.label, group: "Run" })),
-    ...PARAM_NAMES.map((name) => ({ value: `param:${name}`, label: name, group: "Parameters" })),
-    ...METRIC_NAMES.map((name) => ({
+    ...params.map((name) => ({ value: `param:${name}`, label: name, group: "Parameters" })),
+    ...metrics.map((name) => ({
       value: `metric:${name}`,
       label: name.split("/").at(-1) ?? name,
       group: "Metrics",

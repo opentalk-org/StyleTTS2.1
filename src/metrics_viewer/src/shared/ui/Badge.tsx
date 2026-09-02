@@ -40,7 +40,7 @@ const STATUS_TONES: Record<RunStatus, BadgeTone> = {
   succeeded: "positive",
   running: "accent",
   failed: "negative",
-  awaiting: "notice",
+  queued: "notice",
   cancelled: "neutral",
 };
 
@@ -48,7 +48,7 @@ const STATUS_MARKS: Record<RunStatus, string> = {
   succeeded: "✓",
   running: "▸",
   failed: "✕",
-  awaiting: "•",
+  queued: "•",
   cancelled: "—",
 };
 

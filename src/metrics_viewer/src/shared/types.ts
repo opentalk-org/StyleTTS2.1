@@ -1,4 +1,4 @@
-export type RunStatus = "awaiting" | "running" | "succeeded" | "failed" | "cancelled";
+export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export type Scalar = string | number | boolean;
 export type ArtifactKind = "audio" | "image" | "text" | "plot";
 

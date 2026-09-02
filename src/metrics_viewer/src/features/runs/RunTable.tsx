@@ -79,6 +79,7 @@ export function RunTable({
   const anchorRef = useRef<string | null>(null);
 
   const focusPending = useRef(false);
+  const columnOptions = useMemo(() => runColumnOptions(runs), [runs]);
 
   const filtered = useMemo(() => {
     const normalized = query.toLowerCase();
@@ -220,7 +221,7 @@ export function RunTable({
         >
           <SearchOptionList
             multiple
-            options={runColumnOptions()}
+            options={columnOptions}
             selected={columns}
             placeholder="Search columns"
             emptyMessage="No column matches"

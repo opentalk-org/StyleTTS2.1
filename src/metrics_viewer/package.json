@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "backend": "tsx src/server/server.ts",
+    "build": "tsc --noEmit && tsc -p tsconfig.server.json && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@clickhouse/client": "^1.23.1",
     "@tanstack/react-query": "latest",
     "@tanstack/react-table": "latest",
     "@tanstack/react-virtual": "latest",
@@ -21,13 +23,14 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "latest",
-    "@types/node": "latest",
+    "@types/node": "^22.20.1",
+    "@types/plotly.js": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "@types/plotly.js": "latest",
     "@types/react-plotly.js": "^2.6.4",
     "@vitejs/plugin-react": "latest",
     "tailwindcss": "latest",
+    "tsx": "^4.23.13",
     "typescript": "latest",
     "vite": "latest"
   }
