@@ -3,15 +3,17 @@ use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use crate::grpc_support::{self, AssetStore, SessionsMap};
+use crate::grpc_support::{self, ActiveRuns, AssetStore};
 use crate::loader::{Loader, S3Loader, SyntheticLoader};
 use crate::metrics;
 use crate::proto::{
-    AssetRequest, AssetResponse, CheckpointRequest, CheckpointResponse, EndRequest, EndResponse,
-    InitRequest, InitResponse, MetricsRequest, MetricsResponse, checkpoint_request,
+    AssetRequest, AssetResponse, CheckpointRequest, CheckpointResponse, DataRequest, DataResponse,
+    EndRequest, EndResponse, InitRequest, InitResponse, MetricsRequest, MetricsResponse,
+    checkpoint_request,
+    give_me_data_server::{GiveMeData as GiveMeDataService, GiveMeDataServer},
     metrics_request,
 };
-use crate::trainings::TrainingStore;
+use crate::run_manager::{RunManager, RunStatus};
 use clickhouse::Client;
 use futures::Stream;
 use tokio::sync::mpsc;
@@ -21,26 +23,23 @@ use tonic::transport::Server;
 use tonic::{Request, Response, Status, Streaming};
 use tracing::{debug, error, info};
 
-use crate::proto::give_me_data_server::{GiveMeData as GiveMeDataService, GiveMeDataServer};
-use crate::proto::{DataRequest, DataResponse};
-
 struct GiveMeData {
     database: Client,
-    trainings: TrainingStore,
+    run_manager: RunManager,
     loader: Arc<dyn Loader>,
     assets: AssetStore,
     cache_dir: &'static Path,
     checkpoint_dir: &'static Path,
     metrics_dir: &'static Path,
     synthetic: bool,
-    sessions: SessionsMap,
+    active_runs: ActiveRuns,
 }
 
 impl GiveMeData {
     fn new(
         s3_client: aws_sdk_s3::Client,
         database: Client,
-        trainings: TrainingStore,
+        run_manager: RunManager,
         bucket: &'static str,
         cache_dir: &'static Path,
         assets_dir: &'static Path,
@@ -54,7 +53,7 @@ impl GiveMeData {
             Arc::new(S3Loader::new(s3_client.clone(), bucket))
         };
         GiveMeData {
-            sessions: Default::default(),
+            active_runs: Default::default(),
             loader,
             assets: AssetStore::new(s3_client, bucket, assets_dir, synthetic),
             cache_dir,
@@ -62,7 +61,7 @@ impl GiveMeData {
             metrics_dir,
             synthetic,
             database,
-            trainings,
+            run_manager,
         }
     }
 }
@@ -74,7 +73,7 @@ impl GiveMeDataService for GiveMeData {
         debug!(run = %run_id, "init request");
         let initialized = grpc_support::initialize(
             run_id,
-            &self.trainings,
+            &self.run_manager,
             &self.assets,
             &self.database,
             self.loader.clone(),
@@ -82,11 +81,11 @@ impl GiveMeDataService for GiveMeData {
             self.synthetic,
         )
         .await?;
-        self.sessions
+        self.active_runs
             .write()
             .await
             .insert(run_id, initialized.active);
-        info!(run = %run_id, "training session created");
+        info!(run = %run_id, "run initialized");
 
         Ok(Response::new(InitResponse {
             run_id: run_id.to_string(),
@@ -104,9 +103,11 @@ impl GiveMeDataService for GiveMeData {
 
         let (out_tx, out_rx) = mpsc::unbounded_channel();
         tokio::spawn({
-            let sessions = self.sessions.clone();
+            let active_runs = self.active_runs.clone();
             async move {
-                if let Err(err) = grpc_support::data_handler(sessions, &mut stream, &out_tx).await {
+                if let Err(err) =
+                    grpc_support::data_handler(active_runs, &mut stream, &out_tx).await
+                {
                     error!(error = format!("{err:#}"), "data stream failed");
                     let _ = out_tx.send(Err(Status::internal(format!("{err:#}"))));
                 }
@@ -125,12 +126,12 @@ impl GiveMeDataService for GiveMeData {
         let request = request.into_inner();
         let run_id = grpc_support::parse_run_id(&request.run_id)?;
         let active = self
-            .sessions
+            .active_runs
             .read()
             .await
             .get(&run_id)
             .cloned()
-            .ok_or_else(|| Status::not_found("unknown training"))?;
+            .ok_or_else(|| Status::not_found("unknown run"))?;
         let asset = active
             .config
             .assets
@@ -165,8 +166,8 @@ impl GiveMeDataService for GiveMeData {
             }
         };
         let run_id = grpc_support::parse_run_id(&metadata.run_id)?;
-        if !self.sessions.read().await.contains_key(&run_id) {
-            return Err(Status::not_found("unknown training"));
+        if !self.active_runs.read().await.contains_key(&run_id) {
+            return Err(Status::not_found("unknown run"));
         }
         info!(run = %run_id, step = metadata.step, "receiving checkpoint");
 
@@ -210,8 +211,8 @@ impl GiveMeDataService for GiveMeData {
             }
         };
         let run_id = grpc_support::parse_run_id(&metadata.run_id)?;
-        if !self.sessions.read().await.contains_key(&run_id) {
-            return Err(Status::not_found("unknown training"));
+        if !self.active_runs.read().await.contains_key(&run_id) {
+            return Err(Status::not_found("unknown run"));
         }
         info!(run = %run_id, "receiving metrics");
 
@@ -238,19 +239,21 @@ impl GiveMeDataService for GiveMeData {
     }
 
     async fn end(&self, request: Request<EndRequest>) -> Result<Response<EndResponse>, Status> {
-        let request = request.into_inner();
-        let run_id = grpc_support::parse_run_id(&request.run_id)?;
-        info!(run = %run_id, "ending training");
-        let removed = self.sessions.write().await.remove(&run_id);
+        let run_id = grpc_support::parse_run_id(&request.into_inner().run_id)?;
+        info!(run = %run_id, "ending run");
+        let removed = self.active_runs.write().await.remove(&run_id);
 
         match removed {
-            None => return Err(Status::not_found("unknown training")),
+            None => return Err(Status::not_found("unknown run")),
             Some(active) => active.handle.finish().await,
         }
-        self.trainings.finish(run_id).await.map_err(|err| {
-            error!(run = %run_id, error = format!("{err:#}"), "finishing training failed");
-            Status::internal(format!("{err:#}"))
-        })?;
+        self.run_manager
+            .append_status(run_id, RunStatus::Succeeded)
+            .await
+            .map_err(|err| {
+                error!(run = %run_id, error = format!("{err:#}"), "finishing run failed");
+                Status::internal(format!("{err:#}"))
+            })?;
 
         Ok(Response::new(EndResponse {}))
     }
@@ -260,7 +263,7 @@ pub async fn serve(
     port: u16,
     s3_client: aws_sdk_s3::Client,
     database: Client,
-    trainings: TrainingStore,
+    run_manager: RunManager,
     bucket: &'static str,
     cache_dir: &'static Path,
     assets_dir: &'static Path,
@@ -270,7 +273,7 @@ pub async fn serve(
     shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
     if synthetic {
-        info!("serving synthetic sessions");
+        info!("serving synthetic runs");
     }
     info!("listening on 0.0.0.0:{port}");
 
@@ -278,7 +281,7 @@ pub async fn serve(
         .add_service(GiveMeDataServer::new(GiveMeData::new(
             s3_client,
             database,
-            trainings,
+            run_manager,
             bucket,
             cache_dir,
             assets_dir,

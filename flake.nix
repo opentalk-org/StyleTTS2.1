@@ -15,8 +15,10 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
     nixpkgsRust.url = "github:NixOS/nixpkgs/26.05";
+    nixpkgsClickhouse.url = "github:NixOS/nixpkgs/56c02bc00adcf003215cc4bd996d6efaf4cff188";
     flake-parts.url = "github:hercules-ci/flake-parts";
     dnvr.url = "github:dialohq/dnvr";
+    dnvr.inputs.nixpkgs.follows = "nixpkgsClickhouse";
     dialo-overlays.url = "github:dialohq/nix-overlays";
   };
 
@@ -478,6 +480,8 @@
           };
 
           dnvr.shells.givemedata = {
+            imports = [ ./nix/clickhouse.nix ];
+
             packages = [
               python
               pkgs.ruff
@@ -492,7 +496,7 @@
             ];
 
             env = {
-              CLICKHOUSE_URL = "http://127.0.0.1:8123?database=gmd";
+              CLICKHOUSE_URL = "http://127.0.0.1:8123";
               CLICKHOUSE_USER = "default";
               CLICKHOUSE_PASSWORD = "";
               GRPC_PORT = "8181";
@@ -525,11 +529,6 @@
                 . .venv/bin/activate
               fi
             '';
-
-            processes.givemedata-clickhouse = {
-              imports = [ presets.clickhouse ];
-              database = "gmd";
-            };
 
             scripts.givemedata-gen = {
               description = "Generate Python proto stubs for givemedata-client.";

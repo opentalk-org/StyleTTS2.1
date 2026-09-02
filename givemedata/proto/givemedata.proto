@@ -15,7 +15,6 @@ message InitRequest {
 
 message InitResponse {
   string run_id = 1;
-  // verbatim yaml passed through to the training loop, never parsed here
   string train_config = 2;
 }
 

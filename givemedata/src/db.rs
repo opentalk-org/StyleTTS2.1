@@ -2,7 +2,7 @@ use rand::{RngExt, SeedableRng, rngs::SmallRng};
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::session;
+use crate::run;
 
 pub const VALIDATION_SEED_SALT: u64 = 0x76616c;
 pub const TRAINING_SEED_SALT: u64 = 0x747261;
@@ -46,7 +46,7 @@ pub struct SampleRow {
 
 pub async fn fetch_validation_samples(
     client: &clickhouse::Client,
-    config: &session::DataConfig,
+    config: &run::DataConfig,
 ) -> anyhow::Result<Vec<SampleRow>> {
     client
         .query(VALIDATION_SAMPLES_QUERY)
@@ -62,7 +62,7 @@ pub async fn fetch_validation_samples(
 pub async fn fetch_training_samples(
     client: &clickhouse::Client,
     excluded_ids: &[Uuid],
-    config: &session::DataConfig,
+    config: &run::DataConfig,
 ) -> anyhow::Result<Vec<SampleRow>> {
     let excluded_ids: Vec<String> = excluded_ids.iter().map(Uuid::to_string).collect();
     client

@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::{
     db::SampleRow,
-    session,
+    run,
     symbols::{TextCleaner, boundary_token_id, text_to_tensor_bytes},
 };
 
@@ -269,7 +269,7 @@ pub struct ScheduledSampler {
 impl ScheduledSampler {
     pub fn new(
         template: Vec<DurationBin>,
-        sequences: &[session::SequenceConfig],
+        sequences: &[run::SequenceConfig],
         seed: u64,
     ) -> Self {
         let schedule: Vec<Sequence> = sequences
@@ -318,7 +318,7 @@ impl Sampler for ScheduledSampler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::SampleRow, session::SequenceConfig};
+    use crate::{db::SampleRow, run::SequenceConfig};
     use std::collections::HashMap;
 
     fn row(i: u128, duration: f64, lower: f64, upper: f64) -> SampleRow {

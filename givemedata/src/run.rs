@@ -91,14 +91,14 @@ fn on_demand_batches(mut sampler: Box<dyn Sampler>, loader: Arc<dyn Loader>) -> 
     }))
 }
 
-pub struct Session {
+pub struct RunState {
     pub id: Uuid,
     cancel_token: CancellationToken,
     validation_batches: Batches,
     training_batches: Batches,
 }
 
-impl Session {
+impl RunState {
     pub async fn new(
         id: Uuid,
         database: &clickhouse::Client,
@@ -107,7 +107,7 @@ impl Session {
         config: &DataConfig,
         synthetic: bool,
     ) -> anyhow::Result<Self> {
-        info!(session = %id, dataset = %config.dataset_id, synthetic, "initializing session");
+        info!(run = %id, dataset = %config.dataset_id, synthetic, "initializing run");
 
         let (validation_rows, training_rows) = if synthetic {
             let language = config
@@ -179,19 +179,19 @@ impl Session {
                     loader.clone(),
                     cache_dir,
                     cancel_token.clone(),
-                    info_span!("prefetcher", session = %id, split = "training"),
+                    info_span!("prefetcher", run = %id, split = "training"),
                 )),
                 Batches::Prefetched(Prefetcher::spawn(
                     validation_sampler,
                     loader,
                     cache_dir,
                     cancel_token.clone(),
-                    info_span!("prefetcher", session = %id, split = "validation"),
+                    info_span!("prefetcher", run = %id, split = "validation"),
                 )),
             )
         };
 
-        Ok(Session {
+        Ok(RunState {
             id,
             cancel_token,
             training_batches,
@@ -236,15 +236,15 @@ enum Command {
 }
 
 #[derive(Clone)]
-pub struct SessionHandle {
+pub struct RunHandle {
     tx: mpsc::Sender<Command>,
 }
 
-impl SessionHandle {
-    pub fn spawn(session: Session) -> Self {
-        let id = session.id;
+impl RunHandle {
+    pub fn spawn(run: RunState) -> Self {
+        let id = run.id;
         let (tx, rx) = mpsc::channel(1);
-        tokio::spawn(run(session, rx).instrument(info_span!("session", session = %id)));
+        tokio::spawn(serve_commands(run, rx).instrument(info_span!("run", run = %id)));
         Self { tx }
     }
 
@@ -256,11 +256,11 @@ impl SessionHandle {
             .await
             .is_err()
         {
-            bail!("session ended");
+            bail!("run ended");
         }
         match response.await {
             Ok(batch) => batch,
-            Err(_) => bail!("session ended"),
+            Err(_) => bail!("run ended"),
         }
     }
 
@@ -273,22 +273,22 @@ impl SessionHandle {
     }
 }
 
-async fn run(mut session: Session, mut rx: mpsc::Receiver<Command>) {
+async fn serve_commands(mut run: RunState, mut rx: mpsc::Receiver<Command>) {
     while let Some(cmd) = rx.recv().await {
         match cmd {
             Command::NextBatch { validation, reply } => {
-                let _ = reply.send(session.next_batch(validation).await);
+                let _ = reply.send(run.next_batch(validation).await);
             }
             Command::Finish { reply } => {
-                session.finish().await;
+                run.finish().await;
                 let _ = reply.send(());
-                debug!("session finished");
+                debug!("run finished");
                 return;
             }
         }
     }
 
     // all handles dropped without an End: still stop prefetchers and drain the cache
-    session.finish().await;
-    debug!("session finished after handles dropped");
+    run.finish().await;
+    debug!("run finished after handles dropped");
 }
