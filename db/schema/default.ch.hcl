@@ -333,9 +333,6 @@ table "dataset_audio_files" {
   column "updated_at" {
     type = DateTime64(6)
   }
-  column "created_at" {
-    type = DateTime64(6)
-  }
 
   primary_key {
     columns = [column.dataset_id, column.audio_file_id]
