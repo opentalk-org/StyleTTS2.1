@@ -8,6 +8,21 @@ const RUN_FIELDS: { id: string; label: string }[] = [
   { id: "duration", label: "Duration" },
 ];
 
+const DEFAULT_RUN_FIELDS = RUN_FIELDS.map((field) => field.id);
+const DEFAULT_DYNAMIC_COLUMN_COUNT = 3;
+
+
+export function defaultRunColumns(runs: Run[]): string[] {
+  const available = runColumnOptions(runs)
+    .map((option) => option.value)
+    .filter((column) => !DEFAULT_RUN_FIELDS.includes(column));
+  for (let index = available.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [available[index], available[swapIndex]] = [available[swapIndex], available[index]];
+  }
+  return [...DEFAULT_RUN_FIELDS, ...available.slice(0, DEFAULT_DYNAMIC_COLUMN_COUNT)];
+}
+
 
 export function metricGroup(name: string): string {
   const separator = name.indexOf("/");

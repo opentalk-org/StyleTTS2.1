@@ -9,7 +9,7 @@ import {
   Rows2,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Analysis } from "@/features/comparison/Analysis";
 import { ModelMonitor } from "@/features/model-monitor/ModelMonitor";
@@ -33,6 +33,11 @@ export function Viewer() {
   const [viewsOpen, setViewsOpen] = useState(false);
   const [modelMonitorOpen, setModelMonitorOpen] = useState(false);
   const runs = runsQuery.data ?? [];
+
+  useEffect(() => {
+    viewer.initializeColumns(runs);
+  }, [runs, viewer.initializeColumns]);
+
   const selectedRuns = useMemo(
     () => runs.filter((run) => viewer.selectedRunIds.includes(run.id)),
     [runs, viewer.selectedRunIds],

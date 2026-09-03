@@ -1,17 +1,10 @@
 import { create } from "zustand";
 
-import type { PlotSettings, Workspace } from "@/shared/types";
+import { defaultRunColumns } from "@/shared/metrics";
+import type { PlotSettings, Run, Workspace } from "@/shared/types";
 
 const STORAGE_KEY = "runflow.metrics.workspaces.v4";
 const STARS_KEY = "runflow.metrics.stars.v1";
-const DEFAULT_COLUMNS = [
-  "name",
-  "status",
-  "startedAt",
-  "duration",
-  "param:decoder",
-  "metric:val/mel_loss",
-];
 
 export const DEFAULT_PLOT_SETTINGS: PlotSettings = {
   xScale: "linear",
@@ -43,6 +36,7 @@ interface ViewerState {
   projectId: string | null;
   selectedRunIds: string[];
   columns: string[];
+  columnsInitialized: boolean;
   runColors: Record<string, string>;
   plotSettings: Record<string, PlotSettings>;
   hiddenPlots: string[];
@@ -53,6 +47,7 @@ interface ViewerState {
   selectProject: (id: string | null) => void;
   toggleRun: (id: string) => void;
   selectRuns: (ids: string[]) => void;
+  initializeColumns: (runs: Run[]) => void;
   setColumns: (columns: string[]) => void;
   setRunColor: (runId: string, color: string | null) => void;
   toggleStar: (runId: string) => void;
@@ -88,7 +83,8 @@ function loadWorkspaces(): Workspace[] {
 export const useViewerStore = create<ViewerState>((set, get) => ({
   projectId: null,
   selectedRunIds: [],
-  columns: DEFAULT_COLUMNS,
+  columns: defaultRunColumns([]),
+  columnsInitialized: false,
   runColors: {},
   plotSettings: {},
   hiddenPlots: [],
@@ -96,7 +92,13 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   sql: DEFAULT_SQL,
   runningSql: DEFAULT_SQL,
   workspaces: loadWorkspaces(),
-  selectProject: (projectId) => set({ projectId, selectedRunIds: [] }),
+  selectProject: (projectId) =>
+    set({
+      projectId,
+      selectedRunIds: [],
+      columns: defaultRunColumns([]),
+      columnsInitialized: false,
+    }),
   toggleRun: (id) =>
     set((state) => ({
       selectedRunIds: state.selectedRunIds.includes(id)
@@ -104,7 +106,13 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
         : [...state.selectedRunIds, id],
     })),
   selectRuns: (selectedRunIds) => set({ selectedRunIds }),
-  setColumns: (columns) => set({ columns }),
+  initializeColumns: (runs) =>
+    set((state) =>
+      state.columnsInitialized || runs.length === 0
+        ? state
+        : { columns: defaultRunColumns(runs), columnsInitialized: true },
+    ),
+  setColumns: (columns) => set({ columns, columnsInitialized: true }),
   setRunColor: (runId, color) =>
     set((state) => {
       const runColors = { ...state.runColors };
@@ -168,6 +176,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       projectId: workspace.projectId,
       selectedRunIds: workspace.selectedRunIds,
       columns: workspace.columns,
+      columnsInitialized: true,
       runColors: workspace.runColors ?? {},
       sql: workspace.sql,
       runningSql: workspace.sql,

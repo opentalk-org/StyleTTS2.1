@@ -20,6 +20,7 @@ from shared.db.waveforms.clickhouse import (
     get_waveform,
     get_waveforms,
     replace_waveform as publish_waveform,
+    waveform_exists,
 )
 from shared.db.waveforms.codec import (
     decode_peaks,
@@ -133,14 +134,6 @@ def bulk_delete_waveforms(
     waveforms = get_waveforms(ids)
     delete_waveforms(ids)
     delete_unreferenced_bucket_files(session, [item.pack_id for item in waveforms])
-
-
-def waveform_exists(audio_file_id: uuid.UUID) -> bool:
-    try:
-        get_waveform(audio_file_id)
-    except KeyError:
-        return False
-    return True
 
 
 def _waveform_from_audio(data: bytes) -> WaveformInput:

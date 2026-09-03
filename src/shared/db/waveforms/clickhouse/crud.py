@@ -76,6 +76,19 @@ def get_waveforms(audio_file_ids: Sequence[UUID]) -> list[AudioWaveformRecord]:
     return [AudioWaveformRecord.model_validate(row) for row in result.named_results()]
 
 
+def waveform_exists(audio_file_id: UUID) -> bool:
+    result = clickhouse_client().query(
+        """
+        SELECT 1
+        FROM audio_waveforms FINAL
+        WHERE audio_file_id = {audio_file_id:UUID}
+        LIMIT 1
+        """,
+        parameters={"audio_file_id": audio_file_id},
+    )
+    return bool(result.result_rows)
+
+
 def delete_waveforms(audio_file_ids: Sequence[UUID]) -> None:
     if not audio_file_ids:
         return

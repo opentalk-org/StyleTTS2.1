@@ -3,6 +3,7 @@ from shared.db.waveforms.clickhouse.crud import (
     get_waveform,
     get_waveforms,
     replace_waveform,
+    waveform_exists,
 )
 from shared.db.waveforms.clickhouse.models import AudioWaveformRecord
 
@@ -12,4 +13,5 @@ __all__ = [
     "get_waveform",
     "get_waveforms",
     "replace_waveform",
+    "waveform_exists",
 ]
