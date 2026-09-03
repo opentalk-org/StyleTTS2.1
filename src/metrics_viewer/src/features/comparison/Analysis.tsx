@@ -19,7 +19,7 @@ import {
   SearchInput,
   SegmentedControl,
 } from "@/shared/ui";
-import { DEFAULT_PLOT_SETTINGS, DEFAULT_SQL, useViewerStore } from "@/state/store";
+import { DEFAULT_PLOT_SETTINGS, DEFAULT_SQL, useViewerStore } from "@/features/viewer/store";
 import { groupPlots, type Plot } from "./logic";
 import { MediaPanel } from "./MediaPanel";
 import { ParamsPanel } from "./ParamsPanel";

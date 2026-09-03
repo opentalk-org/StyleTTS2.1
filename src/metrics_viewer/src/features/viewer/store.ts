@@ -3,7 +3,6 @@ import { create } from "zustand";
 import type { PlotSettings, Workspace } from "@/shared/types";
 
 const STORAGE_KEY = "runflow.metrics.workspaces.v4";
-
 const STARS_KEY = "runflow.metrics.stars.v1";
 const DEFAULT_COLUMNS = [
   "name",
@@ -13,7 +12,6 @@ const DEFAULT_COLUMNS = [
   "param:decoder",
   "metric:val/mel_loss",
 ];
-
 
 export const DEFAULT_PLOT_SETTINGS: PlotSettings = {
   xScale: "linear",
@@ -25,7 +23,6 @@ export const DEFAULT_PLOT_SETTINGS: PlotSettings = {
   smoothOpacity: 0.95,
   showLegend: true,
 };
-
 
 export const DEFAULT_SQL = `SELECT
   plot,
@@ -46,17 +43,11 @@ interface ViewerState {
   projectId: string | null;
   selectedRunIds: string[];
   columns: string[];
-
   runColors: Record<string, string>;
-
   plotSettings: Record<string, PlotSettings>;
-
   hiddenPlots: string[];
-
   starredRunIds: string[];
-
   sql: string;
-
   runningSql: string;
   workspaces: Workspace[];
   selectProject: (id: string | null) => void;

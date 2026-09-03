@@ -43,19 +43,13 @@ export interface Artifact {
   source: string;
 }
 
-
-
-
-
 export interface PlotQueryResult {
-
   plot: string[];
   runId: string[];
   x: number[];
   y: number[];
   elapsedMs: number;
 }
-
 
 export interface PlotSettings {
   xScale: "linear" | "log";
