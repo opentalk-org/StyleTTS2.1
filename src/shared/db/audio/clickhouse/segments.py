@@ -12,41 +12,22 @@ def list_audio_segments(audio_file_id: UUID) -> list[AudioSegmentRecord]:
         SELECT
             id,
             audio_file_id,
-            latest.1 AS updated_at,
-            latest.2 AS position,
-            latest.3 AS start_seconds,
-            latest.4 AS end_seconds,
-            latest.5 AS text,
-            latest.6 AS phon,
-            latest.7 AS kind,
-            latest.8 AS accuracy,
-            latest.9 AS speaker_id,
-            latest.10 AS metadata,
-            latest.11 AS alignment
-        FROM (
-            SELECT
-                id,
-                audio_file_id,
-                argMax(
-                    tuple(
-                        updated_at,
-                        position,
-                        start_seconds,
-                        end_seconds,
-                        text,
-                        phon,
-                        kind,
-                        accuracy,
-                        speaker_id,
-                        metadata,
-                        alignment
-                    ),
-                    updated_at
-                ) AS latest
-            FROM audio_segments
-            WHERE audio_file_id = {audio_file_id:UUID}
-            GROUP BY audio_file_id, id
-        )
+            updated_at,
+            position,
+            start_seconds,
+            end_seconds,
+            text,
+            phon,
+            kind,
+            accuracy,
+            speaker_id,
+            metadata,
+            alignment
+        FROM audio_segments
+        WHERE audio_file_id = {audio_file_id:UUID}
+        QUALIFY row_number() OVER (
+            PARTITION BY audio_file_id, id ORDER BY updated_at DESC
+        ) = 1
         ORDER BY position, id
         """,
         parameters={"audio_file_id": audio_file_id},
@@ -62,20 +43,13 @@ def list_audio_segments_bulk(
         return {}
     result = clickhouse_client().query(
         """
-        SELECT id, audio_file_id, latest.1 AS updated_at, latest.2 AS position,
-               latest.3 AS start_seconds, latest.4 AS end_seconds,
-               latest.5 AS text, latest.6 AS phon, latest.7 AS kind,
-               latest.8 AS accuracy, latest.9 AS speaker_id,
-               latest.10 AS metadata, latest.11 AS alignment
-        FROM (
-            SELECT id, audio_file_id,
-                   argMax(tuple(updated_at, position, start_seconds, end_seconds,
-                                text, phon, kind, accuracy, speaker_id, metadata,
-                                alignment), updated_at) AS latest
-            FROM audio_segments
-            WHERE audio_file_id IN {ids:Array(UUID)}
-            GROUP BY audio_file_id, id
-        )
+        SELECT id, audio_file_id, updated_at, position, start_seconds, end_seconds,
+               text, phon, kind, accuracy, speaker_id, metadata, alignment
+        FROM audio_segments
+        WHERE audio_file_id IN {ids:Array(UUID)}
+        QUALIFY row_number() OVER (
+            PARTITION BY audio_file_id, id ORDER BY updated_at DESC
+        ) = 1
         ORDER BY audio_file_id, position, id
         """,
         parameters={"ids": ids},
@@ -112,30 +86,22 @@ def list_audio_segment_previews(
         SELECT
             id,
             audio_file_id,
-            latest.1 AS updated_at,
-            latest.2 AS position,
-            latest.3 AS start_seconds,
-            latest.4 AS end_seconds,
-            latest.5 AS text,
-            latest.6 AS phon,
-            latest.7 AS kind,
-            latest.8 AS accuracy,
-            latest.9 AS speaker_id,
-            latest.10 AS metadata,
-            latest.11 AS alignment
-        FROM (
-            SELECT
-                id,
-                audio_file_id,
-                argMax(
-                    tuple(updated_at, position, start_seconds, end_seconds, text,
-                          phon, kind, accuracy, speaker_id, metadata, alignment),
-                    updated_at
-                ) AS latest
-            FROM audio_segments
-            WHERE audio_file_id IN {ids:Array(UUID)}
-            GROUP BY audio_file_id, id
-        )
+            updated_at,
+            position,
+            start_seconds,
+            end_seconds,
+            text,
+            phon,
+            kind,
+            accuracy,
+            speaker_id,
+            metadata,
+            alignment
+        FROM audio_segments
+        WHERE audio_file_id IN {ids:Array(UUID)}
+        QUALIFY row_number() OVER (
+            PARTITION BY audio_file_id, id ORDER BY updated_at DESC
+        ) = 1
         ORDER BY audio_file_id, position, id
         LIMIT {limit:UInt32} BY audio_file_id
         """,
