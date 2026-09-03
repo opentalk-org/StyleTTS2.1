@@ -2,7 +2,7 @@ from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from shared.db.audio.clickhouse.files import get_audio_files
+from shared.db.audio import crud as audio_crud
 from shared.db.mos.clickhouse.crud import (
     count_comparisons as _count_comparisons,
     create_comparison,
@@ -11,7 +11,6 @@ from shared.db.mos.clickhouse.crud import (
     list_comparisons as _list_comparisons,
     sample_pair as _sample_pair,
     update_comparison,
-    validate_pair_membership,
 )
 from shared.db.mos.clickhouse.models import MosComparisonRecord, MosPairIds
 from shared.db.mos.schemas import MosRatingCreate, MosRatingUpdate
@@ -32,7 +31,11 @@ def sample_pair(dataset_ids: Sequence[UUID]) -> MosPairIds:
 
 
 def create_rating(payload: MosRatingCreate) -> MosComparisonRecord:
-    validate_pair_membership(payload.dataset_id, payload.audio_a_id, payload.audio_b_id)
+    audio_files = audio_crud.get_audio_files_bulk(
+        [payload.audio_a_id, payload.audio_b_id]
+    )
+    if len(audio_files) != 2:
+        raise ValueError("both MOS audio files must exist")
     now = datetime.now(UTC)
     return create_comparison(
         MosComparisonRecord(
@@ -76,7 +79,7 @@ def comparison_audio_files(comparisons: Sequence[MosComparisonRecord]):
         for item in comparisons
         for audio_id in (item.audio_a_id, item.audio_b_id)
     ]
-    return {item.id: item for item in get_audio_files(ids)}
+    return audio_crud.get_audio_files_bulk(ids)
 
 
 def update_latest_rating(

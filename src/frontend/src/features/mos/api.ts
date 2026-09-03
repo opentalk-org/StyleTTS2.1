@@ -15,7 +15,6 @@ export type MosPair = {
 };
 
 export type MosRatingRequest = {
-  dataset_id: string;
   audio_a_id: string;
   audio_b_id: string;
   preferred_audio_id: string;

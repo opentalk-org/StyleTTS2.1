@@ -83,14 +83,12 @@ class SaveAudioRecordNode(Node):
                 session,
                 payloads,
                 config=_audio_pack_config(self.settings),
-                commit=False,
             )
             if self.settings.dataset_id is not None:
                 dataset_crud.bulk_add_audio_files_to_dataset(
                     self.settings.dataset_id,
                     [item.id for item in items],
                 )
-            session.commit()
         context.check_cancel()
         return [
             _audio_writeback_output(item, audio, "created")

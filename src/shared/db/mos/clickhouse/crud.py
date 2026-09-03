@@ -120,22 +120,6 @@ def count_comparisons(dataset_id: UUID) -> int:
     return int(result.result_rows[0][0])
 
 
-def validate_pair_membership(
-    dataset_id: UUID, audio_a_id: UUID, audio_b_id: UUID
-) -> None:
-    result = clickhouse_client().query(
-        """
-        SELECT countDistinct(audio_file_id)
-        FROM dataset_audio_files FINAL
-        WHERE dataset_id = {dataset_id:UUID}
-          AND audio_file_id IN {audio_ids:Array(UUID)}
-        """,
-        parameters={"dataset_id": dataset_id, "audio_ids": [audio_a_id, audio_b_id]},
-    )
-    if int(result.result_rows[0][0]) != 2:
-        raise ValueError("both MOS audio files must belong to the selected dataset")
-
-
 def delete_comparison(comparison_id: UUID) -> None:
     delete_rows(
         clickhouse_client(),

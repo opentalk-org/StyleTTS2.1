@@ -9,7 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class MosRatingCreate(BaseModel):
-    dataset_id: UUID
     audio_a_id: UUID
     audio_b_id: UUID
     preferred_audio_id: UUID

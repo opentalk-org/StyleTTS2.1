@@ -163,7 +163,6 @@ class DeleteAudioRecordsNode(Node):
             audio_crud.bulk_delete_audio_files(
                 session,
                 [audio.audio_file_id for audio in audios],
-                prune=False,
             )
         return [
             {"writeback_result": {"deleted": str(audio.audio_file_id)}}

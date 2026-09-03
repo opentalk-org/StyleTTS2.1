@@ -49,10 +49,6 @@ from shared.db.waveforms.clickhouse import get_waveforms
 class AudioPackConfig:
     target_pack_bytes: int = 128 * 1024 * 1024
     path_prefix: str = "audio-packs"
-    folder_target_files: int = 256
-    prune_used_ratio: float = 0.5
-    prune_size_ratio: float = 0.2
-    remote_workers: int = 9
 
 
 def get_audio_file(audio_file_id: UUID) -> AudioFileRecord:
@@ -83,9 +79,13 @@ def bulk_create_audio_files(
     session: Session,
     payloads: Sequence[AudioCreate],
     config: AudioPackConfig = AudioPackConfig(),
-    commit: bool = True,
 ) -> list[AudioFileRecord]:
-    return _create_files(session, payloads)
+    return _create_files(
+        session,
+        payloads,
+        target_pack_bytes=config.target_pack_bytes,
+        path_prefix=config.path_prefix,
+    )
 
 
 def bulk_update_audio_files(
@@ -93,15 +93,17 @@ def bulk_update_audio_files(
     payloads: dict[UUID, AudioUpdate],
     config: AudioPackConfig = AudioPackConfig(),
 ) -> dict[UUID, AudioFileRecord]:
-    return _update_files(session, payloads)
+    return _update_files(
+        session,
+        payloads,
+        target_pack_bytes=config.target_pack_bytes,
+        path_prefix=config.path_prefix,
+    )
 
 
 def bulk_delete_audio_files(
     session: Session,
     audio_file_ids: Iterable[UUID],
-    config: AudioPackConfig = AudioPackConfig(),
-    commit: bool = True,
-    prune: bool = False,
 ) -> None:
     ids = list(dict.fromkeys(audio_file_ids))
     files = get_audio_files(ids)

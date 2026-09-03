@@ -22,7 +22,7 @@ def persist_split_records(
     delete_source: bool,
 ) -> tuple[list[AudioFileRecord], dict[UUID, list[dict]]]:
     with database_session() as session:
-        items = audio_crud.bulk_create_audio_files(session, payloads, commit=False)
+        items = audio_crud.bulk_create_audio_files(session, payloads)
         segments_by_id = audio_crud.bulk_replace_audio_segments(
             {
                 item.id: segments
@@ -53,10 +53,7 @@ def persist_split_records(
             audio_crud.bulk_delete_audio_files(
                 session,
                 completed_source_ids,
-                commit=False,
-                prune=False,
             )
-        session.commit()
     return items, segments_by_id
 
 

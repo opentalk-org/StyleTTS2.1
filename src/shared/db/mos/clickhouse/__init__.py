@@ -6,7 +6,6 @@ from shared.db.mos.clickhouse.crud import (
     list_comparisons,
     sample_pair,
     update_comparison,
-    validate_pair_membership,
 )
 from shared.db.mos.clickhouse.models import MosComparisonRecord, MosPairIds
 
@@ -20,5 +19,4 @@ __all__ = [
     "list_comparisons",
     "sample_pair",
     "update_comparison",
-    "validate_pair_membership",
 ]

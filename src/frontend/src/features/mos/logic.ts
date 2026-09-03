@@ -18,7 +18,6 @@ export function mosRatingRequest(
     throw new Error("Choose the better audio file");
   }
   return {
-    dataset_id: pair.dataset_id,
     audio_a_id: pair.audio_a.id,
     audio_b_id: pair.audio_b.id,
     preferred_audio_id: preferredAudioId,
