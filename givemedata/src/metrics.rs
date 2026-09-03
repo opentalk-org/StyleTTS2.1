@@ -15,7 +15,7 @@ struct ScalarRecord<'a> {
     step: u64,
     timestamp_unix_ms: i64,
     name: &'a str,
-    value: f64,
+    value: f32,
 }
 
 #[derive(Serialize)]
@@ -23,7 +23,7 @@ struct ArrayRecord<'a> {
     step: u64,
     timestamp_unix_ms: i64,
     name: &'a str,
-    value: &'a [f64],
+    value: &'a [f32],
 }
 
 #[derive(Serialize)]

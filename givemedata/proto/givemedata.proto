@@ -81,14 +81,14 @@ message ScalarMetric {
   uint64 step = 1;
   int64 timestamp_unix_ms = 2;
   string name = 3;
-  double value = 4;
+  float value = 4;
 }
 
 message ArrayMetric {
   uint64 step = 1;
   int64 timestamp_unix_ms = 2;
   string name = 3;
-  repeated double value = 4;
+  repeated float value = 4;
 }
 
 message ArtifactMetric {
