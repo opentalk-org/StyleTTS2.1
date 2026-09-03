@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/shared/icons";
-import { addNode, nodeAccent } from "../logic";
+import { addNode, nodeAccent } from "../graph";
 import { useWorkflowStore } from "../store";
 import type { WorkflowNodeSchema, WorkflowSchema } from "../types";
 

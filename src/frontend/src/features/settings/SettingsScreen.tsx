@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { useNav } from "@/app/navStore";
+import { useAppStore } from "@/app/store";
 import { showToast } from "@/shared/feedback/Toast";
 import { useFrontendPreferences } from "@/shared/preferences";
 import { Button } from "@/shared/ui/Button";
@@ -78,7 +78,7 @@ function settingsFormsMatch(first: SettingsForm, second: SettingsForm): boolean 
 }
 
 export function SettingsScreen() {
-  const { backendUrl, setBackendUrl } = useNav();
+  const { backendUrl, setBackendUrl } = useAppStore();
   const storage = useStorageSettingsQuery();
   const updateStorage = useStorageSettingsActions();
   const testStorage = useStorageConnectionTest();

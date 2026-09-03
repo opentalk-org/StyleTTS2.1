@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { backendWebSocketUrl } from "@/app/backend";
-import { useNav } from "@/app/navStore";
+import { useAppStore } from "@/app/store";
 import { AUDIO_FILES_KEY } from "@/features/audio/query";
 import { DATASETS_KEY } from "@/features/datasets/query";
 
@@ -13,7 +13,7 @@ import type { RunStatus, WorkflowSocketMessage } from "./types";
 const TERMINAL_STATES = new Set(["succeeded", "failed", "stopped"]);
 
 export function useWorkflowSocket() {
-  const backendUrl = useNav((state) => state.backendUrl);
+  const backendUrl = useAppStore((state) => state.backendUrl);
   const activeRunId = useWorkflowStore((state) => state.activeRunId);
   const applyRunnerStatus = useWorkflowStore((state) => state.applyRunnerStatus);
   const applyRunStatus = useWorkflowStore((state) => state.applyRunStatus);

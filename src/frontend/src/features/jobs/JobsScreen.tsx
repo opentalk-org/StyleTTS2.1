@@ -1,6 +1,5 @@
 import { useState } from "react";
 
-import { useNav } from "@/app/navStore";
 import { fetchRunSnapshot, fetchWorkflowSchema } from "@/features/workflows/api";
 import { useWorkflowStore } from "@/features/workflows/store";
 import { Pager } from "@/shared/data/Pager";
@@ -17,6 +16,7 @@ import { cn } from "@/shared/ui/cn";
 import { fetchJobGraph, type Job } from "./api";
 import { useJobActions, useJobsQuery } from "./query";
 import { useJobsSelection } from "./store";
+import { useNavigate } from "react-router-dom";
 
 const STATE_LABEL: Record<Job["state"], string> = {
   queued: "queued",
@@ -156,6 +156,7 @@ export function JobsScreen() {
 }
 
 function JobRow({ job, selected, onToggle }: { job: Job; selected: boolean; onToggle: () => void }) {
+  const navigate = useNavigate();
   const [opening, setOpening] = useState(false);
   const [editing, setEditing] = useState(false);
   const { remove, removing, stop, stopping, rename } = useJobActions();
@@ -176,7 +177,7 @@ function JobRow({ job, selected, onToggle }: { job: Job; selected: boolean; onTo
       workflow.setActiveRunId(job.run_id);
       const snapshot = await fetchRunSnapshot(job.run_id).catch(() => null);
       if (snapshot) workflow.applyRunSnapshot(job.run_id, snapshot);
-      useNav.getState().go("workflows");
+      void navigate("/workflows");
     } finally {
       setOpening(false);
     }

@@ -1,19 +1,19 @@
 import { useEffect, useRef } from "react";
 
 import { useQueryClient } from "@tanstack/react-query";
+import { Outlet } from "react-router-dom";
 
 import { ConfirmHost } from "@/shared/feedback/ConfirmDialog";
 import { ParamModalHost } from "@/shared/feedback/ParamModal";
 import { ToastHost } from "@/shared/feedback/Toast";
 import { ConnectScreen } from "./ConnectScreen";
 import { Header } from "./Header";
-import { ScreenRouter } from "./ScreenRouter";
 import { Sidebar } from "./Sidebar";
-import { useNav } from "./navStore";
+import { useAppStore } from "./store";
 
 export function AppShell() {
-  const connected = useNav((s) => s.connected);
-  const backendUrl = useNav((s) => s.backendUrl);
+  const connected = useAppStore((state) => state.connected);
+  const backendUrl = useAppStore((state) => state.backendUrl);
   const queryClient = useQueryClient();
   const previousBackendUrl = useRef(backendUrl);
 
@@ -35,7 +35,7 @@ export function AppShell() {
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header />
         <main className="relative flex-1 overflow-y-auto overflow-x-hidden">
-          <ScreenRouter />
+          <Outlet />
         </main>
       </div>
       <ToastHost />

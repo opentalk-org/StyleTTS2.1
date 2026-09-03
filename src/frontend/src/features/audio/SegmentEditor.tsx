@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
 import { backendResourceUrl } from "@/app/backend";
-import { useNav } from "@/app/navStore";
 import { showToast } from "@/shared/feedback/Toast";
 import { useQueryClient } from "@tanstack/react-query";
+import { useParams } from "react-router-dom";
 import { renameAudioFile, saveAudioSegments, updateAudioLanguage, updateAudioScore, updateAudioStylePrompt, updateAudioVoicePrompt, type AudioFile, type AudioSegment } from "./api";
 import { EditorHeader, type EditorHeaderDraft } from "./editor/EditorHeader";
 import { EditorSegmentList } from "./editor/EditorSegmentList";
@@ -48,7 +48,8 @@ function draftMatchesFile(draft: EditorHeaderDraft, file: AudioFile): boolean {
 }
 
 export function SegmentEditor() {
-  const activeAudioFileId = useNav((state) => state.activeAudioFileId);
+  const { audioFileId: activeAudioFileId } = useParams<{ audioFileId: string }>();
+  if (activeAudioFileId === undefined) throw new Error("Audio editor route requires an audio file ID");
   const audio = useAudioFileQuery(activeAudioFileId);
   const queryClient = useQueryClient();
   const audioRef = useRef<HTMLAudioElement>(null);

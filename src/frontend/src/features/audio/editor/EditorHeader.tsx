@@ -1,6 +1,5 @@
 import { useState } from "react";
 
-import { useNav } from "@/app/navStore";
 import { copyText } from "@/shared/clipboard";
 import { showToast } from "@/shared/feedback/Toast";
 import { fmtDur } from "@/shared/format";
@@ -9,6 +8,7 @@ import { Button } from "@/shared/ui/Button";
 import { cn } from "@/shared/ui/cn";
 import { AudioScoreInput, formatAudioScore } from "../AudioScoreInput";
 import type { AudioFile } from "../api";
+import { useNavigate } from "react-router-dom";
 
 export type EditorHeaderDraft = {
   name: string;
@@ -37,6 +37,7 @@ export function EditorHeader({
   onDraftChange: (draft: EditorHeaderDraft) => void;
   onSave: () => Promise<void>;
 }) {
+  const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
   const [metadataCopied, setMetadataCopied] = useState(false);
   const [showMetadata, setShowMetadata] = useState(false);
@@ -46,7 +47,7 @@ export function EditorHeader({
     <div className="relative z-30 mb-4">
       <div className="rounded-[10px] border border-line bg-panel">
         <div className="flex items-center gap-2 px-3 py-2.5">
-          <Button variant="secondary" size="sm" icon="arrow-left" onClick={() => useNav.getState().go("audio")}>Back</Button>
+          <Button variant="secondary" size="sm" icon="arrow-left" onClick={() => void navigate("/audio")}>Back</Button>
           <input
             value={draft.name}
             disabled={saving}

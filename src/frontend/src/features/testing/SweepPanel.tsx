@@ -14,7 +14,7 @@ import { backendResourceUrl } from "@/app/backend";
 import { showToast } from "@/shared/feedback/Toast";
 import { useCheckpointsQuery } from "../checkpoints/query";
 import { useSpeakersQuery } from "../speakers/query";
-import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../workflows/logic";
+import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../workflows/execution";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
 import { DatasetField } from "./DatasetField";
 import { checkpointOptions, numericSetting, sweepConfigFromGraph, testingNode, type TestingWorkflowSpec, updateNodeParams } from "./logic";
