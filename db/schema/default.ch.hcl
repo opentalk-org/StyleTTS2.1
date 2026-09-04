@@ -411,6 +411,10 @@ table "assets" {
   column "name" {
     type = String
   }
+  column "step" {
+    type    = UInt64
+    default = 0
+  }
   column "path" {
     type = String
   }
@@ -437,6 +441,10 @@ table "assets" {
     default = "00000000-0000-0000-0000-000000000000"
   }
 
+  column "deleted" {
+    type = Bool
+  }
+
   primary_key {
     columns = [column.id]
   }
@@ -444,4 +452,3 @@ table "assets" {
     columns = [column.id]
   }
 }
-
