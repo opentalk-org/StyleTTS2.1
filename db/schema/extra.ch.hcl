@@ -52,7 +52,8 @@ table "statistics_entries" {
     type = String
   }
   column "dataset_id" {
-    type = sql("Nullable(UUID)")
+    type = UUID
+    default = "00000000-0000-0000-0000-000000000000"
   }
   column "payload" {
     type = sql("JSON")

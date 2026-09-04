@@ -44,10 +44,10 @@ table "runs" {
     type = String
   }
   column "data_config" {
-    type = JSON
+    type = String
   }
   column "train_config" {
-    type = JSON
+    type = String
   }
 
   primary_key {
@@ -224,28 +224,30 @@ table "audio_files" {
     type = String
   }
   column "bucket_file_id" {
-    type = sql("Nullable(UUID)")
+    type = UUID
+    default = "00000000-0000-0000-0000-000000000000"
   }
   column "byte_offset" {
     type = UInt64
   }
   column "duration" {
-    type = Float64
+    type = Float32
   }
   column "byte_length" {
     type = UInt64
   }
   column "score" {
-    type = sql("Nullable(Float32)")
+    type = Float32
+    default = "inf"
   }
   column "language" {
-    type = sql("LowCardinality(Nullable(String))")
+    type = sql("LowCardinality(String)")
   }
   column "style_prompt" {
-    type = sql("Nullable(String)")
+    type = String
   }
   column "voice_prompt" {
-    type = sql("Nullable(String)")
+    type = String
   }
   column "virtual" {
     type = Bool
@@ -254,10 +256,10 @@ table "audio_files" {
     type = sql("Enum8('packed' = 1, 'external' = 2)")
   }
   column "storage_ref" {
-    type = sql("Nullable(JSON)")
+    type = String
   }
   column "metadata" {
-    type = sql("JSON")
+    type = String
   }
 
   primary_key {
@@ -285,10 +287,10 @@ table "audio_segments" {
     type = UInt32
   }
   column "start_seconds" {
-    type = Float64
+    type = Float32
   }
   column "end_seconds" {
-    type = Float64
+    type = Float32
   }
   column "text" {
     type = String
@@ -300,20 +302,21 @@ table "audio_segments" {
     type = sql("LowCardinality(String)")
   }
   column "accuracy" {
-    type = sql("Nullable(Float32)")
+    type = Float32
+    default = -1.0
   }
   column "speaker_id" {
-    type = sql("Nullable(String)")
+    type = String
   }
   column "metadata" {
-    type = sql("JSON")
+    type = String
   }
   column "alignment" {
-    type = sql("JSON")
+    type = sql("Array(Tuple(word String, start Float32, end Float32))")
   }
 
   primary_key {
-    columns = [column.audio_file_id, column.id]
+    columns = [column.audio_file_id, column.id, column.updated_at]
   }
   sort {
     columns = [column.audio_file_id, column.id, column.updated_at]
@@ -331,6 +334,9 @@ table "dataset_audio_files" {
     type = UUID
   }
   column "updated_at" {
+    type = DateTime64(6)
+  }
+  column "created_at" {
     type = DateTime64(6)
   }
 
@@ -418,10 +424,11 @@ table "assets" {
     type = sql("LowCardinality(String)")
   }
   column "metadata" {
-    type = sql("JSON")
+    type = String
   }
   column "run_id" {
-    type = sql("Nullable(UUID)")
+    type = UUID
+    default = "00000000-0000-0000-0000-000000000000"
   }
 
   primary_key {
