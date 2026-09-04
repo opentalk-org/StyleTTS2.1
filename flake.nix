@@ -205,8 +205,6 @@
               RUNFLOW_NOTIFY_DATABASE_URL = "postgresql+psycopg://runflow:runflow@127.0.0.1:5432/runflow";
               RUNFLOW_CLICKHOUSE_URL = "http://127.0.0.1:8123/default";
 
-              MLFLOW_TRACKING_URI = "http://127.0.0.1:7860";
-              MLFLOW_S3_ENDPOINT_URL = "http://127.0.0.1:9001";
               VITE_BACKEND_URL = "http://127.0.0.1:8001";
               RUNNER_ID = "runner-1";
               GIVEMEDATA_HTTP_ADDR = "http://127.0.0.1:8180";
@@ -248,7 +246,6 @@
               imports = [ presets.postgres ];
               package = pkgs.postgresql_16;
               database = "runflow";
-              extraDatabases = [ "mlflow" ];
               runAsUser = "user";
               initdbArgs = [
                 "--encoding=UTF8"
@@ -364,27 +361,6 @@
               };
             };
 
-            processes.mlflow = {
-              env = {
-                MLFLOW_WAIT_PG = "dnvr://pg/database";
-                MLFLOW_BUCKET = "dnvr://s3/bucket";
-              };
-              command = pkgs.writeShellApplication {
-                name = "mlflow-run";
-                runtimeInputs = [ pkgs.coreutils ];
-                text = ''
-                  echo "[mlflow] http://127.0.0.1:7860"
-                  exec mlflow server \
-                    --host 127.0.0.1 \
-                    --port 7860 \
-                    --backend-store-uri "postgresql+psycopg://runflow:runflow@127.0.0.1:5432/mlflow" \
-                    --artifacts-destination "s3://''${MLFLOW_BUCKET}/mlflow" \
-                    --allowed-hosts "localhost:*,127.0.0.1:*" \
-                    --x-frame-options NONE
-                '';
-              };
-            };
-
             processes.backend = {
               env = {
                 RUNFLOW_PGBOUNCER_DATABASE_URL = "dnvr://pgbouncer/url";
@@ -415,16 +391,13 @@
               };
             };
 
-            processes.metrics-viewer-api = {
-              command = "cd $DNVR_ROOT/src/metrics_viewer && npm run backend";
+            processes.metrics-viewer = {
               env = {
                 CLICKHOUSE_HTTP_URL = "http://127.0.0.1:8123/default";
                 CLICKHOUSE_USER = "default";
                 CLICKHOUSE_PASSWORD = "";
                 METRICS_DIR = "$DNVR_ROOT/.givemedata/metrics";
               };
-            };
-            processes.metrics-viewer = {
               command = "cd $DNVR_ROOT/src/metrics_viewer && npm run dev -- --host 127.0.0.1 --port 5174 --strictPort";
             };
 

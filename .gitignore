@@ -32,6 +32,10 @@ backups/
 *.png
 scripts/*
 !scripts/bootstrap-vast.sh
+!scripts/migrate_postgres_to_clickhouse.py
+!scripts/migrate_mlflow_to_clickhouse.py
+!scripts/migrate_mlflow_artifacts.py
 runflow_mlflow_backup_20260827T094556Z/
 runflow_mlflow_backup_20260827T094556Z.zip
 target/
+.tmp/
