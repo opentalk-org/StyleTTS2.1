@@ -263,7 +263,7 @@ table "audio_files" {
   }
 
   primary_key {
-    columns = [column.id]
+    columns = [column.id, column.updated_at]
   }
   sort {
     columns = [column.id, column.updated_at]
