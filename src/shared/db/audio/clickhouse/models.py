@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from enum import Enum
 from typing import Any
@@ -35,6 +36,11 @@ class AudioFileRecord(BaseModel):
 
     _updated_at_utc = field_validator("updated_at")(utc_datetime)
 
+    @field_validator("storage_ref", "metadata", mode="before")
+    @classmethod
+    def parse_json_fields(cls, value: Any) -> Any:
+        return json.loads(value) if isinstance(value, str) else value
+
     @property
     def annotations(self) -> AudioAnnotations:
         return AudioAnnotations(score=self.score, metadata=self.metadata)
@@ -66,7 +72,7 @@ class AudioFileUpdate(BaseModel):
 class AudioSegmentRecord(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    id: str
+    id: UUID
     audio_file_id: UUID
     updated_at: datetime
     position: int
@@ -82,10 +88,22 @@ class AudioSegmentRecord(BaseModel):
 
     _updated_at_utc = field_validator("updated_at")(utc_datetime)
 
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def parse_metadata(cls, value: Any) -> Any:
+        return json.loads(value) if isinstance(value, str) else value
+
     @field_validator("alignment", mode="before")
     @classmethod
-    def empty_alignment_is_none(cls, value: Any) -> Any:
-        return None if value == {} else value
+    def parse_alignment(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if not value or isinstance(value[0], dict):
+            return value
+        return [
+            {"word": word, "start": start, "end": end}
+            for word, start, end in value
+        ]
 
     def as_payload(self) -> dict[str, Any]:
         return {

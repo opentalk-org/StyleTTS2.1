@@ -61,7 +61,7 @@ def bulk_add_audio_files_to_dataset(
     audio_file_ids: Sequence[UUID],
 ) -> None:
     now = datetime.now(UTC)
-    add_audio_files(dataset_id, audio_file_ids, now, now)
+    add_audio_files(dataset_id, audio_file_ids, now)
 
 
 def add_audio_file_to_dataset(dataset_id: UUID, audio_file_id: UUID) -> DatasetRecord:

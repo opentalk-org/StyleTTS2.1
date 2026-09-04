@@ -5,7 +5,6 @@ import { cn } from "./cn";
 export interface SegmentedOption<T extends string | number> {
   value: T;
   label: ReactNode;
-
   title?: string;
 }
 
@@ -14,14 +13,16 @@ export interface SegmentedControlProps<T extends string | number> {
   options: SegmentedOption<T>[];
   value: T;
   onValue: (value: T) => void;
-
   leading?: ReactNode;
-
   fill?: boolean;
+  disabled?: boolean;
   className?: string;
 }
 
-
+/**
+ * Neutral selection style on purpose: the accent is reserved for row selection and
+ * primary actions so a segmented control never competes with them.
+ */
 export function SegmentedControl<T extends string | number>({
   label,
   options,
@@ -29,6 +30,7 @@ export function SegmentedControl<T extends string | number>({
   onValue,
   leading,
   fill = false,
+  disabled = false,
   className,
 }: SegmentedControlProps<T>) {
   return (
@@ -36,9 +38,10 @@ export function SegmentedControl<T extends string | number>({
       role="radiogroup"
       aria-label={label}
       className={cn(
-        "flex h-8 items-center gap-0.5 rounded-lg border border-line bg-inset p-0.5",
+        "flex h-control items-center gap-0.5 rounded-md border border-strong bg-inset p-0.5",
         leading === undefined ? "" : "pl-2",
         fill ? "w-full" : "",
+        disabled ? "opacity-50" : "",
         className,
       )}
     >
@@ -52,14 +55,13 @@ export function SegmentedControl<T extends string | number>({
             role="radio"
             aria-checked={selected}
             title={option.title}
+            disabled={disabled}
             onClick={() => onValue(option.value)}
             className={cn(
-              "flex h-7 min-w-7 items-center justify-center gap-1.5 rounded-[6px] px-2 text-xs font-medium",
-              "transition-[background-color,color,box-shadow] duration-150 ease-out",
+              "flex h-full min-w-6 items-center justify-center gap-1 rounded-sm px-2 text-xs font-medium",
+              "transition-[background-color,color] duration-100 ease-out",
               fill ? "min-w-0 flex-1" : "",
-              selected
-                ? "bg-accent-surface text-accent-bright shadow-[inset_0_0_0_1px_rgb(99_102_241/0.18)]"
-                : "text-fg-muted hover:bg-surface hover:text-fg-secondary",
+              selected ? "bg-raised text-fg shadow-[inset_0_0_0_1px_var(--color-strong)]" : "text-fg-muted hover:text-fg",
             )}
           >
             {option.label}

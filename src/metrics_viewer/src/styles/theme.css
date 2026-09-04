@@ -1,61 +1,169 @@
+/*
+ * Design tokens. Raw values live on :root (dark) and :root[data-theme="light"];
+ * the @theme inline block maps them onto Tailwind utilities so `bg-surface`,
+ * `text-fg-muted`, `border-strong` etc. follow the active theme.
+ */
 
+:root {
+  --canvas: #141518;
+  --surface: #1b1c20;
+  --raised: #222328;
+  --inset: #101114;
+  --plot: #101114;
+  --hover: #26272d;
+  --selected: #1e2a3f;
+  --line: #2c2e34;
+  --strong: #5c5f67;
 
-@theme {
-  --font-sans: "Inter", "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "Geist Mono", "JetBrains Mono", "SFMono-Regular", ui-monospace, monospace;
+  --fg: #e4e5e9;
+  --fg-secondary: #b2b5bc;
+  --fg-muted: #8b8e96;
+  --fg-disabled: #5f626a;
 
+  --accent: #5b9dff;
+  --accent-hover: #7ab1ff;
+  --accent-fg: #0b1220;
+  --accent-subtle: #1e2a3f;
 
-  --color-deep: #050507;
-  --color-base: #09090b;
-  --color-elevated: #0d0d10;
-  --color-inset: #111114;
-  --color-surface: rgb(255 255 255 / 0.035);
-  --color-surface-hover: rgb(255 255 255 / 0.055);
+  --running: #5b9dff;
+  --running-bg: #1e2a3f;
+  --succeeded: #4fc38a;
+  --succeeded-bg: #16302a;
+  --failed: #f0716c;
+  --failed-bg: #3a1f1f;
+  --queued: #e2b04a;
+  --queued-bg: #332a17;
+  --cancelled: #8b8e96;
+  --cancelled-bg: #26272d;
 
+  --chart-grid: #26272d;
+  --chart-raw-opacity: 0.25;
 
-  --color-fg: #f4f4f5;
-  --color-fg-secondary: #a1a1aa;
-  --color-fg-muted: #71717a;
+  --series-1: #f2994a;
+  --series-2: #4fc38a;
+  --series-3: #e57cc5;
+  --series-4: #59c2d8;
+  --series-5: #d9c04a;
+  --series-6: #a78bfa;
+  --series-7: #f0716c;
+  --series-8: #7fd0a8;
+  --series-9: #e6a1d0;
+  --series-10: #8fb8e8;
+  --series-11: #c9a27a;
+  --series-12: #b5b8c0;
 
-
-  --color-accent: #6366f1;
-  --color-accent-bright: #818cf8;
-  --color-accent-surface: rgb(99 102 241 / 0.1);
-  --color-accent-border: rgb(99 102 241 / 0.28);
-
-
-  --color-line: rgb(255 255 255 / 0.07);
-  --color-line-hover: rgb(255 255 255 / 0.12);
-
-
-  --color-positive: #4ade80;
-  --color-positive-surface: rgb(74 222 128 / 0.1);
-  --color-positive-border: rgb(74 222 128 / 0.16);
-  --color-negative: #f87171;
-  --color-negative-surface: rgb(248 113 113 / 0.1);
-  --color-negative-border: rgb(248 113 113 / 0.16);
-  --color-notice: #fbbf24;
-  --color-notice-surface: rgb(251 191 36 / 0.1);
-  --color-notice-border: rgb(251 191 36 / 0.16);
-
-  --radius-control: 0.5rem;
-  --radius-card: 0.75rem;
-  --radius-panel: 1rem;
-
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.2), 0 8px 24px rgb(0 0 0 / 0.12);
-  --shadow-overlay: 0 8px 32px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(255 255 255 / 0.05);
-  --shadow-accent-ring: 0 0 0 1px rgb(99 102 241 / 0.3), 0 0 0 3px rgb(99 102 241 / 0.08);
-
-  --ease-precise: cubic-bezier(0.16, 1, 0.3, 1);
+  --scrim: rgb(0 0 0 / 0.55);
+  --shadow-popover: 0 4px 16px rgb(0 0 0 / 0.35);
+  --shadow-dialog: 0 12px 40px rgb(0 0 0 / 0.5);
 }
 
+/*
+ * Light theme. The ground is a definite grey so white panels, cards and popovers
+ * read as raised surfaces; wells (`inset`) stay near-white and get their edge from
+ * `line`, and plot bodies are white so charts are not framed in grey.
+ */
+:root[data-theme="light"] {
+  --canvas: #e9ebef;
+  --surface: #ffffff;
+  --raised: #ffffff;
+  --inset: #f1f3f6;
+  --plot: #ffffff;
+  --hover: #eceff4;
+  --selected: #e1ebfd;
+  --line: #d6dae1;
+  --strong: #a7adb8;
 
+  --fg: #15171c;
+  --fg-secondary: #444851;
+  --fg-muted: #636872;
+  --fg-disabled: #99a0aa;
 
-@theme {
-  --color-series-1: #818cf8;
-  --color-series-2: #6366f1;
-  --color-series-3: #a5b4fc;
-  --color-series-4: #7dd3fc;
-  --color-series-5: #c4b5fd;
-  --color-series-6: #94a3b8;
+  --accent: #1f5fd0;
+  --accent-hover: #1a4fae;
+  --accent-fg: #ffffff;
+  --accent-subtle: #dfeafd;
+
+  --running: #1f5fd0;
+  --running-bg: #dfeafd;
+  --succeeded: #14724a;
+  --succeeded-bg: #daf0e3;
+  --failed: #b52d2a;
+  --failed-bg: #fbe1de;
+  --queued: #8a5a00;
+  --queued-bg: #f9ecce;
+  --cancelled: #636872;
+  --cancelled-bg: #e6e8ed;
+
+  --chart-grid: #dcdfe6;
+  --chart-raw-opacity: 0.3;
+
+  --series-1: #c7641a;
+  --series-2: #1f8f5a;
+  --series-3: #b3428f;
+  --series-4: #1a8ea6;
+  --series-5: #9a8300;
+  --series-6: #6d4fd6;
+  --series-7: #c43d38;
+  --series-8: #3f9a6d;
+  --series-9: #a85f8f;
+  --series-10: #4d7fb3;
+  --series-11: #8a6535;
+  --series-12: #6f727a;
+
+  --scrim: rgb(21 26 34 / 0.32);
+  --shadow-popover: 0 6px 20px rgb(16 24 40 / 0.16);
+  --shadow-dialog: 0 18px 48px rgb(16 24 40 / 0.24);
+}
+
+@theme inline {
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, monospace;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-inset: var(--inset);
+  --color-plot: var(--plot);
+  --color-scrim: var(--scrim);
+  --color-hover: var(--hover);
+  --color-selected: var(--selected);
+  --color-line: var(--line);
+  --color-strong: var(--strong);
+
+  --color-fg: var(--fg);
+  --color-fg-secondary: var(--fg-secondary);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-disabled: var(--fg-disabled);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-subtle: var(--accent-subtle);
+
+  --color-running: var(--running);
+  --color-running-bg: var(--running-bg);
+  --color-succeeded: var(--succeeded);
+  --color-succeeded-bg: var(--succeeded-bg);
+  --color-failed: var(--failed);
+  --color-failed-bg: var(--failed-bg);
+  --color-queued: var(--queued);
+  --color-queued-bg: var(--queued-bg);
+  --color-cancelled: var(--cancelled);
+  --color-cancelled-bg: var(--cancelled-bg);
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --shadow-popover: var(--shadow-popover);
+  --shadow-dialog: var(--shadow-dialog);
+
+  --spacing-topbar: 44px;
+  --spacing-toolbar: 40px;
+  --spacing-row: 32px;
+  --spacing-thead: 28px;
+  --spacing-control-sm: 24px;
+  --spacing-control: 28px;
+  --spacing-control-lg: 32px;
+  --spacing-card-head: 36px;
 }

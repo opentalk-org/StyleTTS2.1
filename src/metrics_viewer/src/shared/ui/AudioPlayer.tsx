@@ -127,10 +127,10 @@ export function AudioPlayer({ src, label, className }: AudioPlayerProps) {
         aria-label={`${playing ? "Pause" : "Play"} ${label}`}
         onClick={toggle}
         className={cn(
-          "grid size-7 shrink-0 place-items-center rounded-full border transition-colors duration-150 ease-out active:scale-[0.98]",
+          "grid size-7 shrink-0 place-items-center rounded-full border transition-colors duration-100 ease-out",
           playing
-            ? "border-accent-border bg-accent-surface text-accent-bright"
-            : "border-line-hover bg-inset text-fg-secondary hover:border-accent-border hover:text-fg",
+            ? "border-accent bg-accent-subtle text-accent"
+            : "border-strong bg-inset text-fg-secondary hover:border-accent hover:text-fg",
         )}
       >
         {playing ? (
@@ -145,7 +145,7 @@ export function AudioPlayer({ src, label, className }: AudioPlayerProps) {
       <div className="relative h-8 min-w-0 flex-1">
         {peaks === null ? (
           <>
-            <span aria-hidden className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-surface-hover" />
+            <span aria-hidden className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-strong" />
             <span
               aria-hidden
               className="absolute left-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-accent"
@@ -168,7 +168,7 @@ export function AudioPlayer({ src, label, className }: AudioPlayerProps) {
         />
       </div>
 
-      <span className="shrink-0 font-mono text-[11px] tabular-nums text-fg-muted">
+      <span className="shrink-0 font-mono text-xs tabular-nums text-fg-muted">
         {formatTime(time)} / {formatTime(duration)}
       </span>
     </div>
@@ -194,7 +194,7 @@ function Waveform({ peaks, progress }: { peaks: number[]; progress: number }) {
             y={(VIEW_HEIGHT - height) / 2}
             height={height}
             rx={0.35}
-            className={index < played ? "fill-accent-bright" : "fill-white/15"}
+            className={index < played ? "fill-accent" : "fill-strong"}
           />
         );
       })}

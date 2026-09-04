@@ -1,3 +1,4 @@
+import json
 from collections.abc import Sequence
 from datetime import timedelta
 from uuid import UUID
@@ -24,8 +25,8 @@ def create_audio_files(items: Sequence[AudioFileRecord]) -> None:
             item.voice_prompt,
             item.virtual,
             item.storage_kind.value,
-            item.storage_ref,
-            item.metadata,
+            json.dumps(item.storage_ref, separators=(",", ":")),
+            json.dumps(item.metadata, separators=(",", ":")),
         ]
         for item in items
     ]

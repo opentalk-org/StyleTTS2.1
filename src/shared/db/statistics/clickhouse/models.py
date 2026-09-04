@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -19,6 +20,11 @@ class StatisticsEntryRecord(BaseModel):
     created_at: datetime
 
     _timestamps_utc = field_validator("updated_at", "created_at")(utc_datetime)
+
+    @field_validator("payload", "metadata", mode="before")
+    @classmethod
+    def parse_json_fields(cls, value: Any) -> Any:
+        return json.loads(value) if isinstance(value, str) else value
 
     @property
     def metadata_(self) -> dict[str, Any]:

@@ -1,3 +1,4 @@
+import json
 from collections.abc import Sequence
 from uuid import UUID
 
@@ -14,8 +15,8 @@ def create_statistics_entries(items: Sequence[StatisticsEntryRecord]) -> None:
             item.updated_at,
             item.name,
             item.dataset_id,
-            item.payload,
-            item.metadata,
+            json.dumps(item.payload, separators=(",", ":")),
+            json.dumps(item.metadata, separators=(",", ":")),
             item.created_at,
         ]
         for item in items

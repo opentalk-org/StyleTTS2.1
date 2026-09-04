@@ -1,8 +1,9 @@
-import { ArrowUpRight, Clock3, FolderKanban } from "lucide-react";
+import { FolderKanban } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { formatRelative } from "@/features/runs/logic";
 import type { Project } from "@/shared/types";
-import { Badge, Card, GroupLabel, SearchInput } from "@/shared/ui";
+import { Badge, Caption, cn, EmptyState, SearchInput, Skeleton, StatusMark, Tooltip } from "@/shared/ui";
 
 interface ProjectsProps {
   projects: Project[];
@@ -10,115 +11,108 @@ interface ProjectsProps {
   onOpen: (id: string) => void;
 }
 
-
-const GRID =
-  "grid min-w-[900px] grid-cols-[minmax(240px,2fr)_80px_120px_140px_110px_32px] items-center gap-3 px-4";
+const GRID = "grid grid-cols-[minmax(240px,1fr)_88px_120px_120px_110px] items-center gap-3 px-4";
 
 export function Projects({ projects, loading = false, onOpen }: ProjectsProps) {
   const [query, setQuery] = useState("");
-  const filteredProjects = useMemo(() => {
-    const normalizedQuery = query.toLowerCase();
-    return projects.filter((project) =>
-      `${project.name} ${project.description}`.toLowerCase().includes(normalizedQuery),
-    );
+  const filtered = useMemo(() => {
+    const normalized = query.toLowerCase();
+    return projects.filter((project) => `${project.name} ${project.description}`.toLowerCase().includes(normalized));
   }, [projects, query]);
 
   return (
-    <main className="min-h-dvh">
-      <header className="flex h-14 items-center border-b border-line bg-elevated px-5">
-        <h1 className="m-0 text-base font-semibold tracking-tight text-fg">Projects</h1>
-      </header>
-      <div className="mx-auto max-w-[1240px] p-6">
-        <Card>
-          <div className="flex h-14 items-center border-b border-line px-3">
-            <SearchInput
-              label="Search projects"
-              value={query}
-              onValue={setQuery}
-              placeholder="Search projects"
-              className="w-full max-w-80"
-            />
-          </div>
-          <div role="table" aria-label="Projects" className="overflow-x-auto">
-            <div role="row" className={`${GRID} h-9 border-b border-line bg-inset`}>
-              {["Project", "Runs", "Active", "Last activity", "Created"].map((label) => (
-                <GroupLabel key={label} role="columnheader">
-                  {label}
-                </GroupLabel>
-              ))}
-              <span />
-            </div>
-            {filteredProjects.map((project) => (
-              <ProjectRow key={project.id} project={project} onOpen={onOpen} />
+    <div className="min-h-0 flex-1 overflow-auto">
+      <div className="mx-auto flex max-w-[1200px] flex-col gap-4 px-6 py-6">
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="text-lg font-semibold text-fg">Projects</h1>
+          <SearchInput
+            label="Search projects"
+            value={query}
+            onValue={setQuery}
+            placeholder="Search projects"
+            shortcut="/"
+            data-shortcut="search"
+            size="lg"
+            className="w-72"
+          />
+        </div>
+
+        <div role="table" aria-label="Projects" className="overflow-x-auto rounded-md border border-line bg-surface">
+          <div role="row" className={cn(GRID, "h-thead border-b border-line")}>
+            {["Name", "Runs", "Running", "Last activity", "Created"].map((label, index) => (
+              <Caption key={label} role="columnheader" className={index === 1 ? "text-right" : ""}>
+                {label}
+              </Caption>
             ))}
-            {loading ? (
-              <p className="m-0 px-4 py-10 text-center text-xs text-fg-muted">Loading projects…</p>
-            ) : null}
-            {!loading && projects.length === 0 ? (
-              <p className="m-0 px-4 py-10 text-center text-xs text-fg-muted">
-                No projects yet. A project appears here once it has its first run.
-              </p>
-            ) : null}
-            {!loading && projects.length > 0 && filteredProjects.length === 0 ? (
-              <p className="m-0 px-4 py-10 text-center text-xs text-fg-muted">
-                No project matches “{query}”.
-              </p>
-            ) : null}
           </div>
-          <footer className="flex h-10 items-center border-t border-line px-4 font-mono text-xs tabular-nums text-fg-muted">
-            {loading ? "…" : filteredProjects.length} projects
-          </footer>
-        </Card>
+          {loading ? (
+            <div className="flex flex-col">
+              {Array.from({ length: 5 }, (_, index) => (
+                <div key={index} className={cn(GRID, "h-10 border-b border-line last:border-b-0")}>
+                  <Skeleton className="h-3 w-48" />
+                  <Skeleton className="ml-auto h-3 w-8" />
+                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="h-3 w-12" />
+                  <Skeleton className="h-3 w-16" />
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {!loading && projects.length === 0 ? (
+            <EmptyState compact icon={<FolderKanban />} title="No projects yet" description="A project appears here once it has its first run." />
+          ) : null}
+          {!loading && projects.length > 0 && filtered.length === 0 ? (
+            <EmptyState compact icon={<FolderKanban />} title="No project matches" description={`Nothing contains “${query}”.`} />
+          ) : null}
+          {filtered.map((project) => (
+            <ProjectRow key={project.id} project={project} onOpen={onOpen} />
+          ))}
+        </div>
+        <span className="font-mono text-xs tabular-nums text-fg-muted">
+          {loading ? "…" : `${filtered.length} projects`}
+        </span>
       </div>
-    </main>
+    </div>
   );
 }
 
 function ProjectRow({ project, onOpen }: { project: Project; onOpen: (id: string) => void }) {
+  const hasDescription = project.description.length > 0;
   return (
     <button
       type="button"
       role="row"
       onClick={() => onOpen(project.id)}
-      className={`${GRID} group h-16 w-full border-b border-line text-left text-sm text-fg-secondary transition-colors duration-150 ease-out last:border-b-0 hover:bg-surface`}
+      className={cn(
+        GRID,
+        "w-full border-b border-line text-left text-[13px] last:border-b-0 hover:bg-hover",
+        hasDescription ? "h-[52px]" : "h-10",
+      )}
     >
-      <span role="cell" className="flex min-w-0 items-center gap-3">
-        <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-line bg-inset text-fg-secondary transition-colors group-hover:border-accent-border group-hover:text-accent-bright">
-          <FolderKanban size={15} />
-        </span>
-        <span className="flex min-w-0 flex-col">
-          <strong className="truncate text-sm font-medium text-fg">{project.name}</strong>
-          <small className="truncate text-xs text-fg-muted">{project.description}</small>
-        </span>
+      <span role="cell" className="flex min-w-0 flex-col">
+        <span className="truncate font-medium text-fg">{project.name}</span>
+        {hasDescription ? <span className="truncate text-xs text-fg-muted">{project.description}</span> : null}
       </span>
-      <span role="cell" className="font-mono text-sm tabular-nums text-fg">
+      <span role="cell" className="text-right font-mono text-xs tabular-nums text-fg-secondary">
         {project.runCount}
       </span>
       <span role="cell">
         {project.runningCount === 0 ? (
-          <em className="text-fg-muted not-italic">—</em>
+          <span className="text-fg-muted">—</span>
         ) : (
-          <Badge tone="accent" icon={<span className="size-1.5 rounded-full bg-accent-bright" aria-hidden />}>
+          <Badge tone="accent" icon={<StatusMark status="running" />}>
             {project.runningCount} running
           </Badge>
         )}
       </span>
-      <span role="cell" className="flex items-center gap-1.5 text-xs text-fg-muted">
-        <Clock3 size={12} className="shrink-0" />
-        <span className="font-mono tabular-nums">{relativeTime(project.lastRunAt)}</span>
+      <span role="cell" className="text-xs text-fg-secondary">
+        <Tooltip content={project.lastRunAt === 0 ? "No runs" : new Date(project.lastRunAt).toLocaleString()}>
+          <span>{formatRelative(project.lastRunAt)}</span>
+        </Tooltip>
       </span>
       <span role="cell" className="font-mono text-xs tabular-nums text-fg-muted">
         {new Date(project.createdAt).toLocaleDateString()}
       </span>
-      <span role="cell" className="text-fg-muted transition-colors group-hover:text-accent-bright">
-        <ArrowUpRight size={16} />
-      </span>
     </button>
   );
-}
-
-function relativeTime(value: number): string {
-  if (value === 0) return "never";
-  const hours = Math.max(1, Math.round((Date.now() - value) / 3.6e6));
-  return hours < 24 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`;
 }

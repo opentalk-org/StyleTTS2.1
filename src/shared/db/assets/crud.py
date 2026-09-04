@@ -46,7 +46,11 @@ def create_bucket_file(
     payload: BucketFileCreate,
 ) -> BucketFileRecord:
     item = BucketFileRecord(
-        id=uuid4(), kind=BucketKind.AUDIO, path=payload.path, size=payload.size
+        id=uuid4(),
+        kind=BucketKind.AUDIO,
+        path=payload.path,
+        size=payload.size,
+        used_bytes=payload.used_bytes,
     )
     ch.create_bucket_files([item])
     return item

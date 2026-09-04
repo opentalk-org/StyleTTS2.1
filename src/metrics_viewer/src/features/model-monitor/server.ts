@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { readArtifactJson } from "@/features/artifacts/server";
 import { query } from "@/server/clickhouse";
+import { uuidSchema } from "@/shared/ids";
 import type { ModelComponent } from "@/shared/types";
 
 interface ArtifactRow {
@@ -20,7 +21,7 @@ interface ArrayMetricRow {
   value: number[];
 }
 
-const runIdSchema = z.uuid();
+const runIdSchema = uuidSchema;
 const arrayMetricInputSchema = z.object({
   runId: runIdSchema,
   name: z.string().min(1),
@@ -60,7 +61,9 @@ export const getArrayMetric = createServerFn({ method: "GET" })
       FROM array_metrics
       WHERE run_id = {run_id:UUID} AND name = {name:String}
       GROUP BY step
-      ORDER BY step`, { run_id: data.runId, name: data.name });
+      ORDER BY step`, { run_id: data.runId, name: data.name }, {
+        optimize_aggregation_in_order: 1,
+      });
     return {
       name: data.name,
       steps: rows.map((row) => Number(row.step)),

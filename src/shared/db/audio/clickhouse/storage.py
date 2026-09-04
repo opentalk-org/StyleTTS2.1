@@ -52,6 +52,7 @@ def bulk_create_audio_files(
                 kind=BucketKind.AUDIO,
                 path=path,
                 size=len(data),
+                used_bytes=len(data),
             )
         )
         byte_offset = 0
@@ -103,6 +104,7 @@ def bulk_update_audio_files(
                 kind=BucketKind.AUDIO,
                 path=path,
                 size=len(data),
+                used_bytes=len(data),
             )
         )
         byte_offset = 0

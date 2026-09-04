@@ -18,7 +18,7 @@ from shared.db.clickhouse import clickhouse_client
 @dataclass(frozen=True)
 class AcceptedSpeakerAssignment:
     audio_id: UUID
-    segment_id: str
+    segment_id: UUID
     speaker_id: str
 
 
@@ -97,7 +97,7 @@ def list_audio_segment_accuracies(
 def bulk_apply_speaker_assignments(
     assignments: Iterable[AcceptedSpeakerAssignment],
 ) -> SpeakerAssignmentWriteCounts:
-    grouped: dict[UUID, dict[str, str]] = {}
+    grouped: dict[UUID, dict[UUID, str]] = {}
     assignment_count = 0
     for assignment in assignments:
         values = grouped.setdefault(assignment.audio_id, {})

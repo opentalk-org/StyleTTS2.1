@@ -17,7 +17,7 @@ class WordAlignment(BaseModel):
 
 
 class AudioSegmentRead(BaseModel):
-    id: str
+    id: UUID
     start: float
     end: float
     text: str
@@ -28,7 +28,7 @@ class AudioSegmentRead(BaseModel):
 
 
 class AudioSegmentWrite(BaseModel):
-    id: str
+    id: UUID
     start: float
     end: float
     text: str

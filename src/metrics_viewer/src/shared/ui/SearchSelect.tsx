@@ -9,7 +9,7 @@ import {
 } from "react";
 
 import { cn } from "./cn";
-import { GroupLabel } from "./Surface";
+import { Caption } from "./Surface";
 import { Popover } from "./Popover";
 
 export interface SearchOption {
@@ -120,7 +120,7 @@ export function SearchOptionList({
       onKeyDown={showSearch ? undefined : onKeyDown}
     >
       {showSearch ? (
-        <div className="flex h-9 flex-none items-center gap-2 border-b border-line px-2.5 text-fg-muted">
+        <div className="flex h-8 flex-none items-center gap-2 border-b border-line px-2 text-fg-muted">
           <Search size={13} className="shrink-0" />
           <input
             autoFocus
@@ -133,10 +133,10 @@ export function SearchOptionList({
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={onKeyDown}
             placeholder={placeholder}
-            className="min-w-0 flex-1 bg-transparent text-sm text-fg placeholder:text-fg-muted focus:outline-none"
+            className="min-w-0 flex-1 bg-transparent text-[13px] text-fg placeholder:text-fg-muted focus:outline-none"
           />
           {query.length === 0 ? null : (
-            <span className="shrink-0 font-mono text-[10px] tabular-nums text-fg-muted">
+            <span className="shrink-0 font-mono text-[11px] tabular-nums text-fg-muted">
               {matches.length}
             </span>
           )}
@@ -156,7 +156,7 @@ export function SearchOptionList({
         {groups.map(([group, groupOptions]) => (
           <div key={group}>
             {group === "" ? null : (
-              <GroupLabel className="block px-2 pt-2 pb-1">{group}</GroupLabel>
+              <Caption className="block px-2 pt-2 pb-1">{group}</Caption>
             )}
             {groupOptions.map((option) => {
               flatIndex += 1;
@@ -173,9 +173,9 @@ export function SearchOptionList({
                   onMouseEnter={() => setActiveIndex(index)}
                   onClick={() => onSelect(option.value)}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm",
+                    "flex h-7 w-full items-center gap-2 rounded-sm px-2 text-left text-[13px]",
                     "transition-colors duration-150 ease-out",
-                    index === activeIndex ? "bg-surface text-fg" : "text-fg-secondary",
+                    index === activeIndex ? "bg-hover text-fg" : "text-fg-secondary",
                     isSelected ? "text-fg" : "",
                   )}
                 >
@@ -183,10 +183,10 @@ export function SearchOptionList({
                     <span
                       aria-hidden
                       className={cn(
-                        "grid size-4 shrink-0 place-items-center rounded-[4px] border transition-colors duration-150",
+                        "grid size-3.5 shrink-0 place-items-center rounded-sm border transition-colors duration-100",
                         isSelected
-                          ? "border-accent bg-accent text-white"
-                          : "border-line-hover bg-inset text-transparent",
+                          ? "border-accent bg-accent text-accent-fg"
+                          : "border-strong bg-inset text-transparent",
                       )}
                     >
                       <Check size={11} />
@@ -195,14 +195,14 @@ export function SearchOptionList({
                     <Check
                       size={13}
                       aria-hidden
-                      className={cn("shrink-0", isSelected ? "text-accent-bright" : "text-transparent")}
+                      className={cn("shrink-0", isSelected ? "text-accent" : "text-transparent")}
                     />
                   )}
                   <span className="min-w-0 flex-1 truncate">
                     <Highlight text={option.label} query={query} />
                   </span>
                   {option.hint === undefined ? null : (
-                    <span className="shrink-0 font-mono text-[10px] text-fg-muted">{option.hint}</span>
+                    <span className="shrink-0 text-xs text-fg-muted">{option.hint}</span>
                   )}
                 </button>
               );
@@ -222,7 +222,7 @@ function Highlight({ text, query }: { text: string; query: string }): ReactNode 
   return (
     <>
       {text.slice(0, start)}
-      <mark className="bg-transparent text-accent-bright">
+      <mark className="bg-transparent text-accent">
         {text.slice(start, start + normalized.length)}
       </mark>
       {text.slice(start + normalized.length)}
@@ -240,7 +240,6 @@ export interface SearchSelectProps {
   searchable?: boolean;
   className?: string;
   align?: "start" | "end";
-  portal?: boolean;
 }
 
 
@@ -254,7 +253,6 @@ export function SearchSelect({
   searchable,
   className,
   align = "end",
-  portal = false,
 }: SearchSelectProps) {
   const [open, setOpen] = useState(false);
   const selected = options.find((option) => option.value === value);
@@ -264,9 +262,8 @@ export function SearchSelect({
       open={open}
       onClose={() => setOpen(false)}
       align={align}
-      portal={portal}
       className={className}
-      panelClassName="w-[min(360px,90vw)] overflow-hidden p-0"
+      width={320} panelClassName="overflow-hidden [&>div]:p-0"
       trigger={
         <button
           type="button"
@@ -275,11 +272,11 @@ export function SearchSelect({
           aria-expanded={open}
           onClick={() => setOpen(!open)}
           className={cn(
-            "flex h-8 w-full min-w-0 items-center justify-between gap-2 rounded-lg border bg-inset px-2.5",
-            "text-sm transition-colors duration-150 ease-out",
+            "flex h-control w-full min-w-0 items-center justify-between gap-2 rounded-md border bg-inset px-2",
+            "text-[13px] transition-colors duration-100 ease-out",
             open
-              ? "border-accent/65 text-fg shadow-[0_0_0_3px_rgb(99_102_241/0.12)]"
-              : "border-line-hover text-fg hover:border-line-hover hover:bg-surface-hover",
+              ? "border-accent text-fg"
+              : "border-strong text-fg hover:bg-hover",
           )}
         >
           <span className="min-w-0 truncate">{selected?.label ?? value}</span>

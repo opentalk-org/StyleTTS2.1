@@ -56,6 +56,7 @@ def replace_waveform(
                 kind=BucketKind.WAVEFORM,
                 path=path,
                 size=len(data),
+                used_bytes=len(data),
             )
         ]
     )

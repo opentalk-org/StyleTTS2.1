@@ -2,24 +2,52 @@ import {
   Background,
   BackgroundVariant,
   Controls,
-  MarkerType,
+  Handle,
   MiniMap,
+  Position,
   ReactFlow,
-  type Edge,
-  type Node,
+  useReactFlow,
+  ReactFlowProvider,
+  type NodeProps,
 } from "@xyflow/react";
-import { Maximize2, Search } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, Maximize2, Scan } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import "@xyflow/react/dist/style.css";
 
-import type { ModelComponent, Run } from "@/shared/types";
-import { IconButton } from "@/shared/ui";
+import { useViewerStore } from "@/features/viewer/store";
+import type { ChartTheme } from "@/shared/chart";
+import type { Run } from "@/shared/types";
+import { cn, IconButton, SearchInput, Toolbar } from "@/shared/ui";
+
+import {
+  formatParameterCount,
+  graphEdges,
+  graphNodes,
+  NODE_HEIGHT,
+  NODE_WIDTH,
+  toggleSet,
+  visibleComponents,
+  type GraphNodeData,
+} from "./graph";
 import { MonitorInspector } from "./MonitorInspector";
 import { useArrayMetricNames, useModelGraph } from "./query";
 
-export function ModelMonitor({ run }: { run: Run }) {
-  const graphQuery = useModelGraph(run.id, run.status === "running");
-  const namesQuery = useArrayMetricNames(run.id, run.status === "running");
+const NODE_TYPES = { module: ModuleNode };
+
+export function ModelMonitor({ run, chart }: { run: Run; chart: ChartTheme }) {
+  return (
+    <ReactFlowProvider>
+      <ModelMonitorInner run={run} chart={chart} />
+    </ReactFlowProvider>
+  );
+}
+
+function ModelMonitorInner({ run, chart }: { run: Run; chart: ChartTheme }) {
+  const running = run.status === "running";
+  const graphQuery = useModelGraph(run.id, running);
+  const namesQuery = useArrayMetricNames(run.id, running);
+  const { fitView } = useReactFlow();
+  const theme = useViewerStore((state) => state.theme);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
@@ -30,137 +58,92 @@ export function ModelMonitor({ run }: { run: Run }) {
     setExpanded(new Set(components.filter((item) => item.parent_id === null).map((item) => item.id)));
   }, [components, expanded.size]);
 
-  const visible = useMemo(
-    () => visibleComponents(components, expanded, search),
-    [components, expanded, search],
-  );
-  const nodes = useMemo(() => graphNodes(visible, selectedId), [visible, selectedId]);
+  const visible = useMemo(() => visibleComponents(components, expanded, search), [components, expanded, search]);
+  const nodes = useMemo(() => graphNodes(visible, components, expanded, selectedId), [visible, components, expanded, selectedId]);
   const edges = useMemo(() => graphEdges(visible), [visible]);
   const selected = components.find((item) => item.id === selectedId);
 
   return (
-    <section className="relative m-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-line bg-inset">
-      <div className="z-10 flex h-12 flex-none items-center justify-between gap-3 border-b border-line bg-elevated px-3">
-        <label className="flex h-8 items-center gap-2 rounded-md border border-line bg-inset px-2.5">
-          <Search size={14} className="text-fg-muted" />
-          <input
-            className="w-52 border-0 bg-transparent text-xs text-fg outline-none"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="module"
-          />
-        </label>
-        <IconButton label="Fullscreen" onClick={() => document.documentElement.requestFullscreen()}>
-          <Maximize2 size={15} />
-        </IconButton>
-      </div>
-      <div className="relative min-h-0 flex-1">
-        <div className="absolute inset-0">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            fitView
-            colorMode="dark"
-            proOptions={{ hideAttribution: true }}
-            minZoom={0.08}
-            maxZoom={2}
-            onNodeClick={(_, node) => setSelectedId(node.id)}
-            onNodeDoubleClick={(_, node) => setExpanded(toggle(expanded, node.id))}
-          >
-            <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} color="#363942" />
-            <Controls position="bottom-left" />
-            <MiniMap
-              position="bottom-right"
-              nodeColor={(node) => node.id === selectedId ? "#2563eb" : "#d4d4d8"}
-              maskColor="rgba(5,6,8,.72)"
-            />
-          </ReactFlow>
+    <div className="flex min-h-0 flex-1 flex-row">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <Toolbar
+          start={
+            <SearchInput label="Search modules" value={search} onValue={setSearch} placeholder="Search modules by name or type" className="w-72" />
+          }
+          end={
+            <>
+              <span className="font-mono text-xs tabular-nums text-fg-muted">{visible.length} of {components.length} modules</span>
+              <IconButton label="Expand all" onClick={() => setExpanded(new Set(components.map((item) => item.id)))}>
+                <ChevronsUpDown size={14} />
+              </IconButton>
+              <IconButton label="Collapse all" onClick={() => setExpanded(new Set(components.filter((item) => item.parent_id === null).map((item) => item.id)))}>
+                <ChevronsDownUp size={14} />
+              </IconButton>
+              <IconButton label="Fit to view" onClick={() => void fitView({ duration: 200 })}>
+                <Scan size={14} />
+              </IconButton>
+              <IconButton label="Fullscreen" onClick={() => void document.documentElement.requestFullscreen()}>
+                <Maximize2 size={14} />
+              </IconButton>
+            </>
+          }
+        />
+        <div className="relative min-h-0 flex-1 bg-canvas">
+          <div className="absolute inset-0">
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              nodeTypes={NODE_TYPES}
+              fitView
+              colorMode={theme}
+              proOptions={{ hideAttribution: true }}
+              minZoom={0.08}
+              maxZoom={2}
+              onNodeClick={(_, node) => setSelectedId(node.id)}
+              onNodeDoubleClick={(_, node) => setExpanded(toggleSet(expanded, node.id))}
+            >
+              <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} color={chart.grid} />
+              <Controls position="bottom-left" showInteractive={false} />
+              <MiniMap
+                position="bottom-right"
+                pannable
+                zoomable
+                nodeColor={(node) => (node.id === selectedId ? chart.series[0] : chart.hoverBorder)}
+                maskColor={theme === "dark" ? "rgb(0 0 0 / 0.5)" : "rgb(255 255 255 / 0.6)"}
+                style={{ background: chart.hoverBg, border: `1px solid ${chart.grid}`, borderRadius: 6 }}
+              />
+            </ReactFlow>
+          </div>
         </div>
       </div>
       {selected === undefined ? null : (
-        <MonitorInspector
-          runId={run.id}
-          component={selected}
-          names={namesQuery.data ?? []}
-          running={run.status === "running"}
-          onClose={() => setSelectedId(null)}
-        />
+        <MonitorInspector runId={run.id} component={selected} names={namesQuery.data ?? []} running={running} chart={chart} onClose={() => setSelectedId(null)} />
       )}
-    </section>
+    </div>
   );
 }
 
-function visibleComponents(
-  components: ModelComponent[],
-  expanded: Set<string>,
-  search: string,
-) {
-  if (search.length > 0) {
-    const needle = search.toLowerCase();
-    return components.filter((item) =>
-      item.id.toLowerCase().includes(needle) || item.module_type.toLowerCase().includes(needle),
-    );
-  }
-  const byId = new Map(components.map((item) => [item.id, item]));
-  return components.filter((item) => ancestorsExpanded(item, byId, expanded));
-}
-
-function ancestorsExpanded(
-  component: ModelComponent,
-  byId: Map<string, ModelComponent>,
-  expanded: Set<string>,
-): boolean {
-  if (component.parent_id === null) return true;
-  const parent = byId.get(component.parent_id);
-  return parent !== undefined && expanded.has(parent.id) && ancestorsExpanded(parent, byId, expanded);
-}
-
-function graphNodes(components: ModelComponent[], selectedId: string | null): Node[] {
-  const rows = new Map<number, number>();
-  return components.map((component) => {
-    const depth = component.id.split(".").length - 1;
-    const row = rows.get(depth) ?? 0;
-    rows.set(depth, row + 1);
-    return {
-      id: component.id,
-      position: { x: 340 * depth + 80, y: 125 * row + 80 },
-      data: {
-        label: <div className="flex flex-col gap-1 text-left">
-          <span className="font-mono text-xs opacity-60">{component.id}</span>
-          <span className="text-base font-semibold text-white">{component.module_type}</span>
-        </div>,
-      },
-      selected: component.id === selectedId,
-      style: {
-        width: 270,
-        padding: "14px 18px",
-        color: "#fff",
-        background: component.id === selectedId ? "#1357dc" : "#111318",
-        border: `1px solid ${component.id === selectedId ? "#3b82f6" : "#d4d4d8"}`,
-        borderRadius: 9,
-        boxShadow: component.id === selectedId ? "0 0 0 1px #2563eb" : "none",
-      },
-    };
-  });
-}
-
-function graphEdges(components: ModelComponent[]): Edge[] {
-  const ids = new Set(components.map((item) => item.id));
-  return components.flatMap((component) =>
-    component.parent_id !== null && ids.has(component.parent_id) ? [{
-      id: `${component.parent_id}-${component.id}`,
-      source: component.parent_id,
-      target: component.id,
-      type: "smoothstep",
-      markerEnd: { type: MarkerType.ArrowClosed, color: "#b8bbc4" },
-      style: { stroke: "#b8bbc4", strokeWidth: 1.5 },
-    }] : [],
+function ModuleNode({ data, selected }: NodeProps & { data: GraphNodeData }) {
+  return (
+    <div
+      style={{ width: NODE_WIDTH, height: NODE_HEIGHT }}
+      className={cn(
+        "flex flex-col justify-center rounded-md border bg-surface px-3 text-left shadow-none",
+        selected ? "border-accent outline-2 outline-accent/40" : "border-strong",
+      )}
+    >
+      <Handle type="target" position={Position.Left} className="!size-1.5 !border-0 !bg-strong" />
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="truncate text-[13px] font-semibold text-fg">{data.moduleType}</span>
+        <span className="shrink-0 font-mono text-[11px] text-fg-muted">{formatParameterCount(data.parameterCount)}</span>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate font-mono text-[11px] text-fg-muted">{data.id}</span>
+        {data.hasChildren && !data.expanded ? (
+          <span className="shrink-0 text-[11px] text-fg-muted">double-click to expand</span>
+        ) : null}
+      </div>
+      <Handle type="source" position={Position.Right} className="!size-1.5 !border-0 !bg-strong" />
+    </div>
   );
-}
-
-function toggle(values: Set<string>, value: string) {
-  const next = new Set(values);
-  if (next.has(value)) next.delete(value);
-  else next.add(value);
-  return next;
 }

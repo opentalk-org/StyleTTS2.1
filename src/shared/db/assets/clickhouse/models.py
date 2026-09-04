@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from enum import Enum
 from typing import Any
@@ -25,6 +26,7 @@ class BucketFileRecord(BaseModel):
     kind: BucketKind
     path: str
     size: int
+    used_bytes: int
 
 
 class AssetRecord(BaseModel):
@@ -42,6 +44,11 @@ class AssetRecord(BaseModel):
     run_id: UUID | None
 
     _updated_at_utc = field_validator("updated_at")(utc_datetime)
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def parse_metadata(cls, value: Any) -> Any:
+        return json.loads(value) if isinstance(value, str) else value
 
     @property
     def type_(self) -> str:
@@ -66,6 +73,11 @@ class ConfigRecord(BaseModel):
     metadata: dict[str, Any]
 
     _updated_at_utc = field_validator("updated_at")(utc_datetime)
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def parse_metadata(cls, value: Any) -> Any:
+        return json.loads(value) if isinstance(value, str) else value
 
     @property
     def type_(self) -> str:

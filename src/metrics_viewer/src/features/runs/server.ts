@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
 
 import { query } from "@/server/clickhouse";
+import { uuidSchema } from "@/shared/ids";
 import type { RunStatus, Scalar } from "@/shared/types";
 
 interface RunRow {
@@ -11,7 +11,11 @@ interface RunRow {
   status: RunStatus;
   startedAt: string;
   endedAt: string;
-  trainingConfig: Record<string, unknown>;
+}
+
+interface RunConfigRow {
+  id: string;
+  trainingConfig: string;
 }
 
 interface SummaryRow {
@@ -21,7 +25,7 @@ interface SummaryRow {
 }
 
 export const listRuns = createServerFn({ method: "GET" })
-  .validator(z.uuid())
+  .validator(uuidSchema)
   .handler(async ({ data }) => {
     const rows = await query<RunRow>(`
       SELECT toString(r.id) AS id, toString(r.project_id) AS projectId, r.name,
@@ -31,8 +35,7 @@ export const listRuns = createServerFn({ method: "GET" })
           s.status IN ('succeeded', 'failed', 'cancelled'),
           toUnixTimestamp64Milli(s.last_status_at),
           0
-        ) AS endedAt,
-        r.train_config AS trainingConfig
+        ) AS endedAt
       FROM runs AS r
       INNER JOIN (
         SELECT run_id, min(timestamp) AS started_at, max(timestamp) AS last_status_at,
@@ -42,14 +45,32 @@ export const listRuns = createServerFn({ method: "GET" })
       ) AS s ON s.run_id = r.id
       WHERE r.project_id = {project_id:UUID}
       ORDER BY s.started_at DESC`, { project_id: data });
-    const summaries = await runSummaries(rows.map((row) => row.id));
-    return rows.map(({ trainingConfig, ...row }) => ({
+    return rows.map((row) => ({
       ...row,
       startedAt: Number(row.startedAt),
       endedAt: Number(row.endedAt),
-      params: scalarParams(trainingConfig),
-      summary: summaries.get(row.id) ?? {},
+      params: {},
+      summary: {},
     }));
+  });
+
+export const getRunParams = createServerFn({ method: "GET" })
+  .validator(uuidSchema)
+  .handler(async ({ data }) => {
+    const rows = await query<RunConfigRow>(`
+      SELECT toString(id) AS id, train_config AS trainingConfig
+      FROM runs
+      WHERE id = {run_id:UUID}`, { run_id: data });
+    const row = rows[0];
+    if (row === undefined) throw new Error(`Run ${data} not found`);
+    return scalarParams(JSON.parse(row.trainingConfig) as Record<string, unknown>);
+  });
+
+export const getRunSummary = createServerFn({ method: "GET" })
+  .validator(uuidSchema)
+  .handler(async ({ data }) => {
+    const summaries = await runSummaries([data]);
+    return summaries.get(data) ?? {};
   });
 
 async function runSummaries(runIds: string[]) {
@@ -59,7 +80,9 @@ async function runSummaries(runIds: string[]) {
     SELECT toString(run_id) AS runId, name, toFloat64(argMax(value, step)) AS value
     FROM metrics
     WHERE run_id IN {run_ids:Array(UUID)}
-    GROUP BY run_id, name`, { run_ids: runIds });
+    GROUP BY run_id, name`, { run_ids: runIds }, {
+      optimize_aggregation_in_order: 1,
+    });
   for (const row of rows) {
     const values = summaries.get(row.runId) ?? {};
     values[row.name] = Number(row.value);

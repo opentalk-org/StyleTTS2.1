@@ -26,6 +26,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "latest",
+    "@tanstack/react-query-devtools": "^5.102.8",
     "@types/node": "^22.20.1",
     "@types/plotly.js": "latest",
     "@types/react": "latest",

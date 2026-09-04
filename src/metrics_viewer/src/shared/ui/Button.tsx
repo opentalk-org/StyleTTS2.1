@@ -1,34 +1,49 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 import { cn } from "./cn";
+import { Tooltip } from "./Tooltip";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost";
-export type ControlSize = "sm" | "md";
+export type ControlSize = "sm" | "md" | "lg";
 
 const BASE =
-  "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap " +
-  "transition-[background-color,border-color,color,opacity] duration-150 ease-out " +
-  "active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40";
+  "inline-flex items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap " +
+  "transition-[background-color,border-color,color] duration-100 ease-out " +
+  "disabled:pointer-events-none disabled:text-fg-disabled";
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-white border border-transparent hover:bg-accent-bright",
-  secondary: "bg-surface text-fg border border-line hover:bg-surface-hover hover:border-line-hover",
-  ghost: "bg-transparent text-fg-secondary border border-transparent hover:bg-surface hover:text-fg",
+  primary: "bg-accent text-accent-fg border border-transparent hover:bg-accent-hover disabled:bg-hover",
+  secondary: "bg-surface text-fg border border-strong hover:bg-hover disabled:border-line",
+  ghost: "bg-transparent text-fg-secondary border border-transparent hover:bg-hover hover:text-fg",
 };
 
 const SIZES: Record<ControlSize, string> = {
-  sm: "h-7 px-2 text-xs",
-  md: "h-8 px-3 text-sm",
+  sm: "h-control-sm px-2 text-xs",
+  md: "h-control px-2.5 text-[13px]",
+  lg: "h-control-lg px-3 text-[13px]",
+};
+
+const ICON_SIZES: Record<ControlSize, string> = {
+  sm: "size-control-sm",
+  md: "size-control",
+  lg: "size-control-lg",
 };
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ControlSize;
-
   icon?: ReactNode;
 }
 
-export function Button({ variant = "secondary", size = "md", icon, className, children, type = "button", ...rest }: ButtonProps) {
+export function Button({
+  variant = "secondary",
+  size = "md",
+  icon,
+  className,
+  children,
+  type = "button",
+  ...rest
+}: ButtonProps) {
   return (
     <button type={type} className={cn(BASE, VARIANTS[variant], SIZES[size], className)} {...rest}>
       {icon}
@@ -38,35 +53,42 @@ export function Button({ variant = "secondary", size = "md", icon, className, ch
 }
 
 export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-
   label: string;
+  shortcut?: string;
   variant?: ButtonVariant;
   size?: ControlSize;
-
   active?: boolean;
 }
 
-const ICON_SIZES: Record<ControlSize, string> = { sm: "size-7", md: "size-8" };
-
-export function IconButton({ label, variant = "ghost", size = "md", active, className, children, type = "button", ...rest }: IconButtonProps) {
+/** Icon-only button. The label is the tooltip and the accessible name. */
+export function IconButton({
+  label,
+  shortcut,
+  variant = "ghost",
+  size = "md",
+  active,
+  className,
+  children,
+  type = "button",
+  ...rest
+}: IconButtonProps) {
   return (
-    <button
-      type={type}
-      title={label}
-      aria-label={label}
-      aria-pressed={active}
-      className={cn(
-        BASE,
-        "shrink-0 p-0",
-        ICON_SIZES[size],
-        active === true
-          ? "bg-accent-surface text-accent-bright border border-accent-border"
-          : VARIANTS[variant],
-        className,
-      )}
-      {...rest}
-    >
-      {children}
-    </button>
+    <Tooltip content={label} shortcut={shortcut}>
+      <button
+        type={type}
+        aria-label={label}
+        aria-pressed={active}
+        className={cn(
+          BASE,
+          "shrink-0 p-0",
+          ICON_SIZES[size],
+          active === true ? "border border-transparent bg-accent-subtle text-accent" : VARIANTS[variant],
+          className,
+        )}
+        {...rest}
+      >
+        {children}
+      </button>
+    </Tooltip>
   );
 }

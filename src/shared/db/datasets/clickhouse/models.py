@@ -22,6 +22,5 @@ class DatasetMembership(BaseModel):
     dataset_id: UUID
     audio_file_id: UUID
     updated_at: datetime
-    created_at: datetime
 
-    _timestamps_utc = field_validator("updated_at", "created_at")(utc_datetime)
+    _updated_at_utc = field_validator("updated_at")(utc_datetime)

@@ -1,18 +1,19 @@
-import { Pause, Play, Settings2, SkipBack, SkipForward } from "lucide-react";
-import Plotly from "plotly.js-basic-dist-min";
-import createPlotlyComponent from "react-plotly.js/factory";
+import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { IconButton } from "@/shared/ui";
+import { baseLayout, axis, type ChartTheme } from "@/shared/chart";
+import { Plot } from "@/shared/plot";
+import { Card, IconButton, Range, SegmentedControl, Skeleton } from "@/shared/ui";
+
 import { useArrayMetric } from "./query";
 
-const Plot = createPlotlyComponent(Plotly);
+const BIN_OPTIONS = [
+  { value: 16, label: "16" },
+  { value: 32, label: "32" },
+  { value: 64, label: "64" },
+];
 
-export function HistogramCard({ runId, name, running }: {
-  runId: string;
-  name: string;
-  running: boolean;
-}) {
+export function HistogramCard({ runId, name, running, chart }: { runId: string; name: string; running: boolean; chart: ChartTheme }) {
   const query = useArrayMetric(runId, name, running);
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -32,64 +33,52 @@ export function HistogramCard({ runId, name, running }: {
 
   const histogram = useMemo(() => metricHistogram(series?.values[index], bins), [series, index, bins]);
   const step = series?.steps[index] ?? 0;
+  const kind = name.startsWith("grad/") ? "Gradient" : "Parameter";
 
   return (
-    <section className="flex min-h-[385px] min-w-0 flex-col rounded-md bg-inset p-2">
-      <h3 className="m-0 truncate text-center font-mono text-sm font-semibold text-fg">{name}</h3>
-      <Plot
-        data={[{
-          type: "bar",
-          x: histogram.x,
-          y: histogram.y,
-          marker: { color: "#2563eb" },
-          hovertemplate: "%{x:.5g}<br>%{y}<extra></extra>",
-        }]}
-        layout={{
-          height: 315,
-          margin: { l: 38, r: 4, t: 8, b: 26 },
-          paper_bgcolor: "#090a0d",
-          plot_bgcolor: "#07080a",
-          font: { color: "#737783", size: 9 },
-          bargap: 0.04,
-          xaxis: { gridcolor: "rgba(255,255,255,.05)", zerolinecolor: "rgba(255,255,255,.12)" },
-          yaxis: { gridcolor: "rgba(255,255,255,.05)", zeroline: false },
-          showlegend: false,
-        }}
-        config={{ responsive: true, displayModeBar: false }}
-        useResizeHandler
-        className="w-full"
-      />
-      <div className="mt-auto text-center font-mono text-xs text-fg-secondary">
-        Step {step} of {series?.steps[last] ?? 0}
+    <Card>
+      <div className="flex h-card-head items-center justify-between gap-2 border-b border-line px-3">
+        <span className="min-w-0 truncate text-[13px] font-medium text-fg" title={name}>
+          <span className="text-fg-muted">{kind} · </span>
+          {name.split(".").at(-1)}
+        </span>
+        <SegmentedControl label="Bins" options={BIN_OPTIONS} value={bins} onValue={setBins} className="h-6" />
       </div>
-      <div className="mt-1 flex items-center gap-1">
+      {series === undefined ? (
+        <Skeleton className="m-2 h-44" />
+      ) : (
+        <div className="h-[180px] bg-plot">
+          <Plot
+            data={[{ type: "bar", x: histogram.x, y: histogram.y, marker: { color: chart.series[0] }, hovertemplate: "%{x:.5g}<br>%{y}<extra></extra>" }]}
+            layout={{
+              ...baseLayout(chart, 180),
+              margin: { l: 40, r: 8, t: 8, b: 28 },
+              bargap: 0.05,
+              xaxis: axis(chart, { showgrid: false }),
+              yaxis: axis(chart, { showgrid: true }),
+            }}
+            config={{ responsive: true, displayModeBar: false }}
+            useResizeHandler
+            style={{ width: "100%", height: "100%" }}
+          />
+        </div>
+      )}
+      <div className="flex items-center gap-1 border-t border-line px-2 py-1">
         <IconButton label="Previous step" size="sm" onClick={() => setIndex(Math.max(index - 1, 0))}>
-          <SkipBack size={14} />
+          <SkipBack size={13} />
         </IconButton>
         <IconButton label={playing ? "Pause" : "Play"} size="sm" onClick={() => setPlaying(!playing)}>
-          {playing ? <Pause size={14} /> : <Play size={14} />}
+          {playing ? <Pause size={13} /> : <Play size={13} />}
         </IconButton>
         <IconButton label="Next step" size="sm" onClick={() => setIndex(Math.min(index + 1, last))}>
-          <SkipForward size={14} />
+          <SkipForward size={13} />
         </IconButton>
-        <input
-          aria-label={`${name} step`}
-          className="min-w-0 flex-1"
-          type="range"
-          min={0}
-          max={last}
-          value={Math.min(index, last)}
-          onChange={(event) => setIndex(Number(event.target.value))}
-        />
-        <IconButton
-          label={`${bins} bins`}
-          size="sm"
-          onClick={() => setBins(bins === 64 ? 16 : bins * 2)}
-        >
-          <Settings2 size={14} />
-        </IconButton>
+        <Range aria-label={`${name} step`} min={0} max={last} step={1} value={Math.min(index, last)} onValue={setIndex} className="min-w-0 flex-1" />
+        <span className="w-24 shrink-0 text-right font-mono text-xs tabular-nums text-fg-muted">
+          step <span className="text-fg">{step.toLocaleString()}</span>
+        </span>
       </div>
-    </section>
+    </Card>
   );
 }
 

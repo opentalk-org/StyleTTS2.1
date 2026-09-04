@@ -43,6 +43,7 @@ def persist_uploaded_audio(payload: AudioCreate, dataset_id: str) -> AudioFileLi
                     kind=BucketKind.AUDIO,
                     path=path,
                     size=len(payload.wav_bytes),
+                    used_bytes=len(payload.wav_bytes),
                 )
             ]
         )

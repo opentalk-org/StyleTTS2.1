@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
 
 import { query } from "@/server/clickhouse";
 
@@ -12,7 +13,7 @@ interface ProjectRow {
   runningCount: string;
 }
 
-const projectsSql = `
+const projectsSql = (filter = "") => `
 SELECT
   toString(p.id) AS id,
   p.name AS name,
@@ -39,16 +40,50 @@ LEFT JOIN (
   ) AS s ON s.run_id = r.id
   GROUP BY r.project_id
 ) AS r ON r.project_id = p.id
+${filter}
 ORDER BY lastRunAt DESC, p.name ASC`;
 
 export const listProjects = createServerFn({ method: "GET" })
   .handler(async () => {
-    const rows = await query<ProjectRow>(projectsSql);
-    return rows.map((row) => ({
-      ...row,
-      createdAt: Number(row.createdAt),
-      lastRunAt: Number(row.lastRunAt),
-      runCount: Number(row.runCount),
-      runningCount: Number(row.runningCount),
-    }));
+    return projectRows(await query<ProjectRow>(projectsSql()));
   });
+
+interface ProjectChangeRow {
+  cursor: string;
+  ids: string[];
+}
+
+export const pollProjectChanges = createServerFn({ method: "POST" })
+  .validator(z.string())
+  .handler(async ({ data }) => {
+    const changes = await query<ProjectChangeRow>(`
+      SELECT toString(max(timestamp)) AS cursor,
+        groupUniqArray(toString(project_id)) AS ids
+      FROM (
+        SELECT id AS project_id, updated_at AS timestamp
+        FROM projects FINAL
+        WHERE updated_at > {after:DateTime64(9)}
+        UNION ALL
+        SELECT r.project_id, s.timestamp
+        FROM run_status AS s
+        INNER JOIN runs AS r ON r.id = s.run_id
+        WHERE s.timestamp > {after:DateTime64(9)}
+      )`, { after: data });
+    const change = changes[0];
+    if (change === undefined || change.ids.length === 0) return { cursor: data, projects: [] };
+    if (data === "1970-01-01 00:00:00.000000000") return { cursor: change.cursor, projects: [] };
+    const rows = await query<ProjectRow>(projectsSql("WHERE p.id IN {project_ids:Array(UUID)}"), {
+      project_ids: change.ids,
+    });
+    return { cursor: change.cursor, projects: projectRows(rows) };
+  });
+
+function projectRows(rows: ProjectRow[]) {
+  return rows.map((row) => ({
+    ...row,
+    createdAt: Number(row.createdAt),
+    lastRunAt: Number(row.lastRunAt),
+    runCount: Number(row.runCount),
+    runningCount: Number(row.runningCount),
+  }));
+}

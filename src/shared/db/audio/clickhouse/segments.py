@@ -1,3 +1,4 @@
+import json
 from collections.abc import Sequence
 from datetime import timedelta
 from uuid import UUID
@@ -130,8 +131,11 @@ def insert_audio_segments(items: Sequence[AudioSegmentRecord]) -> None:
             item.kind,
             item.accuracy,
             item.speaker_id,
-            item.metadata,
-            item.alignment,
+            json.dumps(item.metadata, separators=(",", ":")),
+            [
+                (entry["word"], entry["start"], entry["end"])
+                for entry in (item.alignment or [])
+            ],
         ]
         for item in items
     ]
@@ -215,10 +219,10 @@ def update_audio_segment(item: AudioSegmentRecord) -> AudioSegmentRecord:
     return rows[0]
 
 
-def delete_audio_segment(audio_file_id: UUID, segment_id: str) -> None:
+def delete_audio_segment(audio_file_id: UUID, segment_id: UUID) -> None:
     delete_rows(
         clickhouse_client(),
         "audio_segments",
-        "audio_file_id = {audio_file_id:UUID} AND id = {id:String}",
+        "audio_file_id = {audio_file_id:UUID} AND id = {id:UUID}",
         {"audio_file_id": audio_file_id, "id": segment_id},
     )

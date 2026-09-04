@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 from datetime import timedelta
+import json
 from uuid import UUID
 
 from shared.db.assets.clickhouse.models import (
@@ -16,15 +17,18 @@ def create_bucket_files(items: Sequence[BucketFileRecord]) -> None:
         return
     clickhouse_client().insert(
         "bucket_files",
-        [[item.id, item.kind.value, item.path, item.size] for item in items],
-        column_names=["id", "kind", "path", "size"],
+        [
+            [item.id, item.kind.value, item.path, item.size, item.used_bytes]
+            for item in items
+        ],
+        column_names=["id", "kind", "path", "size", "used_bytes"],
     )
 
 
 def get_bucket_file(bucket_file_id: UUID) -> BucketFileRecord:
     result = clickhouse_client().query(
         """
-        SELECT id, kind, path, size
+        SELECT id, kind, path, size, used_bytes
         FROM bucket_files
         WHERE id = {id:UUID}
         """,
@@ -42,7 +46,7 @@ def get_bucket_files(bucket_file_ids: Sequence[UUID]) -> list[BucketFileRecord]:
         return []
     result = clickhouse_client().query(
         """
-        SELECT id, kind, path, size
+        SELECT id, kind, path, size, used_bytes
         FROM bucket_files
         WHERE id IN {ids:Array(UUID)}
         """,
@@ -54,7 +58,7 @@ def get_bucket_files(bucket_file_ids: Sequence[UUID]) -> list[BucketFileRecord]:
 def list_bucket_files() -> list[BucketFileRecord]:
     result = clickhouse_client().query(
         """
-        SELECT id, kind, path, size
+        SELECT id, kind, path, size, used_bytes
         FROM bucket_files
         ORDER BY id
         """
@@ -125,7 +129,7 @@ def create_assets(items: Sequence[AssetRecord]) -> None:
             item.size,
             item.content_hash,
             item.type,
-            item.metadata,
+            json.dumps(item.metadata, separators=(",", ":")),
             item.run_id,
         ]
         for item in items
@@ -204,7 +208,13 @@ def delete_asset(asset_id: UUID) -> None:
 def create_config(item: ConfigRecord) -> ConfigRecord:
     clickhouse_client().insert(
         "configs",
-        [[item.id, item.updated_at, item.name, item.type, item.metadata]],
+        [[
+            item.id,
+            item.updated_at,
+            item.name,
+            item.type,
+            json.dumps(item.metadata, separators=(",", ":")),
+        ]],
         column_names=["id", "updated_at", "name", "type", "metadata"],
     )
     return get_config(item.id)

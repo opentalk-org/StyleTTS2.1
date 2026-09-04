@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from shared.audio_annotations import AudioAnnotations
 from shared.db.audio.clickhouse.models import AudioSegmentRecord
@@ -15,7 +15,7 @@ def segment_records(
         annotations = AudioAnnotations.model_validate(payload["annotations"])
         records.append(
             AudioSegmentRecord(
-                id=str(payload["id"]),
+                id=uuid5(NAMESPACE_URL, f"audio-segment:{audio_id}:{payload['id']}"),
                 audio_file_id=audio_id,
                 updated_at=updated_at,
                 position=position,

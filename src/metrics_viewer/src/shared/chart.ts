@@ -1,71 +1,99 @@
 import type { Layout } from "plotly.js";
 
+import type { Run } from "@/shared/types";
 
-export const SERIES_COLORS = ["#818cf8", "#6366f1", "#a5b4fc", "#7dd3fc", "#c4b5fd", "#94a3b8"] as const;
+const SERIES_COUNT = 12;
 
-export function seriesColor(index: number): string {
-  return SERIES_COLORS[index % SERIES_COLORS.length];
+export interface ChartTheme {
+  series: string[];
+  grid: string;
+  axisText: string;
+  cursor: string;
+  hoverBg: string;
+  hoverBorder: string;
+  hoverText: string;
+  rawOpacity: number;
+  sans: string;
+  mono: string;
 }
 
-
-
-
-
-export const RUN_COLOR_PALETTE = [
-  "#818cf8",
-  "#6366f1",
-  "#a78bfa",
-  "#38bdf8",
-  "#22d3ee",
-  "#2dd4bf",
-  "#4ade80",
-  "#fbbf24",
-  "#fb7185",
-  "#94a3b8",
-] as const;
-
-
-export function runColor(runId: string, index: number, overrides: Record<string, string>): string {
-  return overrides[runId] ?? seriesColor(index);
+/** Reads the chart tokens off the document so Plotly follows the active theme. */
+export function readChartTheme(): ChartTheme {
+  const style = getComputedStyle(document.documentElement);
+  const token = (name: string) => style.getPropertyValue(name).trim();
+  return {
+    series: Array.from({ length: SERIES_COUNT }, (_, index) => token(`--series-${index + 1}`)),
+    grid: token("--chart-grid"),
+    axisText: token("--fg-muted"),
+    cursor: token("--fg-secondary"),
+    hoverBg: token("--raised"),
+    hoverBorder: token("--strong"),
+    hoverText: token("--fg"),
+    rawOpacity: Number(token("--chart-raw-opacity")),
+    sans: token("--font-sans"),
+    mono: token("--font-mono"),
+  };
 }
 
-const SANS = "Inter, Geist, system-ui, sans-serif";
-const MONO = "Geist Mono, JetBrains Mono, SFMono-Regular, ui-monospace, monospace";
+/**
+ * Colour by position in the project's chronological run order so a run keeps its
+ * colour while other runs are selected or deselected. `runs` is the full project list
+ * ordered newest first, as returned by the runs query.
+ */
+export function assignRunColors(
+  runs: Run[],
+  palette: string[],
+  overrides: Record<string, string>,
+): Record<string, string> {
+  const colors: Record<string, string> = {};
+  const oldestFirst = [...runs].sort((a, b) => a.startedAt - b.startedAt);
+  oldestFirst.forEach((run, index) => {
+    colors[run.id] = overrides[run.id] ?? palette[index % palette.length];
+  });
+  return colors;
+}
 
-const GRID = "rgba(255,255,255,0.05)";
-const AXIS_TEXT = "#71717a";
-
-
-
-export function baseLayout(height?: number): Partial<Layout> {
+export function baseLayout(theme: ChartTheme, height?: number): Partial<Layout> {
   return {
     autosize: true,
     ...(height === undefined ? {} : { height }),
-    margin: { l: 54, r: 16, t: 12, b: 40 },
+    margin: { l: 48, r: 12, t: 8, b: 32 },
     paper_bgcolor: "transparent",
     plot_bgcolor: "transparent",
-    font: { color: AXIS_TEXT, family: SANS, size: 11 },
+    font: { color: theme.axisText, family: theme.sans, size: 11 },
     showlegend: false,
     hoverlabel: {
-      bgcolor: "#0d0d10",
-      bordercolor: "rgba(255,255,255,0.10)",
-      font: { color: "#f4f4f5", family: MONO, size: 11 },
+      bgcolor: theme.hoverBg,
+      bordercolor: theme.hoverBorder,
+      font: { color: theme.hoverText, family: theme.mono, size: 11 },
       align: "left",
       namelength: -1,
     },
   };
 }
 
+/** Half-strength version of a #rrggbb colour for minor gridlines. */
+function faint(hex: string): string {
+  const value = Number.parseInt(hex.slice(1), 16);
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, 0.45)`;
+}
 
-export function axis(overrides: Partial<Layout["xaxis"]> = {}): Partial<Layout["xaxis"]> {
+export function axis(
+  theme: ChartTheme,
+  overrides: Partial<Layout["xaxis"]> = {},
+): Partial<Layout["xaxis"]> {
   return {
-    gridcolor: GRID,
+    gridcolor: theme.grid,
     gridwidth: 1,
     zeroline: false,
     showline: false,
     showspikes: false,
-    ticks: "",
-    tickfont: { color: AXIS_TEXT, family: MONO, size: 10 },
+    nticks: 10,
+    ticks: "outside",
+    ticklen: 4,
+    tickcolor: theme.grid,
+    tickfont: { color: theme.axisText, family: theme.mono, size: 11 },
+    minor: { nticks: 5, ticks: "outside", ticklen: 2, tickcolor: theme.grid, showgrid: true, gridcolor: faint(theme.grid), gridwidth: 1 },
     ...overrides,
   };
 }

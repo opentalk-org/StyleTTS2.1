@@ -87,7 +87,6 @@ def add_audio_files(
     dataset_id: UUID,
     audio_file_ids: Sequence[UUID],
     updated_at: datetime,
-    created_at: datetime,
 ) -> None:
     get_dataset(dataset_id)
     if not audio_file_ids:
@@ -99,40 +98,34 @@ def add_audio_files(
         raise KeyError(f"Audio files not found: {sorted(map(str, missing))}")
     current_result = clickhouse_client().query(
         """
-        SELECT audio_file_id, updated_at, created_at
+        SELECT audio_file_id, updated_at
         FROM dataset_audio_files FINAL
         WHERE dataset_id = {dataset_id:UUID}
           AND audio_file_id IN {ids:Array(UUID)}
         """,
         parameters={"dataset_id": dataset_id, "ids": ids},
     )
-    current = {
-        row[0]: (utc_datetime(row[1]), utc_datetime(row[2]))
-        for row in current_result.result_rows
-    }
+    current = {row[0]: utc_datetime(row[1]) for row in current_result.result_rows}
     rows = [
         DatasetMembership(
             dataset_id=dataset_id,
             audio_file_id=audio_id,
             updated_at=max(
                 updated_at,
-                current[audio_id][0] + timedelta(microseconds=1),
+                current[audio_id] + timedelta(microseconds=1),
             )
             if audio_id in current
             else updated_at,
-            created_at=current[audio_id][1]
-            if audio_id in current
-            else created_at,
         )
         for audio_id in ids
     ]
     clickhouse_client().insert(
         "dataset_audio_files",
         [
-            [row.dataset_id, row.audio_file_id, row.updated_at, row.created_at]
+            [row.dataset_id, row.audio_file_id, row.updated_at]
             for row in rows
         ],
-        column_names=["dataset_id", "audio_file_id", "updated_at", "created_at"],
+        column_names=["dataset_id", "audio_file_id", "updated_at"],
     )
 
 
