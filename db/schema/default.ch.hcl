@@ -111,6 +111,7 @@ table "metrics" {
   sort {
     columns = [column.run_id, column.name, column.step, column.timestamp]
   }
+
 }
 
 table "array_metrics" {
@@ -274,7 +275,7 @@ table "audio_segments" {
   engine = MergeTree
 
   column "id" {
-    type = String
+    type = UUID
   }
   column "audio_file_id" {
     type = UUID
@@ -382,6 +383,9 @@ table "bucket_files" {
   column "size" {
     type = UInt64
   }
+  column "used_bytes" {
+    type = UInt64
+  }
 
   primary_key {
     columns = [column.id]
@@ -422,7 +426,13 @@ table "assets" {
   column "metadata" {
     type = String
   }
+
   column "run_id" {
+    type = UUID
+    default = "00000000-0000-0000-0000-000000000000"
+  }
+
+  column "ancestor_asset_id" {
     type = UUID
     default = "00000000-0000-0000-0000-000000000000"
   }
@@ -434,3 +444,4 @@ table "assets" {
     columns = [column.id]
   }
 }
+
