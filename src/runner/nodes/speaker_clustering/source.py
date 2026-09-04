@@ -20,7 +20,7 @@ from shared.db.audio.ranges import (
     WavClip,
     bulk_read_wav_segments,
 )
-from shared.db.audio.segment_catalog import SegmentCursor, SegmentReference
+from shared.db.audio.clickhouse.references import SegmentCursor, SegmentReference
 
 
 PAGE_SIZE = 1_024
@@ -46,11 +46,9 @@ class SpeakerSegmentSource(Node):
         super().__init__(node_id=node_id, **params)
         self._after: SegmentCursor | None = None
         self._emitted = 0
-        with database_session() as session:
-            self._segment_count = audio_crud.count_segment_references(
-                session,
-                self.settings.dataset_id,
-            )
+        self._segment_count = audio_crud.count_segment_references(
+            self.settings.dataset_id
+        )
 
     def remaining_items(self, context: Any) -> int:
         return self._segment_count - self._emitted
@@ -59,13 +57,12 @@ class SpeakerSegmentSource(Node):
         assert len(batch) == 1, f"{self.id} requires one source task"
         context.check_cancel()
         limit = min(PAGE_SIZE, self.runtime.queue_max_size, self.remaining_items(context))
+        references = audio_crud.list_segment_references_page(
+            self.settings.dataset_id,
+            self._after,
+            limit,
+        )
         with database_session() as session:
-            references = audio_crud.list_segment_references_page(
-                session,
-                self.settings.dataset_id,
-                self._after,
-                limit,
-            )
             assert references, f"{self.id} expected {self.remaining_items(context)} more database segments"
             references = bounded_clip_prefix(
                 references, self.settings.maximum_page_bytes

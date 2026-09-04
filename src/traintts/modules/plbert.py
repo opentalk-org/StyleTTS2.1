@@ -244,8 +244,6 @@ def _load_multilingual_plbert(path: Path, config: dict) -> MultilingualPlBert:
             )
     state_dict["embeddings.word_embeddings.weight"] = extended_embeddings
     bert.load_state_dict(state_dict, strict=True)
-    assert language_weights is not None
-    assert modality_weights is not None
     language_embeddings = nn.Embedding.from_pretrained(
         language_weights,
         freeze=False,

@@ -1,5 +1,5 @@
 import { Input } from "@/shared/ui/Input";
-import { numberRecord, resourceLimitsForGraph, resourceRequirementsForGraph, runtimeConfigForGraph } from "../logic";
+import { numberRecord, resourceLimitsForGraph, resourceRequirementsForGraph, runtimeConfigForGraph } from "../execution";
 import { useWorkflowStore } from "../store";
 
 export function RuntimeSettingsPopover() {

@@ -18,6 +18,7 @@ from .loading import (
 from .losses import MultiResolutionSTFTLoss
 from .modules.plbert import load_plbert
 from .optimizers import MultiOptimizer, build_optimizer
+from .parameter_monitor import ParameterMonitor
 from .utils import recursive_munch
 
 
@@ -101,6 +102,7 @@ def build_training_runtime(
         modules,
         optimizer,
     )
+    optimizer.monitor = ParameterMonitor(accelerator, modules, config.log_every_steps, initial_step)
     model_bundle = ModelBundle(
         modules,
         parameters,

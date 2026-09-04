@@ -14,12 +14,22 @@ from runflow.core.settings import StrictSettings
 from runflow.policies import BatchMode, BatchPolicy, ResourcePolicy
 from runflow.runtime.output_router import INPUT_INDEX_OUTPUT
 from runner.nodes.accelerator_memory import release_accelerator_memory
-from runner.nodes.datatypes import AudioPort, CheckpointRefPort, JsonPort, SynthesisResultPort, TextPort
+from runner.nodes.datatypes import (
+    AudioPort,
+    CheckpointRefPort,
+    JsonPort,
+    SynthesisResultPort,
+    TextPort,
+)
 from runner.nodes.languages import Language
 from runner.nodes.models import SynthesisResult, stable_id, typed_checkpoint
 from runner.nodes.tts.audio_out import audio_from_samples
 from runner.nodes.tts.engines import load_engine
-from runner.nodes.tts.engines.base import EngineRuntime, EngineSynthesisRequest, EngineSynthesisResult
+from runner.nodes.tts.engines.base import (
+    EngineRuntime,
+    EngineSynthesisRequest,
+    EngineSynthesisResult,
+)
 from runner.nodes.tts.voices import TtsEngine, Voice, expand_voice_batch, parse_voice
 
 
@@ -56,7 +66,11 @@ class TtsSynthesisNode(Node):
     }
     OUTPUTS = {"audio": AudioPort(), "synthesis_result": SynthesisResultPort()}
     BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=16, max_size=32)
-    RESOURCE_POLICY = ResourcePolicy(resources={"accelerator": 1, "vram_gb": 8}, keep_loaded=True, exclusive_group="accelerator")
+    RESOURCE_POLICY = ResourcePolicy(
+        resources={"accelerator": 1, "vram_gb": 8},
+        keep_loaded=True,
+        exclusive_group="accelerator",
+    )
 
     def __init__(self, node_id: str | None = None, **params: Any):
         super().__init__(node_id=node_id, **params)
@@ -96,7 +110,9 @@ class TtsSynthesisNode(Node):
             [item.request for item in pending],
             context.check_cancel,
         )
-        assert len(results) == len(pending), f"{self.ENGINE.value} batch output mismatch"
+        assert len(results) == len(pending), (
+            f"{self.ENGINE.value} batch output mismatch"
+        )
         await context.report_progress(
             self.id,
             len(results),
@@ -111,7 +127,9 @@ class TtsSynthesisNode(Node):
     async def _ensure_runtime(self, checkpoint_id: UUID, checkpoint_dir: Path) -> None:
         if self._runtime is not None and self._loaded_checkpoint_id == checkpoint_id:
             return
-        self._runtime = await asyncio.to_thread(self._load_runtime_logged, checkpoint_dir)
+        self._runtime = await asyncio.to_thread(
+            self._load_runtime_logged, checkpoint_dir
+        )
         self._loaded_checkpoint_id = checkpoint_id
 
     def _load_runtime_logged(self, checkpoint_dir: Path) -> EngineRuntime:

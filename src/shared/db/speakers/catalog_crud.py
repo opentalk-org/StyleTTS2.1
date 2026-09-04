@@ -1,101 +1,112 @@
-from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select, update
-from sqlalchemy.orm import Session
-
-from shared.db.audio.models import AudioSegment
-from shared.db.datasets.models import dataset_audio_files
+from shared.db.audio.clickhouse import AudioSegmentRecord
+from shared.db.audio.clickhouse.segments import insert_audio_segments
+from shared.db.clickhouse import clickhouse_client
 from shared.db.speakers.schemas import SpeakerRead
 
 
 def search_speakers(
-    session: Session,
     query: str,
     limit: int,
     offset: int,
 ) -> tuple[list[SpeakerRead], int]:
-    speaker_filter = AudioSegment.speaker_id.is_not(None)
-    if query:
-        speaker_filter = speaker_filter & AudioSegment.speaker_id.ilike(f"%{query}%")
-    statement = (
-        select(
-            AudioSegment.speaker_id,
-            func.count(func.distinct(AudioSegment.audio_file_id)).label("audio_files"),
-            func.count(AudioSegment.id).label("segments"),
+    parameters = {"query": query, "limit": limit, "offset": offset}
+    result = clickhouse_client().query(
+        """
+        WITH current_segments AS (
+            SELECT
+                audio_file_id,
+                id,
+                argMax(tuple(speaker_id), updated_at).1 AS speaker_id
+            FROM audio_segments
+            GROUP BY audio_file_id, id
         )
-        .where(speaker_filter)
-        .group_by(AudioSegment.speaker_id)
-        .order_by(AudioSegment.speaker_id)
-        .limit(limit)
-        .offset(offset)
+        SELECT
+            segment.speaker_id AS id,
+            uniqExact(segment.audio_file_id) AS audio_files,
+            count() AS segments,
+            groupUniqArray(membership.dataset_id) AS datasets,
+            count() OVER () AS total
+        FROM current_segments AS segment
+        LEFT JOIN dataset_audio_files AS membership FINAL
+          ON membership.audio_file_id = segment.audio_file_id
+        WHERE segment.speaker_id IS NOT NULL
+          AND positionCaseInsensitiveUTF8(segment.speaker_id, {query:String}) > 0
+        GROUP BY segment.speaker_id
+        ORDER BY segment.speaker_id
+        LIMIT {limit:UInt32} OFFSET {offset:UInt64}
+        """,
+        parameters=parameters,
     )
-    rows = session.execute(statement).all()
-    speaker_ids = [row.speaker_id for row in rows]
-    datasets = _speaker_datasets(session, speaker_ids)
-    total = session.scalar(
-        select(func.count(func.distinct(AudioSegment.speaker_id))).where(speaker_filter)
-    )
-    return [
-        SpeakerRead(
-            id=row.speaker_id,
-            audio_files=row.audio_files,
-            segments=int(row.segments or 0),
-            datasets=datasets[row.speaker_id],
-        )
-        for row in rows
-    ], int(total or 0)
+    rows = list(result.named_results())
+    total = int(rows[0]["total"]) if rows else 0
+    return [SpeakerRead.model_validate(row) for row in rows], total
 
 
-def rename_speaker(session: Session, speaker_id: str, replacement: str) -> None:
+def rename_speaker(speaker_id: str, replacement: str) -> None:
     if not replacement:
         raise ValueError("replacement speaker_id must not be empty")
-    _replace_speaker(session, speaker_id, replacement)
+    _replace_speaker(speaker_id, replacement)
 
 
-def clear_speaker(session: Session, speaker_id: str) -> None:
-    _replace_speaker(session, speaker_id, None)
+def clear_speaker(speaker_id: str) -> None:
+    _replace_speaker(speaker_id, None)
 
 
-def clear_matching_speakers(session: Session, query: str) -> None:
-    rows, _total = search_speakers(session, query, 200, 0)
+def clear_matching_speakers(query: str) -> None:
+    rows, _ = search_speakers(query, 200, 0)
     while rows:
         for row in rows:
-            _replace_speaker(session, row.id, None, commit=False)
-        session.flush()
-        rows, _total = search_speakers(session, query, 200, 0)
-    session.commit()
+            _replace_speaker(row.id, None)
+        rows, _ = search_speakers(query, 200, 0)
 
 
-def _speaker_datasets(session: Session, speaker_ids: Sequence[str]) -> dict[str, list]:
-    datasets = {speaker_id: [] for speaker_id in speaker_ids}
-    if not speaker_ids:
-        return datasets
-    statement = (
-        select(AudioSegment.speaker_id, dataset_audio_files.c.dataset_id)
-        .join(dataset_audio_files, dataset_audio_files.c.audio_file_id == AudioSegment.audio_file_id)
-        .where(AudioSegment.speaker_id.in_(speaker_ids))
-        .distinct()
+def _replace_speaker(speaker_id: str, replacement: str | None) -> None:
+    result = clickhouse_client().query(
+        """
+        SELECT
+            id,
+            audio_file_id,
+            latest.1 AS updated_at,
+            latest.2 AS position,
+            latest.3 AS start_seconds,
+            latest.4 AS end_seconds,
+            latest.5 AS text,
+            latest.6 AS phon,
+            latest.7 AS kind,
+            latest.8 AS accuracy,
+            latest.9 AS speaker_id,
+            latest.10 AS metadata,
+            latest.11 AS alignment
+        FROM (
+            SELECT
+                id,
+                audio_file_id,
+                argMax(
+                    tuple(updated_at, position, start_seconds, end_seconds, text,
+                          phon, kind, accuracy, speaker_id, metadata, alignment),
+                    updated_at
+                ) AS latest
+            FROM audio_segments
+            GROUP BY audio_file_id, id
+        )
+        WHERE speaker_id = {speaker_id:String}
+        """,
+        parameters={"speaker_id": speaker_id},
     )
-    for speaker_id, dataset_id in session.execute(statement):
-        datasets[speaker_id].append(dataset_id)
-    return datasets
-
-
-def _replace_speaker(
-    session: Session,
-    speaker_id: str,
-    replacement: str | None,
-    commit: bool = True,
-) -> None:
-    segment_audio_ids = set(session.scalars(
-        select(AudioSegment.audio_file_id).where(AudioSegment.speaker_id == speaker_id)
-    ))
-    if not segment_audio_ids:
+    items = [AudioSegmentRecord.model_validate(row) for row in result.named_results()]
+    if not items:
         raise KeyError(f"speaker not found: {speaker_id}")
-    session.execute(
-        update(AudioSegment)
-        .where(AudioSegment.speaker_id == speaker_id)
-        .values(speaker_id=replacement)
+    updated_at = datetime.now(UTC)
+    latest = max(item.updated_at for item in items)
+    if updated_at <= latest:
+        updated_at = latest + timedelta(microseconds=1)
+    insert_audio_segments(
+        [
+            item.model_copy(
+                update={"speaker_id": replacement, "updated_at": updated_at}
+            )
+            for item in items
+        ]
     )
-    if commit:
-        session.commit()

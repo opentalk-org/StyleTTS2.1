@@ -1,6 +1,6 @@
 from functools import partial
 from math import sqrt
-from typing import Callable
+from typing import Callable, cast
 
 import torch
 import torch.nn as nn
@@ -59,11 +59,9 @@ def to_batch(
     x: float | None = None,
     xs: Tensor | None = None,
 ) -> Tensor:
-    assert exists(x) ^ exists(xs), "exactly one of x or xs must be provided"
     if x is not None:
         return torch.full((batch_size,), x, device=device)
-    assert xs is not None
-    return xs
+    return cast(Tensor, xs)
 
 
 class Diffusion(nn.Module):

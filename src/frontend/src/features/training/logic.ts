@@ -5,7 +5,7 @@ import type { FileAsset } from "../assets/api";
 import type { Checkpoint } from "../checkpoints/api";
 import { checkpointDecoderType, checkpointMultispeaker, checkpointSymbolCount as checkpointSymbolCountFromMetadata } from "../checkpoints/logic";
 import type { Dataset } from "../datasets/api";
-import { typeAccepts } from "../workflows/logic";
+import { typeAccepts } from "../workflows/graph";
 import type { WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowSchema } from "../workflows/types";
 import type { TrainTab } from "./store";
 import { TRAINING_WORKFLOWS } from "./workflowSpecs";

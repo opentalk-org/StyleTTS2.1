@@ -51,7 +51,7 @@ class ResolveCheckpointSettings(StrictSettings):
 def resolve_checkpoint_ref(checkpoint_id: str, expected_type: str = "") -> CheckpointRef:
     parsed_id = UUID(checkpoint_id)
     with database_session() as session:
-        checkpoint = asset_crud.get_checkpoint(session, parsed_id)
+        checkpoint = asset_crud.get_checkpoint(parsed_id)
         if expected_type and checkpoint.type_ != expected_type:
             raise ValueError(f"checkpoint {parsed_id} has type {checkpoint.type_}, expected {expected_type}")
         path = asset_crud.get_checkpoint_path(session, parsed_id)

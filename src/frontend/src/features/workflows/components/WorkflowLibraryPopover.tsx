@@ -9,7 +9,7 @@ import { Button } from "@/shared/ui/Button";
 import { IconButton } from "@/shared/ui/IconButton";
 import { Input } from "@/shared/ui/Input";
 import { fetchRunSnapshot } from "../api";
-import { runtimeConfigForGraph, workflowDefinition } from "../logic";
+import { runtimeConfigForGraph, workflowDefinition } from "../execution";
 import { useDeleteWorkflowMutation, useExampleWorkflowsQuery, useSaveWorkflowMutation, useSavedWorkflowsQuery } from "../query";
 import { useWorkflowStore } from "../store";
 import type { WorkflowGraph } from "../types";

@@ -80,9 +80,7 @@ class OtherTtsCorpusSynthesisNode(Node):
         engine = TtsEngine(self.settings.engine.value)
         expected_dataset = f"tts_{engine.value}"
         if self.settings.dataset_name != expected_dataset:
-            raise ValueError(
-                f"{engine.value}: dataset name must be {expected_dataset}"
-            )
+            raise ValueError(f"{engine.value}: dataset name must be {expected_dataset}")
         stream_languages = registered_stream_languages(
             self.settings.corpus_dir,
             engine,
@@ -104,15 +102,13 @@ class OtherTtsCorpusSynthesisNode(Node):
             self.settings.shard_count,
         )
         if self.settings.max_jobs is not None:
-            jobs = jobs[:self.settings.max_jobs]
+            jobs = jobs[: self.settings.max_jobs]
         completed = await asyncio.to_thread(
             completed_source_keys,
             self.settings.dataset_id,
             self.settings.dataset_name,
         )
-        self._jobs = tuple(
-            job for job in jobs if job.source_key not in completed
-        )
+        self._jobs = tuple(job for job in jobs if job.source_key not in completed)
         self._voices = {
             stream: Voice(
                 engine=engine,
@@ -158,7 +154,7 @@ class OtherTtsCorpusSynthesisNode(Node):
             len(self._jobs),
             self._cursor + self.settings.batch_size,
         )
-        selected = self._jobs[self._cursor:end]
+        selected = self._jobs[self._cursor : end]
         requests = [
             EngineSynthesisRequest(
                 job.text,
@@ -182,8 +178,7 @@ class OtherTtsCorpusSynthesisNode(Node):
             self.id,
             self._cursor,
             len(self._jobs),
-            f"{self.settings.engine.value} corpus "
-            f"{self._cursor}/{len(self._jobs)}",
+            f"{self.settings.engine.value} corpus {self._cursor}/{len(self._jobs)}",
         )
         return [
             {

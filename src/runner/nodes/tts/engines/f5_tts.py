@@ -6,7 +6,11 @@ from typing import Any
 import numpy as np
 
 from runner.nodes.asr.audio import write_temp_wav
-from runner.nodes.tts.engines.base import EngineRuntime, require_checkpoint_dir, resolve_device
+from runner.nodes.tts.engines.base import (
+    EngineRuntime,
+    require_checkpoint_dir,
+    resolve_device,
+)
 from runner.nodes.tts.voices import Voice
 
 F5_REPO_ID = "SWivid/F5-TTS"
@@ -20,7 +24,9 @@ class F5TtsRuntime(EngineRuntime):
     def __init__(self, model: Any):
         self._model = model
 
-    def synthesize(self, text: str, voice: Voice, language: str) -> tuple[np.ndarray, int]:
+    def synthesize(
+        self, text: str, voice: Voice, language: str
+    ) -> tuple[np.ndarray, int]:
         reference = voice.require_clone()
         ref_file = str(write_temp_wav(reference.wav_bytes))
         wav, sample_rate, _spectrogram = self._model.infer(
@@ -42,7 +48,9 @@ def load(checkpoint_dir: Path, device: str | None = None) -> F5TtsRuntime:
         raise RuntimeError("f5_tts_not_installed") from exc
     # Point F5TTS at our downloaded weights + vocab instead of letting it re-fetch from HF.
     variant_dir = require_checkpoint_dir(checkpoint_dir) / F5_MODEL_VARIANT
-    ckpt_file = next(variant_dir.glob("*.safetensors"), None) or next(variant_dir.glob("*.pt"), None)
+    ckpt_file = next(variant_dir.glob("*.safetensors"), None) or next(
+        variant_dir.glob("*.pt"), None
+    )
     if ckpt_file is None:
         raise FileNotFoundError(f"f5_checkpoint_weights_missing:{variant_dir}")
     vocab_file = variant_dir / "vocab.txt"

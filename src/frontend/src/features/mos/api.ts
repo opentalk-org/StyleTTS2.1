@@ -15,7 +15,6 @@ export type MosPair = {
 };
 
 export type MosRatingRequest = {
-  dataset_id: string;
   audio_a_id: string;
   audio_b_id: string;
   preferred_audio_id: string;
@@ -23,10 +22,13 @@ export type MosRatingRequest = {
   score_b: number;
 };
 
-export type MosRating = MosRatingRequest & {
+export type MosRating = {
   id: string;
-  previous_score_a: number | null;
-  previous_score_b: number | null;
+  audio_a_id: string;
+  audio_b_id: string;
+  preferred_audio_id: string;
+  score_a: number;
+  score_b: number;
   created_at: string;
 };
 

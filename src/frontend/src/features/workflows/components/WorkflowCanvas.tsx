@@ -7,7 +7,7 @@ import { WorkflowNodeCard } from "./WorkflowNodeCard";
 import { NodePickerPopover } from "./NodePickerPopover";
 import { WorkflowRunPanel } from "./WorkflowRunPanel";
 import { useWorkflowStore } from "../store";
-import { graphPoint } from "../logic";
+import { graphPoint } from "../viewport";
 
 type NodePickerState = {
   left: number;

@@ -55,10 +55,7 @@ def build_corpus_plan(root: Path, catalog: PiperCatalog) -> CorpusPlan:
             f"{manifest_path}: expected {EXPECTED_STREAMS} voices, "
             f"found {len(manifest.voices)}"
         )
-    routed_engines = {
-        voice.identity: _engine_for(voice)
-        for voice in manifest.voices
-    }
+    routed_engines = {voice.identity: _engine_for(voice) for voice in manifest.voices}
     piper_stream_counts = Counter(
         voice.language
         for voice in manifest.voices
@@ -100,9 +97,7 @@ def build_corpus_plan(root: Path, catalog: PiperCatalog) -> CorpusPlan:
         )
         lines = _voice_lines(root, voice)
         target = piper_jobs if engine is TtsEngine.PIPER else kokoro_jobs
-        target.extend(
-            _jobs_for_voice(voice, lines, engine, voice_id, speaker_id)
-        )
+        target.extend(_jobs_for_voice(voice, lines, engine, voice_id, speaker_id))
     plan = CorpusPlan(
         tuple(piper_jobs),
         tuple(kokoro_jobs),
@@ -204,9 +199,7 @@ def _voice_lines(root: Path, voice: VoiceRecord) -> tuple[str, ...]:
     path = root / voice.path
     lines = tuple(path.read_text(encoding="utf-8").splitlines())
     if len(lines) != voice.lines:
-        raise ValueError(
-            f"{path}: expected {voice.lines} lines, found {len(lines)}"
-        )
+        raise ValueError(f"{path}: expected {voice.lines} lines, found {len(lines)}")
     if any(not line.strip() or line != line.strip() for line in lines):
         raise ValueError(f"{path}: lines must be nonempty and trimmed")
     return lines
@@ -242,13 +235,10 @@ def _validate_plan(plan: CorpusPlan) -> None:
     jobs = plan.jobs
     keys = [job.source_key for job in jobs]
     if len(jobs) != EXPECTED_LINES:
-        raise ValueError(
-            f"expected {EXPECTED_LINES} corpus jobs, found {len(jobs)}"
-        )
+        raise ValueError(f"expected {EXPECTED_LINES} corpus jobs, found {len(jobs)}")
     if len(plan.piper_jobs) != EXPECTED_PIPER_JOBS:
         raise ValueError(
-            f"expected {EXPECTED_PIPER_JOBS} Piper jobs, "
-            f"found {len(plan.piper_jobs)}"
+            f"expected {EXPECTED_PIPER_JOBS} Piper jobs, found {len(plan.piper_jobs)}"
         )
     if len(set(keys)) != len(keys):
         raise ValueError("corpus source keys are not unique")

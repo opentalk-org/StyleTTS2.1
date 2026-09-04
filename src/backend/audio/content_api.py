@@ -10,10 +10,12 @@ from backend.audio.responses import (
 from backend.audio.schemas import WaveformStatusRead
 from backend.audio.waveform_service import WaveformService
 from shared.db import database_session
-from shared.db.audio import crud as audio_crud
-from shared.db.audio.schemas import AudioPartRead
+from shared.db.audio.clickhouse import get_audio_file as get_audio_record
+from shared.db.audio.storage_locations import audio_storage_locations
+from shared.db.settings import crud as settings_crud
 from shared.db.waveforms import crud as waveform_crud
 from shared.db.waveforms.schemas import WaveformRead
+from shared.storage import ObjectRange
 
 router = APIRouter()
 waveform_service = WaveformService()
@@ -26,18 +28,21 @@ async def audio_content(
 ) -> Response:
     try:
         with database_session() as session:
-            item = audio_crud.get_audio_file(session, audio_file_id)
+            item = get_audio_record(audio_file_id)
             require_packed_audio(item)
             start, end = content_range(range_header, item.byte_length)
-            data = audio_crud.read_audio_part(
-                session,
-                audio_file_id,
-                AudioPartRead(start=start, length=end - start + 1),
+            location = audio_storage_locations(session, [audio_file_id])[audio_file_id]
+            data = settings_crud.object_store(session).read_range(
+                ObjectRange(
+                    location.object_path,
+                    location.byte_offset + start,
+                    end - start + 1,
+                )
             )
             return Response(
                 data,
                 status_code=status.HTTP_206_PARTIAL_CONTENT,
-                media_type=content_type(item.metadata_),
+                media_type=content_type(item.metadata),
                 headers={
                     "Accept-Ranges": "bytes",
                     "Content-Length": str(len(data)),
@@ -60,7 +65,7 @@ async def get_waveform(
 ) -> WaveformRead:
     try:
         with database_session() as session:
-            item = audio_crud.get_audio_file(session, audio_file_id)
+            item = get_audio_record(audio_file_id)
             require_packed_audio(item)
             return waveform_crud.read_waveform(
                 session,
@@ -79,8 +84,7 @@ async def get_waveform(
 @router.post("/{audio_file_id}/waveform", response_model=WaveformStatusRead)
 async def ensure_waveform(audio_file_id: uuid.UUID) -> WaveformStatusRead:
     try:
-        with database_session() as session:
-            require_packed_audio(audio_crud.get_audio_file(session, audio_file_id))
+        require_packed_audio(get_audio_record(audio_file_id))
     except KeyError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

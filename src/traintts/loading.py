@@ -154,7 +154,6 @@ def load_ASR_models(ASR_MODEL_PATH, ASR_MODEL_CONFIG):
     return asr_model
 
 def build_model(args, text_aligner, pitch_extractor, bert):
-    assert args.decoder.type in ['istftnet', 'hifigan'], 'Decoder type unknown'
     generator_checkpointing = bool(args.decoder.gradient_checkpointing)
     discriminators_checkpointing = bool(args.discriminators_checkpointing)
     

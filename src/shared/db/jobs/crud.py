@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session, defer
 
 from shared.db.jobs.models import Job, NodeLog
 from shared.db.jobs.schemas import JobUpsert, NodeLogUpsert
-from shared.db.reviews.models import WorkflowReview
 from shared.schemas import RunState
 
 
@@ -20,23 +19,18 @@ class ActiveJobError(ValueError):
 def list_jobs(session: Session, limit: int, offset: int) -> tuple[Sequence[Job], int]:
     # Defer the heavy JSONB columns; the list only needs summary fields, and the graph /
     # snapshot are fetched per run on demand.
-    rows = session.execute(
-        select(Job)
-        .options(defer(Job.graph_request), defer(Job.snapshot))
-        .order_by(desc(Job.updated_at))
-        .limit(limit)
-        .offset(offset)
-    ).scalars().all()
-    total = session.execute(select(func.count()).select_from(Job)).scalar_one()
-    counts = dict(
+    rows = (
         session.execute(
-            select(WorkflowReview.producer_run_id, func.count())
-            .where(WorkflowReview.producer_run_id.in_([row.run_id for row in rows]))
-            .group_by(WorkflowReview.producer_run_id)
-        ).all()
+            select(Job)
+            .options(defer(Job.graph_request), defer(Job.snapshot))
+            .order_by(desc(Job.updated_at))
+            .limit(limit)
+            .offset(offset)
+        )
+        .scalars()
+        .all()
     )
-    for row in rows:
-        row.review_count = int(counts.get(row.run_id, 0))
+    total = session.execute(select(func.count()).select_from(Job)).scalar_one()
     return rows, total
 
 
@@ -49,9 +43,13 @@ def list_run_jobs(session: Session) -> Sequence[Job]:
 
 
 def list_jobs_updated_after(session: Session, updated_at: datetime) -> Sequence[Job]:
-    return session.execute(
-        select(Job).where(Job.updated_at > updated_at).order_by(Job.updated_at)
-    ).scalars().all()
+    return (
+        session.execute(
+            select(Job).where(Job.updated_at > updated_at).order_by(Job.updated_at)
+        )
+        .scalars()
+        .all()
+    )
 
 
 def get_job(session: Session, run_id: str) -> Job:
@@ -96,14 +94,20 @@ def delete_job(session: Session, run_id: str, *, force: bool = False) -> None:
 
 
 def get_node_log(session: Session, run_id: str, node_id: str) -> NodeLog:
-    item = session.execute(select(NodeLog).where(NodeLog.run_id == run_id, NodeLog.node_id == node_id)).scalar_one_or_none()
+    item = session.execute(
+        select(NodeLog).where(NodeLog.run_id == run_id, NodeLog.node_id == node_id)
+    ).scalar_one_or_none()
     if item is None:
         raise KeyError(f"Node log not found: {run_id}/{node_id}")
     return item
 
 
 def upsert_node_log(session: Session, payload: NodeLogUpsert) -> NodeLog:
-    item = session.execute(select(NodeLog).where(NodeLog.run_id == payload.run_id, NodeLog.node_id == payload.node_id)).scalar_one_or_none()
+    item = session.execute(
+        select(NodeLog).where(
+            NodeLog.run_id == payload.run_id, NodeLog.node_id == payload.node_id
+        )
+    ).scalar_one_or_none()
     data = payload.model_dump()
     if item is None:
         item = NodeLog(**data)

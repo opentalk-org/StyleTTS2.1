@@ -4,7 +4,7 @@ import mimetypes
 import queue
 import threading
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -12,6 +12,7 @@ from . import givemedata_pb2 as pb
 
 ARTIFACT_CHUNK_BYTES = 2 * 1024 * 1024
 METRICS_QUEUE_SIZE = 16
+MetricValue = float | Sequence[float]
 
 
 @dataclass(frozen=True)
@@ -71,7 +72,7 @@ class MetricsStream:
 
     def log_metrics(
         self,
-        metrics: Mapping[str, float],
+        metrics: Mapping[str, MetricValue],
         step: int,
         timestamp_unix_ms: int | None = None,
     ) -> None:
@@ -83,16 +84,28 @@ class MetricsStream:
         with self._lock:
             self._ensure_accepting()
             for name, value in metrics.items():
-                self._enqueue(
-                    pb.MetricsRequest(
-                        metric=pb.ScalarMetric(
-                            step=step,
-                            timestamp_unix_ms=timestamp,
-                            name=name,
-                            value=float(value),
+                if isinstance(value, Sequence):
+                    self._enqueue(
+                        pb.MetricsRequest(
+                            array_metric=pb.ArrayMetric(
+                                step=step,
+                                timestamp_unix_ms=timestamp,
+                                name=name,
+                                value=[float(item) for item in value],
+                            )
                         )
                     )
-                )
+                else:
+                    self._enqueue(
+                        pb.MetricsRequest(
+                            metric=pb.ScalarMetric(
+                                step=step,
+                                timestamp_unix_ms=timestamp,
+                                name=name,
+                                value=float(value),
+                            )
+                        )
+                    )
 
     def log_artifact(
         self,

@@ -81,7 +81,14 @@ message ScalarMetric {
   uint64 step = 1;
   int64 timestamp_unix_ms = 2;
   string name = 3;
-  double value = 4;
+  float value = 4;
+}
+
+message ArrayMetric {
+  uint64 step = 1;
+  int64 timestamp_unix_ms = 2;
+  string name = 3;
+  repeated float value = 4;
 }
 
 message ArtifactMetric {
@@ -103,6 +110,7 @@ message MetricsRequest {
     ScalarMetric metric = 2;
     ArtifactMetric artifact = 3;
     ArtifactChunk artifact_chunk = 4;
+    ArrayMetric array_metric = 5;
   }
 }
 
@@ -110,6 +118,7 @@ message MetricsResponse {
   uint64 metrics_received = 1;
   uint64 artifacts_received = 2;
   uint64 artifact_bytes_received = 3;
+  uint64 array_metrics_received = 4;
 }
 
 message EndRequest {

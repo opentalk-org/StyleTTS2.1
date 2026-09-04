@@ -72,7 +72,7 @@ class KokoroCorpusSynthesisNode(Node):
         )
         jobs = plan.kokoro_jobs
         if self.settings.max_jobs is not None:
-            jobs = jobs[:self.settings.max_jobs]
+            jobs = jobs[: self.settings.max_jobs]
         completed = await asyncio.to_thread(
             completed_source_keys,
             self.settings.dataset_id,
@@ -93,9 +93,7 @@ class KokoroCorpusSynthesisNode(Node):
 
     def remaining_items(self, context: Any) -> int | None:
         if not self._initialized:
-            return self.settings.max_jobs or (
-                EXPECTED_LINES - EXPECTED_PIPER_JOBS
-            )
+            return self.settings.max_jobs or (EXPECTED_LINES - EXPECTED_PIPER_JOBS)
         return len(self._jobs) - self._cursor
 
     async def execute(self, batch, context):
@@ -105,7 +103,7 @@ class KokoroCorpusSynthesisNode(Node):
             len(self._jobs),
             self._cursor + self.settings.batch_size,
         )
-        selected = self._jobs[self._cursor:end]
+        selected = self._jobs[self._cursor : end]
         requests = [
             EngineSynthesisRequest(
                 job.text,

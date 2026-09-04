@@ -43,7 +43,7 @@ class ObjectStoreConfig:
             bucket=os.environ.get("RUNFLOW_S3_BUCKET", "runflow"),
             folder=os.environ.get("RUNFLOW_S3_FOLDER", "/"),
             endpoint_url=os.environ.get(
-                "RUNFLOW_S3_ENDPOINT_URL", "http://127.0.0.1:9000"
+                "RUNFLOW_S3_ENDPOINT_URL", "http://127.0.0.1:9001"
             ),
             region_name=os.environ.get("RUNFLOW_S3_REGION", "us-east-1"),
             access_key_id=os.environ.get("RUNFLOW_S3_ACCESS_KEY_ID", "runflow"),

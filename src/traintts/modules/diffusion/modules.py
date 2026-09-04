@@ -93,7 +93,6 @@ class StyleTransformer1d(nn.Module):
             )
         
         if use_context_time:
-            assert exists(context_mapping_features)
             self.to_time = nn.Sequential(
                 TimePositionalEmbedding(
                     dim=channels, out_features=context_mapping_features
@@ -102,7 +101,6 @@ class StyleTransformer1d(nn.Module):
             )
 
         if use_context_features:
-            assert exists(context_features) and exists(context_mapping_features)
             self.to_features = nn.Sequential(
                 nn.Linear(
                     in_features=context_features, out_features=context_mapping_features
@@ -120,12 +118,8 @@ class StyleTransformer1d(nn.Module):
     ) -> Optional[Tensor]:
         items, mapping = [], None
         if self.use_context_time:
-            assert_message = "use_context_time=True but no time features provided"
-            assert exists(time), assert_message
             items += [self.to_time(time)]
         if self.use_context_features:
-            assert_message = "context_features exists but no features provided"
-            assert exists(features), assert_message
             items += [self.to_features(features)]
 
         if self.use_context_time or self.use_context_features:
@@ -259,8 +253,6 @@ class StyleAttention(nn.Module):
         )
 
     def forward(self, x: Tensor, s: Tensor, *, context: Optional[Tensor] = None) -> Tensor:
-        assert_message = "You must provide a context when using context_features"
-        assert not self.context_features or exists(context), assert_message
         context = default(context, x)
         x, context = self.norm(x, s), self.norm_context(context, s)
         
@@ -325,7 +317,6 @@ class Transformer1d(nn.Module):
             )
         
         if use_context_time:
-            assert exists(context_mapping_features)
             self.to_time = nn.Sequential(
                 TimePositionalEmbedding(
                     dim=channels, out_features=context_mapping_features
@@ -334,7 +325,6 @@ class Transformer1d(nn.Module):
             )
 
         if use_context_features:
-            assert exists(context_features) and exists(context_mapping_features)
             self.to_features = nn.Sequential(
                 nn.Linear(
                     in_features=context_features, out_features=context_mapping_features
@@ -352,12 +342,8 @@ class Transformer1d(nn.Module):
     ) -> Optional[Tensor]:
         items, mapping = [], None
         if self.use_context_time:
-            assert_message = "use_context_time=True but no time features provided"
-            assert exists(time), assert_message
             items += [self.to_time(time)]
         if self.use_context_features:
-            assert_message = "context_features exists but no features provided"
-            assert exists(features), assert_message
             items += [self.to_features(features)]
 
         if self.use_context_time or self.use_context_features:
@@ -484,7 +470,6 @@ class AttentionBase(nn.Module):
         mid_features = head_features * num_heads
 
         if use_rel_pos:
-            assert exists(rel_pos_num_buckets) and exists(rel_pos_max_distance)
             self.rel_pos = RelativePositionBias(
                 num_buckets=rel_pos_num_buckets,
                 max_distance=rel_pos_max_distance,
@@ -544,8 +529,6 @@ class Attention(nn.Module):
         )
 
     def forward(self, x: Tensor, *, context: Optional[Tensor] = None) -> Tensor:
-        assert_message = "You must provide a context when using context_features"
-        assert not self.context_features or exists(context), assert_message
         context = default(context, x)
         x, context = self.norm(x), self.norm_context(context)
         q, k, v = (self.to_q(x), *torch.chunk(self.to_kv(context), chunks=2, dim=-1))
@@ -602,7 +585,6 @@ class LearnedPositionalEmbedding(nn.Module):
 
     def __init__(self, dim: int):
         super().__init__()
-        assert (dim % 2) == 0
         half_dim = dim // 2
         self.weights = nn.Parameter(torch.randn(half_dim))
 
@@ -628,8 +610,6 @@ class FixedEmbedding(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         batch_size, length, device = *x.shape[0:2], x.device
-        assert_message = "Input sequence length must be <= max_length"
-        assert length <= self.max_length, assert_message
         position = torch.arange(length, device=device)
         fixed_embedding = self.embedding(position)
         fixed_embedding = repeat(fixed_embedding, "n d -> b n d", b=batch_size)

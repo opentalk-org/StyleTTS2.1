@@ -59,7 +59,13 @@ class TtsSelectVoiceNode(_EmitOnceNode):
     async def execute(self, batch, context):
         assert not self._emitted, f"voice node already emitted: {self.id}"
         self._emitted = True
-        return [{"voice": preset_voice_payload(self.settings.engine, self.settings.voice_id)}]
+        return [
+            {
+                "voice": preset_voice_payload(
+                    self.settings.engine, self.settings.voice_id
+                )
+            }
+        ]
 
 
 class TtsRandomVoicesNode(_EmitOnceNode):
@@ -77,8 +83,16 @@ class TtsRandomVoicesNode(_EmitOnceNode):
             raise ValueError(f"{self.settings.engine.value}_has_no_preset_voices")
         take = min(self.settings.count, len(presets))
         chosen = random.Random(self.settings.seed).sample(list(presets), take)
-        voices = [preset_voice_payload(self.settings.engine, voice_id) for voice_id in chosen]
-        return [{"voice": voice_batch_payload(self.settings.engine, voices, self.settings.samples_per_voice)}]
+        voices = [
+            preset_voice_payload(self.settings.engine, voice_id) for voice_id in chosen
+        ]
+        return [
+            {
+                "voice": voice_batch_payload(
+                    self.settings.engine, voices, self.settings.samples_per_voice
+                )
+            }
+        ]
 
 
 class TtsCloneVoiceSettings(StrictSettings):

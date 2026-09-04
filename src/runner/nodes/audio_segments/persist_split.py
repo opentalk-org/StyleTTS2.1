@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from runner.nodes.models import Audio
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
-from shared.db.audio.models import AudioFile
+from shared.db.audio.clickhouse.models import AudioFileRecord
 from shared.db.audio.schemas import AudioCreate
 from shared.db.datasets import crud as dataset_crud
 
@@ -21,16 +20,14 @@ def persist_split_records(
     source_dataset_id: UUID | None,
     replace_all: bool,
     delete_source: bool,
-) -> tuple[list[AudioFile], dict[UUID, list[dict]]]:
+) -> tuple[list[AudioFileRecord], dict[UUID, list[dict]]]:
     with database_session() as session:
-        items = audio_crud.bulk_create_audio_files(session, payloads, commit=False)
+        items = audio_crud.bulk_create_audio_files(session, payloads)
         segments_by_id = audio_crud.bulk_replace_audio_segments(
-            session,
             {
                 item.id: segments
                 for item, segments in zip(items, segment_payloads, strict=True)
             },
-            commit=False,
         )
         completed_source_ids = completed_replace_source_ids(
             session,
@@ -44,26 +41,19 @@ def persist_split_records(
         ]
         for dataset_id in dataset_ids:
             dataset_crud.bulk_add_audio_files_to_dataset(
-                session,
                 dataset_id,
                 [item.id for item in items],
-                commit=False,
             )
         if source_dataset_id is not None and completed_source_ids:
             dataset_crud.bulk_remove_audio_files_from_dataset(
-                session,
                 source_dataset_id,
                 completed_source_ids,
-                commit=False,
             )
         if delete_source and completed_source_ids:
             audio_crud.bulk_delete_audio_files(
                 session,
                 completed_source_ids,
-                commit=False,
-                prune=False,
             )
-        session.commit()
     return items, segments_by_id
 
 
@@ -83,15 +73,10 @@ def completed_replace_source_ids(
             raise ValueError(f"mixed split operations: {source_id}")
     source_ids = list(operation_by_source)
     operation_ids = list(dict.fromkeys(operation_by_source.values()))
-    statement = select(AudioFile.metadata_).where(
-        AudioFile.metadata_["source_audio_id"].astext.in_(
-            [str(source_id) for source_id in source_ids]
-        ),
-        AudioFile.metadata_["split_operation_id"].astext.in_(operation_ids),
-        AudioFile.metadata_["mode"].astext == "replace_all",
-    )
-    groups: dict[UUID, list[tuple[int, int]]] = {source_id: [] for source_id in source_ids}
-    for metadata in session.execute(statement).scalars():
+    groups: dict[UUID, list[tuple[int, int]]] = {
+        source_id: [] for source_id in source_ids
+    }
+    for metadata in audio_crud.list_split_metadata(source_ids, operation_ids):
         source_id = UUID(str(metadata["source_audio_id"]))
         if str(metadata["split_operation_id"]) != operation_by_source[source_id]:
             continue

@@ -29,7 +29,9 @@ class EngineRuntime(ABC):
     SAMPLE_RATE: int
 
     @abstractmethod
-    def synthesize(self, text: str, voice: Voice, language: str) -> tuple[np.ndarray, int]:
+    def synthesize(
+        self, text: str, voice: Voice, language: str
+    ) -> tuple[np.ndarray, int]:
         """Return (float32 mono waveform in [-1, 1], sample_rate) for one utterance."""
         raise NotImplementedError
 
@@ -41,7 +43,11 @@ class EngineRuntime(ABC):
         outputs = []
         for request in requests:
             check_cancel()
-            outputs.append(EngineSynthesisResult(*self.synthesize(request.text, request.voice, request.language)))
+            outputs.append(
+                EngineSynthesisResult(
+                    *self.synthesize(request.text, request.voice, request.language)
+                )
+            )
         return outputs
 
     def close(self) -> None:

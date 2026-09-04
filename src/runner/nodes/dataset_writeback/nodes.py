@@ -37,8 +37,10 @@ class AddAudioToDatasetNode(Node):
         audios = [inputs["audio"] for inputs in batch]
         for _ in context.cancellable(audios):
             pass
-        with database_session() as session:
-            dataset_crud.bulk_add_audio_files_to_dataset(session, self.settings.dataset_id, [audio.audio_file_id for audio in audios])
+        dataset_crud.bulk_add_audio_files_to_dataset(
+            self.settings.dataset_id,
+            [audio.audio_file_id for audio in audios],
+        )
         return [{"writeback_result": {"updated": audio.name}} for audio in audios]
 
 
@@ -56,12 +58,10 @@ class RemoveAudioFromDatasetNode(Node):
         audios = [inputs["audio"] for inputs in batch]
         for _ in context.cancellable(audios):
             pass
-        with database_session() as session:
-            dataset_crud.bulk_remove_audio_files_from_dataset(
-                session,
-                self.settings.dataset_id,
-                [audio.audio_file_id for audio in audios],
-            )
+        dataset_crud.bulk_remove_audio_files_from_dataset(
+            self.settings.dataset_id,
+            [audio.audio_file_id for audio in audios],
+        )
         return [{"writeback_result": {"updated": audio.name}} for audio in audios]
 
 
@@ -82,22 +82,32 @@ class AssignSpeakerNode(Node):
             if not speaker_id:
                 raise ValueError("AssignSpeaker requires speaker_id")
             items = audio_crud.get_audio_files_bulk(
-                session,
                 [audio.audio_file_id for audio in audios],
             )
             payloads = {}
             for audio in audios:
                 context.check_cancel()
                 item = items[audio.audio_file_id]
-                segments = [_assigned_segment(segment, speaker_id) for segment in item.segments]
+                stored_segments = audio_crud.list_audio_segments_bulk(
+                    [item.id]
+                )[item.id]
+                segments = [
+                    _assigned_segment(segment, speaker_id)
+                    for segment in stored_segments
+                ]
                 payloads[audio.audio_file_id] = AudioUpdate(
                     name=item.name,
                     wav_bytes=None,
                     duration=item.duration,
                     segments=segments,
-                    annotations=audio_crud.audio_file_annotations(item).model_copy(update={
-                        "speaker_id": speaker_id,
-                    }),
+                    annotations=audio_crud.audio_file_annotations(item).model_copy(
+                        update={
+                            "speaker_id": speaker_id,
+                        }
+                    ),
+                    language=item.language,
+                    style_prompt=item.style_prompt,
+                    voice_prompt=item.voice_prompt,
                     virtual=item.virtual,
                 )
             updated_by_id = audio_crud.bulk_update_audio_files(session, payloads)
@@ -105,21 +115,31 @@ class AssignSpeakerNode(Node):
         for audio in audios:
             context.check_cancel()
             updated = updated_by_id[audio.audio_file_id]
-            outputs.append({
-                "audio": replace(
-                    audio,
-                    name=updated.name,
-                    annotations=audio_crud.audio_file_annotations(updated),
-                    segments=[replace(segment, annotations=segment.annotations.model_copy(update={
+            outputs.append(
+                {
+                    "audio": replace(
+                        audio,
+                        name=updated.name,
+                        annotations=audio_crud.audio_file_annotations(updated),
+                        segments=[
+                            replace(
+                                segment,
+                                annotations=segment.annotations.model_copy(
+                                    update={
+                                        "speaker_id": speaker_id,
+                                    }
+                                ),
+                            )
+                            for segment in audio.segments
+                        ],
+                        virtual=updated.virtual,
+                    ),
+                    "writeback_result": {
+                        "audio_file_id": str(updated.id),
                         "speaker_id": speaker_id,
-                    })) for segment in audio.segments],
-                    virtual=updated.virtual,
-                ),
-                "writeback_result": {
-                    "audio_file_id": str(updated.id),
-                    "speaker_id": speaker_id,
-                },
-            })
+                    },
+                }
+            )
         return outputs
 
 
@@ -129,13 +149,11 @@ class DeleteAudioRecordsNode(Node):
     CATEGORY = "Dataset"
     INPUTS = {"audio": AudioPort()}
     OUTPUTS = {"writeback_result": JsonPort()}
-    BATCH_POLICY = BatchPolicy(BatchMode.MICRO_BATCH, preferred_size=256, max_size=256, timeout_ms=20)
+    BATCH_POLICY = BatchPolicy(
+        BatchMode.MICRO_BATCH, preferred_size=256, max_size=256, timeout_ms=20
+    )
     RESOURCE_POLICY = ResourcePolicy(resources={"io": 1}, keep_loaded=True)
     QUEUE_MAX_SIZE = 512
-
-    def __init__(self, node_id: str | None = None, **params):
-        super().__init__(node_id=node_id, **params)
-        self._deleted_any = False
 
     async def execute(self, batch, context):
         audios = [inputs["audio"] for inputs in batch]
@@ -145,26 +163,20 @@ class DeleteAudioRecordsNode(Node):
             audio_crud.bulk_delete_audio_files(
                 session,
                 [audio.audio_file_id for audio in audios],
-                prune=False,
             )
-        self._deleted_any = True
-        return [{"writeback_result": {"deleted": str(audio.audio_file_id)}} for audio in audios]
-
-    async def teardown(self, context):
-        if not self._deleted_any:
-            return
-        try:
-            with database_session() as session:
-                audio_crud.prune_audio_packs(session)
-        finally:
-            self._deleted_any = False
+        return [
+            {"writeback_result": {"deleted": str(audio.audio_file_id)}}
+            for audio in audios
+        ]
 
 
 def _assigned_segment(segment: dict, speaker_id: str) -> dict:
     annotations = AudioAnnotations.model_validate(segment["annotations"])
     return {
         **segment,
-        "annotations": annotations.model_copy(update={
-            "speaker_id": speaker_id,
-        }).model_dump(mode="json"),
+        "annotations": annotations.model_copy(
+            update={
+                "speaker_id": speaker_id,
+            }
+        ).model_dump(mode="json"),
     }

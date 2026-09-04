@@ -86,7 +86,7 @@ def _requested_assets(
 def _resolve_asset(role: str, file_id: UUID) -> AssetFileRef:
     with database_session() as session:
         try:
-            extra_file = asset_crud.get_extra_file(session, file_id)
+            extra_file = asset_crud.get_extra_file(file_id)
             path = asset_crud.get_extra_file_path(session, file_id)
             return AssetFileRef(
                 role=role,
@@ -100,7 +100,7 @@ def _resolve_asset(role: str, file_id: UUID) -> AssetFileRef:
                 metadata=extra_file.metadata_,
             )
         except KeyError:
-            checkpoint = asset_crud.get_checkpoint(session, file_id)
+            checkpoint = asset_crud.get_checkpoint(file_id)
             path = _checkpoint_asset_path(asset_crud.get_checkpoint_path(session, file_id), role)
     return AssetFileRef(
         role=role,

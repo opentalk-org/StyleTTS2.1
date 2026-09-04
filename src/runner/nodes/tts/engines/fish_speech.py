@@ -32,10 +32,16 @@ class FishSpeechRuntime(EngineRuntime):
         self._request_cls = request_cls
         self._reference_cls = reference_cls
 
-    def synthesize(self, text: str, voice: Voice, language: str) -> tuple[np.ndarray, int]:
+    def synthesize(
+        self, text: str, voice: Voice, language: str
+    ) -> tuple[np.ndarray, int]:
         references = []
         if voice.clone is not None:
-            references.append(self._reference_cls(audio=voice.clone.wav_bytes, text=voice.clone.transcript))
+            references.append(
+                self._reference_cls(
+                    audio=voice.clone.wav_bytes, text=voice.clone.transcript
+                )
+            )
         request = self._request_cls(text=text, references=references, format="wav")
         # Non-streaming yields one "final" result with the whole waveform; streaming yields
         # "segment" chunks. "header" carries only a WAV header and "error" carries no audio.
@@ -46,7 +52,9 @@ class FishSpeechRuntime(EngineRuntime):
         ]
         if not segments:
             raise RuntimeError("fish_speech_empty_audio")
-        sample_rate = int(segments[0][0]) if isinstance(segments[0], tuple) else self.SAMPLE_RATE
+        sample_rate = (
+            int(segments[0][0]) if isinstance(segments[0], tuple) else self.SAMPLE_RATE
+        )
         merged = [_chunk_to_samples(segment) for segment in segments]
         return np.concatenate(merged).astype(np.float32), sample_rate
 
@@ -85,14 +93,23 @@ def load(checkpoint_dir: Path, device: str | None = None) -> FishSpeechRuntime:
         precision=torch.bfloat16,
         dependencies=queue_dependencies,
     )
-    decoder = load_decoder(config_name="modded_dac_vq", checkpoint_path=str(decoder_path), device=device)
-    engine = TTSInferenceEngine(llama_queue=llama_queue, decoder_model=decoder, precision=torch.bfloat16, compile=False)
+    decoder = load_decoder(
+        config_name="modded_dac_vq", checkpoint_path=str(decoder_path), device=device
+    )
+    engine = TTSInferenceEngine(
+        llama_queue=llama_queue,
+        decoder_model=decoder,
+        precision=torch.bfloat16,
+        compile=False,
+    )
     return FishSpeechRuntime(engine, ServeTTSRequest, ServeReferenceAudio)
 
 
 def _codec_checkpoint(checkpoint_dir: Path) -> Path:
     """The DAC/codec weights inside an OpenAudio checkpoint folder (codec.pth)."""
-    named = sorted(checkpoint_dir.rglob("*codec*.pth")) or sorted(checkpoint_dir.rglob("*firefly*.pth"))
+    named = sorted(checkpoint_dir.rglob("*codec*.pth")) or sorted(
+        checkpoint_dir.rglob("*firefly*.pth")
+    )
     if named:
         return named[0]
     return next(checkpoint_dir.rglob("*.pth"))

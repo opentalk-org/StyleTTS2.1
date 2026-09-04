@@ -3,7 +3,7 @@ import type { Option } from "@/shared/ui/Select";
 
 import type { Checkpoint } from "../checkpoints/api";
 import type { Speaker } from "../speakers/api";
-import { typeAccepts } from "../workflows/logic";
+import { typeAccepts } from "../workflows/graph";
 import type { WorkflowGraph, WorkflowNode, WorkflowSchema } from "../workflows/types";
 import type { TestingWorkflowSpec } from "./workflows";
 

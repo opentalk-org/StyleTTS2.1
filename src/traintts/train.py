@@ -13,9 +13,11 @@ from .tracking import TrackerRun
 
 from .checkpoints import CheckpointPublisher
 from .config import load_training_config
-from .mlflow_logging import MlflowLogger, start_run
 from .profiling import configure_profiling, profiling_fn
-from .runtime import Trainer, Validator
+from .parameter_monitor import write_model_graph
+from .reporting import TrainingReporter, start_run
+from .runtime.trainer import Trainer
+from .runtime.validation import Validator
 from .setup import build_accelerator, build_training_runtime
 from .stages import TrainableModule, stage_for_step
 from .telemetry_metrics import TrainingTelemetry
@@ -52,7 +54,7 @@ def train(
     if owns_run:
         run = start_run(config, data_client)
     telemetry = (
-        MlflowLogger(run, config.total_steps)
+        TrainingReporter(run, config.total_steps)
         if accelerator.is_main_process and run is not None
         else None
     )
@@ -61,6 +63,10 @@ def train(
         config.pretrained_model or "from scratch",
     )
     runtime = build_training_runtime(config, accelerator)
+    if accelerator.is_main_process and run is not None:
+        graph_path = log_dir / "model_graph.json"
+        write_model_graph(runtime.models.modules, graph_path)
+        run.log_artifact(graph_path, "monitor", step=runtime.initial_step)
     logger.info(
         "runtime ready device=%s processes=%s initial_step=%s",
         accelerator.device,
@@ -179,7 +185,6 @@ def train(
             metrics = dict(step_metrics)
             metrics.update(timing.metrics(step))
             if accelerator.is_main_process:
-                assert telemetry is not None
                 reporting_started = time.monotonic()
                 telemetry.log_train(step, metrics)
                 timing.reporting_seconds += (
@@ -208,7 +213,6 @@ def train(
             if validate:
                 validation_started = time.monotonic()
                 if accelerator.is_main_process:
-                    assert telemetry is not None
                     logger.info("validation starting step=%s", step)
                     with profiling_fn("validation"):
                         result = validator.run(validation_batches, step)
@@ -254,7 +258,6 @@ def train(
         time.monotonic() - timing.started_at,
     )
     if owns_run:
-        assert run is not None
         run.close()
 
 

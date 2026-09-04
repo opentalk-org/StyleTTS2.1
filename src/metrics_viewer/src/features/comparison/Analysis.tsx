@@ -1,4 +1,4 @@
-import { BarChart3, ChevronDown, ChevronRight, Columns3, Eye, Loader2, SlidersHorizontal } from "lucide-react";
+import { BarChart3, ChevronDown, ChevronRight, Columns3, Eye, Loader2, Network, SlidersHorizontal } from "lucide-react";
 import {
   lazy,
   Suspense,
@@ -19,7 +19,7 @@ import {
   SearchInput,
   SegmentedControl,
 } from "@/shared/ui";
-import { DEFAULT_PLOT_SETTINGS, DEFAULT_SQL, useViewerStore } from "@/state/store";
+import { DEFAULT_PLOT_SETTINGS, DEFAULT_SQL, useViewerStore } from "@/features/viewer/store";
 import { groupPlots, type Plot } from "./logic";
 import { MediaPanel } from "./MediaPanel";
 import { ParamsPanel } from "./ParamsPanel";
@@ -37,7 +37,7 @@ const MetricChart = lazy(() =>
   import("./MetricChart").then((module) => ({ default: module.MetricChart })),
 );
 
-export function Analysis({ runs }: { runs: Run[] }) {
+export function Analysis({ runs, onModelGraph }: { runs: Run[]; onModelGraph?: () => void }) {
   const [tab, setTab] = useState<Tab>("plots");
   const [metricQuery, setMetricQuery] = useState("");
   const [chartColumns, setChartColumns] = useState<1 | 2 | 3>(2);
@@ -77,6 +77,16 @@ export function Analysis({ runs }: { runs: Run[] }) {
             {item.label}
           </button>
         ))}
+        {onModelGraph === undefined ? null : (
+          <button
+            type="button"
+            onClick={onModelGraph}
+            className="flex h-8 items-center gap-2 rounded-lg px-3 text-sm font-medium text-fg-muted transition-colors hover:bg-surface hover:text-fg-secondary"
+          >
+            <Network size={14} />
+            Model graph
+          </button>
+        )}
         <span className="ml-auto flex items-center gap-2 font-mono text-xs tabular-nums text-fg-muted">
           {plotsQuery.isFetching || artifactsQuery.isFetching ? (
             <span className="flex items-center gap-1.5 text-accent-bright">

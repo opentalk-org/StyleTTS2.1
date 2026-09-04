@@ -1,7 +1,10 @@
 import { create } from "zustand";
 
 import type { SchemaValues } from "@/shared/schema-form/types";
-import { autoLayoutGraph, connect, deleteNodes, moveNodes, renameNode, runtimeConfigForGraph, zoomViewport } from "./logic";
+import { runtimeConfigForGraph } from "./execution";
+import { connect, deleteNodes, moveNodes, renameNode } from "./graph";
+import { autoLayoutGraph } from "./layout";
+import { zoomViewport } from "./viewport";
 import type { ControlTarget, PortAnchor, PortAnchorKey, RunSnapshot, RunStatus, Viewport, WireDraft, WorkflowControl, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowSchema } from "./types";
 
 function shortId(prefix: string): string {

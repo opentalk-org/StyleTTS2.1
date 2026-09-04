@@ -25,7 +25,10 @@ from runner.nodes.synthesis.styletts import StyleTtsSynthesisNode
 from runner.nodes.audio_enhancement.denoise import DeepFilterNetDenoiseNode
 from runner.nodes.audio_enhancement.normalize import NormalizeLoudnessNode
 from runner.nodes.audio_enhancement.pad_silence import PadSilenceNode
-from runner.nodes.audio_segments.extract import ExtractSegmentGroupAudioNode, PersistSplitAudioRecordsNode
+from runner.nodes.audio_segments.extract import (
+    ExtractSegmentGroupAudioNode,
+    PersistSplitAudioRecordsNode,
+)
 from runner.nodes.audio_segments.dedup_overlap import DeduplicateOverlappingSegmentsNode
 from runner.nodes.audio_segments.grouping import PlanSegmentGroupsNode
 from runner.nodes.audio_segments.merge_alignment import MergeAlignmentNode
@@ -41,26 +44,27 @@ from runner.nodes.audio_sources import AudioSourceNode
 from runner.nodes.assets.catalog import CatalogDownloadNode
 from runner.nodes.assets.checkpoints import ResolveCheckpointNode
 from runner.nodes.assets.training_assets import ResolveTrainingAssetsNode
-from runner.nodes.dataset_writeback import AddAudioToDatasetNode, AssignSpeakerNode, DeleteAudioRecordsNode, RemoveAudioFromDatasetNode
+from runner.nodes.dataset_writeback import (
+    AddAudioToDatasetNode,
+    AssignSpeakerNode,
+    DeleteAudioRecordsNode,
+    RemoveAudioFromDatasetNode,
+)
 from runner.nodes.datatypes import register_runner_types
-from runner.nodes.hetzner import HetznerDsV1ParquetAudioSourceNode, HetznerDsV2SourceNode
+from runner.nodes.hetzner import (
+    HetznerDsV1ParquetAudioSourceNode,
+    HetznerDsV2SourceNode,
+)
 from runner.nodes.libritts import LibriTtsSourceNode
 from runner.nodes.mos import MosModelTrainingNode, PredictMosScoreNode
 from runner.nodes.smart_turn import SmartTurnPredictNode
 from runner.nodes.speaker_clustering import (
-    ApplySpeakerClustersNode,
-    AuditSpeakerClustersNode,
-    ClusterSpeakerEmbeddingsNode,
-    CollectSpeakerEmbeddingsNode,
-    ECAPASpeakerEmbedNode,
-    SpeakerEmbeddingSetSourceNode,
-    SpeakerAuditSourceNode,
     SpeakerSegmentSource,
 )
 from runner.nodes.youtube_source import YouTubeAudioSourceNode
 from runner.nodes.text_generation import OpenRouterGenerateTextsNode
 from runner.nodes.text_processing import PhonemizeSegmentsNode
-from runner.nodes.tts import TTS_NODES
+from runner.nodes.tts.registration import TTS_NODES
 from runner.nodes.testing import (
     SelectStyleReferenceNode,
     StyleReferenceSweepNode,
@@ -111,13 +115,6 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
         PredictMosScoreNode,
         SmartTurnPredictNode,
         SpeakerSegmentSource,
-        SpeakerEmbeddingSetSourceNode,
-        SpeakerAuditSourceNode,
-        ECAPASpeakerEmbedNode,
-        CollectSpeakerEmbeddingsNode,
-        ClusterSpeakerEmbeddingsNode,
-        AuditSpeakerClustersNode,
-        ApplySpeakerClustersNode,
         AnalyzeAudioFeaturesNode,
         DatabaseStatisticsFeaturesNode,
         EmbedVoicesPcaPlotNode,
@@ -158,6 +155,7 @@ def register_runner_nodes(registry: NodeRegistry) -> NodeRegistry:
     ]:
         registry.register(node_cls)
     return registry
+
 
 def register_runner_types_for_ui(registry: TypeRegistry) -> TypeRegistry:
     register_runner_types(registry)

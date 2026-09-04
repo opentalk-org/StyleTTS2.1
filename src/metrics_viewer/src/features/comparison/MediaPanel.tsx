@@ -15,7 +15,13 @@ import { AudioPlayer, Card, CardHeader, GroupLabel, IconButton, Modal, Range } f
 
 export function MediaPanel({ runs, artifacts }: { runs: Run[]; artifacts: Artifact[] }) {
   const names = useMemo(
-    () => [...new Set(artifacts.map((artifact) => artifact.name))].sort(),
+    () => [
+      ...new Set(
+        artifacts
+          .filter((artifact) => artifact.name !== "monitor/model_graph.json")
+          .map((artifact) => artifact.name),
+      ),
+    ].sort(),
     [artifacts],
   );
   if (names.length === 0) return null;

@@ -1,4 +1,4 @@
-export type RunStatus = "awaiting" | "running" | "succeeded" | "failed" | "cancelled";
+export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export type Scalar = string | number | boolean;
 export type ArtifactKind = "audio" | "image" | "text" | "plot";
 
@@ -43,19 +43,13 @@ export interface Artifact {
   source: string;
 }
 
-
-
-
-
 export interface PlotQueryResult {
-
   plot: string[];
   runId: string[];
   x: number[];
   y: number[];
   elapsedMs: number;
 }
-
 
 export interface PlotSettings {
   xScale: "linear" | "log";
@@ -66,6 +60,22 @@ export interface PlotSettings {
   rawOpacity: number;
   smoothOpacity: number;
   showLegend: boolean;
+}
+
+export interface ModelComponent {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  module_type: string;
+  parameter_names: string[];
+  parameter_count: number;
+}
+
+export interface ArrayMetricSeries {
+  name: string;
+  steps: number[];
+  timestamps: number[];
+  values: number[][];
 }
 
 export interface Workspace {

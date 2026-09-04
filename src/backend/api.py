@@ -18,7 +18,6 @@ from backend.jobs import router as jobs_router
 from backend.mos import router as mos_router
 from backend.piper import router as piper_router
 from backend.runners import router as runners_router
-from backend.reviews import review_router
 from backend.settings import router as settings_router
 from backend.statistics import router as statistics_router
 from backend.speakers import router as speakers_router
@@ -30,7 +29,14 @@ from runflow.ui.schema_export import export_ui_schema
 from runner.nodes.registry import register_runner_nodes, register_runner_types_for_ui
 from shared.db import create_database_schema
 from shared.logging_setup import configure_logging, get_logger
-from shared.schemas import InlineGraphRunRequest, NodeLogResponseMessage, RunEventResponse, RunnerStatus, RunSnapshot, RunStatus
+from shared.schemas import (
+    InlineGraphRunRequest,
+    NodeLogResponseMessage,
+    RunEventResponse,
+    RunnerStatus,
+    RunSnapshot,
+    RunStatus,
+)
 
 
 configure_logging("backend")
@@ -69,7 +75,6 @@ app.include_router(jobs_router)
 app.include_router(mos_router)
 app.include_router(piper_router)
 app.include_router(runners_router)
-app.include_router(review_router(manager))
 app.include_router(settings_router)
 app.include_router(statistics_router)
 app.include_router(speakers_router)
@@ -92,15 +97,21 @@ async def schema() -> dict:
     return export_ui_schema(node_registry, type_registry)
 
 
-@app.post("/graphs/runs", response_model=RunStatus, status_code=status.HTTP_202_ACCEPTED)
+@app.post(
+    "/graphs/runs", response_model=RunStatus, status_code=status.HTTP_202_ACCEPTED
+)
 async def start_graph_run(request: InlineGraphRunRequest) -> RunStatus:
     try:
         logger.info("start graph run requested run_id=%s", request.run_id)
         return await manager.start_inline_graph(request)
     except DuplicateRunError as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(error)
+        ) from error
     except (KeyError, RuntimeError, TypeError, ValueError) as error:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+        ) from error
 
 
 @app.get("/runs", response_model=RunnerStatus)
@@ -113,7 +124,9 @@ async def get_run(run_id: str) -> RunStatus:
     try:
         return await manager.status(run_id)
     except KeyError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error
 
 
 @app.get("/runs/{run_id}/snapshot", response_model=RunSnapshot)
@@ -121,9 +134,13 @@ async def get_run_snapshot(run_id: str) -> RunSnapshot:
     try:
         return await manager.snapshot(run_id)
     except KeyError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error
     except IncompatibleSnapshotError as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(error)
+        ) from error
 
 
 @app.get("/runs/{run_id}/graph", response_model=InlineGraphRunRequest)
@@ -131,9 +148,13 @@ async def get_run_graph(run_id: str) -> InlineGraphRunRequest:
     try:
         return await manager.graph(run_id)
     except KeyError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error
     except RuntimeError as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(error)
+        ) from error
 
 
 @app.get("/runs/{run_id}/errors", response_model=list[RunEventResponse])
@@ -141,7 +162,9 @@ async def get_run_errors(run_id: str) -> list[RunEventResponse]:
     try:
         return await manager.errors(run_id)
     except KeyError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error
 
 
 @app.post("/runs/{run_id}/stop", response_model=RunStatus)
@@ -150,7 +173,9 @@ async def stop_run(run_id: str) -> RunStatus:
         logger.info("stop run requested run_id=%s", run_id)
         return await manager.stop(run_id)
     except KeyError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error
 
 
 class JobBulkDeleteRequest(BaseModel):
@@ -175,7 +200,9 @@ async def delete_job(run_id: str) -> None:
         logger.info("remove job requested run_id=%s", run_id)
         await manager.remove(run_id)
     except KeyError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error
 
 
 class JobRenameRequest(BaseModel):
@@ -186,12 +213,17 @@ class JobRenameRequest(BaseModel):
 async def rename_job(run_id: str, request: JobRenameRequest) -> None:
     name = request.name.strip()
     if not name:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="name must not be empty")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="name must not be empty",
+        )
     try:
         logger.info("rename job requested run_id=%s", run_id)
         await manager.rename(run_id, name)
     except KeyError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error
 
 
 @app.post("/runs/{run_id}/nodes/{node_id}/load", response_model=RunStatus)
@@ -200,9 +232,13 @@ async def load_run_node(run_id: str, node_id: str) -> RunStatus:
         logger.info("load node requested run_id=%s node_id=%s", run_id, node_id)
         return await manager.load_node(run_id, node_id)
     except KeyError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error
     except RuntimeError as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(error)
+        ) from error
 
 
 @app.post("/runs/{run_id}/nodes/{node_id}/unload", response_model=RunStatus)
@@ -211,9 +247,13 @@ async def unload_run_node(run_id: str, node_id: str) -> RunStatus:
         logger.info("unload node requested run_id=%s node_id=%s", run_id, node_id)
         return await manager.unload_node(run_id, node_id)
     except KeyError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error
     except RuntimeError as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(error)
+        ) from error
 
 
 @app.get("/runs/{run_id}/nodes/{node_id}/logs", response_model=NodeLogResponseMessage)
@@ -222,9 +262,13 @@ async def get_run_node_log(run_id: str, node_id: str) -> NodeLogResponseMessage:
         logger.info("node log requested run_id=%s node_id=%s", run_id, node_id)
         return await manager.node_log(run_id, node_id)
     except KeyError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(error)
+        ) from error
     except RuntimeError as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(error)
+        ) from error
 
 
 @app.websocket("/ws")

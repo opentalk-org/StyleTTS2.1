@@ -129,8 +129,6 @@ class ResBlk(nn.Module):
         return x / math.sqrt(2)
 
     def forward_masked(self, x, lengths):
-        assert self.downsample.layer_type == "half"
-        assert not self.normalize
         shortcut = x
         if self.learned_sc:
             shortcut = self.conv1x1(shortcut)

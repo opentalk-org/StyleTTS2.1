@@ -21,8 +21,9 @@ from runner.nodes.datatypes import AudioPort, SaveResultPort
 from runner.nodes.models import Audio, SegmentGroup, stable_id
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
-from shared.db.audio.models import AudioFile
+from shared.db.audio.clickhouse.models import AudioFileRecord
 from shared.db.audio.schemas import AudioCreate
+
 
 class PersistSplitAudioRecordsSettings(StrictSettings):
     target_dataset_id: UUID | None = None
@@ -46,10 +47,12 @@ class ExtractSegmentGroupAudioNode(Node):
         groups = [_group_from_audio(audio) for audio in audios]
         source_ids = [_group_source_audio_id(group) for group in groups]
         with database_session() as session:
-            items = audio_crud.get_audio_files_bulk(session, source_ids)
+            items = audio_crud.get_audio_files_bulk(source_ids)
             stored = audio_crud.bulk_read_audio_files(session, source_ids)
         outputs = []
-        for group, source_id in context.cancellable(zip(groups, source_ids, strict=True)):
+        for group, source_id in context.cancellable(
+            zip(groups, source_ids, strict=True)
+        ):
             source = _source_audio(items[source_id], stored[source_id], group)
             outputs.append({"audio": extract_group_audio(source, group)})
         return outputs
@@ -73,17 +76,21 @@ class PersistSplitAudioRecordsNode(Node):
         payloads = []
         for audio in context.cancellable(audios):
             assert audio.data is not None, f"audio bytes are required: {audio.id}"
-            payloads.append(AudioCreate(
-                name=audio.name,
-                wav_bytes=audio.data,
-                duration=audio.duration,
-                annotations=audio.annotations.model_copy(update={"metadata": _target_audio_metadata(audio)}),
-                language=_target_audio_language(audio),
-                style_prompt=audio.style_prompt,
-                voice_prompt=audio.voice_prompt,
-                segments=[],
-                virtual=self.settings.virtual,
-            ))
+            payloads.append(
+                AudioCreate(
+                    name=audio.name,
+                    wav_bytes=audio.data,
+                    duration=audio.duration,
+                    annotations=audio.annotations.model_copy(
+                        update={"metadata": _target_audio_metadata(audio)}
+                    ),
+                    language=_target_audio_language(audio),
+                    style_prompt=audio.style_prompt,
+                    voice_prompt=audio.voice_prompt,
+                    segments=[],
+                    virtual=self.settings.virtual,
+                )
+            )
         items, segments_by_id = persist_split_records(
             audios=audios,
             payloads=payloads,
@@ -109,15 +116,27 @@ class PersistSplitAudioRecordsNode(Node):
                 byte_length=item.byte_length,
                 virtual=item.virtual,
             )
-            outputs.append({
-                "audio": saved_audio,
-                "save_result": _save_result(item, audio.lineage_id, source_group_id, len(segments)),
-            })
+            outputs.append(
+                {
+                    "audio": saved_audio,
+                    "save_result": _save_result(
+                        item, audio.lineage_id, source_group_id, len(segments)
+                    ),
+                }
+            )
         return outputs
 
 
 def _group_from_audio(audio: Audio) -> SegmentGroup:
-    return SegmentGroup(audio.name, audio.segments, stable_id("segment_group", audio.id, *(segment.id for segment in audio.segments)), audio.lineage_id, audio.metadata)
+    return SegmentGroup(
+        audio.name,
+        audio.segments,
+        stable_id(
+            "segment_group", audio.id, *(segment.id for segment in audio.segments)
+        ),
+        audio.lineage_id,
+        audio.metadata,
+    )
 
 
 def extract_group_audio(audio: Audio, group: SegmentGroup) -> Audio:
@@ -125,7 +144,9 @@ def extract_group_audio(audio: Audio, group: SegmentGroup) -> Audio:
     span_start, span_end = group_span_bounds(group)
     start_frame = _seconds_to_frame(span_start, info["sample_rate"])
     end_frame = _seconds_to_frame(span_end, info["sample_rate"])
-    assert 0 <= start_frame < end_frame <= info["frame_count"], f"group span outside audio bounds: {group.id}"
+    assert 0 <= start_frame < end_frame <= info["frame_count"], (
+        f"group span outside audio bounds: {group.id}"
+    )
     data = _extract_wav_frames(audio.data, start_frame, end_frame)
     duration = (end_frame - start_frame) / float(info["sample_rate"])
     audio_id = stable_id("audio", audio.audio_file_id, group.id, span_start, span_end)
@@ -160,27 +181,45 @@ def adjusted_segment_payloads(group: SegmentGroup) -> list[dict[str, Any]]:
     for index, segment in enumerate(group.segments):
         start = max(0.0, segment.start - span_start)
         end = max(start, segment.end - span_start)
-        payloads.append({
-            "id": stable_id("segment", group.id, index, segment.id, segment.segment_id or ""),
-            "start": start,
-            "end": end,
-            "text": segment.text,
-            "phon": segment.phon,
-            "annotations": segment.annotations.model_copy(update={"metadata": {
-                **segment.metadata,
-                "type_": str(segment.metadata.get("type_", segment.metadata.get("model", "manual"))),
-                "source_audio_id": str(segment.source_audio_id),
-                "source_segment_id": segment.segment_id or segment.id,
-                "source_segment_lineage_id": segment.lineage_id,
-            }}).model_dump(mode="json"),
-            "type_": str(segment.metadata.get("type_", segment.metadata.get("model", "manual"))),
-        })
+        payloads.append(
+            {
+                "id": stable_id(
+                    "segment", group.id, index, segment.id, segment.segment_id or ""
+                ),
+                "start": start,
+                "end": end,
+                "text": segment.text,
+                "phon": segment.phon,
+                "annotations": segment.annotations.model_copy(
+                    update={
+                        "metadata": {
+                            **segment.metadata,
+                            "type_": str(
+                                segment.metadata.get(
+                                    "type_", segment.metadata.get("model", "manual")
+                                )
+                            ),
+                            "source_audio_id": str(segment.source_audio_id),
+                            "source_segment_id": segment.segment_id or segment.id,
+                            "source_segment_lineage_id": segment.lineage_id,
+                        }
+                    }
+                ).model_dump(mode="json"),
+                "type_": str(
+                    segment.metadata.get(
+                        "type_", segment.metadata.get("model", "manual")
+                    )
+                ),
+            }
+        )
     return payloads
 
 
 def group_span_bounds(group: SegmentGroup) -> tuple[float, float]:
     assert group.segments, f"segment group is empty: {group.id}"
-    return min(segment.start for segment in group.segments), max(segment.end for segment in group.segments)
+    return min(segment.start for segment in group.segments), max(
+        segment.end for segment in group.segments
+    )
 
 
 def _group_source_audio_id(group: SegmentGroup) -> UUID:
@@ -189,7 +228,7 @@ def _group_source_audio_id(group: SegmentGroup) -> UUID:
     return next(iter(source_ids))
 
 
-def _source_audio(item: AudioFile, data: bytes, group: SegmentGroup) -> Audio:
+def _source_audio(item: AudioFileRecord, data: bytes, group: SegmentGroup) -> Audio:
     info = _read_wav_info(data)
     metadata = {
         **item.metadata_,
@@ -205,7 +244,9 @@ def _source_audio(item: AudioFile, data: bytes, group: SegmentGroup) -> Audio:
         int(metadata["channels"]),
         0.0,
         item.duration,
-        audio_crud.audio_file_annotations(item).model_copy(update={"metadata": metadata}),
+        audio_crud.audio_file_annotations(item).model_copy(
+            update={"metadata": metadata}
+        ),
         audio_id,
         group.lineage_id,
     )
@@ -221,7 +262,9 @@ def _read_wav_info(data: bytes) -> dict[str, int]:
                 "frame_count": source.getnframes(),
             }
     except wave.Error as exc:
-        raise ValueError("ExtractSegmentGroupAudio supports WAV audio bytes only") from exc
+        raise ValueError(
+            "ExtractSegmentGroupAudio supports WAV audio bytes only"
+        ) from exc
 
 
 def _extract_wav_frames(data: bytes, start_frame: int, end_frame: int) -> bytes:

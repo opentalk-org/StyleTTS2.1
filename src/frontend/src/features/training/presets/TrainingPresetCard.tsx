@@ -5,7 +5,7 @@ import { Card } from "@/shared/ui/Card";
 import { Input } from "@/shared/ui/Input";
 import { Select } from "@/shared/ui/Select";
 
-import { runtimeConfigForGraph, workflowDefinition } from "../../workflows/logic";
+import { runtimeConfigForGraph, workflowDefinition } from "../../workflows/execution";
 import type { WorkflowDefinition, WorkflowGraph, WorkflowSchema } from "../../workflows/types";
 import { TRAINING_WORKFLOWS } from "../logic";
 import { useCreateTrainingConfigMutation, useTrainingConfigsQuery } from "../query";

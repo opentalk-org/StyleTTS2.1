@@ -193,19 +193,20 @@
               AWS_SECRET_ACCESS_KEY = "runflow-secret";
               AWS_REGION = "us-east-1";
               AWS_DEFAULT_REGION = "us-east-1";
-              AWS_ENDPOINT_URL = "http://127.0.0.1:9000";
+              AWS_ENDPOINT_URL = "http://127.0.0.1:9001";
 
               RUNFLOW_S3_BUCKET = "runflow";
-              RUNFLOW_S3_ENDPOINT_URL = "http://127.0.0.1:9000";
+              RUNFLOW_S3_ENDPOINT_URL = "http://127.0.0.1:9001";
               RUNFLOW_S3_REGION = "us-east-1";
               RUNFLOW_S3_ACCESS_KEY_ID = "runflow";
               RUNFLOW_S3_SECRET_ACCESS_KEY = "runflow-secret";
 
               RUNFLOW_PGBOUNCER_DATABASE_URL = "postgresql+psycopg://runflow:runflow@127.0.0.1:6432/runflow";
               RUNFLOW_NOTIFY_DATABASE_URL = "postgresql+psycopg://runflow:runflow@127.0.0.1:5432/runflow";
+              RUNFLOW_CLICKHOUSE_URL = "http://127.0.0.1:8123/default";
 
               MLFLOW_TRACKING_URI = "http://127.0.0.1:7860";
-              MLFLOW_S3_ENDPOINT_URL = "http://127.0.0.1:9000";
+              MLFLOW_S3_ENDPOINT_URL = "http://127.0.0.1:9001";
               VITE_BACKEND_URL = "http://127.0.0.1:8001";
               RUNNER_ID = "runner-1";
               GIVEMEDATA_HTTP_ADDR = "http://127.0.0.1:8180";
@@ -414,6 +415,19 @@
               };
             };
 
+            processes.metrics-viewer-api = {
+              command = "cd $DNVR_ROOT/src/metrics_viewer && npm run backend";
+              env = {
+                CLICKHOUSE_HTTP_URL = "http://127.0.0.1:8123/default";
+                CLICKHOUSE_USER = "default";
+                CLICKHOUSE_PASSWORD = "";
+                METRICS_DIR = "$DNVR_ROOT/.givemedata/metrics";
+              };
+            };
+            processes.metrics-viewer = {
+              command = "cd $DNVR_ROOT/src/metrics_viewer && npm run dev -- --host 127.0.0.1 --port 5174 --strictPort";
+            };
+
             processes.runner = {
               env = {
                 RUNFLOW_PGBOUNCER_DATABASE_URL = "dnvr://pgbouncer/url";
@@ -503,7 +517,7 @@
               HTTP_PORT = "8180";
               SYNTHETIC = "true";
 
-              AWS_ENDPOINT_URL = "http://127.0.0.1:9000";
+              AWS_ENDPOINT_URL = "http://127.0.0.1:9001";
               AWS_ACCESS_KEY_ID = "givemedata";
               AWS_SECRET_ACCESS_KEY = "givemedata";
               S3_BUCKET = "givemedata";

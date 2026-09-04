@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRunnersQuery } from "@/features/cluster/query";
 import { Button } from "@/shared/ui/Button";
 import { Select } from "@/shared/ui/Select";
-import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../logic";
+import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../execution";
 import { useRunSnapshotQuery, useStartGraphMutation, useStopRunMutation } from "../query";
 import { useWorkflowStore } from "../store";
 import { RunPerformanceStrip } from "./RunPerformanceStrip";

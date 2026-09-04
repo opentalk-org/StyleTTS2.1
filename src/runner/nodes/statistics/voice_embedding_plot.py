@@ -125,7 +125,7 @@ def _load_audio_batch(batch: list[dict[str, Any]]) -> list[LoadedAudioInput]:
     audio_ids = [audio.audio_file_id for audio in audios]
     missing_ids = [audio.audio_file_id for audio in audios if audio.data is None]
     with database_session() as session:
-        records = audio_crud.get_audio_files_bulk(session, audio_ids)
+        records = audio_crud.get_audio_files_bulk(audio_ids)
         stored_data = (
             audio_crud.bulk_read_audio_files(session, missing_ids)
             if missing_ids

@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import REAL, BigInteger, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,7 +30,7 @@ class AudioFile(Base):
     byte_offset: Mapped[int] = mapped_column(BigInteger, nullable=False)
     byte_length: Mapped[int] = mapped_column(BigInteger, nullable=False)
     duration: Mapped[float] = mapped_column(Float, nullable=False)
-    score: Mapped[float | None] = mapped_column(Float)
+    score: Mapped[float | None] = mapped_column(REAL)
     segment_count: Mapped[int] = mapped_column(
         Integer,
         nullable=False,

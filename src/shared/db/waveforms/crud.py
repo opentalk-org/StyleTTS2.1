@@ -1,17 +1,40 @@
 import uuid
 import wave
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
+from shared.db.assets.clickhouse import (
+    BucketFileRecord,
+    BucketKind,
+    create_bucket_files,
+    get_bucket_file,
+)
+from shared.db.assets.crud import delete_unreferenced_bucket_files
 from shared.db.settings import crud as settings_crud
-from shared.db.waveforms.codec import FORMAT_VERSION, decode_peaks, downsample, encode_peaks, waveform_from_wav
-from shared.db.waveforms.models import AudioWaveform, WaveformPack
-from shared.db.waveforms.pack_store import WaveformPackConfig, WaveformPackWriter
+from shared.db.waveforms.clickhouse import (
+    AudioWaveformRecord,
+    delete_waveforms,
+    get_waveform,
+    get_waveforms,
+    replace_waveform as publish_waveform,
+    waveform_exists,
+)
+from shared.db.waveforms.codec import (
+    decode_peaks,
+    downsample,
+    encode_peaks,
+    waveform_from_wav,
+)
 from shared.db.waveforms.schemas import WaveformInput, WaveformRead
 from shared.storage import ObjectRange
+
+
+@dataclass(frozen=True)
+class WaveformPackConfig:
+    path_prefix: str = "waveform-packs"
 
 
 def replace_waveform(
@@ -20,28 +43,35 @@ def replace_waveform(
     duration: float,
     payload: WaveformInput,
     config: WaveformPackConfig = WaveformPackConfig(),
-) -> AudioWaveform:
-    delete_waveform(session, audio_file_id, commit=False)
+) -> AudioWaveformRecord:
     data = encode_peaks(payload.peaks)
-    writer = WaveformPackWriter(session, settings_crud.object_store(session), config)
-    write = writer.append(data)
-    item = AudioWaveform(
-        audio_file_id=audio_file_id,
-        pack_id=write.pack.id,
-        byte_offset=write.byte_offset,
-        byte_length=write.byte_length,
-        duration=duration,
-        sample_rate=payload.sample_rate,
-        points_per_second=payload.points_per_second,
-        point_count=len(payload.peaks),
-        format_version=FORMAT_VERSION,
-        updated_at=_now(),
+    pack_id = uuid.uuid4()
+    path = f"{config.path_prefix}/{pack_id}.bin"
+    store = settings_crud.object_store(session)
+    store.upload(path, data)
+    create_bucket_files(
+        [
+            BucketFileRecord(
+                id=pack_id,
+                kind=BucketKind.WAVEFORM,
+                path=path,
+                size=len(data),
+            )
+        ]
     )
-    writer.flush()
-    session.add(item)
-    session.commit()
-    session.refresh(item)
-    return item
+    return publish_waveform(
+        AudioWaveformRecord(
+            audio_file_id=audio_file_id,
+            updated_at=datetime.now(UTC),
+            pack_id=pack_id,
+            byte_offset=0,
+            byte_length=len(data),
+            duration=duration,
+            sample_rate=payload.sample_rate,
+            points_per_second=payload.points_per_second,
+            point_count=len(payload.peaks),
+        )
+    )
 
 
 def replace_waveform_from_audio(
@@ -50,7 +80,7 @@ def replace_waveform_from_audio(
     audio_bytes: bytes,
     duration: float,
     payload: WaveformInput | None,
-) -> AudioWaveform:
+) -> AudioWaveformRecord:
     waveform = payload if payload is not None else _waveform_from_audio(audio_bytes)
     return replace_waveform(session, audio_file_id, duration, waveform)
 
@@ -62,28 +92,36 @@ def read_waveform(
     end: float,
     max_points: int,
 ) -> WaveformRead:
-    item = session.get(AudioWaveform, audio_file_id)
-    if item is None:
-        raise KeyError(f"Waveform not found: {audio_file_id}")
+    item = get_waveform(audio_file_id)
+    pack = get_bucket_file(item.pack_id)
     first = max(0, min(item.point_count, int(start * item.points_per_second)))
-    last = max(first + 1, min(item.point_count, int(end * item.points_per_second) + 1))
-    offset = item.byte_offset + first * 4
-    data = settings_crud.object_store(session).read_range(
-        ObjectRange(item.pack.path, offset, (last - first) * 4)
+    last = max(
+        first + 1,
+        min(item.point_count, int(end * item.points_per_second) + 1),
     )
-    peaks = downsample(decode_peaks(data), max_points)
+    data = settings_crud.object_store(session).read_range(
+        ObjectRange(
+            pack.path,
+            item.byte_offset + first * 4,
+            (last - first) * 4,
+        )
+    )
     return WaveformRead(
         duration=item.duration,
         sample_rate=item.sample_rate,
         points_per_second=item.points_per_second,
         start=first / item.points_per_second,
         end=last / item.points_per_second,
-        peaks=peaks,
+        peaks=downsample(decode_peaks(data), max_points),
     )
 
 
-def delete_waveform(session: Session, audio_file_id: uuid.UUID, commit: bool = True) -> None:
-    bulk_delete_waveforms(session, [audio_file_id], commit=commit)
+def delete_waveform(
+    session: Session,
+    audio_file_id: uuid.UUID,
+    commit: bool = True,
+) -> None:
+    bulk_delete_waveforms(session, [audio_file_id], commit)
 
 
 def bulk_delete_waveforms(
@@ -91,34 +129,15 @@ def bulk_delete_waveforms(
     audio_file_ids: Sequence[uuid.UUID],
     commit: bool = True,
 ) -> None:
+    del commit
     ids = list(dict.fromkeys(audio_file_ids))
-    if not ids:
-        return
-    rows = session.execute(
-        select(AudioWaveform.pack_id, AudioWaveform.byte_length).where(
-            AudioWaveform.audio_file_id.in_(ids)
-        )
-    ).all()
-    removed_by_pack: dict[uuid.UUID, int] = {}
-    for pack_id, byte_length in rows:
-        removed_by_pack[pack_id] = removed_by_pack.get(pack_id, 0) + byte_length
-    for pack_id, removed_bytes in removed_by_pack.items():
-        result = session.execute(
-            update(WaveformPack)
-            .where(WaveformPack.id == pack_id, WaveformPack.used_bytes >= removed_bytes)
-            .values(used_bytes=WaveformPack.used_bytes - removed_bytes)
-        )
-        assert result.rowcount == 1, f"waveform pack used bytes would go negative: {pack_id}"
-    session.execute(delete(AudioWaveform).where(AudioWaveform.audio_file_id.in_(ids)))
-    if commit:
-        session.commit()
+    waveforms = get_waveforms(ids)
+    delete_waveforms(ids)
+    delete_unreferenced_bucket_files(session, [item.pack_id for item in waveforms])
+
 
 def _waveform_from_audio(data: bytes) -> WaveformInput:
     try:
         return waveform_from_wav(data)
     except (EOFError, ValueError, wave.Error) as error:
         raise ValueError("Waveform is required for non-WAV audio bytes") from error
-
-
-def _now() -> datetime:
-    return datetime.now(UTC)

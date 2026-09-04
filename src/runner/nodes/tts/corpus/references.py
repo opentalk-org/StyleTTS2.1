@@ -7,8 +7,8 @@ import soundfile as sf
 
 from shared.db import database_session
 from shared.db.audio import crud as audio_crud
-from shared.db.audio.models import AudioFile
 from shared.db.datasets import crud as dataset_crud
+from shared.db.datasets.clickhouse.training import TtsReferenceCandidate
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,12 +22,12 @@ class RegisteredReference:
 
 
 def select_reference_rows(
-    rows: Sequence[AudioFile],
+    rows: Sequence[TtsReferenceCandidate],
     stream_languages: Mapping[str, str],
-) -> dict[str, AudioFile]:
-    selected: dict[str, AudioFile] = {}
+) -> dict[str, TtsReferenceCandidate]:
+    selected: dict[str, TtsReferenceCandidate] = {}
     for row in rows:
-        stream = str(row.metadata_["stream"])
+        stream = str(row.audio.metadata["stream"])
         language = stream_languages[stream]
         if not _eligible(row, language):
             continue
@@ -44,52 +44,51 @@ def load_registered_references(
     dataset_ids: Sequence[UUID],
     stream_languages: Mapping[str, str],
 ) -> dict[str, RegisteredReference]:
+    rows = dataset_crud.list_tts_reference_candidates(
+        dataset_ids, tuple(stream_languages)
+    )
+    selected = select_reference_rows(rows, stream_languages)
     with database_session() as session:
-        rows = dataset_crud.list_tts_reference_candidates(
-            session,
-            dataset_ids,
-            tuple(stream_languages),
-        )
-        selected = select_reference_rows(rows, stream_languages)
         wav_by_id = audio_crud.bulk_read_audio_files(
             session,
-            [row.id for row in selected.values()],
+            [row.audio.id for row in selected.values()],
         )
     return {
         stream: RegisteredReference(
             stream_id=stream,
             language=stream_languages[stream],
-            audio_file_id=row.id,
+            audio_file_id=row.audio.id,
             transcript=str(row.segments[0]["text"]).strip(),
-            sample_rate=int(sf.info(io.BytesIO(wav_by_id[row.id])).samplerate),
-            wav_bytes=wav_by_id[row.id],
+            sample_rate=int(sf.info(io.BytesIO(wav_by_id[row.audio.id])).samplerate),
+            wav_bytes=wav_by_id[row.audio.id],
         )
         for stream, row in selected.items()
     }
 
 
-def _eligible(row: AudioFile, language: str) -> bool:
+def _eligible(row: TtsReferenceCandidate, language: str) -> bool:
+    audio = row.audio
     if (
-        row.virtual
-        or row.storage_kind != "packed"
-        or row.byte_length <= 0
-        or not 4.0 <= row.duration <= 12.0
-        or row.language != language
-        or str(row.metadata_["language"]) != language
+        audio.virtual
+        or audio.storage_kind.value != "packed"
+        or audio.byte_length <= 0
+        or not 4.0 <= audio.duration <= 12.0
+        or audio.language != language
+        or str(audio.metadata["language"]) != language
         or len(row.segments) != 1
     ):
         return False
     segment = row.segments[0]
     return (
         float(segment["start"]) == 0.0
-        and float(segment["end"]) == row.duration
+        and float(segment["end"]) == audio.duration
         and bool(str(segment["text"]).strip())
     )
 
 
-def _rank(row: AudioFile) -> tuple[float, int, str]:
+def _rank(row: TtsReferenceCandidate) -> tuple[float, int, str]:
     return (
-        abs(row.duration - 8.0),
-        int(row.metadata_["sentence_index"]),
-        str(row.id),
+        abs(row.audio.duration - 8.0),
+        int(row.audio.metadata["sentence_index"]),
+        str(row.audio.id),
     )

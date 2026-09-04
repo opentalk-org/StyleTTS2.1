@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-import { useNav } from "@/app/navStore";
 import { showToast } from "@/shared/feedback/Toast";
 import { fmtAgo, fmtDur } from "@/shared/format";
 import { Icon } from "@/shared/icons";
@@ -11,6 +10,7 @@ import { InlineSegments } from "./InlineSegments";
 import type { AudioFile } from "./api";
 import { useAudioSegmentPreviewQuery, useRenameAudioFileMutation } from "./query";
 import { useAudio } from "./store";
+import { useNavigate } from "react-router-dom";
 
 export const AUDIO_COLS = "30px 22px 66px minmax(180px,1.2fr) 54px 46px 74px 30px";
 
@@ -33,7 +33,7 @@ export function AudioRow({ file, index }: { file: AudioFile; index: number }) {
   const ex = !!expanded[file.id];
   const noSeg = file.segments === 0;
   const updatedAt = Date.parse(file.updated_at);
-  const openEditor = useNav((s) => s.openEditor);
+  const navigate = useNavigate();
   const renameAudio = useRenameAudioFileMutation();
   const preview = useAudioSegmentPreviewQuery(file.id, ex);
   const skipNameBlur = useRef(false);
@@ -148,7 +148,7 @@ export function AudioRow({ file, index }: { file: AudioFile; index: number }) {
           size={26}
           onClick={(event) => {
             event.stopPropagation();
-            openEditor(file.id);
+            void navigate(`/audio/${file.id}`);
           }}
         />
       </div>

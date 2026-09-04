@@ -1,6 +1,6 @@
 import { Icon } from "@/shared/icons";
 import { Card } from "@/shared/ui/Card";
-import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../workflows/logic";
+import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../workflows/execution";
 import { useStartGraphMutation } from "../workflows/query";
 import type { WorkflowGraph, WorkflowNode, WorkflowSchema } from "../workflows/types";
 import { parseAlphabetSymbols } from "./AlphabetEditor";

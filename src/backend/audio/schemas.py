@@ -2,12 +2,12 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from shared.audio_annotations import AudioAnnotations
 
 
-AudioSort = Literal["updated", "name", "duration", "segments"]
+AudioSort = Literal["updated", "duration"]
 
 
 class WordAlignment(BaseModel):
@@ -59,9 +59,9 @@ class AudioVoicePromptPayload(BaseModel):
 
 
 class AddToDatasetRequest(BaseModel):
-    dataset_id: str
+    dataset_id: UUID
     mode: Literal["ids", "filter"]
-    audio_file_ids: list[str] = []
+    audio_file_ids: list[UUID] = Field(default_factory=list)
     query: str = ""
     language: str = ""
     dataset: str = "all"

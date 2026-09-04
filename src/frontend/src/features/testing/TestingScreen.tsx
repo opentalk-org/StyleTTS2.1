@@ -5,7 +5,7 @@ import { Icon } from "@/shared/icons";
 import { Button } from "@/shared/ui/Button";
 import { Card } from "@/shared/ui/Card";
 import { Tabs } from "@/shared/ui/Tabs";
-import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../workflows/logic";
+import { defaultWorkflowContext, graphPayload, runtimeConfigForGraph } from "../workflows/execution";
 import { useWorkflowSchemaQuery } from "../workflows/query";
 import type { WorkflowGraph, WorkflowSchema } from "../workflows/types";
 import { ConfigCard } from "./ConfigCard";

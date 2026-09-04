@@ -38,7 +38,9 @@ class RaonOpenTtsRuntime(EngineRuntime):
         self._infer_process = infer_process
         self._mel_spec_type = mel_spec_type
 
-    def synthesize(self, text: str, voice: Voice, language: str) -> tuple[np.ndarray, int]:
+    def synthesize(
+        self, text: str, voice: Voice, language: str
+    ) -> tuple[np.ndarray, int]:
         reference = voice.require_clone()
         ref_file = str(write_temp_wav(reference.wav_bytes))
         waveform, sample_rate, _spectrogram = self._infer_process(
@@ -71,9 +73,7 @@ def load(checkpoint_dir: Path, device: str | None = None) -> RaonOpenTtsRuntime:
         "custom",
     )
     vocab_map = {
-        token: index
-        for token, index in vocab_map.items()
-        if index < RAON_VOCAB_SIZE
+        token: index for token, index in vocab_map.items() if index < RAON_VOCAB_SIZE
     }
     vocab_size = len(vocab_map)
     assert vocab_size == RAON_VOCAB_SIZE, (

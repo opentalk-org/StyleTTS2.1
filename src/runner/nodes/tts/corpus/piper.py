@@ -71,7 +71,7 @@ class PiperShard:
         limit = min(len(self.jobs), self.cursor + self.jobs_per_worker)
         while end < limit and _same_runtime_group(first, self.jobs[end]):
             end += 1
-        selected = self.jobs[self.cursor:end]
+        selected = self.jobs[self.cursor : end]
         self.cursor = end
         if self.loaded_voice_id != first.voice_id:
             self.runtime = PiperRuntime(
@@ -150,7 +150,7 @@ class PiperCorpusSynthesisNode(Node):
         )
         jobs = plan.piper_jobs
         if self.settings.max_jobs is not None:
-            jobs = jobs[:self.settings.max_jobs]
+            jobs = jobs[: self.settings.max_jobs]
         completed = await asyncio.to_thread(
             completed_source_keys,
             self.settings.dataset_id,
@@ -159,9 +159,7 @@ class PiperCorpusSynthesisNode(Node):
         pending = without_completed(jobs, completed)
         voice_ids = {job.voice_id for job in pending}
         selected = {
-            voice.voice_id: voice
-            for voice in catalog
-            if voice.voice_id in voice_ids
+            voice.voice_id: voice for voice in catalog if voice.voice_id in voice_ids
         }
         model_paths = await download_piper_models(selected, voice_ids)
         shards = shard_piper_jobs(pending, self.settings.workers)
@@ -239,10 +237,7 @@ def shard_piper_jobs(
         worker = min(range(worker_count), key=lambda index: (loads[index], index))
         shards[worker].extend(group)
         loads[worker] += len(group)
-    return tuple(
-        tuple(sorted(shard, key=_job_group_key))
-        for shard in shards
-    )
+    return tuple(tuple(sorted(shard, key=_job_group_key)) for shard in shards)
 
 
 async def download_piper_models(
@@ -252,7 +247,7 @@ async def download_piper_models(
     ordered = sorted(voice_ids)
     checkpoints = []
     for start in range(0, len(ordered), 8):
-        batch = ordered[start:start + 8]
+        batch = ordered[start : start + 8]
         checkpoints.extend(
             await asyncio.gather(
                 *(
@@ -284,7 +279,4 @@ def _job_group_key(job: CorpusJob) -> tuple[str, int, str, int]:
 
 
 def _same_runtime_group(first: CorpusJob, second: CorpusJob) -> bool:
-    return (
-        first.voice_id == second.voice_id
-        and first.speaker_id == second.speaker_id
-    )
+    return first.voice_id == second.voice_id and first.speaker_id == second.speaker_id

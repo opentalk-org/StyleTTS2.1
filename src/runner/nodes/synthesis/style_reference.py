@@ -13,7 +13,6 @@ from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import JsonPort
 from runner.nodes.models import stable_id
-from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 
 
@@ -62,8 +61,7 @@ def resolve_style_reference_payload(settings: ResolveStyleReferenceSettings) -> 
 
 
 def audio_file_style_reference(audio_file_id: UUID) -> dict[str, object]:
-    with database_session() as session:
-        item = audio_crud.get_audio_file(session, audio_file_id)
+    item = audio_crud.get_audio_file(audio_file_id)
     return {
         "kind": "audio_file",
         "audio_file_id": str(audio_file_id),

@@ -74,7 +74,10 @@ class Trainer:
             training_modules.update(("pitch_extractor", "text_aligner"))
         self.runtime.models.set_training_mode(training_modules)
 
-    def train_step(self, batch: TrainingBatch) -> dict[str, torch.Tensor | float]:
+    def train_step(
+        self,
+        batch: TrainingBatch,
+    ) -> dict[str, torch.Tensor | float | list[float]]:
         first_microbatch = self.accumulation_microstep == 0
         update_due = self.accumulation_microstep + 1 == self.accumulation_steps
         self.update_completed = False
@@ -101,7 +104,7 @@ class Trainer:
         modules.duration_discriminator.requires_grad_(prosody_adversarial)
         slm_adversarial = weights.slm_adversarial > 0
         modules.wd.requires_grad_(slm_adversarial)
-        gradient_metrics: dict[str, torch.Tensor | float] = {}
+        gradient_metrics: dict[str, torch.Tensor | float | list[float]] = {}
         voice_required = (
             waveform_adversarial
             or weights.mel > 0
@@ -885,6 +888,7 @@ class Trainer:
             gradient_metrics,
             gan_metrics,
         )
+        metrics.update(optimizer.monitor.drain())
         metrics.update(quantizer_metrics)
         if style_required and stage.style_source is StyleSource.QUANTIZED:
             metrics["continuous_latent_batch_std"] = (
@@ -903,10 +907,10 @@ class Trainer:
         slm_discriminator_loss: torch.Tensor,
         style_batch_std: torch.Tensor,
         finite: bool,
-        gradient_metrics: dict[str, torch.Tensor | float],
+        gradient_metrics: dict[str, torch.Tensor | float | list[float]],
         gan_metrics: dict[str, torch.Tensor | float],
-    ) -> dict[str, torch.Tensor | float]:
-        metrics: dict[str, torch.Tensor | float] = {
+    ) -> dict[str, torch.Tensor | float | list[float]]:
+        metrics: dict[str, torch.Tensor | float | list[float]] = {
             item.value: losses[item.value]
             for item in TrainingLoss
             if getattr(weights, item.value) > 0

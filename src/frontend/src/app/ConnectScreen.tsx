@@ -1,8 +1,8 @@
 import { Icon } from "@/shared/icons";
-import { useNav } from "./navStore";
+import { useAppStore } from "./store";
 
 export function ConnectScreen() {
-  const { backendUrl, setBackendUrl, connect } = useNav();
+  const { backendUrl, setBackendUrl, connect } = useAppStore();
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-app p-6">

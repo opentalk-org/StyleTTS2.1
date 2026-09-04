@@ -32,7 +32,7 @@ from .build_config import ASR_YAML, PLBERT_YAML, build_config, load_yaml, write_
 from .config import TrainingConfig
 from .default_stages import build_default_training_stages
 from .layout import architecture_yaml, latest_weight
-from .mlflow_logging import start_run
+from .reporting import start_run
 from .stages import TrainingStageSpec
 from .symbols import DEFAULT_STYLETTS_SYMBOLS
 from .train import train
@@ -59,7 +59,6 @@ class RunSpec(BaseModel):
     plbert_symbols: list[str] | None = None
     plbert_languages: list[str] = Field(default_factory=list)
 
-    # mlflow_run_id: str = ""  # mlflow disabled for now
     seed: int = 1
     validation_samples: int = 32
     learning_rate: float = 1e-4
@@ -148,7 +147,6 @@ def build_run_config(spec: RunSpec) -> dict[str, Any]:
             "run_id": spec.run_name,
             "finetune_job_id": spec.run_name,
             "run_name": spec.run_name,
-            "mlflow_run_id": "",  # mlflow disabled for now
         },
         symbols=symbols,
         symbol_count=len(symbols),

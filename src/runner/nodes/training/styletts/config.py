@@ -28,11 +28,7 @@ def build_configs(
     base_name = None
     if not scratch:
         base_name = "base_checkpoint"
-        with database_session() as session:
-            checkpoint = asset_crud.get_checkpoint(
-                session,
-                base_checkpoint.checkpoint_id,
-            )
+        checkpoint = asset_crud.get_checkpoint(base_checkpoint.checkpoint_id)
         assets[base_name] = {"object": checkpoint.path, "entrypoint": None}
 
     spec = RunSpec(
@@ -112,11 +108,11 @@ def _assets(
             role = str(item["role"])
             asset_id = UUID(str(item["id"]))
             if item["storage"] == "checkpoint":
-                record = asset_crud.get_checkpoint(session, asset_id)
+                record = asset_crud.get_checkpoint(asset_id)
                 root = asset_crud.get_checkpoint_path(session, asset_id)
                 entrypoint = Path(str(item["path"])).relative_to(root).as_posix()
             else:
-                record = asset_crud.get_extra_file(session, asset_id)
+                record = asset_crud.get_extra_file(asset_id)
                 entrypoint = None
             assets[role] = {
                 "object": record.path,

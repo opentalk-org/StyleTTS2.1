@@ -8,7 +8,11 @@ from typing import Any
 import numpy as np
 
 from runner.nodes.assets.credentials import huggingface_token
-from runner.nodes.tts.engines.base import EngineRuntime, EngineSynthesisRequest, EngineSynthesisResult
+from runner.nodes.tts.engines.base import (
+    EngineRuntime,
+    EngineSynthesisRequest,
+    EngineSynthesisResult,
+)
 from runner.nodes.tts.voices import Voice
 
 # Unsloth's ungated re-host of canopylabs/orpheus-3b-0.1-ft (same finetuned weights)
@@ -62,8 +66,12 @@ class OrpheusRuntime(EngineRuntime):
         self._sampling_cls = sampling_cls
         self._codec = codec
 
-    def synthesize(self, text: str, voice: Voice, language: str) -> tuple[np.ndarray, int]:
-        result = self.synthesize_batch([EngineSynthesisRequest(text, voice, language)], lambda: None)[0]
+    def synthesize(
+        self, text: str, voice: Voice, language: str
+    ) -> tuple[np.ndarray, int]:
+        result = self.synthesize_batch(
+            [EngineSynthesisRequest(text, voice, language)], lambda: None
+        )[0]
         return result.samples, result.sample_rate
 
     def synthesize_batch(
@@ -77,7 +85,11 @@ class OrpheusRuntime(EngineRuntime):
             for request in requests
         ]
         params = self._sampling_cls(
-            temperature=0.6, top_p=0.8, max_tokens=1200, stop_token_ids=[_STOP_TOKEN_ID], repetition_penalty=1.3
+            temperature=0.6,
+            top_p=0.8,
+            max_tokens=1200,
+            stop_token_ids=[_STOP_TOKEN_ID],
+            repetition_penalty=1.3,
         )
         outputs = self._llm.generate(prompts, params)
         check_cancel()
@@ -93,7 +105,9 @@ class OrpheusRuntime(EngineRuntime):
         )
         if not audio_bytes:
             raise RuntimeError("orpheus_empty_audio")
-        samples = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+        samples = (
+            np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+        )
         return EngineSynthesisResult(samples, ORPHEUS_SAMPLE_RATE)
 
     def _format_prompt(self, text: str, voice: str) -> str:
@@ -104,6 +118,7 @@ class OrpheusRuntime(EngineRuntime):
         end = torch.tensor([list(_END_TOKENS)], dtype=torch.int64)
         all_ids = torch.cat([start, prompt_ids, end], dim=1)
         return self._tokenizer.decode(all_ids[0])
+
 
 def load(checkpoint_dir: Path, device: str | None = None) -> OrpheusRuntime:
     try:
@@ -125,7 +140,12 @@ def load(checkpoint_dir: Path, device: str | None = None) -> OrpheusRuntime:
     # fall back to native sampling / FlashAttention so nothing needs the CUDA-13 runtime.
     os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
     os.environ.setdefault("VLLM_ATTENTION_BACKEND", "FLASH_ATTN")
-    llm = LLM(model=str(checkpoint_dir), dtype="bfloat16", max_model_len=2048, gpu_memory_utilization=0.5)
+    llm = LLM(
+        model=str(checkpoint_dir),
+        dtype="bfloat16",
+        max_model_len=2048,
+        gpu_memory_utilization=0.5,
+    )
     # The finetuned model bundles its own tokenizer; use it (the pretrained repo is also gated).
     tokenizer = AutoTokenizer.from_pretrained(str(checkpoint_dir))
     return OrpheusRuntime(llm, tokenizer, SamplingParams, codec_decoder)

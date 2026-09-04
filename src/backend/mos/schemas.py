@@ -21,14 +21,11 @@ class MosPairRead(BaseModel):
 
 class MosRatingRead(BaseModel):
     id: UUID
-    dataset_id: UUID
     audio_a_id: UUID
     audio_b_id: UUID
     preferred_audio_id: UUID
     score_a: float
     score_b: float
-    previous_score_a: float | None
-    previous_score_b: float | None
     created_at: datetime
 
 

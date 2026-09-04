@@ -12,7 +12,6 @@ from runflow.core.settings import StrictSettings
 from runflow.policies import ResourcePolicy
 from runner.nodes.datatypes import AudioPort
 from runner.nodes.models import Audio, stable_id
-from shared.db import database_session
 from shared.db.audio import crud as audio_crud
 from shared.db.audio.schemas import AudioFileReference
 
@@ -65,13 +64,11 @@ class AudioSourceNode(Node):
         return [{"audio": self._audio(ref, context)} for ref in refs]
 
     def _count_refs(self) -> int:
-        with database_session() as session:
-            total = audio_crud.count_audio_file_references(
-                session,
-                self._dataset_id(),
-                self._selected_ids(),
-                self.settings.include_virtual,
-            )
+        total = audio_crud.count_audio_file_references(
+            self._dataset_id(),
+            self._selected_ids(),
+            self.settings.include_virtual,
+        )
         return min(total, self.settings.limit) if self.settings.limit is not None else total
 
     def _audio(self, item: AudioFileReference, context) -> Audio:
@@ -111,26 +108,23 @@ class AudioSourceNode(Node):
 
     def _fetch_page(self) -> None:
         fetch_count = min(FETCH_BATCH_SIZE, self._output_count - self._scanned)
-        with database_session() as session:
-            rows = audio_crud.list_audio_file_references_page(
-                session,
+        rows = audio_crud.list_audio_file_references_page(
                 self._dataset_id(),
                 self._selected_ids(),
                 self.settings.include_virtual,
                 self._after_id,
                 fetch_count,
             )
-            if not rows and self.settings.selection == "random" and not self._wrapped:
-                self._after_id = None
-                self._wrapped = True
-                rows = audio_crud.list_audio_file_references_page(
-                    session,
-                    self._dataset_id(),
-                    self._selected_ids(),
-                    self.settings.include_virtual,
-                    self._after_id,
-                    fetch_count,
-                )
+        if not rows and self.settings.selection == "random" and not self._wrapped:
+            self._after_id = None
+            self._wrapped = True
+            rows = audio_crud.list_audio_file_references_page(
+                self._dataset_id(),
+                self._selected_ids(),
+                self.settings.include_virtual,
+                self._after_id,
+                fetch_count,
+            )
         assert rows, f"AudioSource expected {self._output_count - self._scanned} more database rows"
         self._after_id = rows[-1].id
         self._scanned += len(rows)

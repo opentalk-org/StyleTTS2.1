@@ -1,29 +1,52 @@
 use std::path::{Component, Path, PathBuf};
 
+use clickhouse::Client;
 use serde::Serialize;
-use tokio::fs::{self, File, OpenOptions};
+use time::OffsetDateTime;
+use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
 use tonic::{Status, Streaming};
 use tracing::{debug, trace, warn};
+use uuid::Uuid;
 
 use crate::proto::{
-    ArtifactMetric, MetricsRequest, MetricsResponse, ScalarMetric, metrics_request,
+    ArrayMetric, ArtifactMetric, MetricsRequest, MetricsResponse, ScalarMetric, metrics_request,
 };
 
-#[derive(Serialize)]
-struct ScalarRecord<'a> {
+#[derive(clickhouse::Row, Serialize)]
+struct ScalarRecord {
+    #[serde(with = "clickhouse::serde::time::datetime64::nanos")]
+    timestamp: OffsetDateTime,
+    #[serde(with = "clickhouse::serde::uuid")]
+    run_id: Uuid,
     step: u64,
-    timestamp_unix_ms: i64,
-    name: &'a str,
-    value: f64,
+    name: String,
+    value: f32,
 }
 
-#[derive(Serialize)]
-struct ArtifactRecord<'a> {
+#[derive(clickhouse::Row, Serialize)]
+struct ArrayRecord {
+    #[serde(with = "clickhouse::serde::time::datetime64::nanos")]
+    timestamp: OffsetDateTime,
+    #[serde(with = "clickhouse::serde::uuid")]
+    run_id: Uuid,
     step: u64,
-    timestamp_unix_ms: i64,
-    name: &'a str,
-    content_type: &'a str,
+    name: String,
+    value: Vec<f32>,
+}
+
+#[derive(clickhouse::Row, Serialize)]
+struct ArtifactRecord {
+    #[serde(with = "clickhouse::serde::uuid")]
+    id: Uuid,
+    #[serde(with = "clickhouse::serde::uuid")]
+    run_id: Uuid,
+    step: u64,
+    #[serde(with = "clickhouse::serde::time::datetime64::nanos")]
+    timestamp: OffsetDateTime,
+    name: String,
+    path: String,
+    content_type: String,
     size_bytes: u64,
 }
 
@@ -36,14 +59,13 @@ struct PendingArtifact {
 }
 
 pub async fn receive(
+    client: &Client,
     root: &Path,
-    run_id: &str,
+    run_id: Uuid,
     mut stream: Streaming<MetricsRequest>,
 ) -> Result<MetricsResponse, Status> {
-    let training_dir = root.join(run_id);
+    let training_dir = root.join(run_id.to_string());
     fs::create_dir_all(&training_dir).await.map_err(internal)?;
-    let metrics_path = training_dir.join("metrics.jsonl");
-    let artifacts_path = training_dir.join("artifacts.jsonl");
     let artifacts_dir = training_dir.join("artifacts");
     fs::create_dir_all(&artifacts_dir).await.map_err(internal)?;
 
@@ -58,16 +80,28 @@ pub async fn receive(
                     ));
                 }
                 Some(metrics_request::Payload::Metric(metric)) => {
-                    store_metric(&metrics_path, &metric).await?;
                     trace!(
-                        run = run_id,
+                        run = %run_id,
                         step = metric.step,
                         timestamp_unix_ms = metric.timestamp_unix_ms,
                         metric = %metric.name,
                         value = metric.value,
                         "metric received"
                     );
+                    store_metric(client, run_id, metric).await?;
                     response.metrics_received += 1;
+                }
+                Some(metrics_request::Payload::ArrayMetric(metric)) => {
+                    trace!(
+                        run = %run_id,
+                        step = metric.step,
+                        timestamp_unix_ms = metric.timestamp_unix_ms,
+                        metric = %metric.name,
+                        values = metric.value.len(),
+                        "array metric received"
+                    );
+                    store_array_metric(client, run_id, metric).await?;
+                    response.array_metrics_received += 1;
                 }
                 Some(metrics_request::Payload::Artifact(artifact)) => {
                     if let Some(previous) = pending.take() {
@@ -80,7 +114,7 @@ pub async fn receive(
                         discard_artifact(previous).await?;
                     }
                     debug!(
-                        run = run_id,
+                        run = %run_id,
                         step = artifact.step,
                         timestamp_unix_ms = artifact.timestamp_unix_ms,
                         artifact = %artifact.name,
@@ -92,9 +126,9 @@ pub async fn receive(
                     if artifact.metadata.size_bytes == 0 {
                         let name = artifact.metadata.name.clone();
                         let step = artifact.metadata.step;
-                        finish_artifact(artifact, &artifacts_path).await?;
+                        finish_artifact(client, run_id, artifact).await?;
                         debug!(
-                            run = run_id,
+                            run = %run_id,
                             step,
                             artifact = %name,
                             bytes = 0,
@@ -128,9 +162,9 @@ pub async fn receive(
                         let name = artifact.metadata.name.clone();
                         let step = artifact.metadata.step;
                         let bytes = artifact.metadata.size_bytes;
-                        finish_artifact(artifact, &artifacts_path).await?;
+                        finish_artifact(client, run_id, artifact).await?;
                         debug!(
-                            run = run_id,
+                            run = %run_id,
                             step,
                             artifact = %name,
                             bytes,
@@ -163,20 +197,46 @@ pub async fn receive(
     Ok(response)
 }
 
-async fn store_metric(path: &Path, metric: &ScalarMetric) -> Result<(), Status> {
+async fn store_metric(client: &Client, run_id: Uuid, metric: ScalarMetric) -> Result<(), Status> {
     if metric.name.is_empty() {
         return Err(Status::invalid_argument("metric name cannot be empty"));
     }
-    append_json(
-        path,
-        &ScalarRecord {
-            step: metric.step,
-            timestamp_unix_ms: metric.timestamp_unix_ms,
-            name: &metric.name,
-            value: metric.value,
-        },
-    )
-    .await
+    let row = ScalarRecord {
+        timestamp: metric_timestamp(metric.timestamp_unix_ms)?,
+        run_id,
+        step: metric.step,
+        name: metric.name,
+        value: metric.value,
+    };
+    let mut insert = client
+        .insert::<ScalarRecord>("metrics")
+        .await
+        .map_err(internal)?;
+    insert.write(&row).await.map_err(internal)?;
+    insert.end().await.map_err(internal)
+}
+
+async fn store_array_metric(
+    client: &Client,
+    run_id: Uuid,
+    metric: ArrayMetric,
+) -> Result<(), Status> {
+    if metric.name.is_empty() {
+        return Err(Status::invalid_argument("metric name cannot be empty"));
+    }
+    let row = ArrayRecord {
+        timestamp: metric_timestamp(metric.timestamp_unix_ms)?,
+        run_id,
+        step: metric.step,
+        name: metric.name,
+        value: metric.value,
+    };
+    let mut insert = client
+        .insert::<ArrayRecord>("array_metrics")
+        .await
+        .map_err(internal)?;
+    insert.write(&row).await.map_err(internal)?;
+    insert.end().await.map_err(internal)
 }
 
 async fn begin_artifact(
@@ -204,7 +264,11 @@ async fn begin_artifact(
     })
 }
 
-async fn finish_artifact(artifact: PendingArtifact, artifacts_path: &Path) -> Result<(), Status> {
+async fn finish_artifact(
+    client: &Client,
+    run_id: Uuid,
+    artifact: PendingArtifact,
+) -> Result<(), Status> {
     artifact.file.sync_all().await.map_err(internal)?;
     drop(artifact.file);
     if fs::try_exists(&artifact.target).await.map_err(internal)? {
@@ -213,17 +277,22 @@ async fn finish_artifact(artifact: PendingArtifact, artifacts_path: &Path) -> Re
     fs::rename(&artifact.part, &artifact.target)
         .await
         .map_err(internal)?;
-    append_json(
-        artifacts_path,
-        &ArtifactRecord {
-            step: artifact.metadata.step,
-            timestamp_unix_ms: artifact.metadata.timestamp_unix_ms,
-            name: &artifact.metadata.name,
-            content_type: &artifact.metadata.content_type,
-            size_bytes: artifact.metadata.size_bytes,
-        },
-    )
-    .await
+    let row = ArtifactRecord {
+        id: Uuid::new_v4(),
+        run_id,
+        step: artifact.metadata.step,
+        timestamp: metric_timestamp(artifact.metadata.timestamp_unix_ms)?,
+        name: artifact.metadata.name,
+        path: artifact.target.to_string_lossy().into_owned(),
+        content_type: artifact.metadata.content_type,
+        size_bytes: artifact.metadata.size_bytes,
+    };
+    let mut insert = client
+        .insert::<ArtifactRecord>("artifacts")
+        .await
+        .map_err(internal)?;
+    insert.write(&row).await.map_err(internal)?;
+    insert.end().await.map_err(internal)
 }
 
 async fn discard_artifact(artifact: PendingArtifact) -> Result<(), Status> {
@@ -231,17 +300,9 @@ async fn discard_artifact(artifact: PendingArtifact) -> Result<(), Status> {
     fs::remove_file(artifact.part).await.map_err(internal)
 }
 
-async fn append_json<T: Serialize>(path: &Path, value: &T) -> Result<(), Status> {
-    let mut line = serde_json::to_vec(value).map_err(internal)?;
-    line.push(b'\n');
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .await
-        .map_err(internal)?;
-    file.write_all(&line).await.map_err(internal)?;
-    file.flush().await.map_err(internal)
+fn metric_timestamp(timestamp_unix_ms: i64) -> Result<OffsetDateTime, Status> {
+    OffsetDateTime::from_unix_timestamp_nanos(i128::from(timestamp_unix_ms) * 1_000_000)
+        .map_err(internal)
 }
 
 fn artifact_path(name: &str) -> Result<&Path, Status> {

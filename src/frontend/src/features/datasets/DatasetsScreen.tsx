@@ -1,6 +1,5 @@
 import { useState } from "react";
 
-import { useNav } from "@/app/navStore";
 import { openParamModal } from "@/shared/feedback/ParamModal";
 import { showToast } from "@/shared/feedback/Toast";
 import { Button } from "@/shared/ui/Button";
@@ -9,11 +8,12 @@ import { EmptyState } from "@/shared/ui/EmptyState";
 import { Input } from "@/shared/ui/Input";
 import { DatasetCard } from "./DatasetCard";
 import { useDatasetActions, useDatasetsQuery } from "./query";
+import { useNavigate } from "react-router-dom";
 
 export function DatasetsScreen() {
   const { data: datasets = [], isLoading, isError, refetch } = useDatasetsQuery();
   const { create, remove } = useDatasetActions();
-  const go = useNav((s) => s.go);
+  const navigate = useNavigate();
   const [name, setName] = useState("");
 
   const submit = () => {
@@ -72,7 +72,7 @@ export function DatasetsScreen() {
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3.5">
           {datasets.map((d) => (
-            <DatasetCard key={d.id} dataset={d} onOpen={() => go("audio")} onDelete={remove} />
+            <DatasetCard key={d.id} dataset={d} onOpen={() => void navigate("/audio")} onDelete={remove} />
           ))}
         </div>
       )}

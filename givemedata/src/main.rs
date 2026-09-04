@@ -120,7 +120,7 @@ struct Args {
     #[arg(
         long,
         env = "METRICS_DIR",
-        help = "Directory storing streamed metrics and artifacts."
+        help = "Directory storing streamed metric artifacts."
     )]
     metrics_dir: PathBuf,
 }

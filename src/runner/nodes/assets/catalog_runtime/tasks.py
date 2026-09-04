@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from runner.nodes.assets.catalog_runtime.entries import CATALOG_ENTRIES, CatalogKey
@@ -98,8 +99,14 @@ def bootstrap_official_styletts2_checkpoints(item: str = "", *, logger: logging.
     log = logger or _LOGGER
     checkpoints = []
     for spec in _selected_specs(official_styletts_specs(), item):
-        item, skipped = ensure_checkpoint_bundle(spec, logger=log)
-        checkpoints.append(checkpoint_payload(item, skipped=skipped, filename=spec.files[0].name))
+        checkpoint, skipped = ensure_checkpoint_bundle(spec, logger=log)
+        checkpoints.append(
+            checkpoint_payload(
+                checkpoint,
+                skipped=skipped,
+                filename=spec.files[0].name,
+            )
+        )
     return {"checkpoints": checkpoints}
 
 

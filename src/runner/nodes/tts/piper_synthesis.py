@@ -17,7 +17,12 @@ from runner.nodes.datatypes import AudioPort, JsonPort, SynthesisResultPort, Tex
 from runner.nodes.models import SynthesisResult, stable_id
 from runner.nodes.tts.audio_out import audio_from_samples
 from runner.nodes.tts.engines.piper import PiperRuntime, PiperSynthesisOptions
-from runner.nodes.tts.voices import PiperVoiceModel, TtsEngine, expand_voice_batch, parse_voice
+from runner.nodes.tts.voices import (
+    PiperVoiceModel,
+    TtsEngine,
+    expand_voice_batch,
+    parse_voice,
+)
 
 
 class PiperSynthesisSettings(StrictSettings):
@@ -52,7 +57,9 @@ def plan_piper_requests(batch: list[dict[str, Any]]) -> PiperRequestGroups:
             assert voice.piper is not None, "validated Piper voice missing model"
             for sample_index in range(samples_per_voice):
                 groups.setdefault(voice.piper.checkpoint_id, []).append(
-                    PendingPiperSynthesis(inputs["text"], voice.piper, sample_index, input_index)
+                    PendingPiperSynthesis(
+                        inputs["text"], voice.piper, sample_index, input_index
+                    )
                 )
     return groups
 
@@ -81,7 +88,9 @@ class PiperSynthesisNode(Node):
         )
         for checkpoint_id, pending in groups.items():
             context.check_cancel()
-            checkpoint = await asyncio.to_thread(resolve_checkpoint_ref, checkpoint_id, TtsEngine.PIPER.value)
+            checkpoint = await asyncio.to_thread(
+                resolve_checkpoint_ref, checkpoint_id, TtsEngine.PIPER.value
+            )
             runtime = await asyncio.to_thread(PiperRuntime, checkpoint.path)
             results = await asyncio.to_thread(
                 runtime.synthesize_many,
@@ -91,15 +100,22 @@ class PiperSynthesisNode(Node):
             )
             outputs.extend(self._outputs(pending, results, str(context.run_id)))
             completed += len(results)
-            await context.report_progress(self.id, completed, total, f"piper synthesized {completed}/{total}")
+            await context.report_progress(
+                self.id, completed, total, f"piper synthesized {completed}/{total}"
+            )
         return outputs
 
     def _outputs(self, pending, results, run_id: str):
         outputs = []
         for item, (samples, sample_rate) in zip(pending, results, strict=True):
             request_id = stable_id(
-                "tts_request", self.NODE_TYPE, run_id, item.input_index,
-                item.text, item.model.voice_id, item.sample_index,
+                "tts_request",
+                self.NODE_TYPE,
+                run_id,
+                item.input_index,
+                item.text,
+                item.model.voice_id,
+                item.sample_index,
             )
             metadata = {
                 "engine": TtsEngine.PIPER.value,
@@ -122,7 +138,17 @@ class PiperSynthesisNode(Node):
                 metadata=metadata,
             )
             result = SynthesisResult(
-                request_id, audio, stable_id("tts_result", request_id), audio.lineage_id, metadata
+                request_id,
+                audio,
+                stable_id("tts_result", request_id),
+                audio.lineage_id,
+                metadata,
             )
-            outputs.append({INPUT_INDEX_OUTPUT: item.input_index, "audio": audio, "synthesis_result": result})
+            outputs.append(
+                {
+                    INPUT_INDEX_OUTPUT: item.input_index,
+                    "audio": audio,
+                    "synthesis_result": result,
+                }
+            )
         return outputs

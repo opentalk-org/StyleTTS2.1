@@ -33,7 +33,7 @@ in
     };
     port = mkOption {
       type = types.port;
-      default = 9000;
+      default = 9001;
     };
     consoleEnable = mkOption {
       type = types.bool;
@@ -41,7 +41,7 @@ in
     };
     consolePort = mkOption {
       type = types.port;
-      default = 9001;
+      default = 9002;
     };
     accessKey = mkOption {
       type = types.str;

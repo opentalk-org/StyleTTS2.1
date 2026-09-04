@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
 import { nodeSnapshot } from "../api";
-import { graphPoint } from "../logic";
+import { graphPoint } from "../viewport";
 import { servicePerformance } from "../performance";
 import { useLoadNodeMutation, useUnloadNodeMutation } from "../query";
 import { useWorkflowStore } from "../store";

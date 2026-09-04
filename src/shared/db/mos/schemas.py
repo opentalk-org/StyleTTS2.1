@@ -7,11 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from shared.db.audio.models import AudioFile
-
 
 class MosRatingCreate(BaseModel):
-    dataset_id: UUID
     audio_a_id: UUID
     audio_b_id: UUID
     preferred_audio_id: UUID
@@ -27,10 +24,13 @@ class MosRatingCreate(BaseModel):
         return self
 
 
-class MosComparisonRead(MosRatingCreate):
+class MosComparisonRead(BaseModel):
     id: UUID
-    previous_score_a: float | None
-    previous_score_b: float | None
+    audio_a_id: UUID
+    audio_b_id: UUID
+    preferred_audio_id: UUID
+    score_a: float
+    score_b: float
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
@@ -44,5 +44,5 @@ class MosRatingUpdate(BaseModel):
 @dataclass(frozen=True)
 class MosPair:
     dataset_id: UUID
-    audio_a: AudioFile
-    audio_b: AudioFile
+    audio_a_id: UUID
+    audio_b_id: UUID

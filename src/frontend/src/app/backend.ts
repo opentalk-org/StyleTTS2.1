@@ -1,6 +1,6 @@
-import { useNav } from "./navStore";
+import { useAppStore } from "./store";
 
-function backendUrl(path: string, base: string = useNav.getState().backendUrl): string {
+function backendUrl(path: string, base: string = useAppStore.getState().backendUrl): string {
   const baseUrl = new URL(base);
   return new URL(path, baseUrl.origin).toString();
 }
