@@ -13,7 +13,11 @@ import clickhouse_connect
 from sqlalchemy import create_engine, text
 from tqdm import tqdm
 
-from migrate_mlflow_artifacts import migrate_artifacts
+from migrate_mlflow_artifacts import (
+    backfill_inline_artifacts,
+    migrate_artifacts,
+    reconcile_checkpoint_runs,
+)
 
 
 MLFLOW_DATABASE_URL_ENV = "MLFLOW_DATABASE_URL"
@@ -231,9 +235,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--inline-artifacts-only", action="store_true")
     args = parser.parse_args()
     migration_specs = specs()
     destination = clickhouse_connect.get_client(dsn=os.environ[CLICKHOUSE_URL_ENV])
+    if args.inline_artifacts_only:
+        backfill_inline_artifacts(destination)
+        return
     for spec in reversed(migration_specs):
         destination.command(f"TRUNCATE TABLE {spec.destination}")
         print(f"reset {spec.destination}", flush=True)
@@ -248,6 +256,7 @@ def main() -> None:
         assert destination_count == source_count
         print(f"validated {table}: {destination_count}", flush=True)
     migrate_artifacts(destination, args.batch_size)
+    reconcile_checkpoint_runs(destination)
 
 
 if __name__ == "__main__":

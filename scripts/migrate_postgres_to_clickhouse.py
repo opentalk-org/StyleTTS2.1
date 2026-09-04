@@ -41,9 +41,9 @@ def serialize_json_fields(row: Row, indexes: tuple[int, ...]) -> Row:
 
 
 def asset_row(row: Row) -> Row:
-    values = list(serialize_json_fields(row, indexes=(8,)))
-    values[9] = values[9] or EMPTY_UUID
+    values = list(serialize_json_fields(row, indexes=(9,)))
     values[10] = values[10] or EMPTY_UUID
+    values[11] = values[11] or EMPTY_UUID
     return values
 
 
@@ -102,6 +102,7 @@ def specs(migrated_at: datetime) -> tuple[CopySpec, ...]:
                 "updated_at",
                 "kind",
                 "name",
+                "step",
                 "path",
                 "size",
                 "content_hash",
@@ -112,19 +113,37 @@ def specs(migrated_at: datetime) -> tuple[CopySpec, ...]:
             ),
             source_sql="""
             SELECT checkpoint.id, TIMESTAMPTZ '__TIMESTAMP__', 'checkpoint',
-                   checkpoint.name, checkpoint.path, checkpoint.size,
+                   checkpoint.name, COALESCE(
+                       (checkpoint.metadata->>'step')::bigint,
+                       (checkpoint.metadata->>'global_step')::bigint,
+                       substring(checkpoint.name from 'step ([0-9]+)$')::bigint,
+                       0
+                   ), checkpoint.path, checkpoint.size,
                    checkpoint.content_hash, checkpoint.type, checkpoint.metadata,
                    CASE WHEN checkpoint.job_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
                         THEN checkpoint.job_id::uuid ELSE NULL END,
-                   COALESCE(CASE
+                   COALESCE(
+                       CASE WHEN checkpoint.job_id IS NOT NULL THEN lag(checkpoint.id) OVER (
+                           PARTITION BY checkpoint.job_id
+                           ORDER BY substring(checkpoint.name from 'step ([0-9]+)$')::bigint
+                       ) END,
+                       CASE
                        WHEN checkpoint.metadata->>'ancestor_asset_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
                        THEN (checkpoint.metadata->>'ancestor_asset_id')::uuid
                        WHEN checkpoint.metadata->>'base_checkpoint_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
                        THEN (checkpoint.metadata->>'base_checkpoint_id')::uuid
                        ELSE NULL
-                   END, selected_checkpoint.id)
+                       END,
+                       selected_checkpoint.id,
+                       parent_checkpoint.id
+                   )
             FROM checkpoints AS checkpoint
             LEFT JOIN jobs AS job ON job.run_id = checkpoint.job_id
+            LEFT JOIN checkpoints AS parent_checkpoint
+              ON parent_checkpoint.content_hash = right(COALESCE(
+                  checkpoint.metadata->>'parent_checkpoint_path',
+                  checkpoint.metadata#>>'{state,parent_checkpoint_path}'
+              ), 64)
             LEFT JOIN LATERAL (
                 SELECT (array_agg(DISTINCT value #>> '{}'))[1]::uuid AS id
                 FROM jsonb_path_query(
@@ -136,7 +155,7 @@ def specs(migrated_at: datetime) -> tuple[CopySpec, ...]:
                 HAVING count(DISTINCT value #>> '{}') = 1
             ) AS selected_checkpoint ON true
             UNION ALL
-            SELECT id, TIMESTAMPTZ '__TIMESTAMP__', 'file', name, path, size,
+            SELECT id, TIMESTAMPTZ '__TIMESTAMP__', 'file', name, 0, path, size,
                    content_hash, type, metadata, NULL, NULL
             FROM extra_files
             """.replace("__TIMESTAMP__", timestamp),
