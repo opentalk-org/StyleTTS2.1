@@ -1,9 +1,11 @@
 import { Images, Link2, Link2Off } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import type { Artifact, Run } from "@/shared/types";
-import { Card, cn, Collapsible, EmptyState, IconButton, Toolbar } from "@/shared/ui";
+import { useViewerStore } from "@/features/viewer/store";
+import type { Artifact, PanelColumns, Run } from "@/shared/types";
+import { Card, cn, Collapsible, EmptyState, IconButton, SegmentedControl, Toolbar } from "@/shared/ui";
 
+import { COLUMN_CLASSES } from "./ChartSection";
 import { sectionize } from "./logic";
 import { ArtifactValue, ImageLightbox, kindIcon, StepControl } from "./MediaCard";
 
@@ -16,6 +18,8 @@ interface MediaPanelProps {
 export function MediaPanel({ runs, runColors, artifacts }: MediaPanelProps) {
   const allSteps = useMemo(() => [...new Set(artifacts.map((artifact) => artifact.step))].sort((a, b) => a - b), [artifacts]);
   const [globalIndex, setGlobalIndex] = useState<number | null>(null);
+  const columns = useViewerStore((state) => state.mediaColumns);
+  const setColumns = useViewerStore((state) => state.setMediaColumns);
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const byName = useMemo(() => {
     const groups = new Map<string, Artifact[]>();
@@ -47,6 +51,19 @@ export function MediaPanel({ runs, runColors, artifacts }: MediaPanelProps) {
             />
           </div>
         }
+        end={
+          <SegmentedControl
+            label="Media columns"
+            value={columns}
+            onValue={setColumns}
+            options={[
+              { value: "1" as const, label: "1" },
+              { value: "2" as const, label: "2" },
+              { value: "3" as const, label: "3" },
+              { value: "auto" as const, label: "Auto" },
+            ]}
+          />
+        }
       />
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="flex flex-col gap-4 p-4">
@@ -66,7 +83,7 @@ export function MediaPanel({ runs, runColors, artifacts }: MediaPanelProps) {
               >
                 <div className="flex flex-col gap-3">
                   {section.items.map((group) => (
-                    <ArtifactSeries key={group.name} name={group.name} runs={runs} runColors={runColors} artifacts={group.items} globalStep={globalStep} />
+                    <ArtifactSeries key={group.name} name={group.name} runs={runs} runColors={runColors} artifacts={group.items} globalStep={globalStep} columns={columns} />
                   ))}
                 </div>
               </Collapsible>
@@ -84,9 +101,10 @@ interface ArtifactSeriesProps {
   runColors: Record<string, string>;
   artifacts: Artifact[];
   globalStep: number | null;
+  columns: PanelColumns;
 }
 
-function ArtifactSeries({ name, runs, runColors, artifacts, globalStep }: ArtifactSeriesProps) {
+function ArtifactSeries({ name, runs, runColors, artifacts, globalStep, columns }: ArtifactSeriesProps) {
   const steps = useMemo(() => [...new Set(artifacts.map((artifact) => artifact.step))].sort((a, b) => a - b), [artifacts]);
   const [linked, setLinked] = useState(true);
   const [ownIndex, setOwnIndex] = useState(steps.length - 1);
@@ -114,7 +132,7 @@ function ArtifactSeries({ name, runs, runColors, artifacts, globalStep }: Artifa
           </IconButton>
         </span>
       </div>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2 p-2">
+      <div className={cn("grid gap-3 p-2", COLUMN_CLASSES[columns])}>
         {runs.map((run) => (
           <ArtifactValue key={run.id} run={run} color={runColors[run.id]} kind={kind} artifact={artifactFor(run, step)} onZoom={() => setZoomedRun(run)} />
         ))}

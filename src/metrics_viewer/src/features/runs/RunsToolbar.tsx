@@ -2,8 +2,8 @@ import { Columns3, Ellipsis, Filter, PanelLeftClose, Rows2, Columns2, RotateCcw 
 import { useMemo, useState } from "react";
 
 import type { ViewerLayout } from "@/features/viewer/layout";
-import { runColumnOptions } from "@/shared/metrics";
-import type { Run, RunStatus } from "@/shared/types";
+import { projectColumnOptions } from "@/shared/metrics";
+import type { ProjectColumns, Run, RunStatus } from "@/shared/types";
 import {
   Checkbox,
   IconButton,
@@ -20,6 +20,7 @@ import { STATUS_ORDER } from "./logic";
 
 interface RunsToolbarProps {
   runs: Run[];
+  projectColumns: ProjectColumns;
   query: string;
   onQuery: (value: string) => void;
   statuses: RunStatus[];
@@ -34,6 +35,7 @@ interface RunsToolbarProps {
 
 export function RunsToolbar({
   runs,
+  projectColumns,
   query,
   onQuery,
   statuses,
@@ -48,7 +50,7 @@ export function RunsToolbar({
   const [statusOpen, setStatusOpen] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const columnOptions = useMemo(() => runColumnOptions(runs), [runs]);
+  const columnOptions = useMemo(() => projectColumnOptions(projectColumns), [projectColumns]);
   const counts = useMemo(() => {
     const byStatus = new Map<RunStatus, number>();
     for (const run of runs) byStatus.set(run.status, (byStatus.get(run.status) ?? 0) + 1);

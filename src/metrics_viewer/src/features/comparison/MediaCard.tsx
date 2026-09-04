@@ -4,6 +4,8 @@ import { useEffect, type ReactNode } from "react";
 import type { Artifact, ArtifactKind, Run } from "@/shared/types";
 import { AudioPlayer, cn, Dialog, IconButton, Range } from "@/shared/ui";
 
+const MEDIA_CONTENT_HEIGHT = 200;
+
 export interface StepControlProps {
   label: string;
   steps: number[];
@@ -45,12 +47,16 @@ export function ArtifactValue({ run, color, kind, artifact, onZoom }: ArtifactVa
         <span className="truncate text-xs font-medium text-fg" title={run.name}>{run.name}</span>
       </header>
       {artifact === undefined ? (
-        <p className="px-3 py-6 text-center text-xs text-fg-muted">Not logged at this step</p>
+        <p className="grid place-items-center px-3 text-center text-xs text-fg-muted" style={{ height: MEDIA_CONTENT_HEIGHT }}>
+          Not logged at this step
+        </p>
       ) : kind === "audio" ? (
-        <AudioPlayer src={artifact.source} label={`${run.name} ${artifact.name}`} />
+        <div className="flex items-center px-3" style={{ height: MEDIA_CONTENT_HEIGHT }}>
+          <AudioPlayer src={artifact.source} label={`${run.name} ${artifact.name}`} />
+        </div>
       ) : kind === "image" ? (
         <button type="button" onClick={onZoom} title="Open full size" className="relative block w-full cursor-zoom-in">
-          <img loading="lazy" src={artifact.source} alt={`${run.name} ${artifact.name}`} className="block h-44 w-full bg-canvas object-contain" />
+          <img loading="lazy" src={artifact.source} alt={`${run.name} ${artifact.name}`} className="block w-full bg-canvas object-contain" style={{ height: MEDIA_CONTENT_HEIGHT }} />
           <span className="absolute top-1.5 right-1.5 grid size-6 place-items-center rounded-sm border border-line bg-raised text-fg-secondary opacity-0 group-hover/artifact:opacity-100">
             <Maximize2 size={12} />
           </span>
@@ -58,7 +64,7 @@ export function ArtifactValue({ run, color, kind, artifact, onZoom }: ArtifactVa
       ) : kind === "plot" ? (
         <MiniPlot values={JSON.parse(artifact.source) as number[]} color={color} />
       ) : (
-        <pre className="m-0 max-h-44 overflow-auto p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-fg-secondary">{artifact.source}</pre>
+        <pre className="m-0 overflow-auto p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-fg-secondary" style={{ height: MEDIA_CONTENT_HEIGHT }}>{artifact.source}</pre>
       )}
     </article>
   );
@@ -90,14 +96,14 @@ export function ImageLightbox({ run, name, artifact, steps, index, onIndex, onCl
       onClose={onClose}
       eyebrow={run.name}
       title={name}
-      size="lg"
+      size="viewport"
       footer={<StepControl label={name} steps={steps} index={index} onIndex={onIndex} className="w-full max-w-md" />}
     >
-      <div className="grid min-h-[60vh] flex-1 place-items-center overflow-auto bg-canvas p-4">
+      <div className="grid min-h-0 flex-1 place-items-center overflow-auto bg-canvas p-4">
         {artifact === undefined ? (
           <p className="text-xs text-fg-muted">Not logged at this step</p>
         ) : (
-          <img src={artifact.source} alt={`${run.name} ${name}`} className="max-h-[75vh] max-w-full object-contain" />
+          <img src={artifact.source} alt={`${run.name} ${name}`} className="h-full w-full object-contain" />
         )}
       </div>
     </Dialog>
@@ -114,7 +120,7 @@ export function kindIcon(kind: ArtifactKind): ReactNode {
 function MiniPlot({ values, color }: { values: number[]; color: string }) {
   const max = Math.max(...values);
   return (
-    <div className="flex h-44 items-end gap-[2px] px-3 pt-4 pb-3" aria-label="Plot artifact preview">
+    <div className="flex items-end gap-[2px] px-3 pt-4 pb-3" style={{ height: MEDIA_CONTENT_HEIGHT }} aria-label="Plot artifact preview">
       {values.map((value, index) => (
         <i
           key={index}

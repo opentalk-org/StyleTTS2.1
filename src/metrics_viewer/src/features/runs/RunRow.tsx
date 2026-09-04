@@ -52,7 +52,9 @@ export function RunRow({
   onMoveFocus,
 }: RunRowProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // Hovering a curve marks the run it belongs to, and the rest of its lineage with it.
   const highlighted = useCursorStore((state) => state.runId === run.id);
+  const inLineage = useCursorStore((state) => state.runIds?.has(run.id) ?? false);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.target !== event.currentTarget) return;
@@ -98,6 +100,7 @@ export function RunRow({
         "group/row absolute inset-x-0 grid cursor-pointer items-center border-b border-line text-xs select-none",
         selected ? "bg-selected" : "hover:bg-hover",
         highlighted ? "shadow-[inset_3px_0_0_0_var(--color-accent)] bg-hover" : "",
+        inLineage && !highlighted ? "shadow-[inset_3px_0_0_0_var(--color-strong)]" : "",
       )}
     >
       <span role="gridcell" className="flex h-full items-center justify-center">

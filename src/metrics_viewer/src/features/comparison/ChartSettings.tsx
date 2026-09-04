@@ -22,11 +22,12 @@ const SCALE_OPTIONS = [
 const X_AXIS_OPTIONS: { value: "inherit" | XAxis; label: string; title?: string }[] = [
   { value: "inherit", label: "Global", title: "Use the x axis from the toolbar" },
   { value: "step", label: "Step" },
+  { value: "lineage", label: "Lineage", title: "Step continued across the runs this one resumed from" },
   { value: "relative", label: "Time", title: "Seconds since the run started" },
   { value: "wall", label: "Wall", title: "Wall-clock time" },
 ];
 
-const X_AXIS_LABELS: Record<XAxis, string> = { step: "step", relative: "time", wall: "wall clock" };
+const X_AXIS_LABELS: Record<XAxis, string> = { step: "step", lineage: "lineage step", relative: "time", wall: "wall clock" };
 
 interface ChartSettingsFormProps {
   settings: PlotSettings;

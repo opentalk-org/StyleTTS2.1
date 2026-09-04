@@ -128,7 +128,7 @@ export function ComparePlot({ runs, runColors, chart, config, onConfig, onRemove
             }}
             onHover={(event) => {
               const meta = (event.points[0].data as { meta?: { runId: string } }).meta;
-              if (meta !== undefined) setCursor({ x: null, axis: "step", source: `compare:${config.id}`, runId: meta.runId, pointerY: 0 });
+              if (meta !== undefined) setCursor({ x: null, axis: "step", source: `compare:${config.id}`, runId: meta.runId, pointerX: 0, pointerY: 0 });
             }}
             onUnhover={clearCursor}
           />

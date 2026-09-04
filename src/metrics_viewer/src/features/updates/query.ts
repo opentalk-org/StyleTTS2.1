@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
 
-import type { ArrayMetricSeries, Artifact, PanelTab, Run } from "@/shared/types";
+import type { ArrayMetricSeries, Artifact, PanelTab } from "@/shared/types";
 
 import { initialUpdateCursor, pollVisibleChanges, type UpdateCursor } from "./server";
 
@@ -41,12 +41,7 @@ export function useVisibleUpdates({ projectId, runIds, tab }: VisibleUpdates) {
     if (change === undefined) return;
     cursor.current = change.cursor;
     if (change.runs.length > 0) {
-      queryClient.setQueryData<Run[]>(["runs", projectId], (current) => {
-        const changed = new Map(change.runs.map((run) => [run.id, run]));
-        const merged = (current ?? []).map((run) => changed.get(run.id) ?? run);
-        const known = new Set(merged.map((run) => run.id));
-        return [...change.runs.filter((run) => !known.has(run.id)), ...merged];
-      });
+      void queryClient.invalidateQueries({ queryKey: ["project-bootstrap", projectId] });
     }
     for (const metric of change.metrics) {
       void queryClient.invalidateQueries({
@@ -58,15 +53,11 @@ export function useVisibleUpdates({ projectId, runIds, tab }: VisibleUpdates) {
           return metric.maxStep >= Number(xMin) && metric.minStep <= Number(xMax);
         },
       });
-      queryClient.setQueryData<Record<string, number>>(["run-summary", metric.runId], (current) => ({
-        ...current,
-        [metric.name]: Number(metric.value),
-      }));
     }
     if (change.metrics.length > 0) {
-      queryClient.setQueryData<string[]>(["metric-names", ids], (current) => [
-        ...new Set([...(current ?? []), ...change.metrics.map((metric) => metric.name)]),
-      ].sort());
+      void queryClient.invalidateQueries({ queryKey: ["run-details"] });
+      void queryClient.invalidateQueries({ queryKey: ["run-metrics", projectId] });
+      void queryClient.invalidateQueries({ queryKey: ["project-bootstrap", projectId] });
       void queryClient.invalidateQueries({ queryKey: ["plots"] });
     }
     if (change.arrayMetrics.length > 0) {

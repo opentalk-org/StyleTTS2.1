@@ -43,22 +43,6 @@ const plotRangeInputSchema = z.object({
   targetPoints: z.number().int().min(200).max(4000),
 });
 
-interface MetricNameRow {
-  name: string;
-}
-
-export const getMetricNames = createServerFn({ method: "POST" })
-  .validator(runIdsSchema)
-  .handler(async ({ data }) => {
-    if (data.length === 0) return [];
-    const rows = await query<MetricNameRow>(`
-      SELECT DISTINCT name
-      FROM metrics
-      WHERE run_id IN {run_ids:Array(UUID)}
-      ORDER BY name`, { run_ids: data });
-    return rows.map((row) => row.name);
-  });
-
 export const getPlotRange = createServerFn({ method: "POST" })
   .validator(plotRangeInputSchema)
   .handler(async ({ data }) => {
@@ -144,15 +128,18 @@ export const runPlotsQuery = createServerFn({ method: "POST" })
   });
 
 function toArtifact(row: ArtifactRow): Artifact {
+  const kind = artifactKind(row.contentType, row.name);
   return {
     id: `${row.runId}-${row.name}-${row.step}`,
     runId: row.runId,
     name: row.name,
     step: Number(row.step),
     timestamp: Number(row.timestamp),
-    kind: artifactKind(row.contentType, row.name),
+    kind,
     contentType: row.contentType,
     sizeBytes: Number(row.sizeBytes),
-    source: `/api/artifacts/content?run_id=${encodeURIComponent(row.runId)}&path=${encodeURIComponent(row.path)}`,
+    source: kind === "plot" || kind === "text"
+      ? row.path
+      : `/api/artifacts/content?run_id=${encodeURIComponent(row.runId)}&path=${encodeURIComponent(row.path)}`,
   };
 }

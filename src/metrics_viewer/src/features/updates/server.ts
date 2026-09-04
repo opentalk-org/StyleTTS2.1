@@ -226,15 +226,18 @@ async function latestTimestamp(
 }
 
 function toArtifact(row: ArtifactChangeRow): Artifact {
+  const kind = artifactKind(row.contentType, row.name);
   return {
     id: `${row.runId}-${row.name}-${row.step}`,
     runId: row.runId,
     name: row.name,
     step: Number(row.step),
     timestamp: Number(row.timestamp),
-    kind: artifactKind(row.contentType, row.name),
+    kind,
     contentType: row.contentType,
     sizeBytes: Number(row.sizeBytes),
-    source: `/api/artifacts/content?run_id=${encodeURIComponent(row.runId)}&path=${encodeURIComponent(row.path)}`,
+    source: kind === "plot" || kind === "text"
+      ? row.path
+      : `/api/artifacts/content?run_id=${encodeURIComponent(row.runId)}&path=${encodeURIComponent(row.path)}`,
   };
 }

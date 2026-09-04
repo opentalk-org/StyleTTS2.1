@@ -6,7 +6,7 @@ import type { ViewerLayout } from "@/features/viewer/layout";
 import { useViewerStore } from "@/features/viewer/store";
 import { isNumericColumn, runColumnLabel } from "@/shared/metrics";
 import { moveBefore } from "@/shared/order";
-import type { Run, RunStatus } from "@/shared/types";
+import type { ProjectColumns, Run, RunStatus } from "@/shared/types";
 import { Button, Caption, cn, EmptyState, Skeleton } from "@/shared/ui";
 
 import { columnMinWidth, columnWidth, filterRuns, type RunSort } from "./logic";
@@ -19,6 +19,7 @@ const SWATCH_WIDTH = 24;
 
 interface RunsPaneProps {
   runs: Run[];
+  projectColumns: ProjectColumns;
   loading: boolean;
   runColors: Record<string, string>;
   palette: string[];
@@ -28,7 +29,7 @@ interface RunsPaneProps {
   onResetLayout: () => void;
 }
 
-export function RunsPane({ runs, loading, runColors, palette, layout, onCollapse, onStack, onResetLayout }: RunsPaneProps) {
+export function RunsPane({ runs, projectColumns, loading, runColors, palette, layout, onCollapse, onStack, onResetLayout }: RunsPaneProps) {
   const viewer = useViewerStore();
   const [query, setQuery] = useState("");
   const [statuses, setStatuses] = useState<RunStatus[]>([]);
@@ -118,6 +119,7 @@ export function RunsPane({ runs, loading, runColors, palette, layout, onCollapse
     <section aria-label="Runs" className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface">
       <RunsToolbar
         runs={runs}
+        projectColumns={projectColumns}
         query={query}
         onQuery={setQuery}
         statuses={statuses}

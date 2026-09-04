@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
-import { defaultRunColumns } from "@/shared/metrics";
-import type { CompareConfig, ComparePlotConfig, GlobalPlotSettings, PanelTab, PlotSettings, Run, Workspace } from "@/shared/types";
+import { defaultRunColumns, defaultRunColumnsFromMetrics } from "@/shared/metrics";
+import type { CompareConfig, ComparePlotConfig, GlobalPlotSettings, PanelColumns, PanelTab, PlotSettings, Run, RunScope, Workspace } from "@/shared/types";
 
 const STORAGE_KEY = "runflow.metrics.workspaces.v5";
 const STARS_KEY = "runflow.metrics.stars.v1";
@@ -47,12 +47,15 @@ export interface HydrateInput {
   projectId: string | null;
   selectedRunIds: string[];
   tab: PanelTab;
+  view: Pick<ViewerState, "runScope" | "columns" | "runColorOverrides" | "globalPlot" | "plotSettings" | "hiddenPlots" | "pinnedSections" | "plotOrder" | "compare" | "sql" | "chartColumns" | "mediaColumns">;
 }
 
 interface ViewerState {
   theme: Theme;
   projectId: string | null;
   selectedRunIds: string[];
+  /** Charts and compare draw the selected runs, or those plus the runs they resumed from. */
+  runScope: RunScope;
   columns: string[];
   columnsInitialized: boolean;
   runColorOverrides: Record<string, string>;
@@ -66,16 +69,21 @@ interface ViewerState {
   compare: CompareConfig;
   sql: string;
   runningSql: string;
+  chartColumns: PanelColumns;
+  mediaColumns: PanelColumns;
   workspaces: Workspace[];
   setTheme: (theme: Theme) => void;
   hydrate: (input: HydrateInput) => void;
   selectProject: (id: string | null) => void;
   setTab: (tab: PanelTab) => void;
+  setRunScope: (runScope: RunScope) => void;
   toggleRun: (id: string) => void;
   focusRun: (id: string, additive: boolean) => void;
   selectRuns: (ids: string[]) => void;
-  initializeColumns: (runs: Run[]) => void;
+  initializeColumns: (metrics: string[]) => void;
   setColumns: (columns: string[]) => void;
+  setChartColumns: (columns: PanelColumns) => void;
+  setMediaColumns: (columns: PanelColumns) => void;
   setRunColor: (runId: string, color: string | null) => void;
   toggleStar: (runId: string) => void;
   setGlobalPlot: (patch: Partial<GlobalPlotSettings>) => void;
@@ -124,6 +132,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   theme: loadTheme(),
   projectId: null,
   selectedRunIds: [],
+  runScope: "selected",
   columns: defaultRunColumns([]),
   columnsInitialized: false,
   runColorOverrides: {},
@@ -137,34 +146,41 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   compare: DEFAULT_COMPARE,
   sql: DEFAULT_SQL,
   runningSql: DEFAULT_SQL,
+  chartColumns: "auto",
+  mediaColumns: "auto",
   workspaces: loadJson<Workspace[]>(STORAGE_KEY, []),
   setTheme: (theme) => {
     localStorage.setItem(THEME_KEY, theme);
     set({ theme });
   },
-  hydrate: ({ projectId, selectedRunIds, tab }) =>
-    set((state) => ({
+  hydrate: ({ projectId, selectedRunIds, tab, view }) =>
+    set({
       projectId,
       selectedRunIds,
       tab,
-      ...(projectId === state.projectId ? {} : { columns: defaultRunColumns([]), columnsInitialized: false, compare: DEFAULT_COMPARE }),
-    })),
+      ...view,
+      columnsInitialized: true,
+      runningSql: view.sql,
+    }),
   selectProject: (projectId) =>
     set({ projectId, selectedRunIds: [], columns: defaultRunColumns([]), columnsInitialized: false, compare: DEFAULT_COMPARE }),
   setTab: (tab) => set({ tab }),
+  setRunScope: (runScope) => set({ runScope }),
   toggleRun: (id) => set((state) => ({ selectedRunIds: toggleItem(state.selectedRunIds, id) })),
   focusRun: (id, additive) =>
     set((state) => ({
       selectedRunIds: additive ? [...new Set([...state.selectedRunIds, id])] : [id],
     })),
   selectRuns: (selectedRunIds) => set({ selectedRunIds }),
-  initializeColumns: (runs) =>
+  initializeColumns: (metrics) =>
     set((state) =>
-      state.columnsInitialized || runs.length === 0
+      state.columnsInitialized
         ? state
-        : { columns: defaultRunColumns(runs), columnsInitialized: true },
+        : { columns: defaultRunColumnsFromMetrics(metrics), columnsInitialized: true },
     ),
   setColumns: (columns) => set({ columns, columnsInitialized: true }),
+  setChartColumns: (chartColumns) => set({ chartColumns }),
+  setMediaColumns: (mediaColumns) => set({ mediaColumns }),
   setRunColor: (runId, color) =>
     set((state) => {
       const runColorOverrides = { ...state.runColorOverrides };
@@ -233,6 +249,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       plotOrder: state.plotOrder,
       compare: state.compare,
       tab: state.tab,
+      runScope: state.runScope,
       updatedAt: new Date().toISOString(),
     };
     const workspaces = [workspace, ...state.workspaces];
@@ -263,6 +280,7 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
       plotOrder: workspace.plotOrder,
       compare: workspace.compare,
       tab: workspace.tab,
+      runScope: workspace.runScope ?? "selected",
     });
   },
   deleteWorkspace: (id) => {

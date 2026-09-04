@@ -3,8 +3,8 @@ import { lazy, Suspense, useMemo, useState } from "react";
 
 import { useViewerStore } from "@/features/viewer/store";
 import type { ChartTheme } from "@/shared/chart";
-import { runColumnOptions } from "@/shared/metrics";
-import type { Run } from "@/shared/types";
+import { projectColumnOptions } from "@/shared/metrics";
+import type { ProjectColumns, Run } from "@/shared/types";
 import { COLUMN_CLASSES, type Columns as GridColumns } from "@/features/comparison/ChartSection";
 import { Button, Checkbox, cn, Popover, SearchOptionList, SegmentedControl, Toolbar } from "@/shared/ui";
 
@@ -14,15 +14,14 @@ import { defaultCompareColumns } from "./logic";
 const ComparePlot = lazy(() => import("./ComparePlot").then((module) => ({ default: module.ComparePlot })));
 
 interface ComparePanelProps {
-  /** Every run in the project, for the column chooser. */
-  allRuns: Run[];
+  projectColumns: ProjectColumns;
   /** Runs ticked in the run list; these are the table rows. */
   runs: Run[];
   runColors: Record<string, string>;
   chart: ChartTheme;
 }
 
-export function ComparePanel({ allRuns, runs, runColors, chart }: ComparePanelProps) {
+export function ComparePanel({ projectColumns, runs, runColors, chart }: ComparePanelProps) {
   const compare = useViewerStore((state) => state.compare);
   const setCompareColumns = useViewerStore((state) => state.setCompareColumns);
   const addComparePlot = useViewerStore((state) => state.addComparePlot);
@@ -33,7 +32,7 @@ export function ComparePanel({ allRuns, runs, runColors, chart }: ComparePanelPr
   const [grid, setGrid] = useState<GridColumns>("auto");
 
   const columns = useMemo(() => compare.columns ?? defaultCompareColumns(runs), [compare.columns, runs]);
-  const columnOptions = useMemo(() => runColumnOptions(allRuns), [allRuns]);
+  const columnOptions = useMemo(() => projectColumnOptions(projectColumns), [projectColumns]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-row">

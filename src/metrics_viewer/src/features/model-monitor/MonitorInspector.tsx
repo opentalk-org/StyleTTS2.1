@@ -12,18 +12,25 @@ interface MonitorInspectorProps {
   runId: string;
   component: ModelComponent;
   names: string[];
+  loading: boolean;
   running: boolean;
   chart: ChartTheme;
   onClose: () => void;
 }
 
-export function MonitorInspector({ runId, component, names, running, chart, onClose }: MonitorInspectorProps) {
+export function MonitorInspector({ runId, component, names, loading, running, chart, onClose }: MonitorInspectorProps) {
   const available = new Set(names);
-  const parameterNames = [...component.parameter_names]
-    .sort((left, right) => rank(left) - rank(right) || left.localeCompare(right))
+  const prefix = `param/${component.module_path ?? component.id}.`;
+  const parameterPaths = names
+    .filter((name) => name.startsWith(prefix))
+    .map((name) => name.slice("param/".length))
+    .sort((left, right) => {
+      const leftName = left.slice(left.lastIndexOf(".") + 1);
+      const rightName = right.slice(right.lastIndexOf(".") + 1);
+      return rank(leftName) - rank(rightName) || left.localeCompare(right);
+    })
     .slice(0, 2);
-  const charts = parameterNames.flatMap((parameter) => {
-    const path = `${component.id}.${parameter}`;
+  const charts = parameterPaths.flatMap((path) => {
     return [`param/${path}`, `grad/${path}`].filter((name) => available.has(name));
   });
 
@@ -36,9 +43,17 @@ export function MonitorInspector({ runId, component, names, running, chart, onCl
           <Caption>Parameters</Caption>
           <dd className="m-0 font-mono tabular-nums text-fg">{formatParameterCount(component.parameter_count)}</dd>
           <Caption>Tensors</Caption>
-          <dd className="m-0 font-mono text-fg-secondary">{component.parameter_names.join(", ") || "—"}</dd>
+          <dd className="m-0 font-mono text-fg-secondary">
+            {component.parameter_names.map((name) => `${name}: ${component.parameter_shapes?.[name] ?? "shape unavailable"}`).join(", ") || "—"}
+          </dd>
+          <Caption>Inputs</Caption>
+          <dd className="m-0 font-mono text-fg-secondary">{component.input_shapes?.join(", ") || "—"}</dd>
+          <Caption>Outputs</Caption>
+          <dd className="m-0 font-mono text-fg-secondary">{component.output_shapes?.join(", ") || "—"}</dd>
         </dl>
-        {charts.length === 0 ? (
+        {loading ? (
+          <Skeleton className="h-64" />
+        ) : charts.length === 0 ? (
           <EmptyState compact icon={<span />} title="No histograms" description="This module has not logged parameter or gradient histograms." />
         ) : (
           <Suspense fallback={<Skeleton className="h-64" />}>

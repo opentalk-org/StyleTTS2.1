@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { cn } from "./cn";
 import { IconButton } from "./Button";
 
-export type DialogSize = "sm" | "md" | "lg" | "full";
+export type DialogSize = "sm" | "md" | "lg" | "full" | "viewport";
 
 export interface DialogProps {
   open: boolean;
@@ -24,6 +24,7 @@ const SIZES: Record<DialogSize, string> = {
   md: "max-w-[640px]",
   lg: "max-w-[1100px]",
   full: "h-full max-w-none",
+  viewport: "h-full max-w-none",
 };
 
 export function Dialog({
@@ -55,7 +56,10 @@ export function Dialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
+      className={cn(
+        "fixed inset-0 z-50 flex items-center justify-center bg-scrim",
+        size === "viewport" ? "p-6 sm:p-8 lg:p-12" : "p-4",
+      )}
       onClick={onClose}
       role="presentation"
     >

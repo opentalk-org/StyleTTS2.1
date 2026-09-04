@@ -1,22 +1,29 @@
 import { BarChart3, ChevronsDownUp, ChevronsUpDown, Database, Ellipsis, Eye, RotateCcw } from "lucide-react";
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 
+import { useRunLineage } from "@/features/lineage/query";
 import { isDefaultSql, useViewerStore } from "@/features/viewer/store";
 import type { ChartTheme } from "@/shared/chart";
 import { useDebouncedCommit } from "@/shared/debounce";
-import type { PlotQueryResult, Run, XAxis } from "@/shared/types";
+import type { PlotQueryResult, Run, RunScope, XAxis } from "@/shared/types";
 import { Button, EmptyState, IconButton, MenuItem, Popover, Range, SearchInput, SegmentedControl, Tooltip } from "@/shared/ui";
 
-import { ChartSection, type Columns } from "./ChartSection";
+import { ChartSection } from "./ChartSection";
 import { sectionize, type Plot } from "./logic";
 import { QuerySheet } from "./QuerySheet";
 
 const ChartDialog = lazy(() => import("./ChartDialog").then((module) => ({ default: module.ChartDialog })));
 
-const X_AXIS_OPTIONS: { value: XAxis; label: string; title: string }[] = [
+const X_AXIS_OPTIONS: { value: XAxis; label: string; title: string; needsTime?: boolean; needsLineage?: boolean }[] = [
   { value: "step", label: "Step", title: "Training step" },
-  { value: "relative", label: "Time", title: "Seconds since the run started" },
-  { value: "wall", label: "Wall", title: "Wall-clock time" },
+  { value: "lineage", label: "Lineage", title: "Step continued through the runs this one resumed from", needsLineage: true },
+  { value: "relative", label: "Time", title: "Seconds since the run started", needsTime: true },
+  { value: "wall", label: "Wall", title: "Wall-clock time", needsTime: true },
+];
+
+const RUN_SCOPE_OPTIONS: { value: RunScope; label: string; title: string }[] = [
+  { value: "selected", label: "Selected", title: "Only the runs ticked in the list" },
+  { value: "lineage", label: "+ ancestors", title: "Also the runs the selected ones were resumed from" },
 ];
 
 interface ChartsPanelProps {
@@ -34,7 +41,6 @@ interface ChartsPanelProps {
 export function ChartsPanel({ runs, runColors, chart, plots, result, error, fetching, onRefetch, rangeQueries }: ChartsPanelProps) {
   const viewer = useViewerStore();
   const [filter, setFilter] = useState("");
-  const [columns, setColumns] = useState<Columns>("auto");
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [sqlOpen, setSqlOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -57,6 +63,15 @@ export function ChartsPanel({ runs, runColors, chart, plots, result, error, fetc
   const customSql = !isDefaultSql(viewer.sql);
   const dirty = viewer.sql !== viewer.runningSql;
   const hasTime = !rangeQueries && (result === null || result.wall !== null);
+  const lineage = useRunLineage();
+  const ancestorCount = runs.filter((run) => !viewer.selectedRunIds.includes(run.id)).length;
+  const xAxisOptions = useMemo(
+    () => X_AXIS_OPTIONS.map((option) => ({
+      ...option,
+      disabled: (option.needsTime === true && !hasTime) || (option.needsLineage === true && lineage.empty),
+    })),
+    [hasTime, lineage.empty],
+  );
 
   const runQuery = useCallback(() => {
     if (viewer.sql === viewer.runningSql) onRefetch();
@@ -74,13 +89,30 @@ export function ChartsPanel({ runs, runColors, chart, plots, result, error, fetc
       <div className="@container min-h-0 min-w-0 flex-1 overflow-auto">
         <div className="sticky top-0 z-20 flex h-toolbar items-center gap-2 border-b border-line bg-surface px-3">
           <SearchInput label="Filter charts" value={filter} onValue={setFilter} placeholder="Filter charts" className="w-40 @3xl:w-56" />
-          <Tooltip content={hasTime ? "What the x axis plots" : "Return wall and rel columns from the query to switch the x axis"}>
+          <Tooltip content={hasTime ? "What the x axis plots" : "Return wall and rel columns from the query to plot against time"}>
             <SegmentedControl
               label="X axis"
-              options={X_AXIS_OPTIONS}
+              options={xAxisOptions}
               value={viewer.globalPlot.xAxis}
               onValue={(xAxis) => viewer.setGlobalPlot({ xAxis })}
-              disabled={!hasTime}
+            />
+          </Tooltip>
+          <Tooltip
+            content={
+              lineage.empty
+                ? "No checkpoint of this project records the run it was resumed from"
+                : "Draw the selected runs, or those plus every run they were resumed from"
+            }
+          >
+            <SegmentedControl
+              label="Runs drawn"
+              options={RUN_SCOPE_OPTIONS.map((option) => ({
+                ...option,
+                label: option.value === "lineage" && ancestorCount > 0 ? `${option.label} (${ancestorCount})` : option.label,
+                disabled: option.value === "lineage" && lineage.empty,
+              }))}
+              value={viewer.runScope}
+              onValue={viewer.setRunScope}
             />
           </Tooltip>
           <label className="hidden items-center gap-2 text-xs text-fg-muted @2xl:flex">
@@ -100,8 +132,8 @@ export function ChartsPanel({ runs, runColors, chart, plots, result, error, fetc
             <SegmentedControl
               className="hidden @xl:flex"
               label="Chart columns"
-              value={columns}
-              onValue={setColumns}
+              value={viewer.chartColumns}
+              onValue={viewer.setChartColumns}
               options={[
                 { value: "1" as const, label: "1" },
                 { value: "2" as const, label: "2" },
@@ -182,7 +214,7 @@ export function ChartsPanel({ runs, runColors, chart, plots, result, error, fetc
               section={section}
               open={!collapsed.includes(section.name)}
               onToggle={() => toggleSection(section.name)}
-              columns={columns}
+              columns={viewer.chartColumns}
               runs={runs}
               runColors={runColors}
               chart={chart}

@@ -117,7 +117,15 @@ function ModelMonitorInner({ run, chart }: { run: Run; chart: ChartTheme }) {
         </div>
       </div>
       {selected === undefined ? null : (
-        <MonitorInspector runId={run.id} component={selected} names={namesQuery.data ?? []} running={running} chart={chart} onClose={() => setSelectedId(null)} />
+        <MonitorInspector
+          runId={run.id}
+          component={selected}
+          names={namesQuery.data ?? []}
+          loading={namesQuery.isPending}
+          running={running}
+          chart={chart}
+          onClose={() => setSelectedId(null)}
+        />
       )}
     </div>
   );
@@ -143,6 +151,7 @@ function ModuleNode({ data, selected }: NodeProps & { data: GraphNodeData }) {
           <span className="shrink-0 text-[11px] text-fg-muted">double-click to expand</span>
         ) : null}
       </div>
+      {data.shapes.length === 0 ? null : <span className="truncate font-mono text-[10px] text-fg-muted">{data.shapes}</span>}
       <Handle type="source" position={Position.Right} className="!size-1.5 !border-0 !bg-strong" />
     </div>
   );

@@ -9,9 +9,11 @@ import { Plot, PLOT_CONFIG, Plotly } from "@/shared/plot";
 import type { Run, XAxis } from "@/shared/types";
 import { cn, IconButton, Tooltip } from "@/shared/ui";
 
-import { nearestRun, useCursorOverlay, useCursorStore, useRunHighlight } from "@/shared/cursor";
+import { nearestRun, pointerDataX, useCursorOverlay, useCursorStore, useRunHighlight } from "@/shared/cursor";
+import { useAncestorCuts, useAncestorRunIds, useLineageGroups, useRunLineage } from "@/features/lineage/query";
+
 import { usePlotRangeQuery, type PlotRange } from "./query";
-import { buildTraces, formatX, groupPlots, plotLayout, resolveSettings, valuesAt, type Plot as PlotData } from "./logic";
+import { buildTraces, clipAncestors, formatX, groupPlots, plotLayout, resolveSettings, valuesAt, type EffectiveSettings, type Plot as PlotData } from "./logic";
 
 const CARD_PLOT_HEIGHT = 200;
 const DRAG_TYPE = "application/x-metrics-chart";
@@ -41,15 +43,26 @@ export const ChartCard = memo(function ChartCard({ plot, runs, runColors, chart,
   const [visible, setVisible] = useState(false);
   const [range, setRange] = useState<PlotRange>({ xMin: null, xMax: null });
   const targetPoints = Math.min(4000, Math.max(200, Math.round((cardRef.current?.clientWidth ?? 680) * 1.5)));
-  const rangeResult = usePlotRangeQuery(runs.map((run) => run.id), plot.name, range, targetPoints, rangeQuery && visible);
-  const queriedPlot = useMemo(() => groupPlots(rangeResult.data ?? null)[0], [rangeResult.data]);
-  const displayedPlot = rangeQuery ? queriedPlot ?? plot : plot;
-
+  const lineage = useRunLineage();
+  const ancestors = useAncestorRunIds();
+  // Hovering one curve lights the whole chain it belongs to, not just that run.
+  const groups = useLineageGroups(runs.map((run) => run.id));
+  // A parent that kept training past the fork is history only up to it.
+  const cuts = useAncestorCuts(runs.map((run) => run.id));
   const settings = saved ?? DEFAULT_PLOT_SETTINGS;
   const effective = useMemo(() => resolveSettings(settings, globalPlot), [settings, globalPlot]);
+  // A window picked on one axis means nothing on another.
+  useEffect(() => setRange({ xMin: null, xMax: null }), [effective.axis]);
+  const rangeResult = usePlotRangeQuery(runs.map((run) => run.id), plot.name, queryRange(range, effective.axis, runs, lineage.offsets), targetPoints, rangeQuery && visible);
+  const queriedPlot = useMemo(() => groupPlots(rangeResult.data ?? null, lineage.offsets)[0], [lineage.offsets, rangeResult.data]);
+  const displayedPlot = useMemo(
+    () => clipAncestors(rangeQuery ? queriedPlot ?? plot : plot, cuts) as PlotData,
+    [cuts, plot, queriedPlot, rangeQuery],
+  );
+
   const traces = useMemo(
-    () => buildTraces(displayedPlot, runs, effective, runColors, chart),
-    [displayedPlot, runs, effective, runColors, chart],
+    () => buildTraces(displayedPlot, runs, effective, runColors, chart, ancestors),
+    [ancestors, displayedPlot, runs, effective, runColors, chart],
   );
   const layout = useMemo(() => plotLayout(effective, chart, CARD_PLOT_HEIGHT), [effective, chart]);
   useCursorOverlay(graphRef, overlayRef, effective.axis);
@@ -156,21 +169,24 @@ export const ChartCard = memo(function ChartCard({ plot, runs, runColors, chart,
           onUpdate={(_, graph) => {
             graphRef.current = graph;
           }}
-          onHover={(event) =>
+          onHover={(event) => {
+            const runId = nearestRun(event, graphRef.current);
             setCursor({
-              x: event.points[0].x as number,
+              x: pointerDataX(event, graphRef.current),
               axis: effective.axis,
               source: plot.name,
-              runId: nearestRun(event, graphRef.current),
+              runId,
+              runIds: runId === null ? null : groups.get(runId) ?? null,
+              pointerX: event.event.clientX,
               pointerY: event.event.clientY,
-            })
-          }
+            });
+          }}
           onUnhover={clearCursor}
           onRelayout={onRelayout}
         />
         <CursorLine overlayRef={overlayRef} />
       </div>
-      <HoverBox plot={displayedPlot} axis={effective.axis} runs={runs} runColors={runColors} anchor={plotRef} />
+      <HoverBox plot={displayedPlot} settings={effective} runs={runs} runColors={runColors} anchor={plotRef} source={plot.name} />
     </div>
   );
 });
@@ -189,28 +205,42 @@ export function CursorLine({ overlayRef }: { overlayRef: RefObject<HTMLDivElemen
 
 interface HoverBoxProps {
   plot: PlotData;
-  axis: XAxis;
+  settings: EffectiveSettings;
   runs: Run[];
   runColors: Record<string, string>;
   anchor: RefObject<HTMLDivElement | null>;
+  /** Cursor source this box answers to; a card and its expanded copy are separate sources. */
+  source: string;
+  /**
+   * Beside the pointer instead of beside the anchor — for the expanded chart, where the
+   * plot fills the window and "beside the plot" would land on the legend.
+   */
+  besidePointer?: boolean;
 }
 
 const HOVER_WIDTH = 260;
 const HOVER_GAP = 8;
 
 /**
- * Hover values rendered beside the card instead of over the lines. Subscribes to the
+ * Hover values rendered beside the chart instead of over the lines. Subscribes to the
  * cursor store itself so the card does not re-render while the pointer moves.
  */
-function HoverBox({ plot, axis, runs, runColors, anchor }: HoverBoxProps) {
-  const cursorX = useCursorStore((state) => (state.source === plot.name ? state.x : null));
-  const pointerY = useCursorStore((state) => (state.source === plot.name ? state.pointerY : 0));
+export function HoverBox({ plot, settings, runs, runColors, anchor, source, besidePointer = false }: HoverBoxProps) {
+  const cursorX = useCursorStore((state) => (state.source === source ? state.x : null));
+  const pointerX = useCursorStore((state) => (state.source === source ? state.pointerX : 0));
+  const pointerY = useCursorStore((state) => (state.source === source ? state.pointerY : 0));
   const highlighted = useCursorStore((state) => state.runId);
-  const values = useMemo(() => (cursorX === null ? null : valuesAt(plot, axis, cursorX)), [plot, axis, cursorX]);
+  const highlightedGroup = useCursorStore((state) => state.runIds);
+  const lit = (runId: string) => highlighted === null || (highlightedGroup ?? new Set([highlighted])).has(runId);
+  const values = useMemo(() => (cursorX === null ? null : valuesAt(plot, settings, cursorX)), [plot, settings, cursorX]);
   if (cursorX === null || values === null || anchor.current === null) return null;
   const rect = anchor.current.getBoundingClientRect();
-  const fitsRight = rect.right + HOVER_GAP + HOVER_WIDTH <= window.innerWidth;
-  const left = fitsRight ? rect.right + HOVER_GAP : rect.left - HOVER_GAP - HOVER_WIDTH;
+  const from = besidePointer ? pointerX : rect.right;
+  const limit = besidePointer ? rect.right : window.innerWidth;
+  const fitsRight = from + HOVER_GAP + HOVER_WIDTH <= limit;
+  const left = fitsRight
+    ? from + HOVER_GAP
+    : Math.max(HOVER_GAP, (besidePointer ? pointerX : rect.left) - HOVER_GAP - HOVER_WIDTH);
   const rows = runs.filter((run) => values.has(run.id));
   const height = 28 + rows.length * 20 + 8;
   const top = Math.min(Math.max(8, pointerY - height / 2), window.innerHeight - height - 8);
@@ -218,14 +248,15 @@ function HoverBox({ plot, axis, runs, runColors, anchor }: HoverBoxProps) {
     <div
       role="tooltip"
       style={{ left, top, width: HOVER_WIDTH }}
-      className="pointer-events-none fixed z-40 rounded-md border border-line bg-raised p-1 shadow-popover"
+      // Above the expanded chart's dialog (z-50), which it also floats over.
+      className="pointer-events-none fixed z-[55] rounded-md border border-line bg-raised p-1 shadow-popover"
     >
       <div className="flex h-6 items-center justify-between px-1.5 text-xs">
         <span className="truncate font-medium text-fg">{plot.name}</span>
-        <span className="shrink-0 font-mono text-fg-muted">{formatX(axis, cursorX)}</span>
+        <span className="shrink-0 font-mono text-fg-muted">{formatX(settings.axis, cursorX)}</span>
       </div>
       {rows.map((run) => (
-        <div key={run.id} className={cn("flex h-5 items-center gap-2 px-1.5 text-xs", highlighted !== null && highlighted !== run.id ? "opacity-50" : "")}>
+        <div key={run.id} className={cn("flex h-5 items-center gap-2 px-1.5 text-xs", lit(run.id) ? "" : "opacity-50")}>
           <span className="size-2 shrink-0 rounded-full" style={{ background: runColors[run.id] }} />
           <span className={cn("min-w-0 flex-1 truncate", highlighted === run.id ? "font-medium text-fg" : "text-fg-secondary")}>{run.name}</span>
           <span className="shrink-0 font-mono tabular-nums text-fg">{formatMetric(values.get(run.id) as number)}</span>
@@ -234,4 +265,14 @@ function HoverBox({ plot, axis, runs, runColors, anchor }: HoverBoxProps) {
     </div>,
     document.body,
   );
+}
+
+/**
+ * The zoom window in query space. On the lineage axis every run is shifted, so the window
+ * is widened to cover the shift of every run drawn — the server filters on raw steps.
+ */
+function queryRange(range: PlotRange, axis: XAxis, runs: Run[], offsets: Map<string, number>): PlotRange {
+  if (axis !== "lineage" || range.xMin === null || range.xMax === null || runs.length === 0) return range;
+  const shifts = runs.map((run) => offsets.get(run.id) ?? 0);
+  return { xMin: range.xMin - Math.max(...shifts), xMax: range.xMax - Math.min(...shifts) };
 }

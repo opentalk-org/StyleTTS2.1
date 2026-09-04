@@ -1,8 +1,15 @@
 export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export type Scalar = string | number | boolean;
 export type ArtifactKind = "audio" | "image" | "text" | "plot";
-export type PanelTab = "charts" | "compare" | "media" | "graph";
-export type XAxis = "step" | "relative" | "wall";
+export type PanelTab = "charts" | "compare" | "media" | "lineage" | "graph";
+export type XAxis = "step" | "lineage" | "relative" | "wall";
+
+/**
+ * Which runs the charts and the compare panel draw: the ones ticked in the runs pane, or
+ * those plus every run they were resumed from.
+ */
+export type RunScope = "selected" | "lineage";
+export type PanelColumns = "1" | "2" | "3" | "auto";
 
 export interface Project {
   id: string;
@@ -23,6 +30,11 @@ export interface Run {
   endedAt: number;
   params: Record<string, Scalar>;
   summary: Record<string, number>;
+}
+
+export interface ProjectColumns {
+  params: string[];
+  metrics: string[];
 }
 
 export interface MetricPoint {
@@ -72,12 +84,51 @@ export interface PlotSettings {
   renderMode: "line" | "scatter" | "line-scatter";
 }
 
+/** One checkpoint asset: `assets` row with `kind = 'checkpoint'`. */
+export interface Checkpoint {
+  id: string;
+  /** Run that wrote the checkpoint; "" when the asset is not linked to a run. */
+  runId: string;
+  /** Checkpoint this one was resumed from (`assets.ancestor_asset_id`), or null for a root. */
+  ancestorId: string | null;
+  name: string;
+  step: number;
+  createdAt: number;
+  sizeBytes: number;
+  type: string;
+}
+
+/** Run identity as the lineage graph needs it; the panel prefers the project's own Run when it has one. */
+export interface LineageRun {
+  id: string;
+  name: string;
+  status: RunStatus;
+}
+
+export interface Lineage {
+  checkpoints: Checkpoint[];
+  runs: LineageRun[];
+  /**
+   * First step each run logged outside the `system/` namespace — the system series are
+   * sampled on a timer and always start at 0, so they say nothing about the training loop.
+   * Tells apart a run that restarted its step counter from one that continued its parent's.
+   */
+  firstSteps: Record<string, number>;
+}
+
 export interface ModelComponent {
   id: string;
   parent_id: string | null;
   name: string;
   module_type: string;
+  /** Stable module path shared by repeated runtime invocations and histogram names. */
+  module_path?: string;
+  /** Runtime producer invocations whose tensors were consumed by this invocation. */
+  input_ids?: string[];
+  input_shapes?: string[];
+  output_shapes?: string[];
   parameter_names: string[];
+  parameter_shapes?: Record<string, string>;
   parameter_count: number;
 }
 
@@ -121,5 +172,7 @@ export interface Workspace {
   plotOrder: string[];
   compare: CompareConfig;
   tab: PanelTab;
+  /** Absent in workspaces saved before the lineage scope existed. */
+  runScope?: RunScope;
   updatedAt: string;
 }

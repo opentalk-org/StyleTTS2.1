@@ -6,6 +6,8 @@ export interface SegmentedOption<T extends string | number> {
   value: T;
   label: ReactNode;
   title?: string;
+  /** Greys out this choice alone; the rest of the control stays usable. */
+  disabled?: boolean;
 }
 
 export interface SegmentedControlProps<T extends string | number> {
@@ -48,6 +50,7 @@ export function SegmentedControl<T extends string | number>({
       {leading === undefined ? null : <span className="mr-1 text-fg-muted">{leading}</span>}
       {options.map((option) => {
         const selected = option.value === value;
+        const off = disabled || option.disabled === true;
         return (
           <button
             key={option.value}
@@ -55,13 +58,14 @@ export function SegmentedControl<T extends string | number>({
             role="radio"
             aria-checked={selected}
             title={option.title}
-            disabled={disabled}
+            disabled={off}
             onClick={() => onValue(option.value)}
             className={cn(
               "flex h-full min-w-6 items-center justify-center gap-1 rounded-sm px-2 text-xs font-medium",
               "transition-[background-color,color] duration-100 ease-out",
               fill ? "min-w-0 flex-1" : "",
               selected ? "bg-raised text-fg shadow-[inset_0_0_0_1px_var(--color-strong)]" : "text-fg-muted hover:text-fg",
+              option.disabled === true && !disabled ? "opacity-45" : "",
             )}
           >
             {option.label}

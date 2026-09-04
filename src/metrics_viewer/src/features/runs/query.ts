@@ -1,32 +1,33 @@
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
-import { getRunParams, getRunSummary, listRuns } from "./server";
+import { getProjectBootstrap, getRunDetails, getRunMetrics } from "./server";
 
-export function useRunsQuery(projectId: string | null) {
+export function useProjectBootstrapQuery(projectId: string | null) {
   return useQuery({
-    queryKey: ["runs", projectId],
-    queryFn: () => listRuns({ data: projectId as string }),
+    queryKey: ["project-bootstrap", projectId],
+    queryFn: () => getProjectBootstrap({ data: projectId as string }),
     enabled: projectId !== null,
   });
 }
 
-export function useRunDetailsQueries(runIds: string[]) {
-  const params = useQueries({
-    queries: runIds.map((runId) => ({
-      queryKey: ["run-params", runId],
-      queryFn: () => getRunParams({ data: runId }),
-      staleTime: Infinity,
-    })),
+export function useRunDetailsQuery(runIds: string[]) {
+  const ids = [...runIds].sort();
+  return useQuery({
+    queryKey: ["run-details", ids],
+    queryFn: () => getRunDetails({ data: ids }),
+    enabled: ids.length > 0,
+    staleTime: Infinity,
+    placeholderData: (previous) => previous,
   });
-  const summaries = useQueries({
-    queries: runIds.map((runId) => ({
-      queryKey: ["run-summary", runId],
-      queryFn: () => getRunSummary({ data: runId }),
-      staleTime: Infinity,
-    })),
+}
+
+export function useRunMetricsQuery(projectId: string | null, names: string[]) {
+  const metricNames = [...names].sort();
+  return useQuery({
+    queryKey: ["run-metrics", projectId, metricNames],
+    queryFn: () => getRunMetrics({ data: { projectId: projectId as string, names: metricNames } }),
+    enabled: projectId !== null && metricNames.length > 0,
+    placeholderData: (previous) => previous,
+    staleTime: Infinity,
   });
-  return Object.fromEntries(runIds.map((runId, index) => [runId, {
-    params: params[index].data ?? {},
-    summary: summaries[index].data ?? {},
-  }]));
 }

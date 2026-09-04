@@ -32,6 +32,7 @@ export function HistogramCard({ runId, name, running, chart }: { runId: string; 
   }, [playing, index, last]);
 
   const histogram = useMemo(() => metricHistogram(series?.values[index], bins), [series, index, bins]);
+  const xRange = useMemo(() => histogramRange(series?.values), [series]);
   const step = series?.steps[index] ?? 0;
   const kind = name.startsWith("grad/") ? "Gradient" : "Parameter";
 
@@ -54,7 +55,7 @@ export function HistogramCard({ runId, name, running, chart }: { runId: string; 
               ...baseLayout(chart, 180),
               margin: { l: 40, r: 8, t: 8, b: 28 },
               bargap: 0.05,
-              xaxis: axis(chart, { showgrid: false }),
+              xaxis: axis(chart, { showgrid: false, range: xRange }),
               yaxis: axis(chart, { showgrid: true }),
             }}
             config={{ responsive: true, displayModeBar: false }}
@@ -92,4 +93,13 @@ function metricHistogram(value: number[] | undefined, bins: number) {
   const width = upper === lower ? 1 : (upper - lower) / bins;
   const x = Array.from({ length: bins }, (_, index) => lower + (index + 0.5) * width);
   return { x, y };
+}
+
+function histogramRange(values: number[][] | undefined): [number, number] | undefined {
+  if (values === undefined || values.length === 0) return undefined;
+  const lower = Math.min(...values.map((value) => value[0]));
+  const upper = Math.max(...values.map((value) => value[1]));
+  if (lower !== upper) return [lower, upper];
+  const padding = Math.max(Math.abs(lower) * 0.05, 1e-6);
+  return [lower - padding, upper + padding];
 }

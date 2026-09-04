@@ -9,6 +9,7 @@ export function visibleComponents(components: ModelComponent[], expanded: Set<st
       (item) => item.id.toLowerCase().includes(needle) || item.module_type.toLowerCase().includes(needle),
     );
   }
+  if (isExecutionGraph(components)) return components;
   const byId = new Map(components.map((item) => [item.id, item]));
   return components.filter((item) => ancestorsExpanded(item, byId, expanded));
 }
@@ -20,7 +21,7 @@ function ancestorsExpanded(component: ModelComponent, byId: Map<string, ModelCom
 }
 
 export const NODE_WIDTH = 260;
-export const NODE_HEIGHT = 58;
+export const NODE_HEIGHT = 68;
 
 export interface GraphNodeData extends Record<string, unknown> {
   id: string;
@@ -28,6 +29,7 @@ export interface GraphNodeData extends Record<string, unknown> {
   parameterCount: number;
   hasChildren: boolean;
   expanded: boolean;
+  shapes: string;
 }
 
 export function graphNodes(
@@ -36,10 +38,12 @@ export function graphNodes(
   expanded: Set<string>,
   selectedId: string | null,
 ): Node<GraphNodeData>[] {
+  const execution = isExecutionGraph(all);
+  const depths = execution ? executionDepths(all) : new Map<string, number>();
   const rows = new Map<number, number>();
   const parents = new Set(all.map((item) => item.parent_id));
   return visible.map((component) => {
-    const depth = component.id.split(".").length - 1;
+    const depth = execution ? depths.get(component.id) as number : component.id.split(".").length - 1;
     const row = rows.get(depth) ?? 0;
     rows.set(depth, row + 1);
     return {
@@ -56,6 +60,9 @@ export function graphNodes(
         parameterCount: component.parameter_count,
         hasChildren: parents.has(component.id),
         expanded: expanded.has(component.id),
+        shapes: component.input_shapes === undefined
+          ? ""
+          : `${component.input_shapes.join(", ") || "—"} → ${component.output_shapes?.join(", ") || "—"}`,
       },
     };
   });
@@ -64,19 +71,31 @@ export function graphNodes(
 export function graphEdges(components: ModelComponent[]): Edge[] {
   const ids = new Set(components.map((item) => item.id));
   return components.flatMap((component) =>
-    component.parent_id !== null && ids.has(component.parent_id)
-      ? [
-          {
-            id: `${component.parent_id}-${component.id}`,
-            source: component.parent_id,
+    (component.input_ids ?? (component.parent_id === null ? [] : [component.parent_id]))
+      .filter((source) => ids.has(source))
+      .map((source) => ({
+            id: `${source}-${component.id}`,
+            source,
             target: component.id,
             type: "smoothstep",
             markerEnd: { type: MarkerType.ArrowClosed, color: "var(--color-strong)" },
             style: { stroke: "var(--color-strong)", strokeWidth: 1.5 },
-          },
-        ]
-      : [],
+          })),
   );
+}
+
+function isExecutionGraph(components: ModelComponent[]): boolean {
+  return components.some((component) => component.input_ids !== undefined);
+}
+
+function executionDepths(components: ModelComponent[]): Map<string, number> {
+  const depths = new Map<string, number>();
+  for (const component of components) {
+    const inputs = component.input_ids ?? [];
+    const depth = inputs.reduce((maximum, input) => Math.max(maximum, depths.get(input) ?? 0), -1) + 1;
+    depths.set(component.id, depth);
+  }
+  return depths;
 }
 
 export function toggleSet(values: Set<string>, value: string): Set<string> {

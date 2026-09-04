@@ -1,5 +1,5 @@
 import type { SearchOption } from "@/shared/ui";
-import type { Run } from "@/shared/types";
+import type { ProjectColumns, Run } from "@/shared/types";
 
 const RUN_FIELDS: { id: string; label: string }[] = [
   { id: "name", label: "Run" },
@@ -18,6 +18,10 @@ const PREFERRED_METRIC_WORDS = ["loss", "val"];
  */
 export function defaultRunColumns(runs: Run[]): string[] {
   const metrics = [...new Set(runs.flatMap((run) => Object.keys(run.summary)))].sort();
+  return defaultRunColumnsFromMetrics(metrics);
+}
+
+export function defaultRunColumnsFromMetrics(metrics: string[]): string[] {
   const preferred = metrics.filter((name) =>
     PREFERRED_METRIC_WORDS.some((word) => name.toLowerCase().includes(word)),
   );
@@ -39,6 +43,11 @@ export function metricLeaf(name: string): string {
 export function runColumnOptions(runs: Run[]): SearchOption[] {
   const params = [...new Set(runs.flatMap((run) => Object.keys(run.params)))].sort();
   const metrics = [...new Set(runs.flatMap((run) => Object.keys(run.summary)))].sort();
+  return projectColumnOptions({ params, metrics });
+}
+
+export function projectColumnOptions(columns: ProjectColumns): SearchOption[] {
+  const { params, metrics } = columns;
   return [
     ...RUN_FIELDS.map((field) => ({ value: field.id, label: field.label, group: "Run" })),
     ...params.map((name) => ({ value: `param:${name}`, label: name, group: "Parameters" })),

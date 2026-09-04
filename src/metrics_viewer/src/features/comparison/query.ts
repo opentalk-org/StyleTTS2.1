@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import type { Run } from "@/shared/types";
 
-import { getArtifacts, getMetricNames, getPlotRange, runPlotsQuery } from "./server";
+import { getArtifacts, getPlotRange, runPlotsQuery } from "./server";
 
 export function useArtifactsQuery(runs: Run[], enabled: boolean) {
   const runIds = runs.map((run) => run.id);
@@ -11,6 +11,7 @@ export function useArtifactsQuery(runs: Run[], enabled: boolean) {
     queryFn: () => getArtifacts({ data: runIds }),
     enabled: enabled && runIds.length > 0,
     staleTime: 30 * 60 * 1000,
+    placeholderData: (previous) => previous,
   });
 }
 
@@ -23,17 +24,8 @@ export function usePlotsQuery(projectId: string | null, sql: string, selectedRun
     }),
     enabled: enabled && projectId !== null && selectedRunIds.length > 0,
     staleTime: 5 * 60 * 1000,
+    placeholderData: (previous) => previous,
     retry: false,
-  });
-}
-
-export function useMetricNamesQuery(runIds: string[], enabled: boolean) {
-  const ids = [...runIds].sort();
-  return useQuery({
-    queryKey: ["metric-names", ids],
-    queryFn: () => getMetricNames({ data: ids }),
-    enabled: enabled && ids.length > 0,
-    staleTime: Infinity,
   });
 }
 

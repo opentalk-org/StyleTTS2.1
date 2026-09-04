@@ -22,7 +22,7 @@ export async function readArtifactJson<T>(runId: string, path: string) {
 export function artifactKind(contentType: string, name: string) {
   if (contentType.startsWith("audio/")) return "audio";
   if (contentType.startsWith("image/")) return "image";
-  if (contentType.includes("json") || contentType.includes("plotly") || name.endsWith(".plot")) return "plot";
+  if (contentType.includes("plotly") || name.endsWith(".plot")) return "plot";
   return "text";
 }
 

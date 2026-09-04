@@ -3,7 +3,7 @@ import { lazy, Suspense, useCallback, useMemo } from "react";
 
 import { useViewerStore } from "@/features/viewer/store";
 import type { ChartTheme } from "@/shared/chart";
-import type { Run } from "@/shared/types";
+import type { PanelColumns, Run } from "@/shared/types";
 import { cn, Collapsible, IconButton } from "@/shared/ui";
 
 import { moveBefore, orderByList } from "@/shared/order";
@@ -12,7 +12,7 @@ import type { Plot, Section } from "./logic";
 
 const ChartCard = lazy(() => import("./ChartCard").then((module) => ({ default: module.ChartCard })));
 
-export type Columns = "1" | "2" | "3" | "auto";
+export type Columns = PanelColumns;
 
 export const COLUMN_CLASSES: Record<Columns, string> = {
   "1": "grid-cols-1",
