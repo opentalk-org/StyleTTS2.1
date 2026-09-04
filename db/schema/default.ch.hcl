@@ -238,7 +238,6 @@ table "audio_files" {
   }
   column "score" {
     type = Float32
-    default = "inf"
   }
   column "language" {
     type = sql("LowCardinality(String)")

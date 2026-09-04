@@ -216,7 +216,7 @@ impl GiveMeDataService for GiveMeData {
         }
         info!(run = %run_id, "receiving metrics");
 
-        match metrics::receive(self.metrics_dir, &run_id.to_string(), stream).await {
+        match metrics::receive(&self.database, self.metrics_dir, run_id, stream).await {
             Ok(response) => {
                 info!(
                     run = %run_id,

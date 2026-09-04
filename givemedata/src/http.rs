@@ -21,6 +21,7 @@ use crate::{
 #[derive(Deserialize)]
 struct CreateRunRequest {
     project_id: Uuid,
+    name: String,
     data_config: DataConfig,
     train_config: Map<String, Value>,
 }
@@ -35,6 +36,7 @@ struct CreateRunResponse {
 struct RunResponse {
     run_id: Uuid,
     project_id: Uuid,
+    name: String,
     data_config: DataConfig,
     train_config: Map<String, Value>,
     status: Option<RunStatus>,
@@ -67,6 +69,7 @@ async fn create_run(
     let run_id = run_manager
         .create(
             request.project_id,
+            &request.name,
             &request.data_config,
             &request.train_config,
         )
@@ -119,6 +122,7 @@ impl From<Run> for RunResponse {
         Self {
             run_id: run.id,
             project_id: run.project_id,
+            name: run.name,
             data_config: run.data_config,
             train_config: run.train_config,
             status: run.status,

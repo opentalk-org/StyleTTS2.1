@@ -45,6 +45,7 @@ impl TryFrom<i8> for RunStatus {
 pub struct Run {
     pub id: Uuid,
     pub project_id: Uuid,
+    pub name: String,
     pub data_config: DataConfig,
     pub train_config: Map<String, Value>,
     pub status: Option<RunStatus>,
@@ -57,6 +58,7 @@ struct RunConfigRow {
     id: Uuid,
     #[serde(with = "clickhouse::serde::uuid")]
     project_id: Uuid,
+    name: String,
     data_config: String,
     train_config: String,
 }
@@ -76,6 +78,7 @@ struct RunRow {
     id: Uuid,
     #[serde(with = "clickhouse::serde::uuid")]
     project_id: Uuid,
+    name: String,
     data_config: String,
     train_config: String,
     status: Option<i8>,
@@ -90,6 +93,7 @@ impl TryFrom<RunRow> for Run {
         Ok(Self {
             id: row.id,
             project_id: row.project_id,
+            name: row.name,
             data_config: serde_json::from_str(&row.data_config)?,
             train_config: serde_json::from_str(&row.train_config)?,
             status: row.status.map(RunStatus::try_from).transpose()?,
@@ -111,12 +115,14 @@ impl RunManager {
     pub async fn create(
         &self,
         project_id: Uuid,
+        name: &str,
         data_config: &DataConfig,
         train_config: &Map<String, Value>,
     ) -> anyhow::Result<Uuid> {
         let row = RunConfigRow {
             id: Uuid::new_v4(),
             project_id,
+            name: name.to_owned(),
             data_config: serde_json::to_string(data_config)?,
             train_config: serde_json::to_string(train_config)?,
         };
