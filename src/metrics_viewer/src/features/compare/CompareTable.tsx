@@ -31,8 +31,7 @@ export function CompareTable({ runs, columns, runColors, onlyDifferences }: Comp
   const numeric = useMemo(() => new Set(visibleColumns.filter((column) => isNumeric(runs, column))), [visibleColumns, runs]);
   const ordered = useMemo(() => {
     if (sort === null) return runs;
-    const sign = sort.direction === "asc" ? 1 : -1;
-    return [...runs].sort((a, b) => sign * compareValue(rawValue(a, sort.column), rawValue(b, sort.column)));
+    return [...runs].sort((a, b) => compareValue(rawValue(a, sort.column), rawValue(b, sort.column), sort.direction));
   }, [runs, sort]);
 
   function cycleSort(column: string) {
@@ -57,12 +56,12 @@ export function CompareTable({ runs, columns, runColors, onlyDifferences }: Comp
     );
   }
 
-  const template = `minmax(220px, 280px) ${visibleColumns.map(() => "minmax(120px, 1fr)").join(" ")}`;
+  const template = `240px ${visibleColumns.map((column) => numeric.has(column) ? "120px" : "168px").join(" ")}`;
 
   return (
-    <div className="min-w-max">
+    <div className="w-max min-w-full">
       <div className="sticky top-0 z-10 grid border-b border-line bg-surface" style={{ gridTemplateColumns: template }}>
-        <Caption className="sticky left-0 z-10 flex h-thead items-center border-r border-line bg-surface px-3">Run</Caption>
+        <Caption className="sticky left-0 z-10 flex h-thead items-center border-r border-line bg-surface px-2">Run</Caption>
         {visibleColumns.map((column) => {
           const active = sort?.column === column;
           return (
@@ -72,7 +71,7 @@ export function CompareTable({ runs, columns, runColors, onlyDifferences }: Comp
               onClick={() => cycleSort(column)}
               title={column}
               className={cn(
-                "group flex h-thead min-w-0 items-center gap-1 px-3 text-left",
+                "group flex h-thead min-w-0 items-center gap-1 px-2 text-left",
                 numeric.has(column) ? "flex-row-reverse" : "",
                 active ? "text-fg" : "text-fg-muted hover:text-fg-secondary",
               )}
@@ -89,7 +88,7 @@ export function CompareTable({ runs, columns, runColors, onlyDifferences }: Comp
       </div>
       {ordered.map((run) => (
         <div key={run.id} className="grid border-b border-line hover:bg-hover" style={{ gridTemplateColumns: template }}>
-          <span className="sticky left-0 z-10 flex min-w-0 items-center gap-2 border-r border-line bg-surface px-3 py-1.5">
+          <span className="sticky left-0 z-10 flex min-w-0 items-center gap-2 border-r border-line bg-surface px-2 py-1.5">
             <span className="size-2.5 shrink-0 rounded-full" style={{ background: runColors[run.id] }} />
             <Clipped value={run.name} className="text-xs font-medium text-fg" />
           </span>
@@ -97,7 +96,7 @@ export function CompareTable({ runs, columns, runColors, onlyDifferences }: Comp
             <Clipped
               key={column}
               value={cellText(run, column)}
-              className={cn("px-3 py-1.5 font-mono text-xs tabular-nums text-fg-secondary", numeric.has(column) ? "text-right" : "")}
+              className={cn("px-2 py-1.5 font-mono text-xs tabular-nums text-fg-secondary", numeric.has(column) ? "text-right" : "")}
             />
           ))}
         </div>

@@ -142,13 +142,21 @@ export interface ArrayMetricSeries {
 /** Compare tab: which runs and columns make up the table, and what the plot shows. */
 export interface ComparePlotConfig {
   id: string;
-  /** "run" or a column id; the x axis of the plot. */
+  /** A scatter/bar chart of one field against another, or parallel coordinates over many. */
+  kind: ComparePlotKind;
+  /** "run" or a column id; the x axis of the chart. */
   x: string;
-  /** Column id plotted on y, or null while the plot is not configured yet. */
+  /** Column id plotted on y, or null while the chart is not configured yet. */
   y: string | null;
   logX: boolean;
   logY: boolean;
+  /** Parallel coordinates: the axes in order, or null for the automatic default. */
+  dims: string[] | null;
+  /** Parallel coordinates: numeric column the lines are coloured by, or null for run colours. */
+  colorBy: string | null;
 }
+
+export type ComparePlotKind = "chart" | "parallel";
 
 export interface CompareConfig {
   /** Column ids, or null for the automatic default. */

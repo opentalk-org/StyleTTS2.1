@@ -1,4 +1,4 @@
-import { ChartScatter, Columns3, Plus } from "lucide-react";
+import { ChartScatter, Columns3, Plus, Waypoints } from "lucide-react";
 import { lazy, Suspense, useMemo, useState } from "react";
 
 import { useViewerStore } from "@/features/viewer/store";
@@ -12,6 +12,7 @@ import { CompareTable } from "./CompareTable";
 import { defaultCompareColumns } from "./logic";
 
 const ComparePlot = lazy(() => import("./ComparePlot").then((module) => ({ default: module.ComparePlot })));
+const ParallelPlot = lazy(() => import("./ParallelPlot").then((module) => ({ default: module.ParallelPlot })));
 
 interface ComparePanelProps {
   projectColumns: ProjectColumns;
@@ -88,9 +89,12 @@ export function ComparePanel({ projectColumns, runs, runColors, chart }: Compare
                   { value: "auto" as const, label: "Auto" },
                 ]}
               />
-              <Button variant="secondary" icon={<Plus size={14} />} onClick={addComparePlot}>
+              <Button variant="secondary" icon={<Plus size={14} />} onClick={() => addComparePlot("chart")}>
                 Add plot
                 {compare.plots.length > 0 ? <ChartScatter size={13} className="text-fg-muted" /> : null}
+              </Button>
+              <Button variant="secondary" icon={<Waypoints size={14} />} onClick={() => addComparePlot("parallel")}>
+                Parallel
               </Button>
             </>
           }
@@ -100,17 +104,30 @@ export function ComparePanel({ projectColumns, runs, runColors, chart }: Compare
             {compare.plots.length > 0 ? (
               <div className={cn("grid gap-3", COLUMN_CLASSES[grid])}>
                 <Suspense fallback={null}>
-                  {compare.plots.map((plot) => (
-                    <ComparePlot
-                      key={plot.id}
-                      runs={runs}
-                      runColors={runColors}
-                      chart={chart}
-                      config={plot}
-                      onConfig={(patch) => updateComparePlot(plot.id, patch)}
-                      onRemove={() => removeComparePlot(plot.id)}
-                    />
-                  ))}
+                  {compare.plots.map((plot) =>
+                    plot.kind === "parallel" ? (
+                      <ParallelPlot
+                        key={plot.id}
+                        runs={runs}
+                        runColors={runColors}
+                        columns={columns}
+                        columnOptions={columnOptions}
+                        config={plot}
+                        onConfig={(patch) => updateComparePlot(plot.id, patch)}
+                        onRemove={() => removeComparePlot(plot.id)}
+                      />
+                    ) : (
+                      <ComparePlot
+                        key={plot.id}
+                        runs={runs}
+                        runColors={runColors}
+                        chart={chart}
+                        config={plot}
+                        onConfig={(patch) => updateComparePlot(plot.id, patch)}
+                        onRemove={() => removeComparePlot(plot.id)}
+                      />
+                    ),
+                  )}
                 </Suspense>
               </div>
             ) : null}

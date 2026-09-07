@@ -14,7 +14,7 @@ from .tracking import TrackerRun
 from .checkpoints import CheckpointPublisher
 from .config import load_training_config
 from .profiling import configure_profiling, profiling_fn
-from .parameter_monitor import write_model_graph
+from .execution_graph import ExecutionGraphRecorder
 from .reporting import TrainingReporter, start_run
 from .runtime.trainer import Trainer
 from .runtime.validation import Validator
@@ -63,10 +63,11 @@ def train(
         config.pretrained_model or "from scratch",
     )
     runtime = build_training_runtime(config, accelerator)
-    if accelerator.is_main_process and run is not None:
-        graph_path = log_dir / "model_graph.json"
-        write_model_graph(runtime.models.modules, graph_path)
-        run.log_artifact(graph_path, "monitor", step=runtime.initial_step)
+    graph_recorder = (
+        ExecutionGraphRecorder(runtime.models.modules)
+        if accelerator.is_main_process and run is not None
+        else None
+    )
     logger.info(
         "runtime ready device=%s processes=%s initial_step=%s",
         accelerator.device,
@@ -149,6 +150,12 @@ def train(
             else:
                 with profiling_fn("train_step"):
                     step_metrics = trainer.train_step(batch)
+            if graph_recorder is not None:
+                graph_recorder.close()
+                graph_path = log_dir / "model_graph.json"
+                graph_recorder.write(graph_path)
+                run.log_artifact(graph_path, "monitor", step=trainer.step + 1)
+                graph_recorder = None
             timing.compute_seconds += time.monotonic() - compute_started
             trainer.step += 1
             step = trainer.step

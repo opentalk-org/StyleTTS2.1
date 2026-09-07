@@ -28,7 +28,19 @@ const viewSchema = z.object({
   plotOrder: z.array(z.string()),
   compare: z.object({
     columns: z.array(z.string()).nullable(),
-    plots: z.array(z.object({ id: z.string(), x: z.string(), y: z.string().nullable(), logX: z.boolean(), logY: z.boolean() })),
+    plots: z.array(
+      z.object({
+        id: z.string(),
+        // Plots saved before parallel coordinates existed carry neither kind nor axes.
+        kind: z.enum(["chart", "parallel"]).default("chart"),
+        x: z.string(),
+        y: z.string().nullable(),
+        logX: z.boolean(),
+        logY: z.boolean(),
+        dims: z.array(z.string()).nullable().default(null),
+        colorBy: z.string().nullable().default(null),
+      }),
+    ),
   }),
   sql: z.string(),
   chartColumns: panelColumnsSchema,

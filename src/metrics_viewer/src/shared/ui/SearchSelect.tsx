@@ -64,14 +64,27 @@ export function SearchOptionList({
   }, [options, query]);
 
 
+  /**
+   * Multi-select lists pin what is already ticked to the top, in selection order, so the
+   * current choice reads as a list of its own instead of being scattered through the groups.
+   */
   const groups = useMemo(() => {
+    const pinned = multiple
+      ? selected.flatMap((value) => matches.filter((option) => option.value === value))
+      : [];
+    const pinnedValues = new Set(pinned.map((option) => option.value));
     const byGroup = new Map<string, SearchOption[]>();
     for (const option of matches) {
+      if (pinnedValues.has(option.value)) continue;
       const key = option.group ?? "";
       byGroup.set(key, [...(byGroup.get(key) ?? []), option]);
     }
-    return [...byGroup.entries()];
-  }, [matches]);
+    const rest: [string, SearchOption[]][] = [...byGroup.entries()];
+    return pinned.length === 0 ? rest : [["Selected", pinned] as [string, SearchOption[]], ...rest];
+  }, [matches, multiple, selected]);
+
+  /** The options as the list actually renders them; keyboard navigation follows this order. */
+  const ordered = useMemo(() => groups.flatMap(([, groupOptions]) => groupOptions), [groups]);
 
   useEffect(() => {
     setActiveIndex(0);
@@ -89,22 +102,22 @@ export function SearchOptionList({
   }, [activeIndex]);
 
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (matches.length === 0) return;
+    if (ordered.length === 0) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActiveIndex((index) => (index + 1) % matches.length);
+      setActiveIndex((index) => (index + 1) % ordered.length);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActiveIndex((index) => (index - 1 + matches.length) % matches.length);
+      setActiveIndex((index) => (index - 1 + ordered.length) % ordered.length);
     } else if (event.key === "Home") {
       event.preventDefault();
       setActiveIndex(0);
     } else if (event.key === "End") {
       event.preventDefault();
-      setActiveIndex(matches.length - 1);
+      setActiveIndex(ordered.length - 1);
     } else if (event.key === "Enter") {
       event.preventDefault();
-      onSelect(matches[activeIndex].value);
+      onSelect(ordered[activeIndex].value);
       if (!multiple) setQuery("");
     }
   }

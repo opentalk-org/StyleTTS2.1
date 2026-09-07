@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 import { defaultRunColumns, defaultRunColumnsFromMetrics } from "@/shared/metrics";
-import type { CompareConfig, ComparePlotConfig, GlobalPlotSettings, PanelColumns, PanelTab, PlotSettings, Run, RunScope, Workspace } from "@/shared/types";
+import type { CompareConfig, ComparePlotConfig, ComparePlotKind, GlobalPlotSettings, PanelColumns, PanelTab, PlotSettings, Run, RunScope, Workspace } from "@/shared/types";
 
 const STORAGE_KEY = "runflow.metrics.workspaces.v5";
 const STARS_KEY = "runflow.metrics.stars.v1";
@@ -99,7 +99,7 @@ interface ViewerState {
   /** Records the order of one group of charts; other charts keep their existing order. */
   setPlotOrder: (names: string[]) => void;
   setCompareColumns: (columns: string[] | null) => void;
-  addComparePlot: () => void;
+  addComparePlot: (kind: ComparePlotKind) => void;
   updateComparePlot: (id: string, patch: Partial<ComparePlotConfig>) => void;
   removeComparePlot: (id: string) => void;
   saveWorkspace: (name: string) => Workspace;
@@ -219,9 +219,12 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   setPlotOrder: (names) =>
     set((state) => ({ plotOrder: [...state.plotOrder.filter((name) => !names.includes(name)), ...names] })),
   setCompareColumns: (columns) => set((state) => ({ compare: { ...state.compare, columns } })),
-  addComparePlot: () =>
+  addComparePlot: (kind) =>
     set((state) => ({
-      compare: { ...state.compare, plots: [...state.compare.plots, { id: crypto.randomUUID(), x: "run", y: null, logX: false, logY: false }] },
+      compare: {
+        ...state.compare,
+        plots: [...state.compare.plots, { id: crypto.randomUUID(), kind, x: "run", y: null, logX: false, logY: false, dims: null, colorBy: null }],
+      },
     })),
   updateComparePlot: (id, patch) =>
     set((state) => ({

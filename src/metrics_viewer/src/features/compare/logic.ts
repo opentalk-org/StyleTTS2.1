@@ -58,11 +58,12 @@ export function defaultCompareColumns(runs: Run[]): string[] {
   return [...differing.map((name) => `param:${name}`), ...chosen.map((name) => `metric:${name}`)];
 }
 
-export function compareValue(a: Scalar | undefined, b: Scalar | undefined): number {
-  if (a === undefined) return 1;
-  if (b === undefined) return -1;
-  if (typeof a === "number" && typeof b === "number") return a - b;
-  return String(a).localeCompare(String(b), undefined, { numeric: true });
+export function compareValue(a: Scalar | undefined, b: Scalar | undefined, direction: "asc" | "desc"): number {
+  if (a === undefined || b === undefined) return Number(a === undefined) - Number(b === undefined);
+  const compared = typeof a === "number" && typeof b === "number"
+    ? a - b
+    : String(a).localeCompare(String(b), undefined, { numeric: true });
+  return (direction === "asc" ? 1 : -1) * compared;
 }
 
 export function axisLabel(column: string): string {

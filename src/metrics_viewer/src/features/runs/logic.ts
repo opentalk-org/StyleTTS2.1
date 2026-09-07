@@ -26,8 +26,7 @@ export function filterRuns(runs: Run[], filter: RunFilter, sort: RunSort | null,
     sort === null
       ? matches
       : [...matches].sort(
-          (a, b) =>
-            (sort.direction === "asc" ? 1 : -1) * compare(sortValue(a, sort.column), sortValue(b, sort.column)),
+          (a, b) => compareSortValues(sortValue(a, sort.column), sortValue(b, sort.column), sort.direction),
         );
   return [...ordered.filter((run) => starred.includes(run.id)), ...ordered.filter((run) => !starred.includes(run.id))];
 }
@@ -73,20 +72,25 @@ export function formatMetric(value: number): string {
   return value.toFixed(4);
 }
 
-export function sortValue(run: Run, column: string): Scalar {
+export function sortValue(run: Run, column: string): Scalar | undefined {
   if (column === "name") return run.name;
   if (column === "status") return STATUS_ORDER.indexOf(run.status);
   if (column === "startedAt") return run.startedAt;
   if (column === "duration") return durationMs(run);
-  if (column.startsWith("param:")) return run.params[column.slice(6)] ?? "";
-  if (column.startsWith("metric:")) return run.summary[column.slice(7)] ?? Number.NaN;
-  return "";
+  if (column.startsWith("param:")) return run.params[column.slice(6)];
+  if (column.startsWith("metric:")) return run.summary[column.slice(7)];
+  return undefined;
 }
 
-function compare(a: Scalar, b: Scalar): number {
+function compareSortValues(a: Scalar | undefined, b: Scalar | undefined, direction: SortDirection): number {
+  const aMissing = a === undefined || (typeof a === "number" && Number.isNaN(a));
+  const bMissing = b === undefined || (typeof b === "number" && Number.isNaN(b));
+  if (aMissing || bMissing) return Number(aMissing) - Number(bMissing);
+  return (direction === "asc" ? 1 : -1) * compareValues(a, b);
+}
+
+function compareValues(a: Scalar, b: Scalar): number {
   if (typeof a === "number" && typeof b === "number") {
-    if (Number.isNaN(a)) return 1;
-    if (Number.isNaN(b)) return -1;
     return a - b;
   }
   return String(a).localeCompare(String(b), undefined, { numeric: true });
