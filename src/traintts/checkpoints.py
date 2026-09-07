@@ -70,4 +70,4 @@ class CheckpointPublisher:
         )
         if self.data_client is not None:
             self.data_client.upload_checkpoint(step, dest)
-            logger.info("checkpoint uploaded to givemedata step=%s", step)
+            logger.info("checkpoint uploaded to tensorlane step=%s", step)

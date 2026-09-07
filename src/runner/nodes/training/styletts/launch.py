@@ -8,16 +8,18 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import UUID
 
+import yaml
+
 from runflow.runtime.cancellation import check_cancel
 
 
 def create_run(data_config: dict, train_config: str) -> UUID:
-    address = os.environ["GIVEMEDATA_HTTP_ADDR"].rstrip("/")
+    address = os.environ["TENSORLANE_HTTP_ADDR"].rstrip("/")
     request = Request(
-        f"{address}/trainings",
+        f"{address}/runs",
         data=json.dumps({
             "data_config": data_config,
-            "train_config": train_config,
+            "train_config": yaml.safe_load(train_config),
         }).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -28,11 +30,11 @@ def create_run(data_config: dict, train_config: str) -> UUID:
     except HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")
         raise RuntimeError(
-            f"givemedata rejected training creation: HTTP {error.code}: {detail}"
+            f"tensorlane rejected run creation: HTTP {error.code}: {detail}"
         ) from error
     except URLError as error:
         raise RuntimeError(
-            f"givemedata HTTP service is unavailable at {address}: {error.reason}"
+            f"tensorlane HTTP service is unavailable at {address}: {error.reason}"
         ) from error
     return UUID(payload["run_id"])
 
@@ -65,7 +67,7 @@ def train(
         command.append("--multi_gpu")
     command.extend(("-m", "traintts.main"))
     environment = os.environ.copy()
-    environment["GIVEMEDATA_RUN_ID"] = str(run_id)
+    environment["TENSORLANE_RUN_ID"] = str(run_id)
     log_path = output_dir / "training.log"
     with log_path.open(mode="w+") as output:
         process = subprocess.Popen(

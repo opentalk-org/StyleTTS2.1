@@ -4,7 +4,7 @@ import shutil
 import time
 from pathlib import Path
 
-import givemedata_client as gmd
+import tensorlane
 import numpy as np
 import torch
 from torch.profiler import ProfilerActivity, profile
@@ -29,7 +29,7 @@ def train(
     config_path: str,
     *,
     run: TrackerRun | None,
-    data_client: gmd.GiveMeDataClient,
+    data_client: tensorlane.Client,
 ) -> None:
     config = load_training_config(config_path)
     logger.info(
@@ -86,12 +86,12 @@ def train(
     active_stage = None
 
     modality_id = config.PLBERT_config.get("modality_id", 0)
-    train_batches = gmd.dataloader(
+    train_batches = tensorlane.dataloader(
         data_client,
         device=config.device,
         modality_id=modality_id,
     )
-    validation_batches = gmd.dataloader(
+    validation_batches = tensorlane.dataloader(
         data_client,
         validation=True,
         device=config.device,
@@ -99,7 +99,7 @@ def train(
         modality_id=modality_id,
     )
     logger.info(
-        "givemedata session ready session=%s dataset=%s",
+        "tensorlane run ready run=%s dataset=%s",
         data_client.run_id,
         config.data_params.dataset_id,
     )

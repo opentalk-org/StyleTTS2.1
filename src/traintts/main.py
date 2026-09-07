@@ -1,13 +1,13 @@
 """Standalone StyleTTS finetuning entry point.
 
 Replicates what the training workflow's node graph used to assemble, without
-the runner/backend/DB machinery. Data comes from the givemedata service
-(GIVEMEDATA_ADDR, default localhost:8181) using the training selected by
-GIVEMEDATA_RUN_ID. Named assets are downloaded through the same service;
-checkpoints, metrics, and metric artifacts are streamed back to givemedata.
+the runner/backend/DB machinery. Data comes from the Tensorlane service
+(TENSORLANE_ADDR, default localhost:8181) using the run selected by
+TENSORLANE_RUN_ID. Named assets are downloaded through the same service;
+checkpoints, metrics, and metric artifacts are streamed back to Tensorlane.
 
 The run spec (RunSpec yaml) is not a local file anymore: it is fetched from the
-givemedata service, which passes its stored training config through verbatim.
+Tensorlane service, which passes its stored training config through verbatim.
 
 Usage:
     python -m traintts.main [--dry-run]
@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from givemedata_client.client import GiveMeDataClient
+from tensorlane import Client
 from pydantic import BaseModel, ConfigDict, Field
 
 from .build_config import ASR_YAML, PLBERT_YAML, build_config, load_yaml, write_config
@@ -183,9 +183,9 @@ def _plbert_config(
     return config
 
 
-def _resolve_assets(spec: RunSpec, client: GiveMeDataClient) -> None:
+def _resolve_assets(spec: RunSpec, client: Client) -> None:
     """Turn asset names from the train config into local paths, downloading
-    through the givemedata Asset RPC (skipped when already cached on disk)."""
+    through the Tensorlane Asset RPC (skipped when already cached on disk)."""
     assets_dir = Path(os.environ.get("TRAINTTS_ASSETS_DIR", ".cache/traintts/assets"))
     for field in ("asr_model", "f0_model", "plbert"):
         name = getattr(spec, field)
@@ -209,16 +209,16 @@ def main(argv: list[str] | None = None) -> None:
     arguments = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
-    run_id = os.environ["GIVEMEDATA_RUN_ID"]
-    data_client = GiveMeDataClient(run_id)
+    run_id = os.environ["TENSORLANE_RUN_ID"]
+    data_client = Client(run_id)
     try:
         _run(arguments, data_client)
     finally:
         data_client.close()
 
 
-def _run(arguments: argparse.Namespace, data_client: GiveMeDataClient) -> None:
-    logger.info("fetched train config from givemedata training=%s", data_client.run_id)
+def _run(arguments: argparse.Namespace, data_client: Client) -> None:
+    logger.info("fetched train config from tensorlane run=%s", data_client.run_id)
     spec = RunSpec.model_validate(yaml.safe_load(data_client.train_config))
     if not arguments.dry_run:
         # dry-run keeps the asset names as-is; nothing is downloaded

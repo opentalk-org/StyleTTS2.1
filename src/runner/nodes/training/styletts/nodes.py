@@ -56,7 +56,7 @@ class StyleTtsFinetuneSettings(StrictSettings):
 
 class StyleTtsFinetuneNode(Node):
     NODE_TYPE = "StyleTtsFinetune"
-    DESCRIPTION = "Create a GiveMeData session from the frontend config and launch traintts."
+    DESCRIPTION = "Create a Tensorlane run from the frontend config and launch traintts."
     CATEGORY = "Training"
     SETTINGS = StyleTtsFinetuneSettings
     INPUTS = {

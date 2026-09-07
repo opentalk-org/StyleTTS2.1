@@ -20,6 +20,8 @@
     dnvr.url = "github:dialohq/dnvr";
     dnvr.inputs.nixpkgs.follows = "nixpkgsClickhouse";
     dialo-overlays.url = "github:dialohq/nix-overlays";
+    tensorlane.url = "github:opentalk-org/tensorlane";
+    tensorlane.inputs.nixpkgs.follows = "nixpkgsRust";
   };
 
   outputs =
@@ -207,8 +209,8 @@
 
               VITE_BACKEND_URL = "http://127.0.0.1:8001";
               RUNNER_ID = "runner-1";
-              GIVEMEDATA_HTTP_ADDR = "http://127.0.0.1:8180";
-              GIVEMEDATA_ADDR = "127.0.0.1:8181";
+              TENSORLANE_HTTP_ADDR = "http://127.0.0.1:8180";
+              TENSORLANE_ADDR = "127.0.0.1:8181";
 
               HF_HOME = "$DNVR_ROOT/.cache/huggingface";
 
@@ -391,12 +393,32 @@
               };
             };
 
+            processes.tensorlane = {
+              env = {
+                CLICKHOUSE_URL = "http://127.0.0.1:8123";
+                CLICKHOUSE_USER = "default";
+                CLICKHOUSE_PASSWORD = "";
+                GRPC_PORT = "8181";
+                HTTP_PORT = "8180";
+                SYNTHETIC = "true";
+                AWS_ENDPOINT_URL = "http://127.0.0.1:9001";
+                AWS_ACCESS_KEY_ID = "runflow";
+                AWS_SECRET_ACCESS_KEY = "runflow-secret";
+                S3_BUCKET = "runflow";
+                CACHE_DIR = "$DNVR_ROOT/.tensorlane/cache";
+                ASSETS_DIR = "$DNVR_ROOT/.tensorlane/assets";
+                CHECKPOINT_DIR = "$DNVR_ROOT/.tensorlane/checkpoints";
+                METRICS_DIR = "$DNVR_ROOT/.tensorlane/artifacts";
+              };
+              command = "${inputs.tensorlane.packages.${system}.server}/bin/tensorlane";
+            };
+
             processes.metrics-viewer = {
               env = {
                 CLICKHOUSE_HTTP_URL = "http://127.0.0.1:8123/default";
                 CLICKHOUSE_USER = "default";
                 CLICKHOUSE_PASSWORD = "";
-                METRICS_DIR = "$DNVR_ROOT/.givemedata/metrics";
+                METRICS_DIR = "$DNVR_ROOT/.tensorlane/artifacts";
               };
               command = "cd $DNVR_ROOT/src/metrics_viewer && npm run dev -- --host 127.0.0.1 --port 5174 --strictPort";
             };
@@ -450,87 +472,6 @@
               '';
             };
 
-            scripts.givemedata-gen = {
-              description = "Generate Python proto stubs for givemedata-client.";
-              runtimeInputs = [ pkgs.gnused ];
-              text = ''
-                cd "$DNVR_ROOT/givemedata-client"
-                uvx --from "grpcio-tools>=1.68,<1.72" python -m grpc_tools.protoc \
-                  -I ../givemedata/proto \
-                  --python_out=src \
-                  --pyi_out=src \
-                  --grpc_python_out=src \
-                  givemedata.proto
-                sed -i 's/^import givemedata_pb2/from . import givemedata_pb2/' src/givemedata_pb2_grpc.py
-              '';
-            };
-          };
-
-          dnvr.shells.givemedata = {
-            imports = [ ./nix/clickhouse.nix ];
-
-            packages = [
-              python
-              pkgs.ruff
-              pkgs.uv
-              pkgs.pyright
-              pkgsRust.cargo
-              pkgsRust.clippy
-              pkgsRust.rustc
-              pkgsRust.rust-analyzer
-              pkgsRust.rustfmt
-              pkgsRust.protobuf
-            ];
-
-            env = {
-              CLICKHOUSE_URL = "http://127.0.0.1:8123";
-              CLICKHOUSE_USER = "default";
-              CLICKHOUSE_PASSWORD = "";
-              GRPC_PORT = "8181";
-              HTTP_PORT = "8180";
-              SYNTHETIC = "true";
-
-              AWS_ENDPOINT_URL = "http://127.0.0.1:9001";
-              AWS_ACCESS_KEY_ID = "givemedata";
-              AWS_SECRET_ACCESS_KEY = "givemedata";
-              S3_BUCKET = "givemedata";
-
-              CACHE_DIR = "$DNVR_ROOT/.givemedata/cache";
-              ASSETS_DIR = "$DNVR_ROOT/.givemedata/assets";
-              CHECKPOINT_DIR = "$DNVR_ROOT/.givemedata/checkpoints";
-              METRICS_DIR = "$DNVR_ROOT/.givemedata/metrics";
-
-              UV_PYTHON = lib.getExe python;
-              UV_PYTHON_PREFERENCE = "only-system";
-              UV_PYTHON_DOWNLOADS = "never";
-            };
-
-            shellHook = ''
-              if [ -f .env ]; then
-                set -a
-                . ./.env
-                set +a
-              fi
-              unset NIX_CFLAGS_COMPILE CFLAGS CXXFLAGS
-              if [ -e .venv/bin/activate ]; then
-                . .venv/bin/activate
-              fi
-            '';
-
-            scripts.givemedata-gen = {
-              description = "Generate Python proto stubs for givemedata-client.";
-              runtimeInputs = [ pkgs.gnused ];
-              text = ''
-                cd "$DNVR_ROOT/givemedata-client"
-                uvx --from "grpcio-tools>=1.68,<1.72" python -m grpc_tools.protoc \
-                  -I ../givemedata/proto \
-                  --python_out=src \
-                  --pyi_out=src \
-                  --grpc_python_out=src \
-                  givemedata.proto
-                sed -i 's/^import givemedata_pb2/from . import givemedata_pb2/' src/givemedata_pb2_grpc.py
-              '';
-            };
           };
         };
     };

@@ -1,4 +1,4 @@
-# Config for the givemedata service (--data-config): everything sessions need
+# Config for the Tensorlane service: everything runs need
 # for sampling and fetching. Values that also appear in train-config.yaml are
 # intentionally duplicated — the two files are separate beasts and are assumed
 # equal for now.

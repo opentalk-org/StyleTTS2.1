@@ -3,10 +3,10 @@ import math
 from pathlib import Path
 
 import torch
-from givemedata_client import GiveMeDataClient
+from tensorlane import Client
 
 from .config import TrainingConfig
-from .tracking import GiveMeDataTracker, MetricValue, TrackerRun
+from .tracking import MetricValue, TensorlaneTracker, TrackerRun
 from .val_sample_export import ValidationSampleArtifacts
 
 
@@ -71,12 +71,12 @@ class TrainingReporter:
                 )
 
 
-def start_run(config: TrainingConfig, data_client: GiveMeDataClient) -> TrackerRun:
+def start_run(config: TrainingConfig, data_client: Client) -> TrackerRun:
     logging.getLogger(__name__).info(
-        "streaming metrics through givemedata training=%s",
+        "streaming metrics through tensorlane run=%s",
         data_client.run_id,
     )
-    return GiveMeDataTracker(data_client.metrics())
+    return TensorlaneTracker(data_client.metrics())
 
 
 def _scalar(value: torch.Tensor | float) -> float:

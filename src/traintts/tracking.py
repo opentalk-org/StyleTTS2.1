@@ -1,4 +1,4 @@
-"""Tracker protocol and local or GiveMeData-backed adapters."""
+"""Tracker protocol and local or Tensorlane-backed adapters."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath
 from typing import Protocol
 
-from givemedata_client import MetricsStream
+from tensorlane import MetricsStream
 
 logger = logging.getLogger(__name__)
 MetricValue = float | Sequence[float]
@@ -32,7 +32,7 @@ class TrackerRun(Protocol):
     def close(self) -> None: ...
 
 
-class GiveMeDataTracker:
+class TensorlaneTracker:
     def __init__(self, stream: MetricsStream) -> None:
         self._stream = stream
 
@@ -64,8 +64,19 @@ class GiveMeDataTracker:
             for name, value in metrics.items()
         })
         logger.info("METRICS %s", json.dumps(record, sort_keys=True))
+        scalar_metrics = {
+            name: value for name, value in metrics.items() if isinstance(value, (int, float))
+        }
+        array_metrics = [
+            name for name, value in metrics.items() if not isinstance(value, (int, float))
+        ]
+        if array_metrics:
+            raise TypeError(
+                "Tensorlane's Python client does not expose array metrics: "
+                + ", ".join(array_metrics)
+            )
         self._stream.log_metrics(
-            metrics,
+            scalar_metrics,
             step=step,
             timestamp_unix_ms=timestamp_unix_ms,
         )

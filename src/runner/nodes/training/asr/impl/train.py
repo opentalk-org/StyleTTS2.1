@@ -9,7 +9,7 @@ from uuid import UUID
 
 import numpy as np
 import torch
-import givemedata_client as gmd
+import tensorlane
 from matplotlib.figure import Figure
 from torch import nn
 
@@ -263,12 +263,12 @@ def train_asr_model(
     if step >= total_steps:
         raise ValueError("asr_checkpoint_already_reached_total_steps")
 
-    data_client = gmd.GiveMeDataClient(os.environ["GIVEMEDATA_RUN_ID"])
-    train_batches = gmd.dataloader(
+    data_client = tensorlane.Client(os.environ["TENSORLANE_RUN_ID"])
+    train_batches = tensorlane.dataloader(
         data_client,
         device=device.type,
     )
-    validation_batches = gmd.dataloader(
+    validation_batches = tensorlane.dataloader(
         data_client,
         validation=True,
         device=device.type,
