@@ -100,9 +100,9 @@ export function ComparePanel({ projectColumns, runs, runColors, chart }: Compare
           }
         />
         <div className="min-h-0 flex-1 overflow-auto">
-          <div className="flex flex-col gap-4 p-4">
+          <div className="flex flex-col gap-2 p-2">
             {compare.plots.length > 0 ? (
-              <div className={cn("grid gap-3", COLUMN_CLASSES[grid])}>
+              <div className={cn("grid gap-1.5", COLUMN_CLASSES[grid])}>
                 <Suspense fallback={null}>
                   {compare.plots.map((plot) =>
                     plot.kind === "parallel" ? (

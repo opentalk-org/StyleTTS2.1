@@ -67,7 +67,7 @@ export function ChartSection({ section, open, onToggle, columns, runs, runColors
         </IconButton>
       }
     >
-      <div className={cn("grid gap-3", COLUMN_CLASSES[columns])}>
+      <div className={cn("grid gap-1.5", COLUMN_CLASSES[columns])}>
         <Suspense fallback={null}>
           {ordered.map((plot) => (
             <ChartCard

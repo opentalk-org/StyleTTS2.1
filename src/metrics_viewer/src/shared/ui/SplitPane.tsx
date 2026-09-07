@@ -118,18 +118,12 @@ export function SplitPane({
           onKeyDown={onKeyDown}
           title="Drag to resize"
           className={cn(
-            "group relative z-10 flex-none touch-none",
-            isColumns ? "w-1.5 cursor-col-resize" : "h-1.5 cursor-row-resize",
+            "relative z-10 flex-none touch-none bg-line transition-colors duration-100 ease-out before:absolute before:content-[''] hover:bg-accent focus-visible:bg-accent",
+            isColumns
+              ? "w-px cursor-col-resize before:-inset-x-1.5 before:inset-y-0"
+              : "h-px cursor-row-resize before:inset-x-0 before:-inset-y-1.5",
           )}
-        >
-          <span
-            aria-hidden
-            className={cn(
-              "absolute bg-line transition-colors duration-100 ease-out group-hover:bg-accent group-focus-visible:bg-accent",
-              isColumns ? "inset-y-0 left-0 w-px" : "inset-x-0 top-0 h-px",
-            )}
-          />
-        </div>
+        />
       ) : null}
 
       {collapsed === "end" ? endRail : (

@@ -13,6 +13,7 @@ import { nearestRun, pointerDataX, useCursorOverlay, useCursorStore, useRunHighl
 import { useAncestorCuts, useAncestorRunIds, useLineageGroups, useRunLineage } from "@/features/lineage/query";
 
 import { usePlotRangeQuery, type PlotRange } from "./query";
+import { usePlotResize } from "./usePlotResize";
 import { buildTraces, clipAncestors, formatX, groupPlots, plotLayout, resolveSettings, valuesAt, type EffectiveSettings, type Plot as PlotData } from "./logic";
 
 const CARD_PLOT_HEIGHT = 200;
@@ -64,9 +65,10 @@ export const ChartCard = memo(function ChartCard({ plot, runs, runColors, chart,
     () => buildTraces(displayedPlot, runs, effective, runColors, chart, ancestors),
     [ancestors, displayedPlot, runs, effective, runColors, chart],
   );
-  const layout = useMemo(() => plotLayout(effective, chart, CARD_PLOT_HEIGHT), [effective, chart]);
+  const layout = useMemo(() => plotLayout(effective, chart, displayedPlot, CARD_PLOT_HEIGHT), [effective, chart, displayedPlot]);
   useCursorOverlay(graphRef, overlayRef, effective.axis);
   useRunHighlight(graphRef);
+  usePlotResize(cardRef, graphRef);
 
   useEffect(() => {
     const card = cardRef.current;

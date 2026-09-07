@@ -24,20 +24,38 @@ export const DEFAULT_COMPARE: CompareConfig = { columns: null, plots: [] };
 
 /** LTTB keeps each run/metric series bounded without materializing raw points in the client. */
 export const DEFAULT_SQL = `SELECT
-  name AS plot,
-  run_id,
+  sampled.name AS plot,
+  sampled.run_id AS run_id,
   point.1 AS x,
-  point.2 AS y
+  point.2 AS y,
+  toUnixTimestamp64Milli(metric_timestamp) AS wall,
+  dateDiff('millisecond', started_at, metric_timestamp) / 1000.0 AS rel
 FROM (
   SELECT
     name,
     run_id,
     largestTriangleThreeBuckets(1000)(step, value) AS points
+  FROM (
+    SELECT run_id, name, step, argMax(value, timestamp) AS value, max(timestamp) AS timestamp
+    FROM metrics
+    WHERE run_id IN {run_ids:Array(UUID)}
+    GROUP BY run_id, name, step
+  )
+  GROUP BY run_id, name
+) AS sampled
+ARRAY JOIN points AS point
+INNER JOIN (
+  SELECT run_id, name, step, max(timestamp) AS metric_timestamp
   FROM metrics
   WHERE run_id IN {run_ids:Array(UUID)}
-  GROUP BY run_id, name
-)
-ARRAY JOIN points AS point`;
+  GROUP BY run_id, name, step
+) AS times ON times.run_id = sampled.run_id AND times.name = sampled.name AND times.step = toUInt64(point.1)
+INNER JOIN (
+  SELECT run_id, min(timestamp) AS started_at
+  FROM run_status
+  WHERE run_id IN {run_ids:Array(UUID)}
+  GROUP BY run_id
+) AS starts ON starts.run_id = sampled.run_id`;
 
 export function isDefaultSql(sql: string): boolean {
   return sql === DEFAULT_SQL;

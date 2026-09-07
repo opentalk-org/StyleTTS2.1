@@ -57,7 +57,7 @@ export function baseLayout(theme: ChartTheme, height?: number): Partial<Layout> 
   return {
     autosize: true,
     ...(height === undefined ? {} : { height }),
-    margin: { l: 48, r: 12, t: 8, b: 32 },
+    margin: { l: 8, r: 8, t: 8, b: 8, pad: 2 },
     paper_bgcolor: "transparent",
     plot_bgcolor: "transparent",
     font: { color: theme.axisText, family: theme.sans, size: 11 },
@@ -89,6 +89,7 @@ export function axis(
     showline: false,
     showspikes: false,
     nticks: 10,
+    automargin: true,
     ticks: "outside",
     ticklen: 4,
     tickcolor: theme.grid,

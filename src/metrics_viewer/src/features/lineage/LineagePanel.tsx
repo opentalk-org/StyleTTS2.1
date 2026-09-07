@@ -39,6 +39,7 @@ interface LineagePanelProps {
   allRuns: Run[];
   runColors: Record<string, string>;
   chart: ChartTheme;
+  onRevealRun: (runId: string, additive: boolean) => void;
 }
 
 export function LineagePanel(props: LineagePanelProps) {
@@ -69,10 +70,9 @@ const BOX_Z = 0;
 const EDGE_Z = 1;
 const NODE_Z = 2;
 
-function LineageGraph({ allRuns, runColors, chart }: LineagePanelProps) {
+function LineageGraph({ allRuns, runColors, chart, onRevealRun }: LineagePanelProps) {
   const projectId = useViewerStore((state) => state.projectId);
   const selectedRunIds = useViewerStore((state) => state.selectedRunIds);
-  const focusRun = useViewerStore((state) => state.focusRun);
   const theme = useViewerStore((state) => state.theme);
   const { fitView } = useReactFlow();
   const [search, setSearch] = useState("");
@@ -121,7 +121,7 @@ function LineageGraph({ allRuns, runColors, chart }: LineagePanelProps) {
       width: box.width,
       height: box.height,
       position: { x: box.x, y: box.y },
-      data: { box, color: colorOf(box), active: selection.has(box.runId), onOpen: focusRun },
+      data: { box, color: colorOf(box), active: selection.has(box.runId), onOpen: onRevealRun },
     }));
     const byRun = new Map(visible.boxes.map((box) => [box.runId, box]));
     const checkpointNodes: Node<CheckpointNodeData>[] = visible.nodes.map((checkpoint) => {
@@ -143,7 +143,7 @@ function LineageGraph({ allRuns, runColors, chart }: LineagePanelProps) {
       };
     });
     return [...boxNodes, ...checkpointNodes];
-  }, [chart.series, colorOf, focusRun, selectedId, selection, visible]);
+  }, [chart.series, colorOf, onRevealRun, selectedId, selection, visible]);
 
   // Selecting a checkpoint traces its resume chain: those links come forward, the rest fade.
   const chainEdgeIds = useMemo(() => {
@@ -276,7 +276,7 @@ function LineageGraph({ allRuns, runColors, chart }: LineagePanelProps) {
           nodes={visible.nodes}
           runNames={runNames}
           run={allRuns.find((run) => run.id === selected.runId)}
-          onOpenRun={(runId, additive) => focusRun(runId, additive)}
+          onOpenRun={onRevealRun}
           onSelect={setSelectedId}
           onClose={() => setSelectedId(null)}
         />

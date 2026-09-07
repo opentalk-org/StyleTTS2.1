@@ -1,4 +1,4 @@
-import { BarChart3, Columns3, GitBranch, Images, Network } from "lucide-react";
+import { BarChart3, Columns3, GitBranch, Images } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useMemo } from "react";
 
@@ -20,10 +20,6 @@ const LineagePanel = lazy(() =>
   import("@/features/lineage/LineagePanel").then((module) => ({ default: module.LineagePanel })),
 );
 
-const ModelMonitor = lazy(() =>
-  import("@/features/model-monitor/ModelMonitor").then((module) => ({ default: module.ModelMonitor })),
-);
-
 interface PanelsProps {
   /** Selected runs, drawn in media and used for the list of charts. */
   runs: Run[];
@@ -34,9 +30,10 @@ interface PanelsProps {
   projectColumns: ProjectColumns;
   runColors: Record<string, string>;
   chart: ChartTheme;
+  onRevealRun: (runId: string, additive: boolean) => void;
 }
 
-export function Panels({ runs, scopedRuns, allRuns, projectColumns, runColors, chart }: PanelsProps) {
+export function Panels({ runs, scopedRuns, allRuns, projectColumns, runColors, chart, onRevealRun }: PanelsProps) {
   const queryClient = useQueryClient();
   const lineage = useRunLineage();
   const tab = useViewerStore((state) => state.tab);
@@ -44,6 +41,7 @@ export function Panels({ runs, scopedRuns, allRuns, projectColumns, runColors, c
   const projectId = useViewerStore((state) => state.projectId);
   const runningSql = useViewerStore((state) => state.runningSql);
   const selectedRunIds = useViewerStore((state) => state.selectedRunIds);
+  const runScope = useViewerStore((state) => state.runScope);
   const defaultQuery = isDefaultSql(runningSql);
   const artifactsQuery = useArtifactsQuery(runs, tab === "media");
   // Charts read the scoped runs; the list of charts still comes from the selected ones, so
@@ -63,22 +61,22 @@ export function Panels({ runs, scopedRuns, allRuns, projectColumns, runColors, c
     [artifactsQuery.data],
   );
   const mediaCount = artifactNames(artifacts).length;
-  useVisibleUpdates({ projectId, runIds: selectedRunIds, tab });
 
   const items: TabItem<PanelTab>[] = [
     { id: "charts", label: "Charts", icon: <BarChart3 />, count: plots.length > 0 ? plots.length : undefined },
-    { id: "compare", label: "Compare", icon: <Columns3 /> },
     { id: "media", label: "Media", icon: <Images />, count: mediaCount > 0 ? mediaCount : undefined },
+    { id: "compare", label: "Compare", icon: <Columns3 /> },
     { id: "lineage", label: "Lineage", icon: <GitBranch /> },
-    {
-      id: "graph",
-      label: "Model graph",
-      icon: <Network />,
-      disabledReason: runs.length === 1 ? undefined : "Select exactly one run",
-    },
   ];
 
-  const activeTab: PanelTab = tab === "graph" && runs.length !== 1 ? "charts" : tab;
+  const activeTab = tab;
+  const updateRunIds = activeTab === "lineage"
+    ? allRuns.map((run) => run.id)
+    : activeTab === "charts"
+      ? scopedRunIds
+      : selectedRunIds;
+  const watchLineage = activeTab === "lineage" || (activeTab === "charts" && runScope === "lineage");
+  useVisibleUpdates({ projectId, runIds: updateRunIds, tab: activeTab, watchLineage, enabled: true });
 
   return (
     <section aria-label="Panels" className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">
@@ -104,12 +102,7 @@ export function Panels({ runs, scopedRuns, allRuns, projectColumns, runColors, c
       {activeTab === "media" ? <MediaPanel runs={runs} runColors={runColors} artifacts={artifacts} /> : null}
       {activeTab === "lineage" ? (
         <Suspense fallback={null}>
-          <LineagePanel allRuns={allRuns} runColors={runColors} chart={chart} />
-        </Suspense>
-      ) : null}
-      {activeTab === "graph" ? (
-        <Suspense fallback={null}>
-          <ModelMonitor run={runs[0]} chart={chart} />
+          <LineagePanel allRuns={allRuns} runColors={runColors} chart={chart} onRevealRun={onRevealRun} />
         </Suspense>
       ) : null}
     </section>

@@ -1,7 +1,8 @@
 export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export type Scalar = string | number | boolean;
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 export type ArtifactKind = "audio" | "image" | "text" | "plot";
-export type PanelTab = "charts" | "compare" | "media" | "lineage" | "graph";
+export type PanelTab = "charts" | "compare" | "media" | "lineage";
 export type XAxis = "step" | "lineage" | "relative" | "wall";
 
 /**
@@ -55,6 +56,12 @@ export interface Artifact {
   contentType: string;
   sizeBytes: number;
   source: string;
+}
+
+export interface RunLog {
+  runId: string;
+  timestamp: number;
+  message: string;
 }
 
 export interface PlotQueryResult {

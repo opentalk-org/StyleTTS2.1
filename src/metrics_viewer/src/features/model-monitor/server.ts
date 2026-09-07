@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { readArtifactJson } from "@/features/artifacts/server";
 import { query } from "@/server/clickhouse";
 import { uuidSchema } from "@/shared/ids";
 import type { ModelComponent } from "@/shared/types";
@@ -37,7 +38,7 @@ export const getModelGraph = createServerFn({ method: "GET" })
       LIMIT 1`, { run_id: data });
     const row = rows[0];
     if (row === undefined) throw new Error("Model graph not found");
-    return JSON.parse(row.path) as ModelComponent[];
+    return readArtifactJson<ModelComponent[]>(row.runId, row.path);
   });
 
 export const getArrayMetricNames = createServerFn({ method: "GET" })

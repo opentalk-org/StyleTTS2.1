@@ -14,10 +14,11 @@ interface TopBarProps {
   onTheme: () => void;
   onHelp: () => void;
   anyRunning: boolean;
+  refreshing: boolean;
   onRefresh: () => void;
 }
 
-export function TopBar({ projects, project, theme, onTheme, onHelp, anyRunning, onRefresh }: TopBarProps) {
+export function TopBar({ projects, project, theme, onTheme, onHelp, anyRunning, refreshing, onRefresh }: TopBarProps) {
   const selectProject = useViewerStore((state) => state.selectProject);
   const [projectMenu, setProjectMenu] = useState(false);
 
@@ -76,8 +77,12 @@ export function TopBar({ projects, project, theme, onTheme, onHelp, anyRunning, 
       <div className="flex shrink-0 items-center gap-1">
         {project === undefined ? null : <ViewsMenu projectName={project.name} />}
         {project === undefined ? null : (
-          <IconButton label={anyRunning ? "Refresh runs (some are running)" : "Refresh runs"} onClick={onRefresh}>
-            <RefreshCw size={14} className={anyRunning ? "text-accent" : undefined} />
+          <IconButton
+            label={refreshing ? "Refreshing visible data" : anyRunning ? "Refresh data (some runs are running)" : "Refresh data"}
+            disabled={refreshing}
+            onClick={onRefresh}
+          >
+            <RefreshCw size={14} className={refreshing ? "animate-spin" : anyRunning ? "text-accent" : undefined} />
           </IconButton>
         )}
         <IconButton label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"} onClick={onTheme}>

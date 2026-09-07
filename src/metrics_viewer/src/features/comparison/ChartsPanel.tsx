@@ -62,7 +62,7 @@ export function ChartsPanel({ runs, runColors, chart, plots, result, error, fetc
   const hiddenCount = plots.filter((plot) => viewer.hiddenPlots.includes(plot.name)).length;
   const customSql = !isDefaultSql(viewer.sql);
   const dirty = viewer.sql !== viewer.runningSql;
-  const hasTime = !rangeQueries && (result === null || result.wall !== null);
+  const hasTime = rangeQueries || result === null || result.wall !== null;
   const lineage = useRunLineage();
   const ancestorCount = runs.filter((run) => !viewer.selectedRunIds.includes(run.id)).length;
   const xAxisOptions = useMemo(
@@ -189,7 +189,7 @@ export function ChartsPanel({ runs, runColors, chart, plots, result, error, fetc
           </span>
         </div>
 
-        <div className="flex flex-col gap-4 p-4">
+        <div className="flex flex-col gap-2 p-2">
           {runs.length === 0 ? (
             <EmptyState icon={<BarChart3 />} title="Select runs to compare" description="Tick runs in the list on the left. Every metric they logged appears here as a chart." />
           ) : null}

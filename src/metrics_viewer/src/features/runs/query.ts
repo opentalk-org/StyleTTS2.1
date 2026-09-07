@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { getProjectBootstrap, getRunDetails, getRunMetrics } from "./server";
+import { getProjectBootstrap, getRunConfig, getRunDetails, getRunMetrics } from "./server";
 
 export function useProjectBootstrapQuery(projectId: string | null) {
   return useQuery({
@@ -28,6 +28,14 @@ export function useRunMetricsQuery(projectId: string | null, names: string[]) {
     queryFn: () => getRunMetrics({ data: { projectId: projectId as string, names: metricNames } }),
     enabled: projectId !== null && metricNames.length > 0,
     placeholderData: (previous) => previous,
+    staleTime: Infinity,
+  });
+}
+
+export function useRunConfigQuery(runId: string) {
+  return useQuery({
+    queryKey: ["run-config", runId],
+    queryFn: () => getRunConfig({ data: runId }),
     staleTime: Infinity,
   });
 }

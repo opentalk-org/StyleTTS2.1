@@ -1,4 +1,4 @@
-import { Check, Star } from "lucide-react";
+import { Check, PanelRightOpen, Star } from "lucide-react";
 import { useState, type KeyboardEvent, type MouseEvent } from "react";
 
 import { useCursorStore } from "@/shared/cursor";
@@ -25,6 +25,7 @@ export interface RunRowProps {
   offset: number;
   onToggle: (extend: boolean) => void;
   onFocusRun: (additive: boolean) => void;
+  onInspect: () => void;
   onStar: () => void;
   onColor: (color: string | null) => void;
   onFocusRow: () => void;
@@ -46,6 +47,7 @@ export function RunRow({
   offset,
   onToggle,
   onFocusRun,
+  onInspect,
   onStar,
   onColor,
   onFocusRow,
@@ -201,6 +203,18 @@ export function RunRow({
                 <Star size={12} fill={starred ? "currentColor" : "none"} />
               </button>
               <span className="min-w-0 truncate">{run.name}</span>
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-label={`Inspect ${run.name}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onInspect();
+                }}
+                className="ml-auto grid size-5 shrink-0 place-items-center rounded-sm text-fg-muted opacity-0 hover:bg-hover hover:text-fg group-hover/row:opacity-100 focus:opacity-100"
+              >
+                <PanelRightOpen size={12} />
+              </button>
             </>
           ) : column === "status" ? (
             <StatusBadge status={run.status} />

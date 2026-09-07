@@ -6,12 +6,17 @@ import { query } from "@/server/clickhouse";
 import { uuidSchema } from "@/shared/ids";
 import type { Artifact, RunStatus } from "@/shared/types";
 
+import { logChanges } from "./log_changes";
+
 const epoch = "1970-01-01 00:00:00.000000000";
+const emptyBaseline = "1970-01-01 00:00:00.000000001";
 const cursorSchema = z.object({
   status: z.string(),
   metrics: z.string(),
   arrayMetrics: z.string(),
   artifacts: z.string(),
+  lineage: z.string(),
+  logs: z.string(),
 });
 const changesInputSchema = z.object({
   projectId: uuidSchema,
@@ -19,6 +24,8 @@ const changesInputSchema = z.object({
   watchMetrics: z.boolean(),
   watchArrayMetrics: z.boolean(),
   watchArtifacts: z.boolean(),
+  watchLineage: z.boolean(),
+  watchLogs: z.boolean(),
   cursor: cursorSchema,
 });
 
@@ -54,7 +61,7 @@ interface ArtifactChangeRow {
   cursor: string;
   runId: string;
   step: string;
-  timestamp: string;
+  timestampMs: string;
   name: string;
   path: string;
   contentType: string;
@@ -66,6 +73,8 @@ export interface UpdateCursor {
   metrics: string;
   arrayMetrics: string;
   artifacts: string;
+  lineage: string;
+  logs: string;
 }
 
 export const initialUpdateCursor: UpdateCursor = {
@@ -73,30 +82,49 @@ export const initialUpdateCursor: UpdateCursor = {
   metrics: epoch,
   arrayMetrics: epoch,
   artifacts: epoch,
+  lineage: epoch,
+  logs: epoch,
 };
 
 export const pollVisibleChanges = createServerFn({ method: "POST" })
   .validator(changesInputSchema)
   .handler(async ({ data }) => {
-    const [status, metrics, arrayMetrics, artifacts] = await Promise.all([
+    const baseline = {
+      status: data.cursor.status === epoch,
+      metrics: data.watchMetrics && data.cursor.metrics === epoch,
+      arrayMetrics: data.watchArrayMetrics && data.cursor.arrayMetrics === epoch,
+      artifacts: data.watchArtifacts && data.cursor.artifacts === epoch,
+      lineage: data.watchLineage && data.cursor.lineage === epoch,
+      logs: data.watchLogs && data.cursor.logs === epoch,
+    };
+    const [status, metrics, arrayMetrics, artifacts, lineage, logs] = await Promise.all([
       statusChanges(data.projectId, data.cursor.status),
       data.watchMetrics ? scalarMetricChanges(data.runIds, data.cursor.metrics) : emptyMetricChange(data.cursor.metrics),
       data.watchArrayMetrics
         ? arrayMetricChanges(data.runIds, data.cursor.arrayMetrics)
         : emptyArrayMetricChange(data.cursor.arrayMetrics),
       data.watchArtifacts ? artifactChanges(data.runIds, data.cursor.artifacts) : emptyArtifactChange(data.cursor.artifacts),
+      data.watchLineage ? lineageChanges(data.projectId, data.cursor.lineage) : emptyLineageChange(data.cursor.lineage),
+      data.watchLogs
+        ? logChanges(data.runIds, data.cursor.logs, epoch, emptyBaseline)
+        : { cursor: data.cursor.logs, rows: [] },
     ]);
     return {
+      baseline,
       cursor: {
         status: status.cursor,
         metrics: metrics.cursor,
         arrayMetrics: arrayMetrics.cursor,
         artifacts: artifacts.cursor,
+        lineage: lineage.cursor,
+        logs: logs.cursor,
       },
       runs: status.runs,
       metrics: metrics.rows,
       arrayMetrics: arrayMetrics.rows,
       artifacts: artifacts.rows,
+      lineageChanged: lineage.changed,
+      logs: logs.rows,
     };
   });
 
@@ -193,12 +221,32 @@ async function artifactChanges(runIds: string[], after: string) {
       WHERE run_id IN {run_ids:Array(UUID)} AND timestamp > {after:DateTime64(9)}) AS next_cursor
     SELECT toString(next_cursor) AS cursor,
       toString(run_id) AS runId, step,
-      toUnixTimestamp64Milli(timestamp) AS timestamp,
+      toUnixTimestamp64Milli(timestamp) AS timestampMs,
       name, path, content_type AS contentType, size_bytes AS sizeBytes
     FROM artifacts
     WHERE run_id IN {run_ids:Array(UUID)}
       AND timestamp > {after:DateTime64(9)}`, { run_ids: runIds, after });
   return { cursor: rows[0]?.cursor ?? after, rows: rows.map(toArtifact) };
+}
+
+async function lineageChanges(projectId: string, after: string) {
+  const rows = await query<{ cursor: string }>(`
+    SELECT toString(max(timestamp)) AS cursor
+    FROM (
+      SELECT toDateTime64(a.updated_at, 9) AS timestamp
+      FROM assets AS a FINAL
+      INNER JOIN runs AS r ON r.id = a.run_id
+      WHERE r.project_id = {project_id:UUID} AND a.kind = 'checkpoint'
+        AND a.updated_at > {after:DateTime64(9)}
+      UNION ALL
+      SELECT timestamp
+      FROM metrics
+      WHERE run_id IN (SELECT id FROM runs WHERE project_id = {project_id:UUID})
+        AND name NOT LIKE 'system/%' AND timestamp > {after:DateTime64(9)}
+    )`, { project_id: projectId, after });
+  const candidate = rows[0]?.cursor ?? epoch;
+  const cursor = candidate === epoch ? (after === epoch ? emptyBaseline : after) : candidate;
+  return { cursor, changed: after !== epoch && cursor !== after };
 }
 
 function emptyMetricChange(cursor: string) {
@@ -213,6 +261,10 @@ function emptyArtifactChange(cursor: string) {
   return { cursor, rows: [] as Artifact[] };
 }
 
+function emptyLineageChange(cursor: string) {
+  return { cursor, changed: false };
+}
+
 async function latestTimestamp(
   table: "run_status" | "metrics" | "array_metrics" | "artifacts",
   filter: string,
@@ -222,7 +274,8 @@ async function latestTimestamp(
     SELECT toString(max(timestamp)) AS cursor
     FROM ${table}
     WHERE ${filter}`, params);
-  return rows[0]?.cursor ?? epoch;
+  const cursor = rows[0]?.cursor ?? epoch;
+  return cursor === epoch ? emptyBaseline : cursor;
 }
 
 function toArtifact(row: ArtifactChangeRow): Artifact {
@@ -232,7 +285,7 @@ function toArtifact(row: ArtifactChangeRow): Artifact {
     runId: row.runId,
     name: row.name,
     step: Number(row.step),
-    timestamp: Number(row.timestamp),
+    timestamp: Number(row.timestampMs),
     kind,
     contentType: row.contentType,
     sizeBytes: Number(row.sizeBytes),

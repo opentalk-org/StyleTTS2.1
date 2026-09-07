@@ -5,15 +5,15 @@
  */
 
 :root {
-  --canvas: #141518;
-  --surface: #1b1c20;
-  --raised: #222328;
-  --inset: #101114;
-  --plot: #101114;
-  --hover: #26272d;
-  --selected: #1e2a3f;
-  --line: #2c2e34;
-  --strong: #5c5f67;
+  --canvas: #1a1f28;
+  --surface: #222936;
+  --raised: #2a3342;
+  --inset: #171c25;
+  --plot: #171c25;
+  --hover: #2e3848;
+  --selected: #263550;
+  --line: #394657;
+  --strong: #68778c;
 
   --fg: #e4e5e9;
   --fg-secondary: #b2b5bc;
@@ -23,10 +23,10 @@
   --accent: #5b9dff;
   --accent-hover: #7ab1ff;
   --accent-fg: #0b1220;
-  --accent-subtle: #1e2a3f;
+  --accent-subtle: #263550;
 
   --running: #5b9dff;
-  --running-bg: #1e2a3f;
+  --running-bg: #263550;
   --succeeded: #4fc38a;
   --succeeded-bg: #16302a;
   --failed: #f0716c;
@@ -34,9 +34,9 @@
   --queued: #e2b04a;
   --queued-bg: #332a17;
   --cancelled: #8b8e96;
-  --cancelled-bg: #26272d;
+  --cancelled-bg: #2e3848;
 
-  --chart-grid: #26272d;
+  --chart-grid: #334052;
   --chart-raw-opacity: 0.25;
 
   --series-1: #f2994a;

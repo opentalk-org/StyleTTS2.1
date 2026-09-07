@@ -5,7 +5,7 @@ import type { Run } from "@/shared/types";
 import { getArtifacts, getPlotRange, runPlotsQuery } from "./server";
 
 export function useArtifactsQuery(runs: Run[], enabled: boolean) {
-  const runIds = runs.map((run) => run.id);
+  const runIds = runs.map((run) => run.id).sort();
   return useQuery({
     queryKey: ["artifacts", runIds],
     queryFn: () => getArtifacts({ data: runIds }),

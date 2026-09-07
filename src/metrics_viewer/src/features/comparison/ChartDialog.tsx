@@ -62,7 +62,7 @@ export function ChartDialog({ plot, plots, runs, runColors, chart, hasTime, rang
     () => buildTraces(displayedPlot, runs, effective, runColors, chart, ancestors),
     [ancestors, displayedPlot, runs, effective, runColors, chart],
   );
-  const layout = useMemo(() => plotLayout(effective, chart), [effective, chart]);
+  const layout = useMemo(() => plotLayout(effective, chart, displayedPlot), [effective, chart, displayedPlot]);
   useCursorOverlay(graphRef, overlayRef, effective.axis);
   useRunHighlight(graphRef);
   const setCursor = useCursorStore((state) => state.set);

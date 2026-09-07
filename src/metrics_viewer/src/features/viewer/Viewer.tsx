@@ -33,6 +33,8 @@ export function Viewer() {
   const runMetricsQuery = useRunMetricsQuery(viewer.projectId, tableMetricNames);
   const { layout, patchLayout, toggleCollapsed, resetLayout } = useViewerLayout();
   const [helpOpen, setHelpOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [revealRunId, setRevealRunId] = useState<string | null>(null);
   const listedRuns = bootstrapQuery.data?.runs ?? [];
   const runDetails = runDetailsQuery.data ?? {};
   const runMetrics = runMetricsQuery.data ?? {};
@@ -99,18 +101,12 @@ export function Viewer() {
   const project = projects.find((candidate) => candidate.id === viewer.projectId);
   const anyRunning = runs.some((run) => run.status === "running");
 
-  function refreshVisible() {
-    void bootstrapQuery.refetch();
-    void projectsQuery.refetch();
-    void queryClient.invalidateQueries({ queryKey: ["run-details"] });
-    void queryClient.invalidateQueries({ queryKey: ["run-metrics", viewer.projectId] });
-    void queryClient.invalidateQueries({ queryKey: ["plot-range"] });
-    void queryClient.invalidateQueries({ queryKey: ["plots"] });
-    if (viewer.tab === "media") void queryClient.invalidateQueries({ queryKey: ["artifacts"] });
-    if (viewer.tab === "graph") {
-      void queryClient.invalidateQueries({ queryKey: ["model-graph"] });
-      void queryClient.invalidateQueries({ queryKey: ["array-metric-names"] });
-      void queryClient.invalidateQueries({ queryKey: ["array-metric"] });
+  async function refreshVisible() {
+    setRefreshing(true);
+    try {
+      await queryClient.refetchQueries({ type: "active" });
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -123,7 +119,8 @@ export function Viewer() {
         onTheme={toggleTheme}
         onHelp={() => setHelpOpen(true)}
         anyRunning={anyRunning}
-        onRefresh={refreshVisible}
+        refreshing={refreshing}
+        onRefresh={() => void refreshVisible()}
       />
 
       {viewer.projectId === null ? (
@@ -163,7 +160,9 @@ export function Viewer() {
               loading={bootstrapQuery.isPending}
               runColors={runColors}
               palette={chart.series}
+              chart={chart}
               layout={layout}
+              revealRunId={revealRunId}
               onCollapse={() => toggleCollapsed("start")}
               onStack={() =>
                 patchLayout({ orientation: layout.orientation === "columns" ? "rows" : "columns" })
@@ -179,6 +178,12 @@ export function Viewer() {
               projectColumns={bootstrapQuery.data?.columns ?? { params: [], metrics: [] }}
               runColors={runColors}
               chart={chart}
+              onRevealRun={(runId, additive) => {
+                viewer.focusRun(runId, additive);
+                setRevealRunId(null);
+                requestAnimationFrame(() => setRevealRunId(runId));
+                patchLayout({ collapsed: null });
+              }}
             />
           }
         />

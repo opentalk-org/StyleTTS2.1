@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { query } from "@/server/clickhouse";
 import { uuidSchema } from "@/shared/ids";
-import type { ProjectColumns, Run, RunStatus, Scalar } from "@/shared/types";
+import type { JsonValue, ProjectColumns, Run, RunStatus, Scalar } from "@/shared/types";
 
 interface RunRow {
   id: string;
@@ -30,6 +30,7 @@ interface RunMetricRow {
 }
 
 const runIdsSchema = uuidSchema.array();
+const runIdSchema = uuidSchema;
 const runMetricsSchema = z.object({ projectId: uuidSchema, names: z.array(z.string()) });
 
 export const getProjectBootstrap = createServerFn({ method: "GET" })
@@ -128,6 +129,22 @@ export const getRunDetails = createServerFn({ method: "POST" })
       };
     }
     return details;
+  });
+
+export const getRunConfig = createServerFn({ method: "GET" })
+  .validator(runIdSchema)
+  .handler(async ({ data }) => {
+    const rows = await query<{ dataConfig: string; trainConfig: string }>(`
+      SELECT data_config AS dataConfig, train_config AS trainConfig
+      FROM runs
+      WHERE id = {run_id:UUID}
+      LIMIT 1`, { run_id: data });
+    const row = rows[0];
+    if (row === undefined) throw new Error(`Run not found: ${data}`);
+    return {
+      data: JSON.parse(row.dataConfig) as JsonValue,
+      training: JSON.parse(row.trainConfig) as JsonValue,
+    };
   });
 
 function scalarParams(config: Record<string, unknown>) {

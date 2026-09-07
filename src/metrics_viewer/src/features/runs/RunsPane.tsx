@@ -1,20 +1,21 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, ArrowUp, Check, Minus } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
+import { Check, Minus } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import type { ViewerLayout } from "@/features/viewer/layout";
 import { useViewerStore } from "@/features/viewer/store";
-import { isNumericColumn, runColumnLabel } from "@/shared/metrics";
+import type { ChartTheme } from "@/shared/chart";
 import { moveBefore } from "@/shared/order";
 import type { ProjectColumns, Run, RunStatus } from "@/shared/types";
-import { Button, Caption, cn, EmptyState, Skeleton } from "@/shared/ui";
+import { Button, cn, EmptyState } from "@/shared/ui";
 
 import { columnMinWidth, columnWidth, filterRuns, type RunSort } from "./logic";
 import { ROW_HEIGHT, RunRow } from "./RunRow";
+import { RunInspector } from "./RunInspector";
+import { ColumnHeader, SkeletonRows } from "./RunsTableParts";
 import { RunsToolbar } from "./RunsToolbar";
 
 const CHECK_WIDTH = 28;
-const COLUMN_DRAG_TYPE = "application/x-metrics-column";
 const SWATCH_WIDTH = 24;
 
 interface RunsPaneProps {
@@ -23,18 +24,21 @@ interface RunsPaneProps {
   loading: boolean;
   runColors: Record<string, string>;
   palette: string[];
+  chart: ChartTheme;
   layout: ViewerLayout;
+  revealRunId: string | null;
   onCollapse: () => void;
   onStack: () => void;
   onResetLayout: () => void;
 }
 
-export function RunsPane({ runs, projectColumns, loading, runColors, palette, layout, onCollapse, onStack, onResetLayout }: RunsPaneProps) {
+export function RunsPane({ runs, projectColumns, loading, runColors, palette, chart, layout, revealRunId, onCollapse, onStack, onResetLayout }: RunsPaneProps) {
   const viewer = useViewerStore();
   const [query, setQuery] = useState("");
   const [statuses, setStatuses] = useState<RunStatus[]>([]);
   const [sort, setSort] = useState<RunSort | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
+  const [inspectedRun, setInspectedRun] = useState<Run | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<string | null>(null);
@@ -51,6 +55,17 @@ export function RunsPane({ runs, projectColumns, loading, runColors, palette, la
     estimateSize: () => ROW_HEIGHT,
     overscan: 12,
   });
+
+  useEffect(() => {
+    if (revealRunId === null) return;
+    setQuery("");
+    setStatuses([]);
+    const visibleRuns = filterRuns(runs, { query: "", statuses: [] }, sort, viewer.starredRunIds);
+    const index = visibleRuns.findIndex((run) => run.id === revealRunId);
+    if (index === -1) return;
+    setFocusIndex(index);
+    requestAnimationFrame(() => virtualizer.scrollToIndex(index, { align: "center" }));
+  }, [revealRunId, runs, sort, viewer.starredRunIds]);
 
   useEffect(() => {
     if (!focusPending.current) return;
@@ -197,6 +212,7 @@ export function RunsPane({ runs, projectColumns, loading, runColors, palette, la
                     anchorRef.current = run.id;
                     viewer.focusRun(run.id, additive);
                   }}
+                  onInspect={() => setInspectedRun(run)}
                   onStar={() => viewer.toggleStar(run.id)}
                   onColor={(color) => viewer.setRunColor(run.id, color)}
                   onFocusRow={() => setFocusIndex(row.index)}
@@ -228,77 +244,14 @@ export function RunsPane({ runs, projectColumns, loading, runColors, palette, la
           Select all
         </Button>
       </footer>
+      {inspectedRun === null ? null : (
+        <RunInspector
+          run={runs.find((run) => run.id === inspectedRun.id) ?? inspectedRun}
+          color={runColors[inspectedRun.id]}
+          chart={chart}
+          onClose={() => setInspectedRun(null)}
+        />
+      )}
     </section>
-  );
-}
-
-interface ColumnHeaderProps {
-  column: string;
-  sort: RunSort | null;
-  onSort: () => void;
-  onReorder: (from: string, to: string) => void;
-}
-
-/** Sortable header cell; drag one onto another to reorder the columns. */
-function ColumnHeader({ column, sort, onSort, onReorder }: ColumnHeaderProps) {
-  const active = sort?.column === column;
-  const [dropTarget, setDropTarget] = useState(false);
-
-  function onDragOver(event: DragEvent<HTMLButtonElement>) {
-    if (!event.dataTransfer.types.includes(COLUMN_DRAG_TYPE)) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    setDropTarget(true);
-  }
-
-  return (
-    <button
-      type="button"
-      role="columnheader"
-      aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}
-      title={`Sort by ${runColumnLabel(column)}. Drag to reorder`}
-      draggable
-      onDragStart={(event) => {
-        event.dataTransfer.setData(COLUMN_DRAG_TYPE, column);
-        event.dataTransfer.effectAllowed = "move";
-      }}
-      onDragOver={onDragOver}
-      onDragLeave={() => setDropTarget(false)}
-      onDrop={(event) => {
-        event.preventDefault();
-        setDropTarget(false);
-        onReorder(event.dataTransfer.getData(COLUMN_DRAG_TYPE), column);
-      }}
-      onClick={onSort}
-      className={cn(
-        "group flex h-full min-w-0 cursor-grab items-center gap-1 px-2 text-left active:cursor-grabbing",
-        isNumericColumn(column) ? "flex-row-reverse" : "",
-        active ? "text-fg" : "text-fg-muted hover:text-fg-secondary",
-        dropTarget ? "shadow-[inset_2px_0_0_0_var(--color-accent)]" : "",
-      )}
-    >
-      <Caption className="truncate text-inherit">{runColumnLabel(column)}</Caption>
-      {active ? (
-        sort.direction === "asc" ? <ArrowUp size={11} className="shrink-0" /> : <ArrowDown size={11} className="shrink-0" />
-      ) : (
-        <ArrowUp size={11} className="shrink-0 opacity-0 group-hover:opacity-60" />
-      )}
-    </button>
-  );
-}
-
-function SkeletonRows() {
-  return (
-    <div className="flex flex-col gap-px p-2">
-      {Array.from({ length: 8 }, (_, index) => (
-        <div key={index} className="flex h-7 items-center gap-3">
-          <Skeleton className="size-3.5" />
-          <Skeleton className="size-3 rounded-full" />
-          <Skeleton className="h-3 w-40" />
-          <Skeleton className="h-3 w-16" />
-          <Skeleton className="ml-auto h-3 w-12" />
-        </div>
-      ))}
-    </div>
   );
 }

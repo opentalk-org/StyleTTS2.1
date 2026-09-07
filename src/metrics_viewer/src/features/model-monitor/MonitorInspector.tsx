@@ -1,16 +1,16 @@
 import { lazy, Suspense } from "react";
 
 import type { ChartTheme } from "@/shared/chart";
-import type { ModelComponent } from "@/shared/types";
 import { Caption, EmptyState, Sheet, Skeleton } from "@/shared/ui";
 
-import { formatParameterCount } from "./graph";
+import { formatParameterCount } from "./hierarchy";
+import type { LevelNode } from "./level";
 
 const HistogramCard = lazy(() => import("./HistogramCard").then((module) => ({ default: module.HistogramCard })));
 
 interface MonitorInspectorProps {
   runId: string;
-  component: ModelComponent;
+  box: LevelNode;
   names: string[];
   loading: boolean;
   running: boolean;
@@ -18,43 +18,47 @@ interface MonitorInspectorProps {
   onClose: () => void;
 }
 
-export function MonitorInspector({ runId, component, names, loading, running, chart, onClose }: MonitorInspectorProps) {
-  const available = new Set(names);
-  const prefix = `param/${component.module_path ?? component.id}.`;
-  const parameterPaths = names
-    .filter((name) => name.startsWith(prefix))
-    .map((name) => name.slice("param/".length))
-    .sort((left, right) => {
-      const leftName = left.slice(left.lastIndexOf(".") + 1);
-      const rightName = right.slice(right.lastIndexOf(".") + 1);
-      return rank(leftName) - rank(rightName) || left.localeCompare(right);
-    })
-    .slice(0, 2);
-  const charts = parameterPaths.flatMap((path) => {
-    return [`param/${path}`, `grad/${path}`].filter((name) => available.has(name));
-  });
+export function MonitorInspector({ runId, box, names, loading, running, chart, onClose }: MonitorInspectorProps) {
+  const component = box.node.component;
+  const charts = histogramNames(names, component?.module_path ?? box.node.id);
 
   return (
-    <Sheet open onClose={onClose} title={component.module_type} width={440}>
+    <Sheet open onClose={onClose} title={box.label.moduleType} width={440}>
       <div className="flex flex-col gap-3 p-3">
         <dl className="m-0 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-xs">
           <Caption>Path</Caption>
-          <dd className="m-0 truncate font-mono text-fg" title={component.id}>{component.id}</dd>
+          <dd className="m-0 truncate font-mono text-fg" title={box.node.id}>{box.node.id}</dd>
           <Caption>Parameters</Caption>
-          <dd className="m-0 font-mono tabular-nums text-fg">{formatParameterCount(component.parameter_count)}</dd>
-          <Caption>Tensors</Caption>
-          <dd className="m-0 font-mono text-fg-secondary">
-            {component.parameter_names.map((name) => `${name}: ${component.parameter_shapes?.[name] ?? "shape unavailable"}`).join(", ") || "—"}
+          <dd className="m-0 font-mono tabular-nums text-fg">{formatParameterCount(box.parameterCount)}</dd>
+          <Caption>Invocations</Caption>
+          <dd className="m-0 font-mono tabular-nums text-fg-secondary">
+            {box.invocationCount}
+            {box.repeatCount > 1 ? ` in ${box.repeatCount} repeats of this block` : ""}
           </dd>
-          <Caption>Inputs</Caption>
-          <dd className="m-0 font-mono text-fg-secondary">{component.input_shapes?.join(", ") || "—"}</dd>
-          <Caption>Outputs</Caption>
-          <dd className="m-0 font-mono text-fg-secondary">{component.output_shapes?.join(", ") || "—"}</dd>
+          {component === null || component.input_ids === undefined ? null : (
+            <>
+              <Caption>Tensors</Caption>
+              <dd className="m-0 font-mono text-fg-secondary">
+                {component.parameter_names
+                  .map((name) => `${name}: ${component.parameter_shapes?.[name] ?? "shape unavailable"}`)
+                  .join(", ") || "—"}
+              </dd>
+              <Caption>Inputs</Caption>
+              <dd className="m-0 font-mono text-fg-secondary">{component.input_shapes?.join(", ") || "—"}</dd>
+              <Caption>Outputs</Caption>
+              <dd className="m-0 font-mono text-fg-secondary">{component.output_shapes?.join(", ") || "—"}</dd>
+            </>
+          )}
         </dl>
         {loading ? (
           <Skeleton className="h-64" />
         ) : charts.length === 0 ? (
-          <EmptyState compact icon={<span />} title="No histograms" description="This module has not logged parameter or gradient histograms." />
+          <EmptyState
+            compact
+            icon={<span />}
+            title="No histograms"
+            description="No parameter or gradient histogram was logged under this path."
+          />
         ) : (
           <Suspense fallback={<Skeleton className="h-64" />}>
             {charts.map((name) => (
@@ -65,6 +69,22 @@ export function MonitorInspector({ runId, component, names, loading, running, ch
       </div>
     </Sheet>
   );
+}
+
+/** The two most telling tensors under a path, each paired with its gradient series. */
+function histogramNames(names: string[], path: string): string[] {
+  const available = new Set(names);
+  const prefix = `param/${path}.`;
+  return names
+    .filter((name) => name.startsWith(prefix))
+    .map((name) => name.slice("param/".length))
+    .sort((left, right) => {
+      const leftName = left.slice(left.lastIndexOf(".") + 1);
+      const rightName = right.slice(right.lastIndexOf(".") + 1);
+      return rank(leftName) - rank(rightName) || left.localeCompare(right);
+    })
+    .slice(0, 2)
+    .flatMap((name) => [`param/${name}`, `grad/${name}`].filter((series) => available.has(series)));
 }
 
 function rank(name: string) {

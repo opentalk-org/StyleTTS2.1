@@ -51,19 +51,37 @@ export const getPlotRange = createServerFn({ method: "POST" })
       : "AND step BETWEEN {x_min:Float64} AND {x_max:Float64}";
     const started = performance.now();
     const rows = await query<PlotRow>(`
-      SELECT name AS plot, toString(run_id) AS runId,
+      SELECT sampled.name AS plot, toString(sampled.run_id) AS runId,
         toFloat64(point.1) AS x, toFloat64(point.2) AS y,
-        NULL AS wall, NULL AS rel
+        toUnixTimestamp64Milli(metric_timestamp) AS wall,
+        dateDiff('millisecond', started_at, metric_timestamp) / 1000.0 AS rel
       FROM (
         SELECT name, run_id,
           largestTriangleThreeBuckets({target_points:UInt32})(step, value) AS points
-        FROM metrics
-        WHERE run_id IN {run_ids:Array(UUID)}
-          AND name = {metric:String}
-          ${rangeFilter}
+        FROM (
+          SELECT run_id, name, step, argMax(value, timestamp) AS value
+          FROM metrics
+          WHERE run_id IN {run_ids:Array(UUID)}
+            AND name = {metric:String}
+            ${rangeFilter}
+          GROUP BY run_id, name, step
+        )
         GROUP BY run_id, name
-      )
-      ARRAY JOIN points AS point`, {
+      ) AS sampled
+      ARRAY JOIN points AS point
+      INNER JOIN (
+        SELECT run_id, name, step, max(timestamp) AS metric_timestamp
+        FROM metrics
+        WHERE run_id IN {run_ids:Array(UUID)} AND name = {metric:String}
+        GROUP BY run_id, name, step
+      ) AS times ON times.run_id = sampled.run_id
+        AND times.name = sampled.name AND times.step = toUInt64(point.1)
+      INNER JOIN (
+        SELECT run_id, min(timestamp) AS started_at
+        FROM run_status
+        WHERE run_id IN {run_ids:Array(UUID)}
+        GROUP BY run_id
+      ) AS starts ON starts.run_id = sampled.run_id`, {
       run_ids: data.runIds,
       metric: data.metric,
       x_min: data.xMin,
@@ -75,8 +93,8 @@ export const getPlotRange = createServerFn({ method: "POST" })
       runId: rows.map((row) => row.runId),
       x: rows.map((row) => Number(row.x)),
       y: rows.map((row) => Number(row.y)),
-      wall: null,
-      rel: null,
+      wall: rows.map((row) => Number(row.wall)),
+      rel: rows.map((row) => Number(row.rel)),
       elapsedMs: Math.round(performance.now() - started),
     };
   });

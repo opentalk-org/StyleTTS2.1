@@ -13,7 +13,7 @@ export function useProjectsQuery() {
     queryKey: ["project-updates"],
     queryFn: () => pollProjectChanges({ data: cursor.current }),
     refetchInterval: 3_000,
-    refetchIntervalInBackground: false,
+    refetchIntervalInBackground: true,
     staleTime: Infinity,
   });
   useEffect(() => {

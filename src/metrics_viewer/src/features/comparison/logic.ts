@@ -3,6 +3,8 @@ import type { Data, Layout } from "plotly.js";
 import { axis, baseLayout, type ChartTheme } from "@/shared/chart";
 import type { Artifact, GlobalPlotSettings, PlotQueryResult, PlotSettings, Run, XAxis } from "@/shared/types";
 
+import { formatRelativeTime, relativeTimeTicks } from "./time";
+
 export interface PlotSeries {
   runId: string;
   step: number[];
@@ -243,13 +245,21 @@ function rollingMean(values: number[], window: number): number[] {
   });
 }
 
-export function plotLayout(settings: EffectiveSettings, theme: ChartTheme, height?: number): Partial<Layout> {
+export function plotLayout(settings: EffectiveSettings, theme: ChartTheme, plot: Plot, height?: number): Partial<Layout> {
+  const timeTicks = settings.axis === "relative" ? relativeTimeTicks(plot.series) : {};
   return {
     ...baseLayout(theme, height),
     hovermode: "x",
     hoverdistance: -1,
     dragmode: "zoom",
-    xaxis: axis(theme, { showgrid: false, type: settings.axis === "wall" ? "date" : settings.xScale, fixedrange: false }),
+    xaxis: axis(theme, {
+      showgrid: true,
+      showline: true,
+      linecolor: theme.grid,
+      type: settings.axis === "wall" ? "date" : settings.xScale,
+      fixedrange: false,
+      ...timeTicks,
+    }),
     yaxis: axis(theme, { showgrid: true, type: settings.yScale, fixedrange: false }),
     uirevision: `${settings.xScale}-${settings.yScale}-${settings.axis}`,
   };
@@ -284,7 +294,7 @@ export function seriesStats(series: PlotSeries, axis: XAxis): SeriesStats {
 
 export function formatX(axis: XAxis, x: number): string {
   if (axis === "wall") return new Date(x).toLocaleTimeString();
-  if (axis === "relative") return `${x.toFixed(x >= 100 ? 0 : 1)} s`;
+  if (axis === "relative") return formatRelativeTime(x);
   // The cursor lands between samples, so a step reads as 10,911 rather than 1.091e+4.
   return x.toLocaleString(undefined, { maximumFractionDigits: Math.abs(x) >= 100 ? 0 : 2 });
 }
