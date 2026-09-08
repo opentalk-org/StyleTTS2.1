@@ -10,7 +10,6 @@ const SHORTCUTS: { keys: string[]; action: string }[] = [
   { keys: ["Esc"], action: "Clear the selection while the run list is focused" },
   { keys: ["Drag"], action: "Zoom into a region of a chart (scroll wheel zooms in the expanded chart)" },
   { keys: ["Double-click"], action: "Reset a chart's zoom" },
-  { keys: ["⌘", "Enter"], action: "Run the SQL query" },
   { keys: ["←", "→"], action: "Previous / next chart or media step in a dialog" },
   { keys: ["?"], action: "Show this list" },
 ];

@@ -1,9 +1,7 @@
 import { BarChart3, Columns3, GitBranch, Images } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useMemo } from "react";
 
-import { useRunLineage } from "@/features/lineage/query";
-import { isDefaultSql, useViewerStore } from "@/features/viewer/store";
+import { useViewerStore } from "@/features/viewer/store";
 import { useVisibleUpdates } from "@/features/updates/query";
 import type { ChartTheme } from "@/shared/chart";
 import type { PanelTab, ProjectColumns, Run } from "@/shared/types";
@@ -12,9 +10,9 @@ import { ProgressLine, Tabs, type TabItem } from "@/shared/ui";
 import { ComparePanel } from "@/features/compare/ComparePanel";
 
 import { ChartsPanel } from "./ChartsPanel";
-import { artifactNames, groupPlots } from "./logic";
+import { artifactNames } from "./logic";
 import { MediaPanel } from "./MediaPanel";
-import { useArtifactsQuery, usePlotsQuery } from "./query";
+import { useArtifactsQuery } from "./query";
 
 const LineagePanel = lazy(() =>
   import("@/features/lineage/LineagePanel").then((module) => ({ default: module.LineagePanel })),
@@ -34,27 +32,19 @@ interface PanelsProps {
 }
 
 export function Panels({ runs, scopedRuns, allRuns, projectColumns, runColors, chart, onRevealRun }: PanelsProps) {
-  const queryClient = useQueryClient();
-  const lineage = useRunLineage();
   const tab = useViewerStore((state) => state.tab);
   const setTab = useViewerStore((state) => state.setTab);
   const projectId = useViewerStore((state) => state.projectId);
-  const runningSql = useViewerStore((state) => state.runningSql);
   const selectedRunIds = useViewerStore((state) => state.selectedRunIds);
   const runScope = useViewerStore((state) => state.runScope);
-  const defaultQuery = isDefaultSql(runningSql);
   const artifactsQuery = useArtifactsQuery(runs, tab === "media");
   // Charts read the scoped runs; the list of charts still comes from the selected ones, so
   // an ancestor with extra metrics does not add charts nobody asked for.
   const scopedRunIds = useMemo(() => scopedRuns.map((run) => run.id), [scopedRuns]);
-  const plotsQuery = usePlotsQuery(projectId, runningSql, scopedRunIds, !defaultQuery);
-
   const plots = useMemo(
-    () => defaultQuery
-      ? [...new Set(runs.flatMap((run) => Object.keys(run.summary)))].sort()
-          .map((name) => ({ name, series: [], pointCount: 0 }))
-      : groupPlots(plotsQuery.data ?? null, lineage.offsets),
-    [defaultQuery, lineage.offsets, plotsQuery.data, runs],
+    () => [...new Set(runs.flatMap((run) => Object.keys(run.summary)))].sort()
+      .map((name) => ({ name, series: [], pointCount: 0 })),
+    [runs],
   );
   const artifacts = useMemo(
     () => (artifactsQuery.data ?? []).filter((artifact) => artifact.name !== "monitor/model_graph.json"),
@@ -80,7 +70,7 @@ export function Panels({ runs, scopedRuns, allRuns, projectColumns, runColors, c
 
   return (
     <section aria-label="Panels" className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">
-      <ProgressLine active={plotsQuery.isFetching || artifactsQuery.isFetching} />
+      <ProgressLine active={artifactsQuery.isFetching} />
       <Tabs label="Panels" items={items} value={activeTab} onValue={setTab} />
       {activeTab === "charts" ? (
         <ChartsPanel
@@ -88,14 +78,6 @@ export function Panels({ runs, scopedRuns, allRuns, projectColumns, runColors, c
           runColors={runColors}
           chart={chart}
           plots={plots}
-          result={plotsQuery.data ?? null}
-          error={plotsQuery.error}
-          fetching={plotsQuery.isFetching}
-          onRefetch={() => {
-            if (defaultQuery) void queryClient.invalidateQueries({ queryKey: ["plot-range"] });
-            else void plotsQuery.refetch();
-          }}
-          rangeQueries={defaultQuery}
         />
       ) : null}
       {activeTab === "compare" ? <ComparePanel projectColumns={projectColumns} runs={scopedRuns} runColors={runColors} chart={chart} /> : null}

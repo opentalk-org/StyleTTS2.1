@@ -1,16 +1,15 @@
-import { BarChart3, ChevronsDownUp, ChevronsUpDown, Database, Ellipsis, Eye, RotateCcw } from "lucide-react";
-import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import { BarChart3, ChevronsDownUp, ChevronsUpDown, Ellipsis, Eye, RotateCcw } from "lucide-react";
+import { lazy, Suspense, useMemo, useState } from "react";
 
 import { useRunLineage } from "@/features/lineage/query";
-import { isDefaultSql, useViewerStore } from "@/features/viewer/store";
+import { useViewerStore } from "@/features/viewer/store";
 import type { ChartTheme } from "@/shared/chart";
 import { useDebouncedCommit } from "@/shared/debounce";
-import type { PlotQueryResult, Run, RunScope, XAxis } from "@/shared/types";
+import type { Run, RunScope, XAxis } from "@/shared/types";
 import { Button, EmptyState, IconButton, MenuItem, Popover, Range, SearchInput, SegmentedControl, Tooltip } from "@/shared/ui";
 
 import { ChartSection } from "./ChartSection";
 import { sectionize, type Plot } from "./logic";
-import { QuerySheet } from "./QuerySheet";
 
 const ChartDialog = lazy(() => import("./ChartDialog").then((module) => ({ default: module.ChartDialog })));
 
@@ -31,18 +30,12 @@ interface ChartsPanelProps {
   runColors: Record<string, string>;
   chart: ChartTheme;
   plots: Plot[];
-  result: PlotQueryResult | null;
-  error: Error | null;
-  fetching: boolean;
-  onRefetch: () => void;
-  rangeQueries: boolean;
 }
 
-export function ChartsPanel({ runs, runColors, chart, plots, result, error, fetching, onRefetch, rangeQueries }: ChartsPanelProps) {
+export function ChartsPanel({ runs, runColors, chart, plots }: ChartsPanelProps) {
   const viewer = useViewerStore();
   const [filter, setFilter] = useState("");
   const [collapsed, setCollapsed] = useState<string[]>([]);
-  const [sqlOpen, setSqlOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [smoothing, setSmoothing] = useDebouncedCommit(
@@ -60,23 +53,15 @@ export function ChartsPanel({ runs, runColors, chart, plots, result, error, fetc
   );
   const sections = useMemo(() => sectionize(visible, viewer.pinnedSections), [visible, viewer.pinnedSections]);
   const hiddenCount = plots.filter((plot) => viewer.hiddenPlots.includes(plot.name)).length;
-  const customSql = !isDefaultSql(viewer.sql);
-  const dirty = viewer.sql !== viewer.runningSql;
-  const hasTime = rangeQueries || result === null || result.wall !== null;
   const lineage = useRunLineage();
   const ancestorCount = runs.filter((run) => !viewer.selectedRunIds.includes(run.id)).length;
   const xAxisOptions = useMemo(
     () => X_AXIS_OPTIONS.map((option) => ({
       ...option,
-      disabled: (option.needsTime === true && !hasTime) || (option.needsLineage === true && lineage.empty),
+      disabled: option.needsLineage === true && lineage.empty,
     })),
-    [hasTime, lineage.empty],
+    [lineage.empty],
   );
-
-  const runQuery = useCallback(() => {
-    if (viewer.sql === viewer.runningSql) onRefetch();
-    else viewer.commitSql();
-  }, [viewer, onRefetch]);
 
   function toggleSection(name: string) {
     setCollapsed((current) => (current.includes(name) ? current.filter((item) => item !== name) : [...current, name]));
@@ -89,7 +74,7 @@ export function ChartsPanel({ runs, runColors, chart, plots, result, error, fetc
       <div className="@container min-h-0 min-w-0 flex-1 overflow-auto">
         <div className="sticky top-0 z-20 flex h-toolbar items-center gap-2 border-b border-line bg-surface px-3">
           <SearchInput label="Filter charts" value={filter} onValue={setFilter} placeholder="Filter charts" className="w-40 @3xl:w-56" />
-          <Tooltip content={hasTime ? "What the x axis plots" : "Return wall and rel columns from the query to plot against time"}>
+          <Tooltip content="What the x axis plots">
             <SegmentedControl
               label="X axis"
               options={xAxisOptions}
@@ -141,21 +126,6 @@ export function ChartsPanel({ runs, runColors, chart, plots, result, error, fetc
                 { value: "auto" as const, label: "Auto" },
               ]}
             />
-            <Button
-              variant={sqlOpen ? "secondary" : "ghost"}
-              icon={<Database size={14} />}
-              aria-expanded={sqlOpen}
-              onClick={() => setSqlOpen(!sqlOpen)}
-            >
-              SQL
-              {error !== null ? (
-                <span className="size-1.5 rounded-full bg-failed" aria-label="Query failed" />
-              ) : dirty ? (
-                <span className="size-1.5 rounded-full bg-queued" aria-label="Edited, not run" />
-              ) : customSql ? (
-                <span className="size-1.5 rounded-full bg-accent" aria-label="Custom query" />
-              ) : null}
-            </Button>
             <Popover
               open={menuOpen}
               onClose={() => setMenuOpen(false)}
@@ -193,14 +163,8 @@ export function ChartsPanel({ runs, runColors, chart, plots, result, error, fetc
           {runs.length === 0 ? (
             <EmptyState icon={<BarChart3 />} title="Select runs to compare" description="Tick runs in the list on the left. Every metric they logged appears here as a chart." />
           ) : null}
-          {runs.length > 0 && error !== null ? (
-            <EmptyState compact icon={<Database />} title="The query failed" description={error.message}>
-              <Button size="sm" onClick={() => setSqlOpen(true)}>Open SQL</Button>
-              <Button size="sm" variant="ghost" onClick={viewer.resetSql}>Reset query</Button>
-            </EmptyState>
-          ) : null}
-          {runs.length > 0 && error === null && !fetching && plots.length === 0 && result !== null ? (
-            <EmptyState compact icon={<BarChart3 />} title="No metrics for these runs" description="The query returned no rows. Widen it in the SQL panel or pick other runs." />
+          {runs.length > 0 && plots.length === 0 ? (
+            <EmptyState compact icon={<BarChart3 />} title="No metrics for these runs" description="Pick other runs or wait for metrics to be logged." />
           ) : null}
           {runs.length > 0 && plots.length > 0 && visible.length === 0 ? (
             <EmptyState compact icon={<BarChart3 />} title="Nothing matches" description={hiddenCount > 0 ? `${hiddenCount} charts are hidden.` : `No chart name contains “${filter}”.`}>
@@ -219,13 +183,11 @@ export function ChartsPanel({ runs, runColors, chart, plots, result, error, fetc
               runColors={runColors}
               chart={chart}
               onExpand={setExpanded}
-              rangeQueries={rangeQueries}
+              rangeQueries
             />
           ))}
         </div>
       </div>
-
-      <QuerySheet open={sqlOpen} onClose={() => setSqlOpen(false)} onRun={runQuery} running={fetching} error={error} result={result} plotCount={plots.length} />
 
       {expandedIndex === -1 ? null : (
         <Suspense fallback={null}>
@@ -235,8 +197,8 @@ export function ChartsPanel({ runs, runColors, chart, plots, result, error, fetc
             runs={runs}
             runColors={runColors}
             chart={chart}
-            hasTime={hasTime}
-            rangeQuery={rangeQueries}
+            hasTime
+            rangeQuery
             onSelectPlot={setExpanded}
             onClose={() => setExpanded(null)}
           />
