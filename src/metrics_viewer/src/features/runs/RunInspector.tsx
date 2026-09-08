@@ -24,12 +24,11 @@ const TABS: TabItem<InspectorTab>[] = [
 
 interface RunInspectorProps {
   run: Run;
-  color: string;
   chart: ChartTheme;
   onClose: () => void;
 }
 
-export function RunInspector({ run, color, chart, onClose }: RunInspectorProps) {
+export function RunInspector({ run, chart, onClose }: RunInspectorProps) {
   const [tab, setTab] = useState<InspectorTab>("config");
   const config = useRunConfigQuery(run.id);
   const liveTab = tab === "logs" ? "run-logs" : "run-graph";
@@ -54,7 +53,7 @@ export function RunInspector({ run, color, chart, onClose }: RunInspectorProps) 
           </div>
         )
       ) : null}
-      {tab === "logs" ? <LogsPanel runs={[run]} runColors={{ [run.id]: color }} /> : null}
+      {tab === "logs" ? <LogsPanel runs={[run]} /> : null}
       {tab === "graph" ? (
         <Suspense fallback={<Skeleton className="m-4 flex-1" />}>
           <ModelMonitor run={run} chart={chart} />

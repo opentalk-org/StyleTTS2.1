@@ -9,14 +9,14 @@ import { useLogsQuery } from "./query";
 
 interface LogsPanelProps {
   runs: Run[];
-  runColors: Record<string, string>;
 }
 
-export function LogsPanel({ runs, runColors }: LogsPanelProps) {
+const NODE_PREFIX_PATTERN = /^\[[^\]]+\] /;
+
+export function LogsPanel({ runs }: LogsPanelProps) {
   const runIds = useMemo(() => runs.map((run) => run.id).sort(), [runs]);
   const logs = useLogsQuery(runIds, runs.length > 0);
   const rows = useMemo(() => logs.data?.pages.flatMap((page) => page.rows) ?? [], [logs.data]);
-  const names = useMemo(() => new Map(runs.map((run) => [run.id, run.name])), [runs]);
   const scroll = useRef<HTMLDivElement>(null);
   const virtual = useVirtualizer({
     count: rows.length,
@@ -54,8 +54,6 @@ export function LogsPanel({ runs, runColors }: LogsPanelProps) {
               ref={virtual.measureElement}
               row={row}
               index={item.index}
-              name={names.get(row.runId) ?? row.runId.slice(0, 8)}
-              color={runColors[row.runId]}
               offset={item.start}
             />
           );
@@ -76,25 +74,21 @@ interface LogRowProps {
   ref: (element: Element | null) => void;
   row: RunLog;
   index: number;
-  name: string;
-  color: string | undefined;
   offset: number;
 }
 
-function LogRow({ ref, row, index, name, color, offset }: LogRowProps) {
+function LogRow({ ref, row, index, offset }: LogRowProps) {
   return (
     <article
       ref={ref}
       data-index={index}
-      className="absolute left-0 top-0 grid w-full grid-cols-[170px_150px_minmax(0,1fr)] border-b border-line px-3 py-2 font-mono text-xs leading-5"
+      className="absolute left-0 top-0 grid w-full grid-cols-[170px_minmax(0,1fr)] border-b border-line px-3 py-2 font-mono text-xs leading-5"
       style={{ transform: `translateY(${offset}px)` }}
     >
       <time className="tabular-nums text-fg-muted">{new Date(row.timestamp).toLocaleString()}</time>
-      <span className="truncate pr-3 text-fg-secondary" title={name}>
-        <span className="mr-2 inline-block size-2 rounded-full" style={{ backgroundColor: color }} />
-        {name}
-      </span>
-      <pre className="m-0 whitespace-pre-wrap break-words font-mono text-xs text-fg">{row.message}</pre>
+      <pre className="m-0 whitespace-pre-wrap break-words font-mono text-xs text-fg">
+        {row.message.replace(NODE_PREFIX_PATTERN, "")}
+      </pre>
     </article>
   );
 }

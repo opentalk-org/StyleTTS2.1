@@ -247,7 +247,6 @@ export function RunsPane({ runs, projectColumns, loading, runColors, palette, ch
       {inspectedRun === null ? null : (
         <RunInspector
           run={runs.find((run) => run.id === inspectedRun.id) ?? inspectedRun}
-          color={runColors[inspectedRun.id]}
           chart={chart}
           onClose={() => setInspectedRun(null)}
         />
