@@ -17,14 +17,18 @@ class ExecutionGraphRecorder:
         self._gradient_producers: dict[Any, str] = {}
         self._calls: dict[str, int] = {}
         self._operations: dict[str, int] = {}
+        self._containers: dict[str, dict[str, Any]] = {}
         self._handles = []
         visited: set[int] = set()
         for root_name, root in modules.items():
             for relative_name, module in root.named_modules():
-                if len(tuple(module.children())) > 0 or id(module) in visited:
+                path = root_name if relative_name == "" else f"{root_name}.{relative_name}"
+                if len(tuple(module.children())) > 0:
+                    self._containers[path] = _container_record(path, module)
+                    continue
+                if id(module) in visited:
                     continue
                 visited.add(id(module))
-                path = root_name if relative_name == "" else f"{root_name}.{relative_name}"
                 self._handles.append(
                     module.register_forward_hook(
                         partial(self._record, path),
@@ -49,7 +53,7 @@ class ExecutionGraphRecorder:
         }
         self._records.append({
             "id": component_id,
-            "parent_id": None,
+            "parent_id": _parent_path(module_path),
             "name": module_path.rsplit(".", 1)[-1],
             "module_type": type(module).__name__,
             "module_path": module_path,
@@ -96,12 +100,70 @@ class ExecutionGraphRecorder:
 
     def write(self, path: Path) -> None:
         assert self._records, "no module execution was recorded"
-        path.write_text(json.dumps(self._records, separators=(",", ":")), encoding="utf-8")
+        self._place_operations()
+        records = self._records + self._reached_containers()
+        path.write_text(json.dumps(records, separators=(",", ":")), encoding="utf-8")
+
+    def _place_operations(self) -> None:
+        """Ops carry no module path, so they take the container of the module that fed them.
+
+        An op that also consumes a tensor from outside that container (a residual add, a
+        branch merge) is lifted one level, which is where the merge actually happens.
+        """
+        parents = {record["id"]: record["parent_id"] for record in self._records}
+        for record in self._records:
+            if record["module_path"] != "" or len(record["input_ids"]) == 0:
+                continue
+            container = parents[record["input_ids"][0]]
+            outside = any(
+                not _contains(container, parents[input_id])
+                for input_id in record["input_ids"][1:]
+            )
+            if outside and container is not None:
+                container = _parent_path(container) or container
+            record["parent_id"] = container
+            parents[record["id"]] = container
+
+    def _reached_containers(self) -> list[dict[str, Any]]:
+        """Only containers on the path to an executed module belong in the graph."""
+        reached: set[str] = set()
+        for record in self._records:
+            path = record["parent_id"]
+            while path is not None and path not in reached:
+                reached.add(path)
+                path = _parent_path(path)
+        return [self._containers[path] for path in sorted(reached)]
 
     def close(self) -> None:
         for handle in self._handles:
             handle.remove()
         self._handles.clear()
+
+
+def _contains(container: str | None, module_path: str | None) -> bool:
+    if container is None:
+        return True
+    if module_path is None:
+        return False
+    return module_path == container or module_path.startswith(f"{container}.")
+
+
+def _parent_path(module_path: str) -> str | None:
+    parent = module_path.rsplit(".", 1)[0]
+    return None if parent == module_path else parent
+
+
+def _container_record(module_path: str, module: nn.Module) -> dict[str, Any]:
+    return {
+        "id": module_path,
+        "parent_id": _parent_path(module_path),
+        "name": module_path.rsplit(".", 1)[-1],
+        "module_type": type(module).__name__,
+        "module_path": module_path,
+        "parameter_names": [],
+        "parameter_shapes": {},
+        "parameter_count": sum(parameter.numel() for parameter in module.parameters()),
+    }
 
 
 def _tensors(value: Any) -> list[Tensor]:

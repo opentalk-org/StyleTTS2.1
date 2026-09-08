@@ -63,7 +63,10 @@ class TensorlaneTracker:
             name: float(value) if isinstance(value, (int, float)) else list(value)
             for name, value in metrics.items()
         })
-        logger.info("METRICS %s", json.dumps(record, sort_keys=True))
+        logger.info("METRICS %s", json.dumps({
+            name: value for name, value in record.items()
+            if isinstance(value, (int, float))
+        }, sort_keys=True))
         scalar_metrics = {
             name: value for name, value in metrics.items() if isinstance(value, (int, float))
         }
@@ -71,9 +74,10 @@ class TensorlaneTracker:
             name for name, value in metrics.items() if not isinstance(value, (int, float))
         ]
         if array_metrics:
-            raise TypeError(
-                "Tensorlane's Python client does not expose array metrics: "
-                + ", ".join(array_metrics)
+            logger.warning(
+                "Tensorlane Python client skipped %s array metrics at step %s",
+                len(array_metrics),
+                step,
             )
         self._stream.log_metrics(
             scalar_metrics,
