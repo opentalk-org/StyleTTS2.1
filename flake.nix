@@ -372,7 +372,7 @@
                 name = "backend-run";
                 runtimeInputs = [ pkgs.coreutils ];
                 text = ''
-                  echo "[backend] http://127.0.0.1:8001 (legacy UI at /ui-old)"
+                  echo "[backend] http://127.0.0.1:8001"
                   exec uvicorn backend.api:app --host 127.0.0.1 --port 8001
                 '';
               };
@@ -420,7 +420,7 @@
                 CLICKHOUSE_PASSWORD = "";
                 METRICS_DIR = "$DNVR_ROOT/.tensorlane/artifacts";
               };
-              command = "cd $DNVR_ROOT/src/metrics_viewer && npm run dev -- --host 127.0.0.1 --port 5174 --strictPort";
+              command = "cd $DNVR_ROOT/src/metrics_viewer && npm run dev -- --host 0.0.0.0 --port 5174 --strictPort";
             };
 
             processes.runner = {
