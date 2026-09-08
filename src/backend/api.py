@@ -42,7 +42,6 @@ from shared.schemas import (
 configure_logging("backend")
 logger = get_logger("backend.api")
 manager = BackendManager()
-old_static_dir = Path(__file__).parent / "ui" / "static"
 
 
 @asynccontextmanager
@@ -65,7 +64,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/ui-old", StaticFiles(directory=old_static_dir, html=True), name="ui-old")
 app.include_router(audio_router)
 app.include_router(artifacts_router)
 app.include_router(assets_router)

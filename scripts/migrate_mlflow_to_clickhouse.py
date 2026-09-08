@@ -18,9 +18,11 @@ from migrate_mlflow_artifacts import (
     migrate_artifacts,
     reconcile_checkpoint_runs,
 )
+from migrate_runflow_logs import migrate_runflow_logs
 
 
 MLFLOW_DATABASE_URL_ENV = "MLFLOW_DATABASE_URL"
+RUNFLOW_DATABASE_URL_ENV = "RUNFLOW_PGBOUNCER_DATABASE_URL"
 CLICKHOUSE_URL_ENV = "RUNFLOW_CLICKHOUSE_URL"
 DEFAULT_BATCH_SIZE = 50_000
 Row = Sequence[Any]
@@ -52,8 +54,34 @@ def run_row(row: Row) -> Row:
     values[0] = UUID(values[0])
     values[1] = project_id(values[1])
     values[3] = json.dumps(values[3], separators=(",", ":"))
-    values[4] = json.dumps(values[4], separators=(",", ":"))
+    values[4] = json.dumps(nested_config(values[4]), separators=(",", ":"))
     return values
+
+
+def nested_config(flat: dict[str, Any]) -> dict[str, Any]:
+    root: dict[str, Any] = {}
+    for path, value in flat.items():
+        parts = path.split(".")
+        cursor = root
+        for part in parts[:-1]:
+            child = cursor.setdefault(part, {})
+            if not isinstance(child, dict):
+                raise ValueError(f"Config path conflicts with scalar value: {path}")
+            cursor = child
+        cursor[parts[-1]] = value
+    return collapse_indexed_config(root)
+
+
+def collapse_indexed_config(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    converted = {key: collapse_indexed_config(item) for key, item in value.items()}
+    if not converted or not all(key.isdecimal() for key in converted):
+        return converted
+    indexes = sorted(int(key) for key in converted)
+    if indexes != list(range(len(indexes))):
+        raise ValueError(f"Config list indexes must be contiguous from zero: {indexes}")
+    return [converted[str(index)] for index in indexes]
 
 
 def referenced_row(row: Row) -> Row:
@@ -245,6 +273,8 @@ def main() -> None:
     for spec in reversed(migration_specs):
         destination.command(f"TRUNCATE TABLE {spec.destination}")
         print(f"reset {spec.destination}", flush=True)
+    destination.command("TRUNCATE TABLE logs")
+    print("reset logs", flush=True)
     expected = {
         spec.destination: copy_table(spec, args.batch_size, args.workers)
         for spec in migration_specs
@@ -257,6 +287,12 @@ def main() -> None:
         print(f"validated {table}: {destination_count}", flush=True)
     migrate_artifacts(destination, args.batch_size)
     reconcile_checkpoint_runs(destination)
+    runflow_source = create_engine(os.environ[RUNFLOW_DATABASE_URL_ENV])
+    mlflow_source = create_engine(os.environ[MLFLOW_DATABASE_URL_ENV])
+    log_count = migrate_runflow_logs(runflow_source, mlflow_source, destination, args.batch_size)
+    runflow_source.dispose()
+    mlflow_source.dispose()
+    print(f"validated logs: {log_count}", flush=True)
 
 
 if __name__ == "__main__":

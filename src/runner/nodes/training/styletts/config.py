@@ -23,7 +23,7 @@ def build_configs(
     settings: Any,
     output_dir: Path,
 ) -> tuple[dict[str, Any], str]:
-    assets, asset_metadata = _assets(pretrained_assets)
+    assets, asset_metadata = _assets(None)
     scratch = is_scratch_checkpoint(base_checkpoint)
     base_name = None
     if not scratch:
@@ -35,6 +35,7 @@ def build_configs(
         dataset_id=dataset_id,
         output_dir=str(output_dir),
         run_name=settings.display_name,
+        device="cuda",
         base_checkpoint=base_name,
         asr_model=_asset_name(assets, "asr_bundle"),
         f0_model=_asset_name(assets, "f0_model"),

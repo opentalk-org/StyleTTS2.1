@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
+from shared.db.audio.clickhouse.files import get_audio_files
 from shared.db.audio.clickhouse.models import AudioFileRecord
 from shared.db.clickhouse import clickhouse_client
 
@@ -19,6 +20,13 @@ def list_audio_files(
     language: str = "",
     run_id: str | None = None,
 ) -> list[AudioFileRecord]:
+    if dataset == "all" and not query and not language.strip() and run_id is None:
+        return _list_unfiltered_audio_files(
+            limit=limit,
+            order=order,
+            after_value=after_value,
+            after_id=after_id,
+        )
     order_column, order_type = _ORDER_COLUMNS[order]
     filters = []
     parameters: dict[str, object] = {"limit": limit}
@@ -120,6 +128,45 @@ def list_audio_files(
     return [AudioFileRecord.model_validate(row) for row in result.named_results()]
 
 
+def _list_unfiltered_audio_files(
+    *,
+    limit: int,
+    order: AudioOrder,
+    after_value: datetime | float | None,
+    after_id: UUID | None,
+) -> list[AudioFileRecord]:
+    order_column, order_type = _PAGE_ORDER_COLUMNS[order]
+    parameters: dict[str, object] = {"limit": limit}
+    where = ""
+    if after_value is not None:
+        assert after_id is not None, "catalog cursor requires an audio ID"
+        where = (
+            f"WHERE ({order_column}, id) < "
+            f"({{after_value:{order_type}}}, {{after_id:UUID}})"
+        )
+        parameters.update(after_value=after_value, after_id=after_id)
+    result = clickhouse_client().query(
+        f"""
+        SELECT id
+        FROM (
+            SELECT
+                id,
+                max(updated_at) AS latest_updated_at,
+                argMax(duration, updated_at) AS duration
+            FROM audio_files
+            GROUP BY id
+        )
+        {where}
+        ORDER BY {order_column} DESC, id DESC
+        LIMIT {{limit:UInt32}}
+        """,
+        parameters=parameters,
+    )
+    ids = [row[0] for row in result.result_rows]
+    rows = {item.id: item for item in get_audio_files(ids)}
+    return [rows[audio_id] for audio_id in ids]
+
+
 def search_audio_file_ids(query: str, dataset: str, language: str) -> list[UUID]:
     return [
         item.id
@@ -139,4 +186,9 @@ def list_audio_files_by_run(run_id: str) -> list[AudioFileRecord]:
 _ORDER_COLUMNS = {
     "updated": ("a.updated_at", "DateTime64(9)"),
     "duration": ("a.duration", "Float64"),
+}
+
+_PAGE_ORDER_COLUMNS = {
+    "updated": ("latest_updated_at", "DateTime64(9)"),
+    "duration": ("duration", "Float64"),
 }

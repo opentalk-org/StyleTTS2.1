@@ -15,11 +15,14 @@ from runflow.runtime.cancellation import check_cancel
 
 def create_run(data_config: dict, train_config: str) -> UUID:
     address = os.environ["TENSORLANE_HTTP_ADDR"].rstrip("/")
+    parsed_train_config = yaml.safe_load(train_config)
     request = Request(
         f"{address}/runs",
         data=json.dumps({
+            "project_id": "55f68f72-f7b3-522e-8eb6-62253946d8c9",
+            "name": parsed_train_config["run_name"],
             "data_config": data_config,
-            "train_config": yaml.safe_load(train_config),
+            "train_config": parsed_train_config,
         }).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -50,22 +53,24 @@ def train(
         "fp16": "fp16",
         "bf16": "bf16",
     }[precision]
-    command = [
-        sys.executable,
-        "-m",
-        "accelerate.commands.launch",
-        "--num_processes",
-        str(process_count),
-        "--num_machines",
-        "1",
-        "--mixed_precision",
-        precision,
-        "--dynamo_backend",
-        "no",
-    ]
+    command = [sys.executable, "-m", "traintts.main"]
     if process_count > 1:
-        command.append("--multi_gpu")
-    command.extend(("-m", "traintts.main"))
+        command = [
+            sys.executable,
+            "-m",
+            "accelerate.commands.launch",
+            "--num_processes",
+            str(process_count),
+            "--num_machines",
+            "1",
+            "--mixed_precision",
+            precision,
+            "--dynamo_backend",
+            "no",
+            "--multi_gpu",
+            "-m",
+            "traintts.main",
+        ]
     environment = os.environ.copy()
     environment["TENSORLANE_RUN_ID"] = str(run_id)
     log_path = output_dir / "training.log"

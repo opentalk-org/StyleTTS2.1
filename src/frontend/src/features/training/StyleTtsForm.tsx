@@ -190,13 +190,6 @@ export function StyleTtsForm({
         </div>
       </FormSection>
 
-      <FormSection title="Output paths" tag="Advanced">
-        <div className="grid grid-cols-2 gap-3.5">
-          <SettingField schema={settingsSchema} values={values} name="output_checkpoint_dir" onChange={updateTraining} />
-          <SettingField schema={settingsSchema} values={values} name="config_output_dir" onChange={updateTraining} />
-        </div>
-      </FormSection>
-
       <OodEditor
         selectedIds={(assets.params.ood_text_set_file_ids as string[]) ?? []}
         availableSets={oodSetValues(oodAssets.data ?? [])}
