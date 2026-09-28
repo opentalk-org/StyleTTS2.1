@@ -60,5 +60,10 @@ profile is explicitly pushed with its dependency closure, including dependencies
 that CI downloaded from another cache. Cachix's build hook also uploads completed
 builds during the job, allowing later runs to reuse work if a build fails.
 
+After publishing, separate fresh runners enter every shell with `nix develop
+--max-jobs 0 --option builders '' -c true`. These jobs use only the cache
+configuration in `flake.nix`, without a Cachix token or client. Missing substitutes
+fail the check instead of triggering a local or remote build.
+
 References: [Cachix shell caching](https://docs.cachix.org/pushing#pushing-shell-environment-1)
 and [`nix print-dev-env`](https://nix.dev/manual/nix/latest/command-ref/new-cli/nix3-print-dev-env.html).

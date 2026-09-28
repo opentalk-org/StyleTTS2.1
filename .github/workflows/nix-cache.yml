@@ -90,3 +90,43 @@ jobs:
           while IFS= read -r name; do
             cachix push "$CACHIX_CACHE" "$RUNNER_TEMP/devshell-$name"
           done < "$RUNNER_TEMP/devshell-names"
+
+  verify-cache:
+    name: Download cached shells (${{ matrix.system }})
+    needs: devshells
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-24.04
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      NIX_SYSTEM: ${{ matrix.system }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            accept-flake-config = true
+
+      - name: Enter every shell using only substitutes on a fresh runner
+        run: |
+          nix eval --no-update-lock-file --json \
+            ".#devShells.$NIX_SYSTEM" --apply builtins.attrNames \
+            | jq -r '.[]' > "$RUNNER_TEMP/devshell-names"
+          while IFS= read -r name; do
+            nix develop --no-update-lock-file --max-jobs 0 --option builders '' \
+              ".#devShells.$NIX_SYSTEM.\"$name\"" -c true
+          done < "$RUNNER_TEMP/devshell-names"
