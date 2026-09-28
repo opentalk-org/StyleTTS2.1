@@ -3,15 +3,14 @@
 The `Cache Linux dev shells` workflow builds every shell in
 `devShells.x86_64-linux` and `devShells.aarch64-linux` on native Linux runners.
 Pushes to `main` and manual runs publish the environments and their dependencies
-to Cachix. Pull requests build the same environments, with read-only cache access
+to the public `opentalk` Cachix cache. Pull requests build the same environments, with read-only cache access
 and no Cachix write token. macOS is not built by this workflow.
 
 ## One-time maintainer setup
 
-1. Create a **public** cache at <https://app.cachix.org>, or use an existing public
-   cache. Create a write token scoped to that cache.
+1. At <https://app.cachix.org>, create a write token scoped to the `opentalk` cache.
 2. In this repository's **Settings → Secrets and variables → Actions**, set:
-   - Repository variable `CACHIX_CACHE`: the cache name, without `.cachix.org`.
+   - Repository variable `CACHIX_CACHE`: `opentalk`.
    - Repository secret `CACHIX_AUTH_TOKEN`: the cache's write token.
 3. After merging, run **Actions → Cache Linux dev shells → Run workflow** on
    `main`, or let the next push populate the cache. Wait for your architecture's
@@ -23,26 +22,23 @@ runs reuse cached outputs and upload newly built paths as they finish.
 
 ## Use the cache locally
 
-Install the Cachix client, then run once, replacing `CACHE_NAME` with the
-repository's `CACHIX_CACHE` value:
-
-```sh
-nix run nixpkgs#cachix -- use CACHE_NAME
-```
-
-`cachix use` installs the cache URL and its actual public signing key. Follow its
-instructions if your Nix daemon requires system-level configuration. Public cache
-downloads do not need the write token.
-
-Then enter the shell as usual and accept the flake's upstream cache configuration
-when prompted:
+Enter the shell as usual and accept the flake's cache configuration when prompted.
+The `opentalk` cache URL and verified public signing key are included in `flake.nix`:
 
 ```sh
 nix develop
 ```
 
-The flake extends your configured substituters and trusted keys, so accepting its
-configuration preserves the Cachix cache configured above.
+The flake extends your configured substituters and trusted keys. Public cache
+downloads do not need a token. If your Nix daemon requires system-level cache
+configuration, run the following and follow Cachix's instructions:
+
+```sh
+nix run nixpkgs#cachix -- use opentalk
+```
+
+To switch caches, change `CACHIX_CACHE` and update the URL and public signing key
+in `flake.nix` to match.
 
 To check that a warmed shell can be downloaded without local builds:
 
