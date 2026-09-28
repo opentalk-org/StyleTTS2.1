@@ -43,7 +43,7 @@ jobs:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
         run: |
           if [[ -z "$CACHIX_CACHE" || -z "$CACHIX_AUTH_TOKEN" ]]; then
-            echo "::error::Set the CACHIX_CACHE repository variable and CACHIX_AUTH_TOKEN secret. See docs/nix-cache.md."
+            echo "::error::Set the CACHIX_CACHE repository variable and CACHIX_AUTH_TOKEN secret in Settings > Secrets and variables > Actions."
             exit 1
           fi
 
